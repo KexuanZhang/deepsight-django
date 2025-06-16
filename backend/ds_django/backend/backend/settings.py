@@ -32,6 +32,18 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        # enable session cookies
+        'rest_framework.authentication.SessionAuthentication',
+        # keep this if you still want browsable API login
+        'rest_framework.authentication.BasicAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}
+
 
 # Application definition
 
@@ -46,11 +58,13 @@ INSTALLED_APPS = [
     'corsheaders',  
     'users',
     'notebooks',
+    'reports',
     'publications',
     'events',
     'people',
     'media',
     'tags',
+    'drf_yasg',
 ]
 
 MIDDLEWARE = [

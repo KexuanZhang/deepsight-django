@@ -1,43 +1,56 @@
-from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.db import models
+from django.contrib.auth.models import (
+    AbstractBaseUser, BaseUserManager, PermissionsMixin
+)
 
-class User(AbstractUser):
-    # override the parent m2m fields to avoid name collisions:
-    groups = models.ManyToManyField(
-        Group,
-        related_name="custom_user_set",    # any unique name
-        blank=True,
-        help_text="The groups this user belongs to.",
-        verbose_name="groups",
-        related_query_name="user",
-    )
-    user_permissions = models.ManyToManyField(
-        Permission,
-        related_name="custom_user_permissions_set",  # unique
-        blank=True,
-        help_text="Specific permissions for this user.",
-        verbose_name="user permissions",
-        related_query_name="user",
-    )
-    # now you can still add extra fields if you want
+class UserManager(BaseUserManager):
+    def create_user(self, username, email=None, password=None, **extra_fields):
+        if not username:
+            raise ValueError("The username must be set")
+        email = self.normalize_email(email)
+        user = self.model(username=username, email=email, **extra_fields)
+        user.set_password(password)  # hashes into password_hash
+        user.save(using=self._db)
+        return user
 
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        return self.create_user(username, email, password, **extra_fields)
+
+class User(AbstractBaseUser, PermissionsMixin):
+    user_id = models.AutoField(primary_key=True)
+    username = models.CharField(max_length=50, unique=True)
+    email = models.EmailField(max_length=100, blank=True)
+    # AbstractBaseUser gives us `password` field; rename its column:
+    password = models.CharField(
+        max_length=255,
+        db_column="password_hash",
+        help_text="Hashed password",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # required fields for PermissionsMixin/AbstractBaseUser:
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
+
+    objects = UserManager()
+
+    USERNAME_FIELD = "username"
+    REQUIRED_FIELDS = ["email"]
+
+    def __str__(self):
+        return self.username
 
 class SearchHistory(models.Model):
+    search_id = models.AutoField(primary_key=True)
     user = models.ForeignKey(
-        'User', on_delete=models.CASCADE, related_name='search_histories'
+        User,
+        on_delete=models.CASCADE,
+        related_name="search_history"
     )
     search_content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Search by {self.user.username}: {self.search_content[:30]}"
-
-class ChatHistory(models.Model):
-    notebook = models.ForeignKey(
-        'notebooks.Notebook', on_delete=models.CASCADE, related_name='chat_histories'
-    )
-    chat_content = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"ChatHistory for Notebook {self.notebook_id}"
+        return f"Search {self.search_id} by {self.user.username}"

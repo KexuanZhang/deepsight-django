@@ -1,25 +1,55 @@
-from rest_framework import viewsets, permissions
-from .models import User, SearchHistory, ChatHistory
-from .serializers import UserSerializer, SearchHistorySerializer, ChatHistorySerializer
+from django.contrib.auth import authenticate, login, logout
+from rest_framework import permissions, status
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from django.contrib.auth import get_user_model
 
-class UserViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    List and retrieve users.
-    (You can add create/update if you want self-signup endpoints.)
-    """
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
-    permission_classes = [permissions.IsAdminUser]
+from .serializers import (
+    UserSerializer,
+    SignupSerializer,
+    LoginSerializer
+)
 
-class SearchHistoryViewSet(viewsets.ModelViewSet):
-    queryset = SearchHistory.objects.all()
-    serializer_class = SearchHistorySerializer
+User = get_user_model()
+
+class SignupView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = SignupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        login(request, user)
+        return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+class LoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = authenticate(
+            request,
+            username=serializer.validated_data["username"],
+            password=serializer.validated_data["password"]
+        )
+        if not user:
+            return Response(
+                {"detail": "Invalid credentials"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        login(request, user)
+        return Response(UserSerializer(user).data)
+
+class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+    def post(self, request):
+        logout(request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
-class ChatHistoryViewSet(viewsets.ModelViewSet):
-    queryset = ChatHistory.objects.all()
-    serializer_class = ChatHistorySerializer
+class CurrentUserView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(UserSerializer(request.user).data)

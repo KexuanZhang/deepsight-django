@@ -1,18 +1,25 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, SearchHistory, ChatHistory
+from .models import User, SearchHistory
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    fieldsets = BaseUserAdmin.fieldsets  # keep default fields
-    # add extra field names to the admin form if you added any to User
+    fieldsets = (
+        (None, {"fields": ("username", "password")}),
+        ("Personal info", {"fields": ("email",)}),
+        ("Permissions", {"fields": ("is_active","is_staff","is_superuser","groups","user_permissions")}),
+        ("Important dates", {"fields": ("last_login","created_at")}),
+    )
+    add_fieldsets = (
+        (None, {
+            "classes": ("wide",),
+            "fields": ("username","email","password1","password2"),
+        }),
+    )
+    list_display = ("user_id","username","email","is_staff","created_at")
+    ordering = ("user_id",)
 
 @admin.register(SearchHistory)
 class SearchHistoryAdmin(admin.ModelAdmin):
-    list_display = ('user', 'search_content', 'created_at')
-    list_filter = ('user',)
-
-@admin.register(ChatHistory)
-class ChatHistoryAdmin(admin.ModelAdmin):
-    list_display = ('notebook', 'created_at')
-    list_filter = ('notebook',)
+    list_display = ("search_id", "user", "search_content", "created_at")
+    list_filter = ("user",)
