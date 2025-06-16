@@ -78,6 +78,20 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
 ]
 
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+MIDDLEWARE.insert(0, "corsheaders.middleware.CorsMiddleware")
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+
 ROOT_URLCONF = 'backend.urls'
 
 AUTH_USER_MODEL = 'users.User'

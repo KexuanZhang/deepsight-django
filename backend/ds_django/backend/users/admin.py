@@ -4,11 +4,19 @@ from .models import User, SearchHistory
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
+    # Make created_at read-only instead of editable
+    readonly_fields = ('created_at',)
+
     fieldsets = (
         (None, {"fields": ("username", "password")}),
         ("Personal info", {"fields": ("email",)}),
-        ("Permissions", {"fields": ("is_active","is_staff","is_superuser","groups","user_permissions")}),
-        ("Important dates", {"fields": ("last_login","created_at")}),
+        ("Permissions", {
+            "fields": ("is_active","is_staff","is_superuser","groups","user_permissions")
+        }),
+        ("Important dates", {
+            # don't include created_at here as an editable field
+            "fields": ("last_login",),
+        }),
     )
     add_fieldsets = (
         (None, {
