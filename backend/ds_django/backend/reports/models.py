@@ -11,7 +11,7 @@ class Report(models.Model):
     )
     # Optional linking to a notebook (if relevant)
     notebook = models.ForeignKey(
-        'notebooks.Notebook',
+        'notebook.Notebook',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

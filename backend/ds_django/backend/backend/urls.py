@@ -36,7 +36,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/users/', include('users.urls')),
     path('api/reports/', include('reports.urls')),
-    path('api/notebooks/', include('notebooks.urls')),
+    path('api/notebook/', include('notebook.urls')),
 
     re_path(r'^swagger(?P<format>\.json|\.yaml)$',
         schema_view.without_ui(cache_timeout=0),

@@ -57,7 +57,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',  
     'users',
-    'notebooks',
+    'notebook',
     'reports',
     'publications',
     'events',
