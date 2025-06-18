@@ -57,7 +57,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',  
     'users',
-    'notebook',
+    'notebooks',
     'reports',
     'publications',
     'events',
@@ -90,6 +90,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
+CORS_ALLOW_CREDENTIALS = True
+
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 ROOT_URLCONF = 'backend.urls'
@@ -116,14 +118,20 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql_psycopg2',
+#         'NAME': os.getenv('PGDATABASE'),
+#         'USER': os.getenv('PGUSER'),
+#         'PASSWORD': os.getenv('PGPASSWORD'),
+#         'HOST': os.getenv('PGHOST', 'localhost'),
+#         'PORT': os.getenv('PGPORT', '5432'),
+#     }
+# }
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME': os.getenv('PGDATABASE'),
-        'USER': os.getenv('PGUSER'),
-        'PASSWORD': os.getenv('PGPASSWORD'),
-        'HOST': os.getenv('PGHOST', 'localhost'),
-        'PORT': os.getenv('PGPORT', '5432'),
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 

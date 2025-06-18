@@ -7,7 +7,7 @@ class ReportSerializer(serializers.ModelSerializer):
         fields = [
             'id',           # was 'report_id'
             'user',
-            'notebook',
+            'notebooks',
             'topic',
             'transcript_content',
             'paper_content',
@@ -30,7 +30,7 @@ class ReportCreateSerializer(serializers.ModelSerializer):
         model = Report
         fields = [
             'user',
-            'notebook',
+            'notebooks',
             'topic',
             'transcript_content',
             'paper_content',

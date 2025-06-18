@@ -36,15 +36,9 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/users/', include('users.urls')),
     path('api/reports/', include('reports.urls')),
-    path('api/notebook/', include('notebook.urls')),
+    path('api/', include('notebooks.urls')),
 
-    re_path(r'^swagger(?P<format>\.json|\.yaml)$',
-        schema_view.without_ui(cache_timeout=0),
-        name='schema-json'),
-    path('swagger/',
-        schema_view.with_ui('swagger', cache_timeout=0),
-        name='schema-swagger-ui'),
-    path('redoc/',
-        schema_view.with_ui('redoc', cache_timeout=0),
-        name='schema-redoc'),
+    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    # ReDoc UI (alternative):
+    path('redoc/',  schema_view.with_ui('redoc',    cache_timeout=0), name='schema-redoc'),
 ]
