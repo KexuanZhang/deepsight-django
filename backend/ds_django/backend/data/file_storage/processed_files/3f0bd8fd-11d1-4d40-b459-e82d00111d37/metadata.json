@@ -1,0 +1,26 @@
+{
+  "file_id": "3f0bd8fd-11d1-4d40-b459-e82d00111d37",
+  "original_filename": "resume_jd.pdf",
+  "file_extension": ".pdf",
+  "content_type": "application/pdf",
+  "file_size": 179400,
+  "upload_timestamp": "2025-06-19T20:10:50.581849+00:00",
+  "processing_timestamp": "2025-06-19T20:10:50.581862+00:00",
+  "processing_type": "immediate",
+  "content_length": 4613,
+  "features_available": [
+    "advanced_pdf_extraction",
+    "figure_extraction",
+    "table_extraction"
+  ],
+  "status": "completed",
+  "parsing_status": "completed",
+  "processing_metadata": {
+    "page_count": 1,
+    "title": "",
+    "author": "XU YUANYUAN",
+    "creation_date": "D:20250116223234-05'00'",
+    "modification_date": "D:20250116223234-05'00'"
+  },
+  "upload_file_id": "upload_1750363850501_1defbdm1q"
+}

@@ -6,6 +6,8 @@ from django.core.files.base import ContentFile
 from rest_framework import status, permissions, authentication, generics 
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser
+from django.shortcuts import get_object_or_404
 from uuid import uuid4    
 
 from .models import Source, UploadedFile, PastedTextFile, URLProcessingResult, KnowledgeItem, Notebook
@@ -24,41 +26,22 @@ file_storage     = FileStorageService()
 class FileUploadView(APIView):
     permission_classes     = [permissions.IsAuthenticated]
     authentication_classes = [authentication.SessionAuthentication]
-    parser_classes         = [ 
-        # allow multipart/form-data
-    ]
+    parser_classes         = [MultiPartParser]
 
     @transaction.atomic
-    def post(self, request):
+    def post(self, request, notebook_id):
         """Handle /api/sources/upload/"""
+        print(request.data)
         ser = FileUploadSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        notebook     = ser.validated_data["notebook"]
+        notebook = get_object_or_404(Notebook, pk=notebook_id, user=request.user)
         inbound_file = ser.validated_data["file"]
         upload_id    = ser.validated_data.get("upload_file_id") or uuid4().hex
 
-        # 1) immediate processing (async → run in event loop)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             upload_processor.process_upload(inbound_file, upload_id)
         )
 
-        # 2) store on-disk & get file_id
-        file_id = asyncio.get_event_loop().run_until_complete(
-            file_storage.store_processed_file(
-                content=result["content"],
-                metadata={
-                    "filename":       inbound_file.name,
-                    "file_extension": os.path.splitext(inbound_file.name)[1],
-                    "content_type":   result["metadata"].get("content_type", ""),
-                    "file_size":      result["file_size"],
-                    "upload_file_id": upload_id,
-                    "parsing_status": result["parsing_status"],
-                },
-                processing_result=result,
-            )
-        )
-
-        # 3) create Source + UploadedFile
         source = Source.objects.create(
             notebook=notebook,
             source_type="file",
@@ -68,21 +51,19 @@ class FileUploadView(APIView):
         )
         UploadedFile.objects.create(source=source, file=inbound_file)
 
-        # 4) store as KnowledgeItem.file
-        #    read back the content.md and attach to KI
-        content_md = asyncio.get_event_loop().run_until_complete(
-            file_storage.get_file_content(file_id)
+        content_md = asyncio.run(
+            file_storage.get_file_content(result['file_id'])
         )
         ki = KnowledgeItem(notebook=notebook, source=source)
         ki.file.save(
-            f"{file_id}.md",
+            f"{result['file_id']}.md",
             ContentFile(content_md.encode("utf-8")),
             save=True
         )
 
         return Response({
             "success": True,
-            "file_id": file_id,
+            "file_id": result['file_id'],
             "knowledge_item_id": ki.id,
         }, status=status.HTTP_201_CREATED)
     
@@ -111,7 +92,7 @@ class FileListView(APIView):
                 upl = UploadedFile.objects.get(source=src)
             except UploadedFile.DoesNotExist:
                 continue
-            meta = file_storage.get_file_metadata(upl.file.name)  # file.name holds our file_id
+            meta = asyncio.run(file_storage.get_file_metadata(upl.file.name))  # file.name holds our file_id
             files.append({
                 "file_id": upl.file.name,
                 "upload_file_id": meta.get("upload_file_id") if meta else None,

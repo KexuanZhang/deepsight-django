@@ -305,7 +305,7 @@ export default function NotebookListPage() {
       setLoading(true);
       setError("");
       try {
-        const res = await fetch("/api/notebooks/", { credentials: "include" });
+        const res = await fetch("/api/v1/notebooks/", { credentials: "include" });
         if (res.status === 401) return navigate("/login");
         if (!res.ok) throw new Error();
         let data = await res.json();
@@ -330,7 +330,7 @@ export default function NotebookListPage() {
     setCreating(true);
     setError("");
     try {
-      const res = await fetch("/api/notebooks/", {
+      const res = await fetch("/api/v1/notebooks/", {
         method: "POST",
         credentials: "include",
         headers: {

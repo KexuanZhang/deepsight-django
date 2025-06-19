@@ -39,16 +39,16 @@ class FileValidator:
         warnings = []
         
         # Check filename
-        if not file.filename:
+        if not file.name:
             errors.append("Filename is required")
             return {"valid": False, "errors": errors, "warnings": warnings}
         
         # Check for potentially dangerous filenames
-        if any(char in file.filename for char in ['<', '>', ':', '"', '|', '?', '*']):
+        if any(char in file.name for char in ['<', '>', ':', '"', '|', '?', '*']):
             errors.append("Filename contains invalid characters")
         
         # Check file extension
-        file_extension = Path(file.filename).suffix.lower()
+        file_extension = Path(file.name).suffix.lower()
         if file_extension not in self.allowed_extensions:
             errors.append(f"File type {file_extension} is not supported. Allowed types: {', '.join(self.allowed_extensions.keys())}")
         

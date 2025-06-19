@@ -101,11 +101,12 @@ class UploadProcessor(BaseService):
 
     async def process_upload(self, file: UploadFile, upload_file_id: Optional[str] = None) -> Dict[str, Any]:
         """Main entry point for immediate file processing."""
+        print("upload")
         temp_path = None
         try:
             # Initialize status tracking
             if upload_file_id:
-                self._update_upload_status(upload_file_id, 'pending', filename=file.filename)
+                self._update_upload_status(upload_file_id, 'pending', filename=file.name)
             
             # Validate file
             validation = self.validator.validate_file(file)
@@ -120,7 +121,7 @@ class UploadProcessor(BaseService):
             
             # Update status to processing
             if upload_file_id:
-                self._update_upload_status(upload_file_id, 'processing', filename=file.filename)
+                self._update_upload_status(upload_file_id, 'processing', filename=file.name)
             
             # Save file temporarily
             temp_path = await self._save_uploaded_file(file)
@@ -141,7 +142,7 @@ class UploadProcessor(BaseService):
             
             # Prepare file metadata
             file_metadata = {
-                "filename": file.filename,
+                "filename": file.name,
                 "file_extension": validation["file_extension"],
                 "content_type": validation["content_type"],
                 "file_size": file_size,
@@ -174,7 +175,7 @@ class UploadProcessor(BaseService):
             if upload_file_id:
                 self._update_upload_status(upload_file_id, 'completed', 
                                          file_id=file_id,
-                                         filename=file.filename,
+                                         filename=file.name,
                                          file_size=file_size,
                                          metadata=file_metadata)
             
@@ -190,7 +191,7 @@ class UploadProcessor(BaseService):
                 'processing_type': 'immediate',
                 'features_available': processing_result.get('features_available', []),
                 'metadata': processing_result.get('metadata', {}),
-                'filename': file.filename,
+                'filename': file.name,
                 'file_size': file_size,
                 'upload_file_id': upload_file_id
             }
@@ -215,12 +216,12 @@ class UploadProcessor(BaseService):
     async def _save_uploaded_file(self, file: UploadFile) -> str:
         """Save uploaded file to temporary directory."""
         try:
-            suffix = Path(file.filename).suffix.lower()
+            suffix = Path(file.name).suffix.lower()
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="deepsight_") as tmp_file:
-                content = await file.read()
+                content = file.read()
                 
                 # Reset file pointer for potential future reads
-                await file.seek(0)
+                file.seek(0)
                 
                 # Additional size check
                 if len(content) > self.validator.max_file_size:
@@ -230,11 +231,11 @@ class UploadProcessor(BaseService):
                 tmp_file.write(content)
                 tmp_file.flush()
                 
-                self.log_operation("save_file", f"Saved {file.filename} to {tmp_file.name}")
+                self.log_operation("save_file", f"Saved {file.name} to {tmp_file.name}")
                 return tmp_file.name
                 
         except Exception as e:
-            self.log_operation("save_file_error", f"File: {file.filename}, error: {str(e)}", "error")
+            self.log_operation("save_file_error", f"File: {file.name}, error: {str(e)}", "error")
             raise
     
     async def _process_file_by_type(self, file_path: str, file_metadata: Dict[str, Any]) -> Dict[str, Any]:

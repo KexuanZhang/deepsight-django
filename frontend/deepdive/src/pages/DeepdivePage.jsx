@@ -302,7 +302,7 @@ export default function DeepdivePage() {
       setLoadError("");
 
       try {
-        const res = await fetch(`/api/notebooks/${notebookId}/`, {
+        const res = await fetch(`/api/v1/notebooks/${notebookId}/`, {
           credentials: "include",
         });
 

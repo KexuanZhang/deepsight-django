@@ -1,0 +1,26 @@
+{
+  "file_id": "7574eebb-9cb1-4d54-93eb-df1621926ce2",
+  "original_filename": "Official EVUS Enrollment Website - Enrollment Status.pdf",
+  "file_extension": ".pdf",
+  "content_type": "application/pdf",
+  "file_size": 113964,
+  "upload_timestamp": "2025-06-19T20:10:19.740826+00:00",
+  "processing_timestamp": "2025-06-19T20:10:19.740838+00:00",
+  "processing_type": "immediate",
+  "content_length": 2951,
+  "features_available": [
+    "advanced_pdf_extraction",
+    "figure_extraction",
+    "table_extraction"
+  ],
+  "status": "completed",
+  "parsing_status": "completed",
+  "processing_metadata": {
+    "page_count": 1,
+    "title": "Official EVUS Enrollment Website - Enrollment Status",
+    "author": "Kexuan Zhang",
+    "creation_date": "D:20250426143814Z00'00'",
+    "modification_date": "D:20250426143814Z00'00'"
+  },
+  "upload_file_id": "upload_1750363819628_44tn69vwc"
+}

@@ -1,0 +1,26 @@
+{
+  "file_id": "bc8ed993-d099-4f61-a5f4-ba3027f69ddc",
+  "original_filename": "hw2.pdf",
+  "file_extension": ".pdf",
+  "content_type": "application/pdf",
+  "file_size": 337677,
+  "upload_timestamp": "2025-06-19T18:41:33.840278+00:00",
+  "processing_timestamp": "2025-06-19T18:41:33.840286+00:00",
+  "processing_type": "immediate",
+  "content_length": 4513,
+  "features_available": [
+    "advanced_pdf_extraction",
+    "figure_extraction",
+    "table_extraction"
+  ],
+  "status": "completed",
+  "parsing_status": "completed",
+  "processing_metadata": {
+    "page_count": 3,
+    "title": "",
+    "author": "",
+    "creation_date": "D:20240126194545-05'00'",
+    "modification_date": "D:20240126194545-05'00'"
+  },
+  "upload_file_id": "upload_1750358493625_yr6vkd20a"
+}

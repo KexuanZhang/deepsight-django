@@ -22,30 +22,8 @@ from rest_framework import serializers
 from .models import Source
 
 class FileUploadSerializer(serializers.Serializer):
-    notebook_id    = serializers.PrimaryKeyRelatedField(
-                        queryset=Notebook.objects.all(),
-                        source="notebook"
-                    )
     file           = serializers.FileField()
     upload_file_id = serializers.CharField(required=False)
-
-# class TextUploadSerializer(serializers.Serializer):
-#     notebook_id = serializers.PrimaryKeyRelatedField(
-#                         queryset=Notebook.objects.all(),
-#                         source="notebook"
-#                   )
-#     text        = serializers.CharField()
-#     title       = serializers.CharField(required=False, allow_blank=True)
-
-# class URLUploadSerializer(serializers.Serializer):
-#     notebook_id     = serializers.PrimaryKeyRelatedField(
-#                          queryset=Notebook.objects.all(),
-#                          source="notebook"
-#                      )
-#     url             = serializers.URLField()
-#     extraction_opts = serializers.JSONField(required=False)
-#     title           = serializers.CharField(required=False, allow_blank=True)
-
 
 
 class PastedTextFileSerializer(serializers.ModelSerializer):

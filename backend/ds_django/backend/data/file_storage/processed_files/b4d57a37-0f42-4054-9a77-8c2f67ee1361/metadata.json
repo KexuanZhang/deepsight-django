@@ -1,0 +1,26 @@
+{
+  "file_id": "b4d57a37-0f42-4054-9a77-8c2f67ee1361",
+  "original_filename": "New Account - Toronto Hydro.pdf",
+  "file_extension": ".pdf",
+  "content_type": "application/pdf",
+  "file_size": 106280,
+  "upload_timestamp": "2025-06-19T20:07:40.260514+00:00",
+  "processing_timestamp": "2025-06-19T20:07:40.260528+00:00",
+  "processing_type": "immediate",
+  "content_length": 1597,
+  "features_available": [
+    "advanced_pdf_extraction",
+    "figure_extraction",
+    "table_extraction"
+  ],
+  "status": "completed",
+  "parsing_status": "completed",
+  "processing_metadata": {
+    "page_count": 1,
+    "title": "New Account - Toronto Hydro",
+    "author": "",
+    "creation_date": "D:20250429234305+00'00'",
+    "modification_date": "D:20250429234305+00'00'"
+  },
+  "upload_file_id": "upload_1750363660127_mu61tgy5p"
+}
