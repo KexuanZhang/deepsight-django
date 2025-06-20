@@ -165,10 +165,9 @@ ehthumbs.db
 Thumbs.db
 
 # Project specific
-data/file_storage/processed_files/
-data/content_indexing/
-source_uploads/
-knowledge_items/
+*data/
+*source_uploads/
+*knowledge_items/
 
 # Migrations (uncomment if you want to ignore migrations)
 # */migrations/*.py
