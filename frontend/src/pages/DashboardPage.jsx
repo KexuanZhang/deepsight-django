@@ -1,102 +1,128 @@
-import React, { useState } from "react";
-import { Menu, X } from "lucide-react";
-import { Link } from "react-router-dom";
-import Logo from "@/components/Logo";
-import Footer from "@/components/Footer";
-import { Toaster } from "@/components/ui/toaster";
+// src/pages/DashboardPage.jsx
+import React, { useState, useEffect } from "react";
+import { Tab } from "@headlessui/react";
+import { fetchJson } from "../lib/utils"; // simple fetch wrapper
+import ReportCard from "../components/ReportCard";
+import ConferenceCard from "../components/ConferenceCard";
+import OrganizationCard from "../components/OrganizationCard";
 
 export default function DashboardPage() {
-  const [menuOpen, setMenuOpen] = useState(false);
+  const tabs = ["Report", "Conference", "Organization"];
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const [reports, setReports] = useState([]);
+  const [confsOverview, setConfsOverview] = useState(null);
+  const [orgsOverview, setOrgsOverview] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadAll() {
+      setLoading(true);
+      try {
+        // 1️⃣ Trending reports (admin‐selected)
+        const rpt = await fetchJson("/api/reports/trending");
+        setReports(rpt);
+
+        // 2️⃣ Conferences overview
+        const confOv = await fetchJson("/api/conferences/overview");
+        setConfsOverview(confOv);
+
+        // 3️⃣ Organizations overview
+        const orgOv = await fetchJson("/api/organizations/overview");
+        setOrgsOverview(orgOv);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadAll();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <span className="text-gray-500">Loading dashboard…</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col relative">
-      {/* Sidebar Menu */}
-      {menuOpen && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="w-64 bg-white shadow-xl p-6 z-50">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-lg font-semibold">Menu</h2>
-              <button
-                onClick={() => setMenuOpen(false)}
-                className="text-gray-600 hover:text-gray-900"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <nav className="space-y-4">
-              <Link to="/dashboard" className="block text-red-600 font-semibold bg-gray-100 p-2 rounded">
-                Dashboard
-              </Link>
-              <Link to="/dataset" className="block text-gray-700 hover:text-red-600">
-                Dataset
-              </Link>
-              <Link to="/deepdive" className="block text-gray-700 hover:text-red-600">
-                Deepdive
-              </Link>
-            </nav>
-          </div>
-          <div
-            className="flex-1 bg-black bg-opacity-30"
-            onClick={() => setMenuOpen(false)}
-          />
-        </div>
-      )}
-
-      {/* Header */}
-      <header className="border-b border-gray-200 p-4 flex justify-between items-center relative z-10">
-        <div className="flex items-center">
-          <button
-            onClick={() => setMenuOpen(true)}
-            className="p-2 rounded-md hover:bg-gray-100"
-          >
-            <Menu className="h-6 w-6 text-gray-700" />
-          </button>
-          <Logo />
-        </div>
-
-        {/* Language Switcher */}
-        <div className="relative group">
-          <div className="cursor-pointer text-gray-600 text-lg flex items-center">
-            <span className="text-2xl">文A</span>
-          </div>
-          <div className="absolute right-0 mt-2 w-32 bg-white border border-gray-200 rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
-            <button className="w-full flex items-center px-3 py-2 text-sm hover:bg-gray-100">
-              🇺🇸 <span className="ml-2">English</span>
-            </button>
-            <button className="w-full flex items-center px-3 py-2 text-sm hover:bg-gray-100">
-              🇨🇳 <span className="ml-2">简体中文</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Dashboard Main Content */}
-      <main className="flex-1 p-6">
-        <h1 className="text-2xl font-bold mb-4">Research Report</h1>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[...Array(6)].map((_, i) => (
-            <div
-              key={i}
-              className="border rounded-lg shadow hover:shadow-md transition-all p-4 bg-white"
+    <div className="p-8 bg-white min-h-screen">
+      <h1 className="text-4xl font-bold mb-4">DeepSight</h1>
+      <Tab.Group selectedIndex={selectedIndex} onChange={setSelectedIndex}>
+        <Tab.List className="flex space-x-4 border-b mb-6">
+          {tabs.map((tab) => (
+            <Tab
+              key={tab}
+              className={({ selected }) =>
+                `px-4 py-2 text-lg ${
+                  selected
+                    ? "border-b-2 border-red-600 font-semibold"
+                    : "text-gray-600 hover:text-gray-900"
+                }`
+              }
             >
-              <div className="w-full h-36 bg-gray-100 rounded mb-3"></div>
-              <h2 className="font-medium text-gray-800">Report Title {i + 1}</h2>
-              <p className="text-sm text-gray-500 mt-1">Short description of report {i + 1}</p>
-              <div className="mt-3 text-xs text-gray-400">April 27, 2025</div>
-            </div>
+              {tab}
+            </Tab>
           ))}
-        </div>
+        </Tab.List>
 
-        <div className="flex justify-center mt-8">
-          <button className="px-6 py-2 text-sm bg-gray-100 border border-gray-300 rounded hover:bg-gray-200">
-            Load More
-          </button>
-        </div>
-      </main>
+        <Tab.Panels>
+          {/* ─── Report Tab ──────────────────────────────────────────── */}
+          <Tab.Panel>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {reports.map((r) => (
+                <ReportCard key={r.report_id} report={r} />
+              ))}
+            </div>
+          </Tab.Panel>
 
-      <Footer />
-      <Toaster />
+          {/* ─── Conference Tab ─────────────────────────────────────── */}
+          <Tab.Panel>
+            {/* Overview metrics */}
+            {confsOverview && (
+              <div className="flex justify-around text-center mb-8">
+                <div>
+                  <p className="text-2xl font-bold">{confsOverview.total_conferences}</p>
+                  <p className="text-gray-500">Total Conferences</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{confsOverview.total_papers}</p>
+                  <p className="text-gray-500">Total Papers</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{confsOverview.years_covered}</p>
+                  <p className="text-gray-500">Years Covered</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{confsOverview.avg_papers_per_year}</p>
+                  <p className="text-gray-500">Avg Papers/Year</p>
+                </div>
+              </div>
+            )}
+            {/* Conference list */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {confsOverview?.conferences.map((c) => (
+                <ConferenceCard key={c.id} conference={c} />
+              ))}
+            </div>
+          </Tab.Panel>
+
+          {/* ─── Organization Tab ──────────────────────────────────── */}
+          <Tab.Panel>
+            {orgsOverview ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {orgsOverview.organizations.map((o) => (
+                  <OrganizationCard key={o.org_id} organization={o} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500">No data available.</p>
+            )}
+          </Tab.Panel>
+        </Tab.Panels>
+      </Tab.Group>
     </div>
   );
 }

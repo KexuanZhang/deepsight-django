@@ -1,35 +1,28 @@
 # Dependencies
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
-yarn.lock
+/.pnp
+.pnp.js
 
-# Build outputs
-dist/
-build/
-out/
+# Testing
+/coverage
 
-# Vite specific
-.vite/
-vite.config.js.timestamp-*
+# Production builds
+/build
+/dist
 
-# Environment variables
-.env
+# Local env files
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+.env
 
 # Logs
-logs
-*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-lerna-debug.log*
 pnpm-debug.log*
+lerna-debug.log*
 
 # Runtime data
 pids
@@ -37,30 +30,14 @@ pids
 *.seed
 *.pid.lock
 
-# Coverage directory used by tools like istanbul
-coverage/
-*.lcov
+# Vite
+.vite
 
-# nyc test coverage
-.nyc_output
-
-# TypeScript cache
-*.tsbuildinfo
+# ESLint cache
+.eslintcache
 
 # Optional npm cache directory
 .npm
-
-# Optional eslint cache
-.eslintcache
-
-# Optional stylelint cache
-.stylelintcache
-
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
 
 # Optional REPL history
 .node_repl_history
@@ -80,6 +57,7 @@ coverage/
 
 # Nuxt.js build / generate output
 .nuxt
+dist
 
 # Storybook build outputs
 .out
@@ -90,12 +68,14 @@ tmp/
 temp/
 
 # Editor directories and files
-.vscode/
+.vscode/*
 !.vscode/extensions.json
-.idea/
-*.swp
-*.swo
-*~
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # OS generated files
 .DS_Store
@@ -106,25 +86,11 @@ temp/
 ehthumbs.db
 Thumbs.db
 
-# React specific
-/build
-/public/hot
-/public/storage
-/storage/*.key
+# TypeScript
+*.tsbuildinfo
 
-# Tailwind CSS
-tailwindcss-*.css
+# Local Netlify folder
+.netlify
 
-# Testing
-/coverage
-
-# PWA files
-sw.js
-sw.js.map
-workbox-*.js
-workbox-*.js.map
-
-# Misc
-*.tgz
-*.tar.gz
-.cache/
+# Turborepo
+.turbo 

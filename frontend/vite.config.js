@@ -185,6 +185,14 @@ export default defineConfig({
 	customLogger: logger,
 	plugins: [react(), addTransformIndexHtml],
 	server: {
+		proxy: {
+		// any request that starts with /api will be forwarded
+		'/api': {
+			target: 'http://localhost:8000',
+			changeOrigin: true,
+			secure: false,
+			},
+		},
 		cors: true,
 		headers: {
 			'Cross-Origin-Embedder-Policy': 'credentialless',

@@ -1,5 +1,10 @@
-// API service for backend communication
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = 'http://localhost:8000/api/v1/notebooks';
+
+// Helper to get CSRF token from cookie
+function getCookie(name) {
+  const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+  return match ? decodeURIComponent(match[2]) : null;
+}
 
 class ApiService {
   constructor() {
@@ -7,411 +12,128 @@ class ApiService {
   }
 
   async request(endpoint, options = {}) {
-    const url = `${this.baseUrl}${endpoint}`;
+    const url = endpoint.startsWith('http')
+      ? endpoint
+      : `${this.baseUrl}${endpoint}`;
+
     const config = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      credentials: 'include',
+      // if we're sending FormData, let the browser set Content-Type for us
+      headers: options.body instanceof FormData
+        ? { ...options.headers }
+        : { 'Content-Type': 'application/json', ...options.headers },
       ...options,
     };
 
     try {
       const response = await fetch(url, config);
-      
       if (!response.ok) {
-        let errorMessage = `HTTP error! status: ${response.status}`;
-        
+        let msg = `HTTP ${response.status}`;
         try {
-          const errorData = await response.json();
-          
-          // Handle FastAPI validation errors
-          if (errorData.detail) {
-            if (Array.isArray(errorData.detail)) {
-              // Format validation errors nicely
-              const validationErrors = errorData.detail.map(err => 
-                `${err.loc?.join('.')} - ${err.msg}`
-              ).join('; ');
-              errorMessage = `Validation error: ${validationErrors}`;
+          const err = await response.json();
+          if (err.detail) {
+            if (Array.isArray(err.detail)) {
+              msg = err.detail.map(d => `${d.loc.join('.')} – ${d.msg}`).join('; ');
             } else {
-              errorMessage = errorData.detail;
+              msg = err.detail;
             }
           }
-        } catch (parseError) {
-          console.error('Failed to parse error response:', parseError);
-        }
-        
-        throw new Error(errorMessage);
+        } catch {}
+        throw new Error(msg);
       }
-      
       return await response.json();
-    } catch (error) {
-      console.error('API request failed:', error);
-      throw error;
+    } catch (e) {
+      console.error('API request failed:', e);
+      throw e;
     }
   }
 
-  // Health check
-  async healthCheck() {
-    return this.request('/health');
+  // ─── FILES ────────────────────────────────────────────────────────────────
+
+  async listParsedFiles(notebookId, { limit = 50, offset = 0 } = {}) {
+    return this.request(`/${notebookId}/files/?limit=${limit}&offset=${offset}`);
   }
 
-  // ===== REPORT GENERATION =====
-  
-  // Generate report with new unified endpoint
-  async generateReport(requestData) {
-    return this.request('/reports/generate', {
-      method: 'POST',
-      body: JSON.stringify(requestData),
-    });
+  async parseFile(file, uploadFileId, notebookId) {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('notebook', notebookId);
+    console.log(form)
+    if (uploadFileId) form.append('upload_file_id', uploadFileId);
+
+
+    return this.request(
+      `/${notebookId}/files/upload/`,
+      { method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}, body: form, credentials: 'include' }
+    );
   }
 
-  // Legacy support - redirect to new endpoint
-  async generateAdvancedReport(requestData) {
-    return this.generateReport(requestData);
-  }
+  // createParsingStatusStream(uploadFileId, notebookId, onMessage, onError, onClose) {
+  //   const url = `${this.baseUrl}/${notebookId}/files/${uploadFileId}/status/stream`;
+  //   const es  = new EventSource(url, { withCredentials: true });
+  //   // …
+  // }
+  createParsingStatusStream(notebookId, uploadFileId, onMessage, onError, onClose) {
+  const url = `/api/v1/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
+  const eventSource = new EventSource(url);
 
-  // Legacy support - redirect to new endpoint  
-  async generateReportWithSourceIds(requestData) {
-    return this.generateReport(requestData);
-  }
+  eventSource.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    onMessage(data);
+  };
 
-  // Legacy support - redirect to new endpoint
-  async generateAdvancedReportWithSourceIds(requestData) {
-    return this.generateReport(requestData);
-  }
+  eventSource.onerror = (err) => {
+    onError(err);
+    eventSource.close(); // optional but safe
+  };
 
-  // Get report status
-  async getReportStatus(jobId) {
-    return this.request(`/reports/status/${jobId}`);
-  }
+  eventSource.onclose = () => {
+    onClose();
+  };
 
-  // Cancel a report generation job
-  async cancelJob(jobId) {
-    return this.request('/reports/cancel', {
-      method: 'POST',
-      body: JSON.stringify({ job_id: jobId }),
-    });
-  }
+  return eventSource;
+}
 
-  // List all jobs
-  async listJobs(limit = 50, userId = null) {
-    const params = new URLSearchParams({ limit: limit.toString() });
-    if (userId) {
-      params.append('user_id', userId);
-    }
-    return this.request(`/reports/jobs?${params}`);
-  }
-
-  // Get report content
-  async getReportContent(jobId) {
-    return this.request(`/reports/${jobId}/content`);
-  }
-
-  // Download report file
-  async downloadFile(jobId, filename = null) {
-    const params = filename ? `?filename=${encodeURIComponent(filename)}` : '';
-    const url = `${this.baseUrl}/reports/${jobId}/download${params}`;
-    
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Download failed: ${response.status}`);
-    }
-    
-    return response.blob();
-  }
-
-  // List files for a job
-  async listJobFiles(jobId) {
-    return this.request(`/reports/${jobId}/files`);
-  }
-
-  // Get available models and options
-  async getAvailableModels() {
-    return this.request('/reports/available-models');
-  }
-
-  // Clean up old jobs
-  async cleanupOldJobs(days = 7) {
-    return this.request(`/reports/cleanup?days=${days}`, {
+  async deleteFile(fileId, notebookId) {
+    return this.request(`/${notebookId}/files/${fileId}/`, {
       method: 'DELETE',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
     });
   }
 
-  // ===== PODCAST GENERATION =====
-
-  // Generate podcast from source files
-  async generatePodcast(formData) {
-    return this.request('/podcasts/generate', {
-      method: 'POST',
-      headers: {}, // Let browser set Content-Type for FormData
-      body: formData,
-    });
+  async deleteUpload(uploadFileId, notebookId) {
+    return this.deleteFile(uploadFileId, notebookId); // same as deleteFile
   }
 
-  // Get podcast job status
-  async getPodcastJobStatus(jobId) {
-    return this.request(`/podcasts/jobs/${jobId}/status`);
+  // ─── STATUS ───────────────────────────────────────────────────────────────
+
+  async getStatus(uploadFileId, notebookId) {
+    return this.request(`/${notebookId}/files/${uploadFileId}/status/`);
   }
 
-  // List all podcast jobs
-  async listPodcastJobs() {
-    return this.request('/podcasts/jobs');
-  }
+  createStatusStream(uploadFileId, notebookId, onMessage, onError, onClose) {
+    const url = `${this.baseUrl}/${notebookId}/files/${uploadFileId}/status/stream`;
+    const es = new EventSource(url, { withCredentials: true }); // include session
 
-  // Cancel podcast generation job
-  async cancelPodcastJob(jobId) {
-    return this.request(`/podcasts/jobs/${jobId}/cancel`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Delete podcast job
-  async deletePodcastJob(jobId) {
-    return this.request(`/podcasts/jobs/${jobId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Get podcast conversation text
-  async getPodcastConversation(jobId) {
-    return this.request(`/podcasts/jobs/${jobId}/conversation`);
-  }
-
-  // ===== FILE MANAGEMENT =====
-
-  // Upload and parse file
-  async parseFile(file, uploadFileId = null) {
-    const formData = new FormData();
-    formData.append('file', file);
-    if (uploadFileId) {
-      formData.append('upload_file_id', uploadFileId);
-    }
-    
-    return this.request('/files/upload', {
-      method: 'POST',
-      headers: {}, // Let browser set Content-Type for FormData
-      body: formData,
-    });
-  }
-
-  // Parse URL
-  async parseUrl(url, extractionStrategy = 'cosine', uploadUrlId = null) {
-    const formData = new FormData();
-    formData.append('url', url);
-    formData.append('extraction_strategy', extractionStrategy);
-    if (uploadUrlId) {
-      formData.append('upload_url_id', uploadUrlId);
-    }
-    
-    return this.request('/files/urls/parse', {
-      method: 'POST',
-      headers: {}, // Let browser set Content-Type for FormData
-      body: formData,
-    });
-  }
-
-  // Parse multiple URLs in batch
-  async parseUrlsBatch(urls, extractionStrategy = 'cosine') {
-    return this.request('/files/urls/batch-parse', {
-      method: 'POST',
-      body: JSON.stringify({
-        urls: urls,
-        extraction_strategy: extractionStrategy
-      }),
-    });
-  }
-
-  // List all parsed files
-  async listParsedFiles() {
-    return this.request('/files/list');
-  }
-
-  // List all parsed URLs
-  async listParsedUrls() {
-    return this.request('/files/urls/list');
-  }
-
-  // Get knowledge base (all files and URLs)
-  async getKnowledgeBase() {
-    return this.request('/files/knowledge-base');
-  }
-
-  // Get parsed file content and metadata
-  async getParsedFile(fileId) {
-    return this.request(`/files/${fileId}/content`);
-  }
-
-  // Get parsed file metadata
-  async getParsedFileMetadata(fileId) {
-    return this.request(`/files/${fileId}/metadata`);
-  }
-
-  // Get parsed URL content and metadata
-  async getParsedUrl(urlId) {
-    return this.request(`/files/urls/${urlId}/content`);
-  }
-
-  // Delete parsed file
-  async deleteParsedFile(fileId) {
-    return this.request(`/files/${fileId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Delete file by upload ID (cancels parsing if running, deletes if completed)
-  async deleteFileByUploadId(uploadFileId) {
-    return this.request(`/files/upload/${uploadFileId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Get parsing status by upload file ID
-  async getParsingStatus(uploadFileId) {
-    return this.request(`/files/upload/${uploadFileId}/status`);
-  }
-
-  // Create SSE connection for real-time parsing status updates
-  createParsingStatusStream(uploadFileId, onMessage, onError = null, onClose = null) {
-    const eventSource = new EventSource(`${this.baseUrl}/files/upload/${uploadFileId}/status/stream`);
-    
-    eventSource.onmessage = (event) => {
+    es.onmessage = e => {
       try {
-        const data = JSON.parse(event.data);
-        onMessage(data);
-      } catch (error) {
-        console.error('Error parsing SSE data:', error);
-        if (onError) onError(error);
+        onMessage(JSON.parse(e.data));
+      } catch (err) {
+        console.error('SSE parse error', err);
+        onError?.(err);
       }
     };
-
-    eventSource.onerror = (error) => {
-      console.error('SSE connection error:', error);
-      if (onError) onError(error);
+    es.onerror = err => {
+      console.error('SSE error', err);
+      onError?.(err);
+      es.close();
+      onClose?.();
     };
-
-    eventSource.onclose = () => {
-      console.log('SSE connection closed');
-      if (onClose) onClose();
-    };
-
-    return eventSource;
-  }
-
-  // Delete parsed URL
-  async deleteParsedUrl(urlId) {
-    return this.request(`/files/urls/${urlId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Delete URL by upload ID (cancels parsing if running, deletes if completed)
-  async deleteUrlByUploadId(uploadUrlId) {
-    return this.request(`/files/urls/upload/${uploadUrlId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Get URL parsing status by upload URL ID
-  async getUrlParsingStatus(uploadUrlId) {
-    return this.request(`/files/urls/upload/${uploadUrlId}/status`);
-  }
-
-  // ===== WEBSOCKET =====
-
-  // Create WebSocket connection for job status updates
-  createJobStatusWebSocket(jobId, onMessage, onError, onClose) {
-    const wsUrl = `ws://localhost:8000/api/v1/ws/job-status/${jobId}`;
-    const ws = new WebSocket(wsUrl);
-    
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        onMessage(data);
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
-        onError?.(error);
-      }
-    };
-    
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      onError?.(error);
-    };
-    
-    ws.onclose = (event) => {
-      console.log('WebSocket closed:', event.code, event.reason);
-      onClose?.(event);
-    };
-    
-    // Helper method to send messages
-    ws.sendMessage = (message) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(message));
-      }
-    };
-    
-    // Helper method to cancel job via WebSocket
-    ws.cancelJob = () => {
-      ws.sendMessage({ type: 'cancel_job' });
-    };
-    
-    // Helper method to send ping
-    ws.ping = () => {
-      ws.sendMessage({ type: 'ping' });
-    };
-    
-    return ws;
-  }
-
-  // ===== LEGACY SUPPORT =====
-  
-  // Legacy method names for backward compatibility
-  async deleteJob(jobId) {
-    return this.cancelJob(jobId);
+    return es;
   }
 }
 
 const apiService = new ApiService();
 export default apiService;
-
-// Export individual methods for easier importing
-export const {
-  healthCheck,
-  generateReport,
-  generateAdvancedReport,
-  generateReportWithSourceIds,
-  generateAdvancedReportWithSourceIds,
-  getReportStatus,
-  cancelJob,
-  listJobs,
-  getReportContent,
-  downloadFile,
-  listJobFiles,
-  getAvailableModels,
-  cleanupOldJobs,
-  generatePodcast,
-  getPodcastJobStatus,
-  listPodcastJobs,
-  cancelPodcastJob,
-  deletePodcastJob,
-  getPodcastConversation,
-  parseFile,
-  parseUrl,
-  parseUrlsBatch,
-  listParsedFiles,
-  listParsedUrls,
-  getKnowledgeBase,
-  getParsedFile,
-  getParsedFileMetadata,
-  getParsedUrl,
-  deleteParsedFile,
-  deleteFileByUploadId,
-  getParsingStatus,
-  createParsingStatusStream,
-  deleteParsedUrl,
-  deleteUrlByUploadId,
-  getUrlParsingStatus,
-  createJobStatusWebSocket,
-  deleteJob,
-} = apiService; 
