@@ -119,9 +119,10 @@ class FileListView(APIView):
                 "has_content": bool(kb_item.content),
                 "parsing_status": "completed",  # Knowledge base items are always processed
                 
-                # Legacy fields for compatibility
-                "original_filename": kb_item.title,
+                # Legacy fields for compatibility - prioritize original file information from metadata
+                "original_filename": self._get_original_filename_from_metadata(kb_item.metadata, kb_item.title),
                 "file_extension": self._get_extension_from_metadata(kb_item.metadata),
+                "file_size": self._get_file_size_from_metadata(kb_item.metadata),
                 "uploaded_at": kb_item.created_at.isoformat(),
             }
             
@@ -201,7 +202,45 @@ class FileListView(APIView):
         """Extract file extension from metadata."""
         if not metadata:
             return ""
-        return metadata.get('file_extension', metadata.get('original_filename', '').split('.')[-1] if '.' in metadata.get('original_filename', '') else "")
+        
+        # Try various sources for file extension
+        extension = metadata.get('file_extension', '')
+        if not extension and 'original_filename' in metadata and '.' in metadata['original_filename']:
+            extension = '.' + metadata['original_filename'].split('.')[-1]
+        elif not extension and 'filename' in metadata and '.' in metadata['filename']:
+            extension = '.' + metadata['filename'].split('.')[-1]
+        
+        return extension
+    
+    def _get_original_filename_from_metadata(self, metadata, fallback_title):
+        """Extract original filename from metadata, with fallback to title."""
+        if not metadata:
+            return fallback_title
+        
+        # Priority order for original filename
+        original_filename = metadata.get('original_filename') or \
+                           metadata.get('filename') or \
+                           fallback_title
+        
+        # If we have a filename but no extension, and we can get extension from metadata, combine them
+        if original_filename and not '.' in original_filename:
+            extension = metadata.get('file_extension', '')
+            if extension:
+                if not extension.startswith('.'):
+                    extension = '.' + extension
+                original_filename = original_filename + extension
+        
+        return original_filename
+    
+    def _get_file_size_from_metadata(self, metadata):
+        """Extract file size from metadata."""
+        if not metadata:
+            return None
+        
+        # Try various sources for file size
+        return metadata.get('file_size') or \
+               metadata.get('content_length') or \
+               None
 
 
 class KnowledgeBaseView(APIView):
@@ -411,26 +450,7 @@ class FileDeleteView(APIView):
         
         deleted = False
         
-        # Try to find as knowledge base item ID
-        try:
-            if force_delete:
-                # Delete from knowledge base entirely
-                success = file_storage.delete_knowledge_base_item(
-                    file_or_upload_id, request.user.pk
-                )
-                if success:
-                    deleted = True
-            else:
-                # Just unlink from this notebook
-                success = file_storage.unlink_knowledge_item_from_notebook(
-                    file_or_upload_id, notebook_id, request.user.pk
-                )
-                if success:
-                    deleted = True
-        except Exception as e:
-            print(f"Error deleting knowledge item: {e}")
-        
-        # Also try direct deletion by KnowledgeItem ID for backward compatibility
+        # Strategy 1: Try to find by knowledge_item_id (direct database ID)
         if not deleted:
             try:
                 knowledge_item_id = int(file_or_upload_id)
@@ -442,15 +462,115 @@ class FileDeleteView(APIView):
                 if ki:
                     if force_delete:
                         # Delete the knowledge base item entirely
-                        file_storage.delete_knowledge_base_item(
+                        success = file_storage.delete_knowledge_base_item(
                             str(ki.knowledge_base_item.id), request.user.pk
                         )
+                        if success:
+                            deleted = True
                     else:
                         # Just delete the link
                         ki.delete()
-                    deleted = True
+                        deleted = True
             except (ValueError, TypeError):
                 pass  # Not a valid integer ID
+        
+        # Strategy 2: Try to find by knowledge_base_item_id (if it's a valid integer)
+        if not deleted:
+            try:
+                kb_item_id = int(file_or_upload_id)
+                # Try to find a KnowledgeItem in this notebook that links to this KB item
+                ki = KnowledgeItem.objects.filter(
+                    notebook=notebook,
+                    knowledge_base_item_id=kb_item_id
+                ).first()
+                
+                if ki:
+                    if force_delete:
+                        # Delete the knowledge base item entirely
+                        success = file_storage.delete_knowledge_base_item(
+                            str(kb_item_id), request.user.pk
+                        )
+                        if success:
+                            deleted = True
+                    else:
+                        # Just unlink from this notebook
+                        success = file_storage.unlink_knowledge_item_from_notebook(
+                            str(kb_item_id), notebook_id, request.user.pk
+                        )
+                        if success:
+                            deleted = True
+            except (ValueError, TypeError):
+                pass  # Not a valid integer ID
+        
+        # Strategy 3: Handle upload IDs by searching in metadata
+        if not deleted and str(file_or_upload_id).startswith('upload_'):
+            try:
+                # Find knowledge items in this notebook that have the upload ID in metadata
+                knowledge_items = KnowledgeItem.objects.filter(
+                    notebook=notebook
+                ).select_related('knowledge_base_item', 'source')
+                
+                for ki in knowledge_items:
+                    kb_item = ki.knowledge_base_item
+                    source = ki.source
+                    
+                    # Check if this knowledge item is related to the upload ID
+                    upload_id_match = False
+                    
+                    # Check metadata for upload ID references
+                    if kb_item.metadata and isinstance(kb_item.metadata, dict):
+                        metadata_str = str(kb_item.metadata)
+                        if file_or_upload_id in metadata_str:
+                            upload_id_match = True
+                    
+                    # Check source metadata if available
+                    if source and hasattr(source, 'upload') and source.upload:
+                        # Check if source file contains the upload ID pattern
+                        if file_or_upload_id in str(source.upload.file.name):
+                            upload_id_match = True
+                    
+                    if upload_id_match:
+                        if force_delete:
+                            # Delete the knowledge base item entirely
+                            success = file_storage.delete_knowledge_base_item(
+                                str(kb_item.id), request.user.pk
+                            )
+                            if success:
+                                deleted = True
+                                break
+                        else:
+                            # Just delete the link
+                            ki.delete()
+                            deleted = True
+                            break
+                        
+            except Exception as e:
+                print(f"Error handling upload ID {file_or_upload_id}: {e}")
+        
+        # Strategy 4: Legacy fallback - try as string knowledge base item ID
+        if not deleted:
+            try:
+                # Some systems might pass KB item IDs as strings
+                ki = KnowledgeItem.objects.filter(
+                    notebook=notebook,
+                    knowledge_base_item_id=file_or_upload_id
+                ).first()
+                
+                if ki:
+                    if force_delete:
+                        # Delete the knowledge base item entirely
+                        success = file_storage.delete_knowledge_base_item(
+                            str(ki.knowledge_base_item.id), request.user.pk
+                        )
+                        if success:
+                            deleted = True
+                    else:
+                        # Just delete the link
+                        ki.delete()
+                        deleted = True
+                        
+            except Exception as e:
+                print(f"Error in legacy fallback for {file_or_upload_id}: {e}")
 
         if deleted:
             return Response(status=status.HTTP_204_NO_CONTENT)

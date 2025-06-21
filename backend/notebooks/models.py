@@ -1,5 +1,6 @@
 import os
 import mimetypes
+from datetime import datetime
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -78,24 +79,55 @@ class Source(models.Model):
         return f"{self.get_source_type_display()} — {self.title or self.pk}"
 
 
+# Optimized file upload path functions with proper date formatting
 def user_notebook_source_upload_path(instance, filename):
-    """Generate notebook-specific upload path for source files."""
+    """Generate organized upload path for source files with proper date formatting."""
     user_id = instance.source.notebook.user.pk
     notebook_id = instance.source.notebook.pk
-    return f"source_uploads/{user_id}/{notebook_id}/%Y/%m/%d/{filename}"
+    now = timezone.now()
+    
+    # Create a clean, organized path structure
+    # Format: source_uploads/user_1/notebook_2/2024/12/20/filename.pdf
+    return f"source_uploads/user_{user_id}/notebook_{notebook_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/{filename}"
 
 
 def user_notebook_pasted_text_path(instance, filename):
-    """Generate notebook-specific upload path for pasted text files."""
+    """Generate organized upload path for pasted text files with proper date formatting."""
     user_id = instance.source.notebook.user.pk
     notebook_id = instance.source.notebook.pk
-    return f"pasted_text/{user_id}/{notebook_id}/%Y/%m/%d/{filename}"
+    now = timezone.now()
+    
+    # Format: pasted_text/user_1/notebook_2/2024/12/20/paste_123456789.txt
+    return f"pasted_text/user_{user_id}/notebook_{notebook_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/{filename}"
 
 
 def user_knowledge_base_path(instance, filename):
-    """Generate user-wide knowledge base path for processed content."""
+    """Generate organized path for knowledge base processed content with proper date formatting."""
     user_id = instance.user.pk
-    return f"knowledge_base/{user_id}/%Y/%m/%d/{filename}"
+    now = timezone.now()
+    
+    # Format: knowledge_base/user_1/2024/12/20/processed_content.md
+    return f"knowledge_base/user_{user_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/{filename}"
+
+
+def user_url_processing_path(instance, filename):
+    """Generate organized path for URL processing downloads with proper date formatting."""
+    user_id = instance.source.notebook.user.pk
+    notebook_id = instance.source.notebook.pk
+    now = timezone.now()
+    
+    # Format: url_downloads/user_1/notebook_2/2024/12/20/downloaded_file.ext
+    return f"url_downloads/user_{user_id}/notebook_{notebook_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/{filename}"
+
+
+def user_processing_results_path(instance, filename):
+    """Generate organized path for processing result files with proper date formatting."""
+    user_id = instance.source.notebook.user.pk
+    notebook_id = instance.source.notebook.pk
+    now = timezone.now()
+    
+    # Format: processing_results/user_1/notebook_2/2024/12/20/result_file.md
+    return f"processing_results/user_{user_id}/notebook_{notebook_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/{filename}"
 
 
 class UploadedFile(models.Model):
@@ -179,7 +211,7 @@ class URLProcessingResult(models.Model):
         help_text="Markdown extracted from a webpage, if applicable",
     )
     downloaded_file = models.FileField(
-        upload_to="downloaded_media/%Y/%m/%d/",
+        upload_to=user_url_processing_path,
         blank=True,
         null=True,
         help_text="Media file downloaded from the URL, if any",
@@ -220,7 +252,7 @@ class ProcessingJob(models.Model):
         default="queued",
     )
     result_file = models.FileField(
-        upload_to="processing_results/%Y/%m/%d/",
+        upload_to=user_processing_results_path,
         blank=True,
         null=True,
         help_text="Generated .md or other output file",

@@ -140,13 +140,15 @@ class UploadProcessor(BaseService):
             # Get file size
             file_size = os.path.getsize(temp_path)
             
-            # Prepare file metadata
+            # Prepare file metadata with original file information
             file_metadata = {
                 "filename": file.name,
+                "original_filename": file.name,  # Ensure original filename is preserved
                 "file_extension": validation["file_extension"],
                 "content_type": validation["content_type"],
                 "file_size": file_size,
                 "upload_file_id": upload_file_id,
+                "upload_timestamp": datetime.now().isoformat(),
                 "parsing_status": "processing"
             }
             

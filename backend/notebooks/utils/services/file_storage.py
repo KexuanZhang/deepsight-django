@@ -238,25 +238,66 @@ class FileStorageService(BaseService):
             return False
     
     def delete_knowledge_base_item(self, kb_item_id: str, user_id: int) -> bool:
-        """Delete a knowledge base item and all its notebook links."""
+        """Delete a knowledge base item and all its notebook links and related source files."""
         try:
-            from ...models import KnowledgeBaseItem
+            from ...models import KnowledgeBaseItem, KnowledgeItem, Source
             
             kb_item = KnowledgeBaseItem.objects.filter(id=kb_item_id, user_id=user_id).first()
             if not kb_item:
                 return False
             
-            # Delete the file if it exists
-            if kb_item.file:
-                try:
-                    kb_item.file.delete(save=False)
-                except (FileNotFoundError, OSError):
-                    pass  # File already gone, that's fine
+            # Find all knowledge items that link to this knowledge base item
+            knowledge_items = KnowledgeItem.objects.filter(knowledge_base_item=kb_item)
             
-            # Delete the knowledge base item (this will cascade delete notebook links)
+            # Collect all related source files to delete
+            source_files_to_delete = []
+            
+            for ki in knowledge_items:
+                if ki.source:
+                    source = ki.source
+                    
+                    # Delete uploaded files (original files uploaded by user)
+                    if hasattr(source, 'upload') and source.upload:
+                        upload = source.upload
+                        if upload.file:
+                            source_files_to_delete.append(('uploaded_file', upload.file))
+                            self.log_operation("delete_source_file", f"Queued uploaded file: {upload.file.name}")
+                    
+                    # Delete pasted text files
+                    if hasattr(source, 'pasted_text_file') and source.pasted_text_file:
+                        text_file = source.pasted_text_file
+                        if text_file.file:
+                            source_files_to_delete.append(('pasted_text_file', text_file.file))
+                            self.log_operation("delete_source_file", f"Queued pasted text file: {text_file.file.name}")
+                    
+                    # Delete URL processing result files
+                    if hasattr(source, 'url_result') and source.url_result:
+                        url_result = source.url_result
+                        if url_result.downloaded_file:
+                            source_files_to_delete.append(('url_result_file', url_result.downloaded_file))
+                            self.log_operation("delete_source_file", f"Queued URL result file: {url_result.downloaded_file.name}")
+            
+            # Delete the knowledge base item's processed content file
+            if kb_item.file:
+                source_files_to_delete.append(('knowledge_base_file', kb_item.file))
+                self.log_operation("delete_source_file", f"Queued knowledge base file: {kb_item.file.name}")
+            
+            # Now delete all collected files
+            for file_type, file_field in source_files_to_delete:
+                try:
+                    file_field.delete(save=False)
+                    self.log_operation("delete_source_file", f"Deleted {file_type}: {file_field.name}")
+                except (FileNotFoundError, OSError) as e:
+                    # File already gone, that's fine - log but continue
+                    self.log_operation("delete_source_file", f"File already deleted {file_type}: {getattr(file_field, 'name', 'unknown')} - {str(e)}", "warning")
+                except Exception as e:
+                    # Log other errors but continue
+                    self.log_operation("delete_source_file", f"Error deleting {file_type}: {getattr(file_field, 'name', 'unknown')} - {str(e)}", "error")
+            
+            # Delete the knowledge base item (this will cascade delete notebook links and sources)
             kb_item.delete()
             
-            self.log_operation("delete_knowledge_item", f"kb_item_id={kb_item_id}, user_id={user_id}")
+            self.log_operation("delete_knowledge_item", f"kb_item_id={kb_item_id}, user_id={user_id}, deleted_files_count={len(source_files_to_delete)}")
             return True
             
         except Exception as e:
@@ -268,18 +309,29 @@ class FileStorageService(BaseService):
         try:
             from ...models import KnowledgeItem, Notebook
             
+            self.log_operation("unlink_knowledge_item", f"Starting unlink: kb_item_id={kb_item_id}, notebook_id={notebook_id}, user_id={user_id}")
+            
             # Verify ownership
             notebook = Notebook.objects.filter(id=notebook_id, user_id=user_id).first()
             if not notebook:
+                self.log_operation("unlink_knowledge_item_error", f"Notebook not found: notebook_id={notebook_id}, user_id={user_id}", "error")
                 return False
             
-            # Delete the link
+            # Try to convert kb_item_id to int if it's a valid number
+            try:
+                kb_item_id_int = int(kb_item_id)
+                self.log_operation("unlink_knowledge_item", f"Converted kb_item_id to int: {kb_item_id_int}")
+            except (ValueError, TypeError):
+                self.log_operation("unlink_knowledge_item_error", f"Invalid kb_item_id format: {kb_item_id} (expected integer)", "error")
+                return False
+            
+            # Delete the link using the integer ID
             deleted_count, _ = KnowledgeItem.objects.filter(
                 notebook=notebook,
-                knowledge_base_item_id=kb_item_id
+                knowledge_base_item_id=kb_item_id_int
             ).delete()
             
-            self.log_operation("unlink_knowledge_item", f"kb_item_id={kb_item_id}, notebook_id={notebook_id}, deleted={deleted_count > 0}")
+            self.log_operation("unlink_knowledge_item", f"kb_item_id={kb_item_id}, notebook_id={notebook_id}, deleted={deleted_count > 0}, deleted_count={deleted_count}")
             return deleted_count > 0
             
         except Exception as e:

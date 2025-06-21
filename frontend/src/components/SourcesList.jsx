@@ -2,7 +2,6 @@ import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect, us
 import { ArrowUpDown, Trash2, Plus, ChevronLeft, RefreshCw, CheckCircle, AlertCircle, Clock, X, Upload, Link2, FileText, Globe, Youtube, Group, File, Music, Video, Presentation, Loader2, Eye } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import apiService from "@/lib/api";
@@ -23,14 +22,7 @@ const fileIcons = {
   media: Video
 };
 
-// --- NEW: builds the SSE URL for a single upload ---
-function buildStatusUrl(notebookId, uploadFileId) {
-  if (typeof notebookId !== 'string' && typeof notebookId !== 'number') {
-    console.error("Invalid notebookId passed to buildStatusUrl:", notebookId);
-    throw new Error("notebookId must be a string or number");
-  }
-  return `/api/v1/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
-}
+
 
 // Helper function to get principle file icon with visual indicator
 const getPrincipleFileIcon = (source) => {
@@ -115,7 +107,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       setError(null);
       
       const response = await apiService.listParsedFiles(notebookId);
-      console.log(response)
+
       
       if (response.success) {
         const parsedSources = response.data.map(metadata => ({
@@ -128,7 +120,10 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           file_id: metadata.file_id,
           upload_file_id: metadata.upload_file_id,
           parsing_status: metadata.parsing_status,
-          metadata: metadata,
+          metadata: {
+            ...metadata,
+            knowledge_item_id: metadata.knowledge_item_id // Store the knowledge item ID for unlinking
+          },
           error_message: metadata.error_message,
           // Store both original and processed info for processing
           originalFile: getPrincipleFileInfo(metadata)
@@ -162,7 +157,16 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     }
     
     // Show original file information for non-URL sources
-    const originalSize = metadata.file_size ? `${(metadata.file_size / (1024 * 1024)).toFixed(1)} MB` : 'Unknown size';
+    // Try to get original file size from metadata, fallback to various fields
+    let originalSize = 'Unknown size';
+    if (metadata.file_size) {
+      originalSize = `${(metadata.file_size / (1024 * 1024)).toFixed(1)} MB`;
+    } else if (metadata.metadata?.file_size) {
+      originalSize = `${(metadata.metadata.file_size / (1024 * 1024)).toFixed(1)} MB`;
+    } else if (metadata.metadata?.content_length) {
+      originalSize = `${(metadata.metadata.content_length / 1000).toFixed(1)}k chars`;
+    }
+    
     const ext = getPrincipleFileExtension(metadata).toUpperCase();
     
     return `${ext} • ${originalSize}`;
@@ -193,15 +197,29 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     }
     
     // Use original file extension, fallback to processed extension
-    const originalExt = metadata.file_extension?.substring(1) || 
-                       metadata.original_filename?.split('.').pop() || 
-                       "unknown";
-    return originalExt.toLowerCase();
-  };
-
-  const generateFileDescription = (metadata) => {
-    // Keep this for backward compatibility, but now it calls the principle version
-    return generatePrincipleFileDescription(metadata);
+    // Try multiple metadata sources for the file extension
+    let originalExt = "unknown";
+    if (metadata.file_extension) {
+      originalExt = metadata.file_extension.startsWith('.') ? 
+                   metadata.file_extension.substring(1) : 
+                   metadata.file_extension;
+    } else if (metadata.metadata?.file_extension) {
+      originalExt = metadata.metadata.file_extension.startsWith('.') ? 
+                   metadata.metadata.file_extension.substring(1) : 
+                   metadata.metadata.file_extension;
+    } else if (metadata.original_filename) {
+      const parts = metadata.original_filename.split('.');
+      if (parts.length > 1) {
+        originalExt = parts.pop();
+      }
+    } else if (metadata.metadata?.filename) {
+      const parts = metadata.metadata.filename.split('.');
+      if (parts.length > 1) {
+        originalExt = parts.pop();
+      }
+    }
+    
+        return originalExt.toLowerCase();
   };
 
   // Helper function to extract domain from URL for better display
@@ -243,7 +261,20 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     }
     
     // For regular files, show the original filename
-    return metadata.original_filename || metadata.filename || 'Unknown File';
+    // Priority order: original_filename -> metadata.filename -> metadata.original_filename -> title fallback
+    let originalFilename = metadata.original_filename || 
+                          metadata.metadata?.filename || 
+                          metadata.metadata?.original_filename || 
+                          metadata.filename || 
+                          metadata.title || 
+                          'Unknown File';
+    
+    // If the title looks like it was processed (no extension), try to get original from metadata
+    if (!originalFilename.includes('.') && metadata.metadata?.filename && metadata.metadata.filename.includes('.')) {
+      originalFilename = metadata.metadata.filename;
+    }
+    
+    return originalFilename;
   };
 
   // Get principle file information based on source type
@@ -258,7 +289,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     
     if (isUrl) {
       // For URL sources, try to extract the original URL
-      let sourceUrl = metadata.source_url;
+      let sourceUrl = metadata.source_url || metadata.metadata?.source_url;
       
       // If no source_url, try to reconstruct from filename pattern
       if (!sourceUrl && metadata.original_filename?.includes('_20')) {
@@ -271,18 +302,36 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       return {
         filename: sourceUrl || metadata.original_filename,
         extension: '.url',
-        size: metadata.content_length || 0,
-        uploadTimestamp: metadata.upload_timestamp,
+        size: metadata.content_length || metadata.metadata?.content_length || 0,
+        uploadTimestamp: metadata.upload_timestamp || metadata.uploaded_at || metadata.created_at,
         sourceUrl: sourceUrl,
         processingType: metadata.processing_method || metadata.processing_type || 'website'
       };
     } else {
-      // For regular files
+      // For regular files - try multiple sources for original file information
+      const originalFilename = metadata.original_filename || 
+                              metadata.metadata?.filename || 
+                              metadata.metadata?.original_filename || 
+                              metadata.filename || 
+                              metadata.title;
+      
+      const fileExtension = metadata.file_extension || 
+                           metadata.metadata?.file_extension;
+      
+      const fileSize = metadata.file_size || 
+                      metadata.metadata?.file_size || 
+                      0;
+      
+      const uploadTime = metadata.upload_timestamp || 
+                        metadata.uploaded_at || 
+                        metadata.created_at || 
+                        metadata.metadata?.upload_timestamp;
+      
       return {
-        filename: metadata.original_filename || metadata.filename,
-        extension: metadata.file_extension,
-        size: metadata.file_size,
-        uploadTimestamp: metadata.upload_timestamp
+        filename: originalFilename,
+        extension: fileExtension,
+        size: fileSize,
+        uploadTimestamp: uploadTime
       };
     }
   };
@@ -351,8 +400,6 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     }
 
     const onMessage = (data) => {
-      console.log('SSE status update received:', data);
-      
       if (data.error) {
         console.error('SSE status error:', data.error);
         return;
@@ -434,7 +481,6 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     };
 
     const onClose = () => {
-      console.log('SSE connection closed for', uploadFileId);
       sseConnectionsRef.current.delete(uploadFileId);
     };
 
@@ -442,7 +488,6 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       // Create SSE connection with correct parameter order
       const eventSource = apiService.createParsingStatusStream(notebookId, uploadFileId, onMessage, onError, onClose);
       sseConnectionsRef.current.set(uploadFileId, eventSource);
-      console.log('SSE connection established for', uploadFileId);
     } catch (error) {
       console.error('Failed to create SSE connection for', uploadFileId, ':', error);
       onError(error);
@@ -557,8 +602,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     if (!confirm(`Are you sure you want to delete ${selectedSources.length} selected source(s)?`)) {
       return;
     }
-    
-    console.log('Deleting selected sources:', selectedSources);
+
     
     // Track which deletions succeed
     const deletionResults = [];
@@ -566,11 +610,18 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     // Delete files from backend
     for (const source of selectedSources) {
       try {
-        console.log('Attempting to delete source:', source);
-        
         let result;
-        if (source.upload_file_id) {
-          console.log('Using deleteFileByUploadId for:', source.upload_file_id);
+        
+        // Priority order for unlink operations:
+        // 1. knowledge_item_id (best for unlinking from notebook)
+        // 2. file_id (knowledge base item ID - also good for unlinking)
+        // 3. upload_file_id (upload tracking ID - fallback)
+        
+        if (source.metadata?.knowledge_item_id) {
+          result = await apiService.deleteParsedFile(source.metadata.knowledge_item_id, notebookId);
+        } else if (source.file_id) {
+          result = await apiService.deleteParsedFile(source.file_id, notebookId);
+        } else if (source.upload_file_id) {
           result = await apiService.deleteFileByUploadId(source.upload_file_id, notebookId);
           
           // Stop any SSE connection for this file
@@ -579,15 +630,10 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
             eventSource.close();
             sseConnectionsRef.current.delete(source.upload_file_id);
           }
-        } else if (source.file_id) {
-          console.log('Using deleteParsedFile for:', source.file_id);
-          result = await apiService.deleteParsedFile(source.file_id, notebookId);
         } else {
-          console.warn('Source has neither upload_file_id nor file_id:', source);
+          console.warn('Source has no valid ID for deletion:', source);
           continue;
         }
-        
-        console.log('Delete result:', result);
         
         if (result.success) {
           deletionResults.push({ source, success: true });
