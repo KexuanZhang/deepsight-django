@@ -70,6 +70,11 @@ class FileUploadView(APIView):
                     'notes': f"Processed from {inbound_file.name}"
                 }
             )
+            
+            # If the KnowledgeItem already existed but didn't have a source, update it
+            if not created and not ki.source:
+                ki.source = source
+                ki.save(update_fields=['source'])
         except KnowledgeBaseItem.DoesNotExist:
             return Response({
                 "success": False,

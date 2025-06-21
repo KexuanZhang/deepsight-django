@@ -41,12 +41,13 @@ class FileStorageService(BaseService):
         metadata: Dict[str, Any], 
         processing_result: Dict[str, Any],
         user_id: int,
-        notebook_id: int
+        notebook_id: int,
+        source_id: Optional[int] = None
     ) -> str:
         """Store processed file content in user's knowledge base."""
         try:
             # Import here to avoid circular imports
-            from ...models import KnowledgeBaseItem, KnowledgeItem, Notebook
+            from ...models import KnowledgeBaseItem, KnowledgeItem, Notebook, Source
             
             # Calculate content hash for deduplication
             content_hash = self._calculate_content_hash(content)
@@ -61,10 +62,17 @@ class FileStorageService(BaseService):
                 self.log_operation("duplicate_content", f"Content already exists: {existing_item.id}")
                 # Link existing knowledge base item to current notebook
                 notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
+                
+                # Get the source if provided
+                source = None
+                if source_id:
+                    source = Source.objects.filter(id=source_id, notebook=notebook).first()
+                
                 knowledge_item, created = KnowledgeItem.objects.get_or_create(
                     notebook=notebook,
                     knowledge_base_item=existing_item,
                     defaults={
+                        'source': source,
                         'notes': f"Imported from {metadata.get('filename', 'unknown source')}"
                     }
                 )
@@ -91,13 +99,20 @@ class FileStorageService(BaseService):
             
             # Link to current notebook
             notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
+            
+            # Get the source if provided
+            source = None
+            if source_id:
+                source = Source.objects.filter(id=source_id, notebook=notebook).first()
+            
             KnowledgeItem.objects.create(
                 notebook=notebook,
                 knowledge_base_item=kb_item,
+                source=source,
                 notes=f"Processed from {metadata.get('filename', 'source')}"
             )
             
-            self.log_operation("store_knowledge_item", f"kb_item_id={kb_item.id}, user_id={user_id}, notebook_id={notebook_id}")
+            self.log_operation("store_knowledge_item", f"kb_item_id={kb_item.id}, user_id={user_id}, notebook_id={notebook_id}, source_id={source_id}")
             return str(kb_item.id)
             
         except Exception as e:
@@ -253,8 +268,10 @@ class FileStorageService(BaseService):
             source_files_to_delete = []
             
             for ki in knowledge_items:
+                self.log_operation("delete_source_check", f"Checking KnowledgeItem {ki.id}, has_source: {bool(ki.source)}")
                 if ki.source:
                     source = ki.source
+                    self.log_operation("delete_source_check", f"Source {source.id} type: {source.source_type}")
                     
                     # Delete uploaded files (original files uploaded by user)
                     if hasattr(source, 'upload') and source.upload:
@@ -276,6 +293,8 @@ class FileStorageService(BaseService):
                         if url_result.downloaded_file:
                             source_files_to_delete.append(('url_result_file', url_result.downloaded_file))
                             self.log_operation("delete_source_file", f"Queued URL result file: {url_result.downloaded_file.name}")
+                else:
+                    self.log_operation("delete_source_check", f"KnowledgeItem {ki.id} has no source - cannot delete original files")
             
             # Delete the knowledge base item's processed content file
             if kb_item.file:

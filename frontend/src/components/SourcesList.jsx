@@ -599,10 +599,6 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       return;
     }
 
-    if (!confirm(`Are you sure you want to delete ${selectedSources.length} selected source(s)?`)) {
-      return;
-    }
-
     
     // Track which deletions succeed
     const deletionResults = [];
@@ -1400,10 +1396,10 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
               size="sm"
               className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
               onClick={handleDeleteSelected}
-              title="Delete Selected"
+              title="Remove Selected"
             >
               <Trash2 className="h-3 w-3 mr-1" />
-              Delete
+              Remove
             </Button>
           )}
         </div>
@@ -1973,20 +1969,19 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                                   selectedKnowledgeItems.has(item.id)
                                     ? 'bg-purple-900/30 border-purple-600'
                                     : item.linked_to_notebook
-                                    ? 'bg-gray-700 border-gray-600'
+                                    ? 'bg-gray-700 border-gray-600 hover:border-gray-500'
                                     : 'bg-gray-700 border-gray-600 hover:border-gray-500'
                                 }`}
-                                onClick={() => !item.linked_to_notebook && handleKnowledgeItemSelect(item.id)}
+                                onClick={() => handleKnowledgeItemSelect(item.id)}
                               >
                                 <div className="flex items-center space-x-3">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedKnowledgeItems.has(item.id)}
-                                    onChange={() => handleKnowledgeItemSelect(item.id)}
-                                    disabled={item.linked_to_notebook}
-                                    className="h-4 w-4 rounded border-gray-500 text-purple-600 focus:ring-purple-500"
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
+                                                                      <input
+                                      type="checkbox"
+                                      checked={selectedKnowledgeItems.has(item.id)}
+                                      onChange={() => handleKnowledgeItemSelect(item.id)}
+                                      className="h-4 w-4 rounded border-gray-500 text-purple-600 focus:ring-purple-500"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center space-x-2">
                                       <h4 className="text-sm font-medium text-white truncate">
@@ -2033,7 +2028,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                         <Button
                           onClick={handleLinkSelectedKnowledgeItems}
                           className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
-                          disabled={Array.from(selectedKnowledgeItems).every(id => 
+                          disabled={selectedKnowledgeItems.size === 0 || Array.from(selectedKnowledgeItems).every(id => 
                             knowledgeBaseItems.find(item => item.id === id)?.linked_to_notebook
                           )}
                         >
