@@ -4,13 +4,15 @@ import asyncio
 import time
 from django.db import transaction
 from django.core.files.base import ContentFile
-from django.http import StreamingHttpResponse
+from django.http import StreamingHttpResponse, HttpResponse, Http404, FileResponse
 from rest_framework import status, permissions, authentication, generics 
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, JSONParser
 from django.shortcuts import get_object_or_404
+from django.core.exceptions import PermissionDenied
 from uuid import uuid4    
+import mimetypes
 
 from .models import Source, UploadedFile, PastedTextFile, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook
 from .serializers import (
@@ -612,7 +614,227 @@ class NotebookRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView
     """
     serializer_class    = NotebookSerializer
     permission_classes  = [permissions.IsAuthenticated]
+    authentication_classes = [authentication.SessionAuthentication]
 
     def get_queryset(self):
         # Users can only operate on their own notebooks
         return Notebook.objects.filter(user=self.request.user)
+
+
+class FileContentView(APIView):
+    """
+    GET /api/v1/files/{file_id}/content/
+    Serve parsed content from knowledge base item
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = [authentication.SessionAuthentication]
+
+    def get(self, request, file_id):
+        try:
+            # TODO: Add rate limiting to prevent abuse
+            # from django_ratelimit.decorators import ratelimit
+            # @ratelimit(key='user', rate='100/h', method='GET')
+            
+            # Get the knowledge base item
+            kb_item = get_object_or_404(KnowledgeBaseItem, id=file_id, user=request.user)
+            
+            # TODO: Log access attempts for security monitoring
+            # logger.info(f"User {request.user.id} accessed file content {file_id}")
+            
+            # Get content from storage service
+            content = file_storage.get_file_content(file_id, user_id=request.user.pk)
+            
+            if content is None:
+                # TODO: Log failed access attempts
+                # logger.warning(f"User {request.user.id} attempted to access unavailable content {file_id}")
+                return Response({
+                    "success": False,
+                    "error": "Content not found or not accessible"
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            return Response({
+                "success": True,
+                "data": {
+                    "content": content,
+                    "title": kb_item.title,
+                    "content_type": kb_item.content_type,
+                    "metadata": kb_item.metadata or {}
+                }
+            })
+            
+        except Exception as e:
+            # TODO: Log security exceptions
+            # logger.error(f"Security exception in FileContentView: user={request.user.id}, file_id={file_id}, error={str(e)}")
+            return Response({
+                "success": False,
+                "error": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class FileRawView(APIView):
+    """
+    GET /api/v1/notebooks/{notebook_id}/files/{file_id}/raw/
+    Serve raw file content (PDFs, videos, audio, etc.)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = [authentication.SessionAuthentication]
+
+    def get(self, request, notebook_id, file_id):
+        try:
+            # TODO: Add rate limiting for file downloads
+            # @ratelimit(key='user', rate='50/h', method='GET')
+            
+            # Verify notebook ownership
+            notebook = get_object_or_404(Notebook, id=notebook_id, user=request.user)
+            
+            # Get the knowledge base item
+            kb_item = get_object_or_404(KnowledgeBaseItem, id=file_id, user=request.user)
+            
+            # Check if user has access to this file through the notebook
+            knowledge_item = KnowledgeItem.objects.filter(
+                notebook=notebook,
+                knowledge_base_item=kb_item
+            ).first()
+            
+            if not knowledge_item:
+                # TODO: Log unauthorized access attempts
+                # logger.warning(f"User {request.user.id} attempted unauthorized access: notebook={notebook_id}, file={file_id}")
+                raise PermissionDenied("File not linked to this notebook")
+            
+            # TODO: Log successful file access
+            # logger.info(f"User {request.user.id} downloaded file {file_id} from notebook {notebook_id}")
+            
+            # FIRST: Try to serve original source file (this is the raw binary file we want)
+            if knowledge_item.source:
+                source = knowledge_item.source
+                
+                if source.source_type == "file" and hasattr(source, 'upload'):
+                    upload = source.upload
+                    if upload.file:
+                        content_type, _ = mimetypes.guess_type(upload.file.name)
+                        if not content_type:
+                            content_type = 'application/octet-stream'
+                        
+                        response = FileResponse(
+                            upload.file.open('rb'),
+                            content_type=content_type,
+                            as_attachment=False
+                        )
+                        response['Content-Disposition'] = f'inline; filename="{upload.original_name or kb_item.title}"'
+                        return response
+            
+            # FALLBACK: Try to serve the file from knowledge base item
+            # (This would be processed content like .md files, not ideal for raw access)
+            if kb_item.file:
+                # TODO: Add file size limits for security
+                # if kb_item.file.size > settings.MAX_FILE_DOWNLOAD_SIZE:
+                #     raise ValidationError("File too large to download")
+                
+                # Determine content type
+                content_type, _ = mimetypes.guess_type(kb_item.file.name)
+                if not content_type:
+                    content_type = 'application/octet-stream'
+                
+                # Return file response
+                response = FileResponse(
+                    kb_item.file.open('rb'),
+                    content_type=content_type,
+                    as_attachment=False
+                )
+                response['Content-Disposition'] = f'inline; filename="{kb_item.title}"'
+                # TODO: Add security headers
+                # response['X-Content-Type-Options'] = 'nosniff'
+                # response['X-Frame-Options'] = 'DENY'
+                return response
+            
+            raise Http404("Raw file not found")
+            
+        except PermissionDenied:
+            return Response({
+                "error": "Permission denied"
+            }, status=status.HTTP_403_FORBIDDEN)
+        except Exception as e:
+            # TODO: Log all security-related exceptions
+            # logger.error(f"FileRawView exception: user={request.user.id}, notebook={notebook_id}, file={file_id}, error={str(e)}")
+            return Response({
+                "error": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class FileRawSimpleView(APIView):
+    """
+    GET /api/v1/files/{file_id}/raw/
+    Serve raw file content (PDFs, videos, audio, etc.) without requiring notebook context
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = [authentication.SessionAuthentication]
+
+    def get(self, request, file_id):
+        try:
+            # TODO: Add rate limiting for file downloads
+            # @ratelimit(key='user', rate='50/h', method='GET')
+            
+            # Get the knowledge base item - only files owned by the user
+            kb_item = get_object_or_404(KnowledgeBaseItem, id=file_id, user=request.user)
+            
+            # TODO: Log successful file access
+            # logger.info(f"User {request.user.id} downloaded raw file {file_id}")
+            
+            # FIRST: Try to find original source file (this is the raw binary file we want)
+            # Look for any knowledge item that links to this kb_item for the user
+            knowledge_items = KnowledgeItem.objects.filter(
+                knowledge_base_item=kb_item,
+                notebook__user=request.user
+            )
+            
+            for knowledge_item in knowledge_items:
+                if knowledge_item.source:
+                    source = knowledge_item.source
+                    
+                    if source.source_type == "file" and hasattr(source, 'upload'):
+                        upload = source.upload
+                        if upload.file:
+                            content_type, _ = mimetypes.guess_type(upload.file.name)
+                            if not content_type:
+                                content_type = 'application/octet-stream'
+                            
+                            response = FileResponse(
+                                upload.file.open('rb'),
+                                content_type=content_type,
+                                as_attachment=False
+                            )
+                            response['Content-Disposition'] = f'inline; filename="{upload.original_name or kb_item.title}"'
+                            return response
+            
+            # FALLBACK: If no original source file found, try knowledge base file
+            # (This would be processed content like .md files, not ideal for raw access)
+            if kb_item.file:
+                # TODO: Add file size limits for security
+                # if kb_item.file.size > settings.MAX_FILE_DOWNLOAD_SIZE:
+                #     raise ValidationError("File too large to download")
+                
+                # Determine content type
+                content_type, _ = mimetypes.guess_type(kb_item.file.name)
+                if not content_type:
+                    content_type = 'application/octet-stream'
+                
+                # Return file response
+                response = FileResponse(
+                    kb_item.file.open('rb'),
+                    content_type=content_type,
+                    as_attachment=False
+                )
+                response['Content-Disposition'] = f'inline; filename="{kb_item.title}"'
+                # TODO: Add security headers
+                # response['X-Content-Type-Options'] = 'nosniff'
+                # response['X-Frame-Options'] = 'DENY'
+                return response
+            
+            raise Http404("Raw file not found")
+            
+        except Exception as e:
+            # TODO: Log all security-related exceptions
+            # logger.error(f"FileRawSimpleView exception: user={request.user.id}, file={file_id}, error={str(e)}")
+            return Response({
+                "error": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -60,6 +60,18 @@ class ApiService {
     return this.request(`/${notebookId}/files/?limit=${limit}&offset=${offset}`);
   }
 
+  async getParsedFile(fileId) {
+    // Get file content from knowledge base item
+    // Use absolute URL since this endpoint is outside the notebooks namespace
+    return this.request(`http://localhost:8000/api/v1/files/${fileId}/content/`);
+  }
+
+  async getFileRaw(fileId, notebookId) {
+    // Serve raw file content (for PDFs, videos, audio, etc.)
+    const url = `${this.baseUrl}/${notebookId}/files/${fileId}/raw/`;
+    return url; // Return URL for direct browser access
+  }
+
   async parseFile(file, uploadFileId, notebookId) {
     const form = new FormData();
     form.append('file', file);

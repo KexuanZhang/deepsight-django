@@ -2058,6 +2058,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         source={previewSource}
         isOpen={isPreviewOpen}
         onClose={handleClosePreview}
+        notebookId={notebookId}
       />
     </div>
   );

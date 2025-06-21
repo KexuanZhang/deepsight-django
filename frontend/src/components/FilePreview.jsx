@@ -36,7 +36,7 @@ const MarkdownContent = React.memo(({ content }) => (
   </div>
 ));
 
-const FilePreview = ({ source, isOpen, onClose }) => {
+const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
   // Consolidate all state into a single object to avoid hook order issues
   const [state, setState] = useState({
     preview: null,
@@ -55,14 +55,16 @@ const FilePreview = ({ source, isOpen, onClose }) => {
 
   // Helper function to get raw file URL
   const getRawFileUrl = (fileId) => {
-    return `${API_BASE_URL}/files/${fileId}/raw`;
+    return notebookId ? 
+      `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
+      `${API_BASE_URL}/files/${fileId}/raw`;
   };
 
   useEffect(() => {
     if (isOpen && source && supportsPreview(source.metadata?.file_extension, source.metadata)) {
       loadPreview();
     }
-  }, [isOpen, source]);
+  }, [isOpen, source, notebookId]);
 
   const loadPreview = async () => {
     if (!source) return;
@@ -77,7 +79,7 @@ const FilePreview = ({ source, isOpen, onClose }) => {
     });
     
     try {
-      const previewData = await generatePreview(source);
+      const previewData = await generatePreview(source, notebookId);
       updateState({ preview: previewData, isLoading: false });
     } catch (err) {
       updateState({ error: err.message, isLoading: false });
@@ -168,6 +170,17 @@ const FilePreview = ({ source, isOpen, onClose }) => {
           <FileText className="h-3 w-3 mr-1" />
           {state.preview.lines} lines
         </Badge>
+        {state.preview.fileSize && (
+          <Badge variant="secondary">
+            <HardDrive className="h-3 w-3 mr-1" />
+            {state.preview.fileSize}
+          </Badge>
+        )}
+        {state.preview.format && (
+          <Badge variant="secondary">
+            {state.preview.format}
+          </Badge>
+        )}
       </div>
 
       <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
@@ -195,6 +208,12 @@ const FilePreview = ({ source, isOpen, onClose }) => {
           <Badge variant="secondary">
             <Calendar className="h-3 w-3 mr-1" />
             {formatDate(state.preview.extractedAt)}
+          </Badge>
+        )}
+        {state.preview.domain && (
+          <Badge variant="secondary">
+            <Globe className="h-3 w-3 mr-1" />
+            {state.preview.domain}
           </Badge>
         )}
       </div>
@@ -321,6 +340,12 @@ const FilePreview = ({ source, isOpen, onClose }) => {
               <p className="text-sm text-gray-600">{state.preview.sampleRate}</p>
             </div>
           )}
+          {state.preview.language && state.preview.language !== 'Unknown' && (
+            <div>
+              <span className="text-sm font-medium text-gray-700">Language:</span>
+              <p className="text-sm text-gray-600 capitalize">{state.preview.language}</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -424,6 +449,12 @@ const FilePreview = ({ source, isOpen, onClose }) => {
               <p className="text-sm text-gray-600">{state.preview.resolution}</p>
             </div>
           )}
+          {state.preview.language && state.preview.language !== 'Unknown' && (
+            <div>
+              <span className="text-sm font-medium text-gray-700">Language:</span>
+              <p className="text-sm text-gray-600 capitalize">{state.preview.language}</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -473,13 +504,6 @@ const FilePreview = ({ source, isOpen, onClose }) => {
       <div className="bg-white rounded-lg border border-gray-200">
         <div className="p-6 max-h-[600px] overflow-y-auto">
           <MarkdownContent content={state.preview.content} />
-          {state.preview.fullLength > 2000 && (
-            <div className="mt-6 pt-4 border-t border-gray-200">
-              <p className="text-xs text-gray-500 text-center">
-                Showing first 2,000 characters. Open the PDF for complete content.
-              </p>
-            </div>
-          )}
         </div>
       </div>
     </div>

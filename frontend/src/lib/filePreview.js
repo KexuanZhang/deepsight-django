@@ -128,15 +128,17 @@ async function generateTextPreview(fileId, metadata) {
     }
     
     const content = response.data.content || '';
-    const preview = content.length > 500 ? content.substring(0, 500) + '...' : content;
     
     return {
       type: PREVIEW_TYPES.TEXT_CONTENT,
       title: metadata.original_filename || 'Text Content',
-      content: preview,
+      content: content,
       fullLength: content.length,
-      wordCount: content.split(/\s+/).length,
-      lines: content.split('\n').length
+      wordCount: content.split(/\s+/).filter(word => word.length > 0).length,
+      lines: content.split('\n').length,
+      fileSize: formatFileSize(metadata.file_size),
+      format: (metadata.file_extension || '').toUpperCase().replace('.', ''),
+      uploadedAt: metadata.upload_timestamp
     };
   } catch (error) {
     throw new Error(`Failed to load text preview: ${error.message}`);
@@ -186,16 +188,34 @@ async function generateAudioPreview(metadata) {
   const fileId = metadata.file_id;
   const audioUrl = `${API_BASE_URL}/files/${fileId}/raw`;
   
+  // Check if we have parsed transcript content
+  let transcriptContent = null;
+  let hasTranscript = false;
+  let wordCount = 0;
+  
+  try {
+    const response = await apiService.getParsedFile(fileId);
+    if (response.success && response.data.content) {
+      transcriptContent = response.data.content;
+      hasTranscript = transcriptContent.trim().length > 0;
+      wordCount = transcriptContent.split(/\s+/).filter(word => word.length > 0).length;
+    }
+  } catch (error) {
+    console.log('No transcript available for audio file:', error);
+  }
+  
   return {
     type: PREVIEW_TYPES.AUDIO_INFO,
     title: metadata.original_filename || 'Audio File',
-    content: 'Audio file ready for playback',
+    content: hasTranscript ? transcriptContent : 'Audio file ready for playback',
+    hasTranscript: hasTranscript,
+    wordCount: wordCount,
     fileSize: formatFileSize(metadata.file_size),
     format: (metadata.file_extension || '').toUpperCase().replace('.', ''),
     uploadedAt: metadata.upload_timestamp,
-    // Could add duration, bitrate, etc. if available in metadata
     duration: metadata.duration || 'Unknown',
     sampleRate: metadata.sample_rate || 'Unknown',
+    language: metadata.language || 'Unknown',
     audioUrl: audioUrl,
     fileId: fileId
   };
@@ -209,16 +229,34 @@ async function generateVideoPreview(metadata) {
   const fileId = metadata.file_id;
   const videoUrl = `${API_BASE_URL}/files/${fileId}/raw`;
   
+  // Check if we have parsed transcript content
+  let transcriptContent = null;
+  let hasTranscript = false;
+  let wordCount = 0;
+  
+  try {
+    const response = await apiService.getParsedFile(fileId);
+    if (response.success && response.data.content) {
+      transcriptContent = response.data.content;
+      hasTranscript = transcriptContent.trim().length > 0;
+      wordCount = transcriptContent.split(/\s+/).filter(word => word.length > 0).length;
+    }
+  } catch (error) {
+    console.log('No transcript available for video file:', error);
+  }
+  
   return {
     type: PREVIEW_TYPES.VIDEO_INFO,
     title: metadata.original_filename || 'Video File',
-    content: 'Video file ready for playback',
+    content: hasTranscript ? transcriptContent : 'Video file ready for playback',
+    hasTranscript: hasTranscript,
+    wordCount: wordCount,
     fileSize: formatFileSize(metadata.file_size),
     format: (metadata.file_extension || '').toUpperCase().replace('.', ''),
     uploadedAt: metadata.upload_timestamp,
-    // Could add duration, resolution, etc. if available in metadata
     duration: metadata.duration || 'Unknown',
     resolution: metadata.resolution || 'Unknown',
+    language: metadata.language || 'Unknown',
     videoUrl: videoUrl,
     fileId: fileId
   };
@@ -231,17 +269,55 @@ async function generatePdfPreview(fileId, metadata) {
   // Use the raw endpoint to serve the actual PDF binary file
   const pdfUrl = `${API_BASE_URL}/files/${fileId}/raw`;
   
-  return {
-    type: PREVIEW_TYPES.PDF_VIEWER,
-    title: metadata.original_filename || 'PDF Document',
-    content: 'PDF document ready for viewing',
-    fileSize: formatFileSize(metadata.file_size),
-    format: 'PDF',
-    uploadedAt: metadata.upload_timestamp,
-    pageCount: metadata.page_count || 'Unknown',
-    pdfUrl: pdfUrl,
-    fileId: fileId
-  };
+  // Check if we have parsed PDF content
+  let pdfContent = null;
+  let hasParsedContent = false;
+  let wordCount = 0;
+  let error = null;
+  
+  try {
+    const response = await apiService.getParsedFile(fileId);
+    if (response.success && response.data.content) {
+      pdfContent = response.data.content;
+      hasParsedContent = pdfContent.trim().length > 0;
+      wordCount = pdfContent.split(/\s+/).filter(word => word.length > 0).length;
+    }
+  } catch (err) {
+    console.log('No parsed content available for PDF file:', err);
+    error = 'PDF content extraction failed or not available';
+  }
+  
+  // Return appropriate preview type based on content availability
+  if (hasParsedContent) {
+          return {
+        type: PREVIEW_TYPES.TEXT_CONTENT,
+        isPdfPreview: true,
+        title: metadata.original_filename || 'PDF Document',
+        content: pdfContent,
+        fullLength: pdfContent.length,
+      wordCount: wordCount,
+      fileSize: formatFileSize(metadata.file_size),
+      format: 'PDF',
+      uploadedAt: metadata.upload_timestamp,
+      pageCount: metadata.page_count || 'Unknown',
+      pdfUrl: pdfUrl,
+      fileId: fileId
+    };
+  } else {
+    return {
+      type: PREVIEW_TYPES.METADATA,
+      isPdfPreview: true,
+      title: metadata.original_filename || 'PDF Document',
+      content: 'PDF document ready for viewing',
+      fileSize: formatFileSize(metadata.file_size),
+      format: 'PDF',
+      uploadedAt: metadata.upload_timestamp,
+      pageCount: metadata.page_count || 'Unknown',
+      pdfUrl: pdfUrl,
+      fileId: fileId,
+      error: error
+    };
+  }
 }
 
 /**

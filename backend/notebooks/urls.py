@@ -10,6 +10,9 @@ from .views import (
     FileStatusStreamView,
     FileDeleteView,
     KnowledgeBaseView,
+    FileContentView,
+    FileRawView,
+    FileRawSimpleView,
 )
 
 urlpatterns = [
@@ -62,5 +65,26 @@ urlpatterns = [
         'notebooks/<int:notebook_id>/knowledge-base/',
         KnowledgeBaseView.as_view(),
         name='knowledge-base'
+    ),
+
+    # 6) file content serving (parsed content)
+    path(
+        'files/<str:file_id>/content/',
+        FileContentView.as_view(),
+        name='file-content'
+    ),
+
+    # 7) raw file serving (PDFs, videos, audio, etc.)
+    path(
+        'notebooks/<int:notebook_id>/files/<str:file_id>/raw/',
+        FileRawView.as_view(),
+        name='file-raw'
+    ),
+
+    # 8) simplified raw file serving (without notebook context)
+    path(
+        'files/<str:file_id>/raw/',
+        FileRawSimpleView.as_view(),
+        name='file-raw-simple'
     ),
 ]
