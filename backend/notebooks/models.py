@@ -32,7 +32,7 @@ class Notebook(models.Model):
 
 class Source(models.Model):
     """
-    A generic “source” that the user adds to a notebook:
+    A generic "source" that the user adds to a notebook:
     • File upload
     • URL
     • Pasted text
@@ -78,9 +78,30 @@ class Source(models.Model):
         return f"{self.get_source_type_display()} — {self.title or self.pk}"
 
 
+def user_notebook_source_upload_path(instance, filename):
+    """Generate notebook-specific upload path for source files."""
+    user_id = instance.source.notebook.user.pk
+    notebook_id = instance.source.notebook.pk
+    return f"source_uploads/{user_id}/{notebook_id}/%Y/%m/%d/{filename}"
+
+
+def user_notebook_pasted_text_path(instance, filename):
+    """Generate notebook-specific upload path for pasted text files."""
+    user_id = instance.source.notebook.user.pk
+    notebook_id = instance.source.notebook.pk
+    return f"pasted_text/{user_id}/{notebook_id}/%Y/%m/%d/{filename}"
+
+
+def user_knowledge_base_path(instance, filename):
+    """Generate user-wide knowledge base path for processed content."""
+    user_id = instance.user.pk
+    return f"knowledge_base/{user_id}/%Y/%m/%d/{filename}"
+
+
 class UploadedFile(models.Model):
     """
-    Stores any binary the user uploaded for a Source of type “file.”
+    Stores any binary the user uploaded for a Source of type "file."
+    These are notebook-specific raw files.
     """
     source = models.OneToOneField(
         Source,
@@ -88,8 +109,8 @@ class UploadedFile(models.Model):
         related_name="upload",
     )
     file = models.FileField(
-        upload_to="source_uploads/%Y/%m/%d/",
-        help_text="Original user-uploaded file (PDF, MP3, MP4, etc.)",
+        upload_to=user_notebook_source_upload_path,
+        help_text="Original user-uploaded file (PDF, MP3, MP4, etc.) - notebook specific",
     )
     content_type = models.CharField(
         max_length=100,
@@ -116,6 +137,7 @@ class UploadedFile(models.Model):
 class PastedTextFile(models.Model):
     """
     When the user pastes raw text, we write it out as a .txt and store it here.
+    These are notebook-specific.
     """
     source = models.OneToOneField(
         Source,
@@ -123,9 +145,9 @@ class PastedTextFile(models.Model):
         related_name="pasted_text_file",
     )
     file = models.FileField(
-        upload_to="pasted_text/%Y/%m/%d/",
+        upload_to=user_notebook_pasted_text_path,
         validators=[FileExtensionValidator(allowed_extensions=["txt"] )],
-        help_text="Auto-generated .txt of pasted content",
+        help_text="Auto-generated .txt of pasted content - notebook specific",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -145,6 +167,7 @@ class PastedTextFile(models.Model):
 class URLProcessingResult(models.Model):
     """
     Holds the result of crawling or downloading when the user provides a URL.
+    These are notebook-specific.
     """
     source = models.OneToOneField(
         Source,
@@ -213,36 +236,86 @@ class ProcessingJob(models.Model):
         return f"{self.job_type} [{self.status}] for Source {self.source_id}"
 
 
-# class SearchResult(models.Model):
-#     """
-#     (Optional) Stores snippets when the user “searches existing” sources.
-#     """
-#     source = models.ForeignKey(
-#         Source,
-#         on_delete=models.CASCADE,
-#         related_name="search_results",
-#     )
-#     snippet = models.TextField()
-#     metadata = models.JSONField(
-#         blank=True,
-#         null=True,
-#         help_text="Optional structured metadata about this snippet",
-#     )
-#     created_at = models.DateTimeField(auto_now_add=True)
+class KnowledgeBaseItem(models.Model):
+    """
+    User-wide knowledge base items that can be shared across notebooks.
+    These are the processed, searchable content items.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="knowledge_base_items",
+        help_text="Owner of this knowledge item"
+    )
+    title = models.CharField(
+        max_length=512,
+        help_text="Title or identifier for this knowledge item"
+    )
+    content_type = models.CharField(
+        max_length=50,
+        choices=[
+            ('text', 'Text Content'),
+            ('document', 'Document'),
+            ('webpage', 'Webpage'),
+            ('media', 'Media File'),
+        ],
+        default='text'
+    )
+    file = models.FileField(
+        upload_to=user_knowledge_base_path,
+        blank=True,
+        null=True,
+        validators=[FileExtensionValidator(allowed_extensions=["md", "txt"])],
+        help_text="Processed content file in the user's knowledge base",
+    )
+    content = models.TextField(
+        blank=True,
+        help_text="Inline text content if not stored as file",
+    )
+    metadata = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="Source metadata, processing info, etc.",
+    )
+    source_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="Hash of original content to detect duplicates",
+        db_index=True,
+    )
+    tags = models.JSONField(
+        default=list,
+        help_text="Tags for categorization and search",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
-#     def __str__(self):
-#         return self.snippet[:75] + ("…" if len(self.snippet) > 75 else "")
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['user', 'source_hash']),
+            models.Index(fields=['user', 'content_type']),
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.content_type})"
 
 
 class KnowledgeItem(models.Model):
     """
-    The final chunks of text or standalone .md/.txt files
-    imported into the notebook’s long-term store.
+    Links between notebooks and knowledge base items.
+    This allows sharing knowledge items across multiple notebooks.
     """
     notebook = models.ForeignKey(
         Notebook,
         on_delete=models.CASCADE,
         related_name="knowledge_items",
+    )
+    knowledge_base_item = models.ForeignKey(
+        KnowledgeBaseItem,
+        on_delete=models.CASCADE,
+        related_name="notebook_links",
     )
     source = models.ForeignKey(
         Source,
@@ -250,39 +323,26 @@ class KnowledgeItem(models.Model):
         blank=True,
         null=True,
         related_name="knowledge_items",
+        help_text="Original source that created this knowledge item (if any)"
     )
-    content = models.TextField(
+    added_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(
         blank=True,
-        help_text="Inline text for imported/pasted/URL-converted items",
+        help_text="Notebook-specific notes about this knowledge item"
     )
-    file = models.FileField(
-        upload_to="knowledge_items/%Y/%m/%d/",
-        blank=True,
-        null=True,
-        validators=[FileExtensionValidator(allowed_extensions=["md", "txt"])],
-        help_text="Standalone .md or .txt file, if this item was stored on disk",
-    )
-    metadata = models.JSONField(
-        blank=True,
-        null=True,
-        help_text="Optional structural metadata (headings, timestamps, etc.)",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["-added_at"]
+        unique_together = ['notebook', 'knowledge_base_item']
         indexes = [
-            models.Index(fields=["notebook", "source"]),
+            models.Index(fields=['notebook', '-added_at']),
         ]
 
     def clean(self):
-        super().clean()
-        if not (self.content or self.file):
-            raise ValidationError("Either `content` or `file` must be set.")
-        if self.content and self.file:
-            raise ValidationError("Provide either `content` or `file`, not both.")
+        # Ensure the knowledge base item belongs to the same user as the notebook
+        if self.knowledge_base_item and self.notebook:
+            if self.knowledge_base_item.user != self.notebook.user:
+                raise ValidationError("Knowledge base item must belong to the same user as the notebook")
 
     def __str__(self):
-        if self.file:
-            return os.path.basename(self.file.name)
-        return (self.content[:75] + "…") if len(self.content) > 75 else self.content
+        return f"{self.notebook.name} -> {self.knowledge_base_item.title}"

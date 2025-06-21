@@ -7,6 +7,7 @@ from .models import (
     URLProcessingResult,
     ProcessingJob,
     # SearchResult,
+    KnowledgeBaseItem,
     KnowledgeItem,
 )
 
@@ -104,12 +105,41 @@ class ProcessingJobAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "completed_at")
 
 
+@admin.register(KnowledgeBaseItem)
+class KnowledgeBaseItemAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "title", "content_type", "created_at")
+    list_filter = ("content_type", "created_at")
+    search_fields = ("title", "content", "user__username")
+    readonly_fields = ("created_at", "updated_at", "source_hash")
+    fieldsets = (
+        (None, {
+            'fields': ('user', 'title', 'content_type')
+        }),
+        ('Content', {
+            'fields': ('file', 'content', 'tags')
+        }),
+        ('Metadata', {
+            'fields': ('metadata', 'source_hash'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        })
+    )
+
+
 @admin.register(KnowledgeItem)
 class KnowledgeItemAdmin(admin.ModelAdmin):
-    list_display = ("id", "notebook", "source", "created_at")
-    list_filter = ("notebook",)
-    search_fields = ("content",)
-    readonly_fields = ("created_at",)
+    list_display = ("id", "notebook", "knowledge_base_item", "source", "added_at")
+    list_filter = ("notebook", "added_at")
+    search_fields = ("knowledge_base_item__title", "notebook__name", "notes")
+    readonly_fields = ("added_at",)
+    
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related(
+            'notebook', 'knowledge_base_item', 'source'
+        )
 
 
 # Register remaining models in default fashion

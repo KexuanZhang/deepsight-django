@@ -1,5 +1,5 @@
 import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback, useMemo } from "react";
-import { ArrowUpDown, Trash2, Plus, ChevronLeft, RefreshCw, CheckCircle, AlertCircle, Clock, X, Upload, Link2, FileText, Globe, Youtube, Group, File, Music, Video, Presentation, Loader2, Eye, ChevronsUp } from "lucide-react";
+import { ArrowUpDown, Trash2, Plus, ChevronLeft, RefreshCw, CheckCircle, AlertCircle, Clock, X, Upload, Link2, FileText, Globe, Youtube, Group, File, Music, Video, Presentation, Loader2, Eye } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -74,8 +74,13 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
   const [isDragOver, setIsDragOver] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [pasteText, setPasteText] = useState('');
-  const [activeTab, setActiveTab] = useState('file'); // 'file', 'link', 'text'
+  const [activeTab, setActiveTab] = useState('file'); // 'file', 'link', 'text', 'knowledge'
   const [urlProcessingType, setUrlProcessingType] = useState('website'); // 'website' or 'media'
+  
+  // Knowledge base management state
+  const [knowledgeBaseItems, setKnowledgeBaseItems] = useState([]);
+  const [isLoadingKnowledgeBase, setIsLoadingKnowledgeBase] = useState(false);
+  const [selectedKnowledgeItems, setSelectedKnowledgeItems] = useState(new Set());
 
   // Sort and group state
   const [sortOrder, setSortOrder] = useState('newest'); // 'newest' or 'oldest'
@@ -363,20 +368,20 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         }));
       }
       
-      // Update source status
+      // Update source status while preserving original file display information
       setSources(prev => prev.map(source => 
         source.id === sourceId ? {
           ...source,
           parsing_status: status,
-          authors: job_details ? 
-            generateFileDescription({
-              ...source.metadata,
-              parsing_status: status,
-              content_length: job_details.result?.content_length || source.metadata?.content_length
-            }) : 
-            source.authors,
-          metadata: job_details?.result?.metadata || source.metadata,
-          error_message: job_details?.error
+          // Preserve original display information, don't change authors/title
+          metadata: {
+            ...source.metadata,
+            ...(job_details?.result?.metadata || {}),
+            parsing_status: status
+          },
+          error_message: job_details?.error,
+          // Store the file_id when processing completes successfully
+          ...(status === 'completed' && job_details?.result?.file_id ? { file_id: job_details.result.file_id } : {})
         } : source
       ));
       
@@ -395,10 +400,8 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           return newProgress;
         });
         
-        // If completed successfully, reload the file list to get updated data
-        if (status === 'completed') {
-          setTimeout(loadParsedFiles, 1000);
-        }
+        // Don't reload the entire file list - we already have the information we need
+        // This preserves the original file display information
       }
     };
 
@@ -412,12 +415,12 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         sseConnectionsRef.current.delete(uploadFileId);
       }
       
-      // Update source to show error after connection failure
+      // Update source to show error after connection failure while preserving original display information
       setSources(prev => prev.map(source => 
         source.id === sourceId ? {
           ...source,
           parsing_status: "error",
-          authors: source.authors.replace(/Processing|Queued/, "Connection Failed"),
+          // Preserve original display information, don't change authors/title
           error_message: "Lost connection to server during processing"
         } : source
       ));
@@ -436,8 +439,8 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     };
 
     try {
-      // Create SSE connection
-      const eventSource = apiService.createParsingStatusStream(uploadFileId, onMessage, onError, onClose);
+      // Create SSE connection with correct parameter order
+      const eventSource = apiService.createParsingStatusStream(notebookId, uploadFileId, onMessage, onError, onClose);
       sseConnectionsRef.current.set(uploadFileId, eventSource);
       console.log('SSE connection established for', uploadFileId);
     } catch (error) {
@@ -455,17 +458,20 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           const { data } = response;
           const status = data.status;
           
-          // Update source status
+          // Update source status while preserving original display information
           setSources(prev => prev.map(source => 
             source.id === sourceId ? {
               ...source,
               parsing_status: status,
-              authors: source.authors.replace(/Processing|Parsing/, 
-                status === 'completed' ? 'Completed' : 
-                status === 'error' ? 'Failed' : 'Processing'
-              ),
-              metadata: data.metadata || source.metadata,
-              error_message: status === 'error' ? 'Processing failed' : undefined
+              // Preserve original display information, don't change authors/title
+              metadata: {
+                ...source.metadata,
+                ...(data.metadata || {}),
+                parsing_status: status
+              },
+              error_message: status === 'error' ? 'Processing failed' : undefined,
+              // Store the file_id when processing completes successfully
+              ...(status === 'completed' && data.file_id ? { file_id: data.file_id } : {})
             } : source
           ));
           
@@ -481,12 +487,12 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         }
       } catch (error) {
         console.error('URL status polling error:', error);
-        // Update source to show error
+        // Update source to show error while preserving original display information
         setSources(prev => prev.map(source => 
           source.id === sourceId ? {
             ...source,
             parsing_status: "error",
-            authors: source.authors.replace(/Processing|Parsing/, 'Failed'),
+            // Preserve original display information, don't change authors/title
             error_message: 'Connection failed during processing'
           } : source
         ));
@@ -565,7 +571,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         let result;
         if (source.upload_file_id) {
           console.log('Using deleteFileByUploadId for:', source.upload_file_id);
-          result = await apiService.deleteFileByUploadId(source.upload_file_id);
+          result = await apiService.deleteFileByUploadId(source.upload_file_id, notebookId);
           
           // Stop any SSE connection for this file
           const eventSource = sseConnectionsRef.current.get(source.upload_file_id);
@@ -575,7 +581,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           }
         } else if (source.file_id) {
           console.log('Using deleteParsedFile for:', source.file_id);
-          result = await apiService.deleteParsedFile(source.file_id);
+          result = await apiService.deleteParsedFile(source.file_id, notebookId);
         } else {
           console.warn('Source has neither upload_file_id nor file_id:', source);
           continue;
@@ -609,11 +615,33 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     }
   };
 
+  // Load knowledge base items
+  const loadKnowledgeBase = async () => {
+    try {
+      setIsLoadingKnowledgeBase(true);
+      const response = await apiService.getKnowledgeBase(notebookId);
+      
+      if (response.success) {
+        setKnowledgeBaseItems(response.data);
+      } else {
+        throw new Error(response.error || "Failed to load knowledge base");
+      }
+    } catch (error) {
+      console.error('Error loading knowledge base:', error);
+      setError(`Failed to load knowledge base: ${error.message}`);
+    } finally {
+      setIsLoadingKnowledgeBase(false);
+    }
+  };
+
   const handleAddSource = () => {
     setShowUploadModal(true);
     setActiveTab('file');
     setLinkUrl('');
     setPasteText('');
+    setSelectedKnowledgeItems(new Set());
+    // Load knowledge base when modal opens
+    loadKnowledgeBase();
   };
 
   // Modified file upload handler
@@ -723,15 +751,14 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       if (response.success) {
         const { data } = response;
         
-        // Update source with response data while preserving principle URL display
+        // Update source with response data while preserving original display information
         setSources((prev) => prev.map(source => 
           source.id === newSource.id ? {
             ...source,
             file_id: data.file_id,
             type: "parsing",
             parsing_status: data.status || 'completed',
-            // Keep principle URL info in authors display
-            authors: `${processingTypeLabel} • ${data.content_length ? `${(data.content_length / 1000).toFixed(1)}k chars` : 'Unknown size'}`,
+            // Preserve original display information, don't change authors/title
             metadata: {
               ...source.metadata,
               ...data,
@@ -763,12 +790,12 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     } catch (error) {
       console.error('Error processing URL:', error);
       
-      // Update source to show error
+      // Update source to show error while preserving original display information
       setSources((prev) => prev.map(source => 
         source.upload_file_id === uploadFileId ? {
           ...source,
           parsing_status: "error",
-          authors: `URL • ${urlProcessingType === 'media' ? 'Media processing' : 'Content parsing'} failed`,
+          // Preserve original display information, don't change authors/title
           error_message: error.message
         } : source
       ));
@@ -848,8 +875,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
             file_id: data.file_id,
             type: "parsing",
             parsing_status: data.status,
-            // Keep principle text info in authors display
-            authors: `TXT • ${textSizeKB}k chars`,
+            // Preserve original display information, don't change authors/title
             metadata: {
               ...source.metadata,
               file_size: data.file_size,
@@ -859,7 +885,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           } : source
         ));
         
-        startStatusMonitoring(notebookId, uploadFileId);
+        startStatusMonitoring(uploadFileId, newSource.id);
         
       } else {
         throw new Error(response.error || 'Text upload failed');
@@ -872,7 +898,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         source.id === newSource.id ? {
           ...source,
           parsing_status: "error",
-          authors: `TXT • Upload failed`,
+          // Preserve original display information, don't change authors/title
           error_message: error.message
         } : source
       ));
@@ -890,7 +916,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
   const validateFile = (file) => {
     const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav"];
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
-    const maxSize = 3 * 1024 * 1024 * 1024; // 3GB
+    const maxSize = 100 * 1024 * 1024; // 100MB
     const minSize = 100; // 100 bytes minimum
     
     const errors = [];
@@ -905,7 +931,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     
     // Check file size
     if (file.size > maxSize) {
-      errors.push(`File size (${(file.size / (1024 * 1024 * 1024)).toFixed(2)}GB) exceeds maximum allowed size of 3GB`);
+      errors.push(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds maximum allowed size of 100MB`);
     } else if (file.size < minSize) {
       warnings.push("File is very small and may be empty");
     }
@@ -996,30 +1022,30 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         console.log("response", response)
         
         if (response.success) {
-          // const { data } = response;
-          // console.log("data", data)
-          
-          // Update the source with response information while preserving principle file display
+          // Update the source with response information while preserving original display information
           setSources((prev) => prev.map(source => 
             source.id === newSource.id ? {
               ...source,
               file_id: response.file_id,
-              type: "parsing",
-              // parsing_status: data.status,
-
-              // Keep principle file info in authors (original size, not processed size)
-              authors: `${validation.extension.toUpperCase()} • ${(source.originalFile?.size / (1024 * 1024)).toFixed(1)} MB`,
+              type: "parsed",
+              parsing_status: "completed",
+              // Preserve original display information, don't change authors/title
               metadata: {
                 ...source.metadata,
-                // file_size: data.file_size,
-                // file_extension: data.file_extension,
                 processing_completed: true
               }
             } : source
           ));
           
-          // Start status polling for real-time updates
-          startStatusMonitoring(notebookId, uploadFileId);
+          // Clear upload progress since upload is complete
+          setUploadProgress(prev => {
+            const newProgress = { ...prev };
+            delete newProgress[uploadFileId];
+            return newProgress;
+          });
+          
+          // Since the upload completed immediately, no need for SSE monitoring
+          // We already have the file_id and original display information is preserved
           
         } else {
           // Handle upload failure
@@ -1028,12 +1054,12 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       } catch (error) {
         console.error('Error uploading file:', error);
         
-        // Update source to show error
+        // Update source to show error while preserving original display information
         setSources((prev) => prev.map(source => 
           source.id === newSource.id ? {
             ...source,
             parsing_status: "error",
-            authors: `${validation.extension.toUpperCase()} • Upload failed`,
+            // Preserve original display information, don't change authors/title
             error_message: error.message
           } : source
         ));
@@ -1124,6 +1150,90 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     setPreviewSource(null);
   };
 
+  // Knowledge base management functions
+  const handleKnowledgeItemSelect = (itemId) => {
+    setSelectedKnowledgeItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleLinkSelectedKnowledgeItems = async () => {
+    if (selectedKnowledgeItems.size === 0) {
+      setError('Please select at least one knowledge base item to link');
+      return;
+    }
+
+    try {
+      setError(null);
+      const linkPromises = Array.from(selectedKnowledgeItems).map(itemId =>
+        apiService.linkKnowledgeBaseItem(notebookId, itemId)
+      );
+
+      const results = await Promise.all(linkPromises);
+      const failedLinks = results.filter(result => !result.success);
+
+      if (failedLinks.length === 0) {
+        // All links successful
+        setShowUploadModal(false);
+        setSelectedKnowledgeItems(new Set());
+        // Refresh the sources list to show newly linked items
+        setTimeout(loadParsedFiles, 500);
+      } else {
+        throw new Error(`Failed to link ${failedLinks.length} item(s)`);
+      }
+    } catch (error) {
+      console.error('Error linking knowledge base items:', error);
+      setError(`Failed to link items: ${error.message}`);
+    }
+  };
+
+  const handleDeleteKnowledgeBaseItems = async () => {
+    if (selectedKnowledgeItems.size === 0) {
+      setError('Please select at least one knowledge base item to delete');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to permanently delete ${selectedKnowledgeItems.size} knowledge base item(s)? This action cannot be undone and will remove them from all notebooks.`)) {
+      return;
+    }
+
+    try {
+      setError(null);
+      const deletePromises = Array.from(selectedKnowledgeItems).map(itemId =>
+        apiService.deleteKnowledgeBaseItem(notebookId, itemId)
+      );
+
+      const results = await Promise.all(deletePromises);
+      const successfulDeletes = Array.from(selectedKnowledgeItems).filter((_, index) => 
+        results[index].success !== false
+      );
+
+      // Remove successfully deleted items from the knowledge base list
+      setKnowledgeBaseItems(prev => 
+        prev.filter(item => !successfulDeletes.includes(item.id))
+      );
+      
+      setSelectedKnowledgeItems(new Set());
+      
+      // Refresh the sources list in case any were linked to current notebook
+      setTimeout(loadParsedFiles, 500);
+
+      const failedDeletes = results.filter(result => result.success === false);
+      if (failedDeletes.length > 0) {
+        setError(`Failed to delete ${failedDeletes.length} item(s)`);
+      }
+    } catch (error) {
+      console.error('Error deleting knowledge base items:', error);
+      setError(`Failed to delete items: ${error.message}`);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col relative">
       {/* Header */}
@@ -1159,20 +1269,19 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           </Button>
           {onToggleCollapse && (
             <Button
-              variant="outline"
+              variant="ghost"
               size="icon"
-              className={`h-7 w-7 border-red-500 hover:border-red-600 hover:bg-red-50 text-red-600 hover:text-red-700 shadow-sm hover:shadow-md transition-all duration-200 ${
-                !isCollapsed ? 'ring-2 ring-red-300 ring-opacity-50' : ''
-              }`}
+              className="h-7 w-7 text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all duration-200 group"
               onClick={onToggleCollapse}
-              title={isCollapsed ? "Expand Sources" : "Collapse Sources"}
+              title="Collapse Sources Panel"
             >
               <motion.div
-                animate={{ rotate: isCollapsed ? 180 : 0 }}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                transition={{ duration: 0.2 }}
                 className="flex items-center justify-center"
               >
-                <ChevronLeft className="h-4 w-4 text-red-600 font-bold" />
+                <ChevronLeft className="h-4 w-4 group-hover:text-red-600 transition-colors duration-200" />
               </motion.div>
             </Button>
           )}
@@ -1511,7 +1620,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         />
         
         <p className="text-xs text-gray-400 mt-2 text-center">
-          Supports PDF, TXT, MD, PPT, MP3, MP4, WAV (max 3 GB)
+          Supports PDF, TXT, MD, PPT, MP3, MP4, WAV (max 100MB)
         </p>
         <p className="text-xs text-gray-300 mt-1 text-center">
           💡 Files shown are original uploads • Extracted content used for processing
@@ -1537,7 +1646,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold text-white">Upload sources</h2>
                 <Button
                   variant="ghost"
@@ -1549,42 +1658,69 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                 </Button>
               </div>
 
-              {/* Main Upload Area */}
-              <div
-                className={`border-2 border-dashed rounded-xl p-12 mb-8 text-center transition-all duration-200 ${
-                  isDragOver 
-                    ? 'border-blue-400 bg-blue-900/20' 
-                    : 'border-gray-600 bg-gray-800/50'
-                }`}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-              >
-                <div className="flex flex-col items-center space-y-4">
-                  <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
-                    <Upload className="h-8 w-8 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-semibold text-white mb-2">Upload sources</h3>
-                    <p className="text-gray-400">
-                      Drag & drop or{' '}
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="text-blue-400 hover:text-blue-300 underline"
-                      >
-                        choose file to upload
-                      </button>
-                    </p>
-                  </div>
-                </div>
-                <p className="text-sm text-gray-500 mt-6">
-                  Supported file types: PDF, .txt, Markdown, Audio (mp3, wav), Video (mp4)
-                </p>
+              {/* Tab Navigation - Fixed at top */}
+              <div className="flex space-x-1 mb-8 bg-gray-800 p-1 rounded-lg">
+                <button
+                  onClick={() => setActiveTab('file')}
+                  className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'file'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  }`}
+                >
+                  Upload Files
+                </button>
+                <button
+                  onClick={() => setActiveTab('knowledge')}
+                  className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'knowledge'
+                      ? 'bg-purple-600 text-white'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  }`}
+                >
+                  知识库
+                </button>
               </div>
 
+              {/* Main Upload Area - Only show when not in knowledge base mode */}
+              {activeTab !== 'knowledge' && (
+                <div
+                  className={`border-2 border-dashed rounded-xl p-12 mb-8 text-center transition-all duration-200 ${
+                    isDragOver 
+                      ? 'border-blue-400 bg-blue-900/20' 
+                      : 'border-gray-600 bg-gray-800/50'
+                  }`}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                >
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
+                      <Upload className="h-8 w-8 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold text-white mb-2">Upload sources</h3>
+                      <p className="text-gray-400">
+                        Drag & drop or{' '}
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="text-blue-400 hover:text-blue-300 underline"
+                        >
+                          choose file to upload
+                        </button>
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-6">
+                    Supported file types: PDF, .txt, Markdown, Audio (mp3, wav), Video (mp4)
+                  </p>
+                </div>
+              )}
+
               {/* Upload Options */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {activeTab !== 'knowledge' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Link Section */}
                 <div className="bg-gray-800 rounded-xl p-6">
                   <div className="flex items-center space-x-3 mb-4">
@@ -1706,6 +1842,171 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   </div>
                 </div>
               </div>
+              )}
+
+              {/* Knowledge Base Management */}
+              {activeTab === 'knowledge' && (
+                <div className="space-y-6">
+                  {/* Knowledge Base Header */}
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 bg-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <File className="h-8 w-8 text-white" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-white mb-2">知识库管理</h3>
+                    <p className="text-gray-400">
+                      管理您的知识库项目 • 链接到当前笔记本或永久删除
+                    </p>
+                  </div>
+                  
+                  <div className="bg-gray-800 rounded-xl p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-md font-medium text-white">知识库项目</h4>
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          onClick={loadKnowledgeBase}
+                          variant="outline"
+                          size="sm"
+                          className="border-gray-600 text-gray-300 hover:bg-gray-700"
+                          disabled={isLoadingKnowledgeBase}
+                        >
+                          {isLoadingKnowledgeBase ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Knowledge Base Items List */}
+                    <div className="space-y-3">
+                      {isLoadingKnowledgeBase ? (
+                        <div className="flex items-center justify-center py-8">
+                          <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+                          <span className="ml-2 text-gray-400">Loading knowledge base...</span>
+                        </div>
+                      ) : knowledgeBaseItems.length === 0 ? (
+                        <div className="text-center py-8 text-gray-400">
+                          <File className="h-12 w-12 mx-auto mb-2 text-gray-500" />
+                          <p>No items in knowledge base</p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Select All */}
+                          <div className="flex items-center justify-between p-3 bg-gray-700 rounded-lg">
+                            <label className="flex items-center space-x-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedKnowledgeItems.size === knowledgeBaseItems.length && knowledgeBaseItems.length > 0}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedKnowledgeItems(new Set(knowledgeBaseItems.map(item => item.id)));
+                                  } else {
+                                    setSelectedKnowledgeItems(new Set());
+                                  }
+                                }}
+                                className="h-4 w-4 rounded border-gray-500 text-purple-600 focus:ring-purple-500"
+                              />
+                              <span className="text-sm text-gray-300">
+                                Select All ({knowledgeBaseItems.length} items)
+                              </span>
+                            </label>
+                            {selectedKnowledgeItems.size > 0 && (
+                              <Badge variant="outline" className="border-purple-600 text-purple-400">
+                                {selectedKnowledgeItems.size} selected
+                              </Badge>
+                            )}
+                          </div>
+
+                          {/* Knowledge Base Items */}
+                          <div className="max-h-64 overflow-y-auto space-y-2">
+                            {knowledgeBaseItems.map((item) => (
+                              <div
+                                key={item.id}
+                                className={`p-3 rounded-lg border transition-colors cursor-pointer ${
+                                  selectedKnowledgeItems.has(item.id)
+                                    ? 'bg-purple-900/30 border-purple-600'
+                                    : item.linked_to_notebook
+                                    ? 'bg-gray-700 border-gray-600'
+                                    : 'bg-gray-700 border-gray-600 hover:border-gray-500'
+                                }`}
+                                onClick={() => !item.linked_to_notebook && handleKnowledgeItemSelect(item.id)}
+                              >
+                                <div className="flex items-center space-x-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedKnowledgeItems.has(item.id)}
+                                    onChange={() => handleKnowledgeItemSelect(item.id)}
+                                    disabled={item.linked_to_notebook}
+                                    className="h-4 w-4 rounded border-gray-500 text-purple-600 focus:ring-purple-500"
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center space-x-2">
+                                      <h4 className="text-sm font-medium text-white truncate">
+                                        {item.title}
+                                      </h4>
+                                      {item.linked_to_notebook && (
+                                        <Badge variant="outline" className="border-green-600 text-green-400 text-xs">
+                                          Already linked
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                      {item.content_type} • {new Date(item.created_at).toLocaleDateString()}
+                                    </p>
+                                    {item.tags && item.tags.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {item.tags.slice(0, 3).map((tag, index) => (
+                                          <span
+                                            key={index}
+                                            className="px-1.5 py-0.5 bg-gray-600 text-gray-300 text-xs rounded"
+                                          >
+                                            {tag}
+                                          </span>
+                                        ))}
+                                        {item.tags.length > 3 && (
+                                          <span className="text-xs text-gray-500">
+                                            +{item.tags.length - 3} more
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Action Buttons */}
+                    {selectedKnowledgeItems.size > 0 && (
+                      <div className="flex space-x-3 mt-6 pt-4 border-t border-gray-700">
+                        <Button
+                          onClick={handleLinkSelectedKnowledgeItems}
+                          className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
+                          disabled={Array.from(selectedKnowledgeItems).every(id => 
+                            knowledgeBaseItems.find(item => item.id === id)?.linked_to_notebook
+                          )}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Link to Notebook ({selectedKnowledgeItems.size})
+                        </Button>
+                        <Button
+                          onClick={handleDeleteKnowledgeBaseItems}
+                          variant="outline"
+                          className="border-red-600 text-red-400 hover:bg-red-900/20"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete ({selectedKnowledgeItems.size})
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}

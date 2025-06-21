@@ -256,69 +256,45 @@ const FilePreview = ({ source, isOpen, onClose }) => {
           }}
         >
           <source 
-            src={state.preview.audioUrl || getRawFileUrl(source?.file_id)} 
-            type={`audio/${state.preview.format.toLowerCase()}`} 
+            src={preview.audioUrl || getRawFileUrl(source?.file_id)} 
+            // type={`audio/${preview.format.toLowerCase()}`} 
           />
           Your browser does not support the audio element.
         </audio>
         
-        {state.audioError && (
-          <div className="mt-2 text-xs text-center">
+        <div className="mt-2 text-xs text-center">
+          {audioError ? (
             <span className="text-red-500">⚠️ Audio file could not be loaded</span>
-          </div>
-        )}
+          ) : audioLoaded ? (
+            <span className="text-green-600">✅ Audio ready for playback</span>
+          ) : (
+            <span className="text-gray-500">🔄 Loading audio...</span>
+          )}
+        </div>
       </div>
       
-      {/* Transcript Content Display */}
-      {state.preview.hasTranscript && (
-        <div className="bg-white rounded-lg border border-gray-200">
-          <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
-                  <FileText className="h-4 w-4 text-white" />
-                </div>
-                <div className="flex-1">
-                  <h4 className="text-base font-semibold text-gray-900">Audio Transcript</h4>
-                  {/* Document Stats */}
-                  <div className="flex flex-wrap gap-2 mt-2 -ml-1">
-                    <Badge variant="secondary">
-                      <FileText className="h-3 w-3 mr-1" />
-                      {state.preview.wordCount} words
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="p-6 max-h-[600px] overflow-y-auto">
-            <MarkdownContent content={state.preview.content} />
-          </div>
-        </div>
-      )}
-
       {/* File Information */}
       <div className="bg-gray-50 rounded-lg p-4">
         <h4 className="text-sm font-medium text-gray-900 mb-3">File Information</h4>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <span className="text-sm font-medium text-gray-700">Format:</span>
-            <p className="text-sm text-gray-600">{state.preview.format}</p>
+            <p className="text-sm text-gray-600">{preview.format}</p>
           </div>
           <div>
             <span className="text-sm font-medium text-gray-700">File Size:</span>
-            <p className="text-sm text-gray-600">{state.preview.fileSize}</p>
+            <p className="text-sm text-gray-600">{preview.fileSize}</p>
           </div>
-          {state.preview.duration !== 'Unknown' && (
+          {preview.duration !== 'Unknown' && (
             <div>
               <span className="text-sm font-medium text-gray-700">Duration:</span>
-              <p className="text-sm text-gray-600">{state.preview.duration}</p>
+              <p className="text-sm text-gray-600">{preview.duration}</p>
             </div>
           )}
-          {state.preview.sampleRate !== 'Unknown' && (
+          {preview.sampleRate !== 'Unknown' && (
             <div>
               <span className="text-sm font-medium text-gray-700">Sample Rate:</span>
-              <p className="text-sm text-gray-600">{state.preview.sampleRate}</p>
+              <p className="text-sm text-gray-600">{preview.sampleRate}</p>
             </div>
           )}
         </div>
@@ -349,79 +325,57 @@ const FilePreview = ({ source, isOpen, onClose }) => {
           style={{ maxHeight: '400px' }}
           onError={(e) => {
             console.log('Video load error:', e);
-            updateState({ videoError: true });
+            setVideoError(true);
           }}
           onLoadedMetadata={() => {
-            updateState({ videoLoaded: true, videoError: false });
+            setVideoLoaded(true);
+            setVideoError(false);
           }}
           onCanPlay={() => {
-            updateState({ videoLoaded: true, videoError: false });
+            setVideoLoaded(true);
+            setVideoError(false);
           }}
         >
           <source 
-            src={state.preview.videoUrl || getRawFileUrl(source?.file_id)} 
-            type={`video/${state.preview.format.toLowerCase()}`} 
+            src={preview.videoUrl || getRawFileUrl(source?.file_id)} 
+            // type={`video/${preview.format.toLowerCase()}`} 
           />
           Your browser does not support the video element.
         </video>
         
-        {state.videoError && (
-          <div className="mt-2 text-xs text-center">
+        <div className="mt-2 text-xs text-center">
+          {videoError ? (
             <span className="text-red-500">⚠️ Video file could not be loaded</span>
-          </div>
-        )}
+          ) : videoLoaded ? (
+            <span className="text-green-600">✅ Video ready for playback</span>
+          ) : (
+            <span className="text-gray-500">🔄 Loading video...</span>
+          )}
+        </div>
       </div>
       
-      {/* Transcript Content Display */}
-      {state.preview.hasTranscript && (
-        <div className="bg-white rounded-lg border border-gray-200">
-          <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
-                  <FileText className="h-4 w-4 text-white" />
-                </div>
-                <div className="flex-1">
-                  <h4 className="text-base font-semibold text-gray-900">Video Transcript</h4>
-                  {/* Document Stats */}
-                  <div className="flex flex-wrap gap-2 mt-2 -ml-1">
-                    <Badge variant="secondary">
-                      <FileText className="h-3 w-3 mr-1" />
-                      {state.preview.wordCount} words
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="p-6 max-h-[600px] overflow-y-auto">
-            <MarkdownContent content={state.preview.content} />
-          </div>
-        </div>
-      )}
-
       {/* Video Information */}
       <div className="bg-gray-50 rounded-lg p-4">
         <h4 className="text-sm font-medium text-gray-900 mb-3">Video Information</h4>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <span className="text-sm font-medium text-gray-700">Format:</span>
-            <p className="text-sm text-gray-600">{state.preview.format}</p>
+            <p className="text-sm text-gray-600">{preview.format}</p>
           </div>
           <div>
             <span className="text-sm font-medium text-gray-700">File Size:</span>
-            <p className="text-sm text-gray-600">{state.preview.fileSize}</p>
+            <p className="text-sm text-gray-600">{preview.fileSize}</p>
           </div>
-          {state.preview.duration !== 'Unknown' && (
+          {preview.duration !== 'Unknown' && (
             <div>
               <span className="text-sm font-medium text-gray-700">Duration:</span>
-              <p className="text-sm text-gray-600">{state.preview.duration}</p>
+              <p className="text-sm text-gray-600">{preview.duration}</p>
             </div>
           )}
-          {state.preview.resolution !== 'Unknown' && (
+          {preview.resolution !== 'Unknown' && (
             <div>
               <span className="text-sm font-medium text-gray-700">Resolution:</span>
-              <p className="text-sm text-gray-600">{state.preview.resolution}</p>
+              <p className="text-sm text-gray-600">{preview.resolution}</p>
             </div>
           )}
         </div>
@@ -429,92 +383,90 @@ const FilePreview = ({ source, isOpen, onClose }) => {
     </div>
   );
 
-
-
-  const renderPdfContentPreview = () => (
+  const renderPdfPreview = () => (
     <div className="space-y-6">
-      {/* PDF Header with Action Buttons */}
+      {/* PDF Viewer Section */}
       <div className="bg-gradient-to-r from-red-50 to-orange-50 rounded-lg p-4 border border-red-200">
-        <div className="flex items-start justify-between">
-                      <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0">
-                <FileText className="h-5 w-5 text-white" />
-              </div>
-              <div className="flex-1">
-                <h4 className="text-base font-semibold text-gray-900 mb-3">PDF Document</h4>
-                {/* Document Stats - aligned with title */}
-                <div className="flex flex-wrap gap-2 -ml-1">
-                  <Badge variant="secondary">
-                    <FileText className="h-3 w-3 mr-1" />
-                    {state.preview.wordCount} words
-                  </Badge>
-                  <Badge variant="secondary">
+        <div className="flex items-center space-x-3 mb-3">
+          <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
+            <FileText className="h-5 w-5 text-white" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-medium text-gray-900">PDF Viewer</h4>
+            <p className="text-xs text-gray-600">View the PDF document directly in your browser</p>
+          </div>
+        </div>
+        
+        {/* PDF Embed */}
+        <div className="relative bg-white rounded-lg border-2 border-gray-200" style={{ height: '700px' }}>
+          {!pdfError ? (
+            <>
+              <iframe
+                src={`${preview.pdfUrl || getRawFileUrl(source?.file_id)}#toolbar=1&navpanes=1&scrollbar=1`}
+                className="w-full h-full rounded-lg"
+                title="PDF Preview"
+                onLoad={() => {
+                  setPdfLoaded(true);
+                  setPdfError(false);
+                }}
+                onError={() => {
+                  console.log('PDF load error');
+                  setPdfError(true);
+                }}
+              />
+              
+              {/* Alternative embed for better compatibility */}
+              <object
+                data={preview.pdfUrl || getRawFileUrl(source?.file_id)}
+                type="application/pdf"
+                className="w-full h-full rounded-lg"
+                style={{ display: 'none' }}
+              >
+                <embed
+                  src={preview.pdfUrl || getRawFileUrl(source?.file_id)}
+                  type="application/pdf"
+                  className="w-full h-full rounded-lg"
+                />
+              </object>
+            </>
+          ) : (
+            /* Fallback for browsers that don't support PDF viewing */
+            <div className="flex items-center justify-center bg-gray-50 rounded-lg h-full">
+              <div className="text-center">
+                <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-600 mb-4">PDF preview not available in this browser</p>
+                <div className="space-y-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(preview.pdfUrl || getRawFileUrl(source?.file_id), '_blank')}
+                    className="text-xs mr-2"
+                  >
+                    <ExternalLink className="h-3 w-3 mr-1" />
+                    Open PDF in new tab
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const downloadUrl = (preview.pdfUrl || getRawFileUrl(source?.file_id)) + '?download=true';
+                      const link = document.createElement('a');
+                      link.href = downloadUrl;
+                      link.download = preview.title || 'document.pdf';
+                      link.click();
+                    }}
+                    className="text-xs"
+                  >
                     <HardDrive className="h-3 w-3 mr-1" />
-                    {state.preview.fileSize}
-                  </Badge>
+                    Download PDF
+                  </Button>
                 </div>
               </div>
             </div>
-          <div className="flex items-center h-full pt-2">
-            <Button
-              size="sm"
-              variant="default"
-              onClick={() => window.open(state.preview.pdfUrl, '_blank')}
-              className="text-xs font-medium"
-            >
-              <ExternalLink className="h-3 w-3 mr-1.5" />
-              Open PDF
-            </Button>
-          </div>
-        </div>
-      </div>
-      
-      {/* Parsed Content Display */}
-      <div className="bg-white rounded-lg border border-gray-200">
-        <div className="p-6 max-h-[600px] overflow-y-auto">
-          <MarkdownContent content={state.preview.content} />
-          {state.preview.fullLength > 2000 && (
-            <div className="mt-6 pt-4 border-t border-gray-200">
-              <p className="text-xs text-gray-500 text-center">
-                Showing first 2,000 characters. Open the PDF for complete content.
-              </p>
-            </div>
           )}
         </div>
-      </div>
-    </div>
-  );
-
-  const renderPdfMetadataPreview = () => (
-    <div className="space-y-6">
-      {/* PDF Error State */}
-      <div className="bg-gradient-to-r from-red-50 to-orange-50 rounded-lg p-4 border border-red-200">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
-              <FileText className="h-5 w-5 text-white" />
-            </div>
-            <div className="flex-1">
-              <h4 className="text-sm font-medium text-gray-900">PDF Document</h4>
-              <p className="text-xs text-gray-600">Content extraction unavailable</p>
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant="default"
-            onClick={() => window.open(state.preview.pdfUrl, '_blank')}
-            className="text-xs"
-          >
-            <ExternalLink className="h-3 w-3 mr-1" />
-            Open PDF
-          </Button>
-        </div>
         
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
-          <p className="text-sm text-yellow-800">
-            {state.preview.error || 'PDF content could not be extracted. Click "Open PDF" to view the original document.'}
-          </p>
-        </div>
+
       </div>
       
       {/* PDF Information */}
@@ -523,22 +475,22 @@ const FilePreview = ({ source, isOpen, onClose }) => {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <span className="text-sm font-medium text-gray-700">Format:</span>
-            <p className="text-sm text-gray-600">{state.preview.format}</p>
+            <p className="text-sm text-gray-600">{preview.format}</p>
           </div>
           <div>
             <span className="text-sm font-medium text-gray-700">File Size:</span>
-            <p className="text-sm text-gray-600">{state.preview.fileSize}</p>
+            <p className="text-sm text-gray-600">{preview.fileSize}</p>
           </div>
-          {state.preview.pageCount !== 'Unknown' && (
+          {preview.pageCount !== 'Unknown' && (
             <div>
               <span className="text-sm font-medium text-gray-700">Pages:</span>
-              <p className="text-sm text-gray-600">{state.preview.pageCount}</p>
+              <p className="text-sm text-gray-600">{preview.pageCount}</p>
             </div>
           )}
-          {state.preview.uploadedAt && (
+          {preview.uploadedAt && (
             <div>
               <span className="text-sm font-medium text-gray-700">Uploaded:</span>
-              <p className="text-sm text-gray-600">{formatDate(state.preview.uploadedAt)}</p>
+              <p className="text-sm text-gray-600">{formatDate(preview.uploadedAt)}</p>
             </div>
           )}
         </div>
@@ -557,29 +509,29 @@ const FilePreview = ({ source, isOpen, onClose }) => {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <span className="text-sm font-medium text-gray-700">Format:</span>
-            <p className="text-sm text-gray-600">{state.preview.format}</p>
+            <p className="text-sm text-gray-600">{preview.format}</p>
           </div>
           <div>
             <span className="text-sm font-medium text-gray-700">File Size:</span>
-            <p className="text-sm text-gray-600">{state.preview.fileSize}</p>
+            <p className="text-sm text-gray-600">{preview.fileSize}</p>
           </div>
           <div>
             <span className="text-sm font-medium text-gray-700">Status:</span>
-            <p className="text-sm text-gray-600 capitalize">{state.preview.processingStatus}</p>
+            <p className="text-sm text-gray-600 capitalize">{preview.processingStatus}</p>
           </div>
-          {state.preview.uploadedAt && (
+          {preview.uploadedAt && (
             <div>
               <span className="text-sm font-medium text-gray-700">Uploaded:</span>
-              <p className="text-sm text-gray-600">{formatDate(state.preview.uploadedAt)}</p>
+              <p className="text-sm text-gray-600">{formatDate(preview.uploadedAt)}</p>
             </div>
           )}
         </div>
         
-        {state.preview.featuresAvailable && state.preview.featuresAvailable.length > 0 && (
+        {preview.featuresAvailable && preview.featuresAvailable.length > 0 && (
           <div className="mt-4">
             <span className="text-sm font-medium text-gray-700">Available Features:</span>
             <div className="flex flex-wrap gap-1 mt-1">
-              {state.preview.featuresAvailable.map((feature) => (
+              {preview.featuresAvailable.map((feature) => (
                 <Badge key={feature} variant="outline" className="text-xs">
                   {feature}
                 </Badge>
@@ -613,7 +565,7 @@ const FilePreview = ({ source, isOpen, onClose }) => {
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-gray-200">
             <div className="flex items-center space-x-3">
-              {state.preview && React.createElement(getPreviewIcon(state.preview.type), {
+              {preview && React.createElement(getPreviewIcon(preview.type), {
                 className: "h-6 w-6 text-gray-700"
               })}
               <div>

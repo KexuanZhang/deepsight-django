@@ -46,7 +46,7 @@ class UploadProcessor(BaseService):
                 self._whisper_model = None
         return self._whisper_model
     
-    async def get_upload_status(self, upload_file_id: str) -> Optional[Dict[str, Any]]:
+    def get_upload_status(self, upload_file_id: str, user_pk: int = None) -> Optional[Dict[str, Any]]:
         """Get the current status of an upload by upload_file_id."""
         try:
             # Check in-memory status first
@@ -54,7 +54,7 @@ class UploadProcessor(BaseService):
                 return self._upload_statuses[upload_file_id]
             
             # Check if file is already processed and stored
-            file_metadata = await self.file_storage.get_file_by_upload_id(upload_file_id)
+            file_metadata = self.file_storage.get_file_by_upload_id(upload_file_id, user_pk)
             if file_metadata:
                 status = {
                     'upload_file_id': upload_file_id,
@@ -73,7 +73,7 @@ class UploadProcessor(BaseService):
             self.log_operation("get_upload_status_error", str(e), "error")
             return None
     
-    async def delete_upload(self, upload_file_id: str) -> bool:
+    def delete_upload(self, upload_file_id: str, user_pk: int) -> bool:
         """Delete an upload and its associated files."""
         try:
             # Remove from in-memory tracking
@@ -81,7 +81,7 @@ class UploadProcessor(BaseService):
                 del self._upload_statuses[upload_file_id]
             
             # Delete from storage
-            return await self.file_storage.delete_file_by_upload_id(upload_file_id)
+            return self.file_storage.delete_file_by_upload_id(upload_file_id, user_pk)
         except Exception as e:
             self.log_operation("delete_upload_error", str(e), "error")
             return False
@@ -99,7 +99,7 @@ class UploadProcessor(BaseService):
             })
             self._upload_statuses[upload_file_id] = current_status
 
-    async def process_upload(self, file: UploadFile, upload_file_id: Optional[str] = None) -> Dict[str, Any]:
+    def process_upload(self, file: UploadFile, upload_file_id: Optional[str] = None, user_pk: Optional[int] = None, notebook_id: Optional[int] = None) -> Dict[str, Any]:
         """Main entry point for immediate file processing."""
         print("upload")
         temp_path = None
@@ -124,7 +124,7 @@ class UploadProcessor(BaseService):
                 self._update_upload_status(upload_file_id, 'processing', filename=file.name)
             
             # Save file temporarily
-            temp_path = await self._save_uploaded_file(file)
+            temp_path = self._save_uploaded_file(file)
             
             # Additional content validation
             content_validation = self.validator.validate_file_content(temp_path)
@@ -151,20 +151,27 @@ class UploadProcessor(BaseService):
             }
             
             # Process based on file type
-            processing_result = await self._process_file_by_type(temp_path, file_metadata)
+            processing_result = self._process_file_by_type(temp_path, file_metadata)
             
             # Update file metadata with parsing status
             file_metadata["parsing_status"] = "completed"
             
-            # Store result
-            file_id = await self.file_storage.store_processed_file(
+            # Store result with user isolation
+            if user_pk is None:
+                raise ValueError("user_pk is required for file storage")
+            if notebook_id is None:
+                raise ValueError("notebook_id is required for file storage")
+                
+            file_id = self.file_storage.store_processed_file(
                 content=processing_result['content'],
                 metadata=file_metadata,
-                processing_result=processing_result
+                processing_result=processing_result,
+                user_id=user_pk,
+                notebook_id=notebook_id
             )
             
             # Index content for search
-            await self.content_indexing.index_content(
+            self.content_indexing.index_content(
                 file_id=file_id,
                 content=processing_result['content'],
                 metadata=file_metadata,
@@ -202,18 +209,17 @@ class UploadProcessor(BaseService):
                 os.unlink(temp_path)
             raise
         except Exception as e:
-            # Clean up and raise new HTTP exception
+            # Handle unexpected errors
             if temp_path and os.path.exists(temp_path):
                 os.unlink(temp_path)
             
-            # Update error status
             if upload_file_id:
                 self._update_upload_status(upload_file_id, 'error', error=str(e))
             
             self.log_operation("process_upload_error", str(e), "error")
-            raise HTTPException(status_code=500, detail=f"File processing failed: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
     
-    async def _save_uploaded_file(self, file: UploadFile) -> str:
+    def _save_uploaded_file(self, file: UploadFile) -> str:
         """Save uploaded file to temporary directory."""
         try:
             suffix = Path(file.name).suffix.lower()
@@ -238,20 +244,20 @@ class UploadProcessor(BaseService):
             self.log_operation("save_file_error", f"File: {file.name}, error: {str(e)}", "error")
             raise
     
-    async def _process_file_by_type(self, file_path: str, file_metadata: Dict[str, Any]) -> Dict[str, Any]:
+    def _process_file_by_type(self, file_path: str, file_metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Process file based on its type."""
         file_extension = file_metadata.get('file_extension', '').lower()
         
         if file_extension == '.pdf':
-            return await self._process_pdf_immediate(file_path, file_metadata)
+            return self._process_pdf_immediate(file_path, file_metadata)
         elif file_extension in ['.mp3', '.wav', '.m4a']:
-            return await self._process_audio_immediate(file_path, file_metadata)
+            return self._process_audio_immediate(file_path, file_metadata)
         elif file_extension in ['.mp4', '.avi', '.mov']:
-            return await self._process_video_immediate(file_path, file_metadata)
+            return self._process_video_immediate(file_path, file_metadata)
         elif file_extension in ['.txt', '.md']:
-            return await self._process_text_immediate(file_path, file_metadata)
+            return self._process_text_immediate(file_path, file_metadata)
         elif file_extension in ['.ppt', '.pptx']:
-            return await self._process_presentation_immediate(file_path, file_metadata)
+            return self._process_presentation_immediate(file_path, file_metadata)
         else:
             return {
                 'content': f"File type {file_extension} is supported but no immediate processing available.",
@@ -260,7 +266,7 @@ class UploadProcessor(BaseService):
                 'processing_time': 'immediate'
             }
     
-    async def _process_pdf_immediate(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
+    def _process_pdf_immediate(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
         """Quick PDF text extraction using PyMuPDF."""
         try:
             doc = fitz.open(file_path)
@@ -298,7 +304,7 @@ class UploadProcessor(BaseService):
         except Exception as e:
             raise Exception(f"PDF processing failed: {str(e)}")
     
-    async def _process_audio_immediate(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
+    def _process_audio_immediate(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
         """Quick audio transcription using Whisper."""
         try:
             if not self.whisper_model:
@@ -329,7 +335,7 @@ class UploadProcessor(BaseService):
         except Exception as e:
             raise Exception(f"Audio processing failed: {str(e)}")
     
-    async def _process_video_immediate(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
+    def _process_video_immediate(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
         """Quick video processing - extract audio and transcribe."""
         try:
             # Extract audio from video
@@ -383,7 +389,7 @@ class UploadProcessor(BaseService):
         except Exception as e:
             raise Exception(f"Video processing failed: {str(e)}")
     
-    async def _process_text_immediate(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
+    def _process_text_immediate(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
         """Process text files immediately."""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -430,7 +436,7 @@ class UploadProcessor(BaseService):
         except Exception as e:
             raise Exception(f"Text processing failed: {str(e)}")
     
-    async def _process_presentation_immediate(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
+    def _process_presentation_immediate(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
         """Process presentation files."""
         try:
             # For now, return placeholder - would need python-pptx for full implementation

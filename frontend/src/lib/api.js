@@ -41,6 +41,12 @@ class ApiService {
         } catch {}
         throw new Error(msg);
       }
+      
+      // Handle 204 No Content responses (common for DELETE operations)
+      if (response.status === 204) {
+        return { success: true };
+      }
+      
       return await response.json();
     } catch (e) {
       console.error('API request failed:', e);
@@ -105,6 +111,66 @@ class ApiService {
 
   async deleteUpload(uploadFileId, notebookId) {
     return this.deleteFile(uploadFileId, notebookId); // same as deleteFile
+  }
+
+  async deleteFileByUploadId(uploadFileId, notebookId) {
+    return this.request(`/${notebookId}/files/${uploadFileId}/`, {
+      method: 'DELETE',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+  }
+
+  async deleteParsedFile(fileId, notebookId) {
+    return this.request(`/${notebookId}/files/${fileId}/`, {
+      method: 'DELETE',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+  }
+
+  async getUrlParsingStatus(uploadUrlId) {
+    // This is a placeholder - URL parsing might use a different endpoint
+    return { success: false, error: 'URL parsing status not implemented' };
+  }
+
+  // ─── KNOWLEDGE BASE ───────────────────────────────────────────────────────
+
+  async getKnowledgeBase(notebookId, { limit = 50, offset = 0, content_type = null } = {}) {
+    let url = `/${notebookId}/knowledge-base/?limit=${limit}&offset=${offset}`;
+    if (content_type) {
+      url += `&content_type=${content_type}`;
+    }
+    return this.request(url);
+  }
+
+  async linkKnowledgeBaseItem(notebookId, knowledgeBaseItemId, notes = '') {
+    return this.request(`/${notebookId}/knowledge-base/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: JSON.stringify({
+        knowledge_base_item_id: knowledgeBaseItemId,
+        notes: notes
+      }),
+    });
+  }
+
+  async deleteKnowledgeBaseItem(notebookId, knowledgeBaseItemId) {
+    return this.request(`/${notebookId}/knowledge-base/`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: JSON.stringify({
+        knowledge_base_item_id: knowledgeBaseItemId
+      }),
+    });
   }
 
   // ─── STATUS ───────────────────────────────────────────────────────────────

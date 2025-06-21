@@ -261,12 +261,11 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Toaster } from "@/components/ui/toaster";
-import { Menu, X, ArrowLeft, LogOut } from "lucide-react";
+import { Menu, X, ArrowLeft, LogOut, ChevronLeft } from "lucide-react";
 import Logo from "@/components/Logo";
 import SourcesList from "@/components/SourcesList";
 import ChatPanel from "@/components/ChatPanel";
 import StudioPanel from "@/components/StudioPanel";
-import Footer from "@/components/Footer";
 import "highlight.js/styles/github.css";
 import { Link, useParams, useNavigate } from "react-router-dom";
 
@@ -354,7 +353,7 @@ export default function DeepdivePage() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col relative">
+    <div className="h-screen bg-white flex flex-col relative overflow-hidden">
       {/* Sidebar Menu */}
       {menuOpen && (
         <div className="fixed inset-0 z-50 flex">
@@ -380,7 +379,7 @@ export default function DeepdivePage() {
       )}
 
       {/* Header */}
-      <header className="border-b border-gray-200 p-4 flex justify-between items-center relative z-10">
+      <header className="flex-shrink-0 border-b border-gray-200 p-4 flex justify-between items-center relative z-10">
         <div className="flex items-center space-x-4">
           {/* Back Button */}
           <button
@@ -426,36 +425,44 @@ export default function DeepdivePage() {
       </header>
 
       {/* Main Content */}
-      <main className="flex flex-col flex-1 relative">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 h-[calc(100vh-4rem)] overflow-hidden relative">
+      <main className="flex-1 flex flex-col min-h-0">
+        <div className={`flex gap-4 p-4 flex-1 min-h-0 ${!isSourcesCollapsed ? 'md:grid md:grid-cols-12' : ''}`}>
           {/* Sources Panel */}
           {!isSourcesCollapsed && (
             <motion.div
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
-              className="col-span-1 md:col-span-3 border border-gray-200 rounded-lg overflow-auto relative"
+              className="col-span-1 md:col-span-3 border border-gray-200 rounded-lg overflow-auto relative min-h-0"
             >
-              <SourcesList notebookId={notebookId} />
-              <button
-                onClick={() => setIsSourcesCollapsed(true)}
-                className="absolute right-[-10px] top-1/2 transform -translate-y-1/2 bg-white border border-gray-200 rounded shadow w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600 z-50"
-                title="Collapse Sources"
-              >
-                ❮
-              </button>
+              <SourcesList 
+                notebookId={notebookId} 
+                onToggleCollapse={() => setIsSourcesCollapsed(true)}
+                isCollapsed={isSourcesCollapsed}
+              />
             </motion.div>
           )}
 
           {/* Expand Sources Button */}
           {isSourcesCollapsed && (
-            <button
+            <motion.button
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3 }}
               onClick={() => setIsSourcesCollapsed(false)}
-              className="absolute left-0 top-1/2 transform -translate-y-1/2 bg-white border border-gray-200 rounded shadow w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600 z-50"
-              title="Expand Sources"
+              className="w-12 flex-shrink-0 border border-gray-200 rounded-lg bg-white hover:bg-red-50 hover:border-red-200 flex items-center justify-center text-gray-400 hover:text-red-600 transition-all duration-200 group shadow-sm hover:shadow-md"
+              title="Expand Sources Panel"
             >
-              ❯
-            </button>
+              <div className="group-hover:scale-110 transition-transform duration-200">
+                <motion.div
+                  animate={{ x: [0, 2, 0] }}
+                  transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                  className="text-gray-500 group-hover:text-red-600 transition-colors duration-200"
+                >
+                  <ChevronLeft className="h-5 w-5 transform rotate-180" />
+                </motion.div>
+              </div>
+            </motion.button>
           )}
 
           {/* Chat Panel */}
@@ -463,8 +470,8 @@ export default function DeepdivePage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.1 }}
-            className={`border border-gray-200 rounded-lg overflow-auto ${
-              isSourcesCollapsed ? "col-span-1 md:col-span-6" : "col-span-1 md:col-span-5"
+            className={`border border-gray-200 rounded-lg overflow-auto min-h-0 ${
+              isSourcesCollapsed ? "flex-1" : "col-span-1 md:col-span-5"
             }`}
           >
             <ChatPanel notebookId={notebookId} />
@@ -475,17 +482,20 @@ export default function DeepdivePage() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3, delay: 0.2 }}
-            className={`border border-gray-200 rounded-lg overflow-auto ${
-              isSourcesCollapsed ? "col-span-1 md:col-span-6" : "col-span-1 md:col-span-4"
+            className={`border border-gray-200 rounded-lg overflow-auto min-h-0 ${
+              isSourcesCollapsed ? "flex-1" : "col-span-1 md:col-span-4"
             }`}
           >
             <StudioPanel notebookId={notebookId} />
           </motion.div>
         </div>
+        
+        {/* Copyright Footer */}
+        <div className="flex-shrink-0 p-4 text-center text-sm text-gray-500 border-t border-gray-100">
+          © 2025, Huawei. All Rights Reserved.
+        </div>
       </main>
 
-      {/* Footer */}
-      <Footer />
       <Toaster />
     </div>
   );

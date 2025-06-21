@@ -1,272 +1,304 @@
 """
-File storage service for managing processed files and metadata.
+File storage service for managing processed files and knowledge base.
 """
 
 import json
 import shutil
 import os
+import hashlib
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime, UTC
+from django.conf import settings
+from django.core.files.base import ContentFile
 
 from .base_service import BaseService
-from ..core.config import settings
+from ..core.config import settings as config_settings
 
 class FileStorageService(BaseService):
-    """Service for storing and managing processed files."""
+    """Service for storing and managing processed files in user knowledge base."""
     
     def __init__(self):
         super().__init__("file_storage")
         
-        # Create storage directories
-        self.processed_files_dir = self.data_dir / "processed_files"
-        self.processed_files_dir.mkdir(exist_ok=True)
+        # Use Django's MEDIA_ROOT for file storage
+        media_root = Path(settings.MEDIA_ROOT)
         
-        # Create index for quick lookups
-        self.index_file = self.data_dir / "file_index.json"
+        # Create storage directories that match Django models
+        self.source_uploads_dir = media_root / "source_uploads"
+        self.knowledge_base_dir = media_root / "knowledge_base"
+        
+        self.source_uploads_dir.mkdir(exist_ok=True)
+        self.knowledge_base_dir.mkdir(exist_ok=True)
     
-    async def store_processed_file(
+    def _calculate_content_hash(self, content: str) -> str:
+        """Calculate SHA-256 hash of content for deduplication."""
+        return hashlib.sha256(content.encode('utf-8')).hexdigest()
+    
+    def store_processed_file(
         self, 
         content: str, 
         metadata: Dict[str, Any], 
-        processing_result: Dict[str, Any]
+        processing_result: Dict[str, Any],
+        user_id: int,
+        notebook_id: int
     ) -> str:
-        """Store processed file content and metadata."""
+        """Store processed file content in user's knowledge base."""
         try:
-            # Generate file ID
-            file_id = self.generate_id()
+            # Import here to avoid circular imports
+            from ...models import KnowledgeBaseItem, KnowledgeItem, Notebook
             
-            # Create file directory
-            file_dir = self.processed_files_dir / file_id
-            file_dir.mkdir(exist_ok=True)
+            # Calculate content hash for deduplication
+            content_hash = self._calculate_content_hash(content)
             
-            # Prepare comprehensive metadata
-            file_metadata = {
-                "file_id": file_id,
-                "original_filename": metadata.get("filename", "unknown"),
-                "file_extension": metadata.get("file_extension", ""),
-                "content_type": metadata.get("content_type", ""),
-                "file_size": metadata.get("file_size", 0),
-                "upload_timestamp": datetime.now(UTC).isoformat(),
-                "processing_timestamp": datetime.now(UTC).isoformat(),
-                "processing_type": processing_result.get("processing_type", "immediate"),
-                "content_length": len(content),
-                "features_available": processing_result.get("features_available", []),
-                "status": "completed",
-                "parsing_status": metadata.get("parsing_status", "completed"),
-                "processing_metadata": processing_result.get("metadata", {}),
-                "upload_file_id": metadata.get("upload_file_id")
-            }
+            # Check if this content already exists in user's knowledge base
+            existing_item = KnowledgeBaseItem.objects.filter(
+                user_id=user_id,
+                source_hash=content_hash
+            ).first()
             
-            # Save content
-            content_path = file_dir / "content.md"
-            with open(content_path, 'w', encoding='utf-8') as f:
-                f.write(content)
+            if existing_item:
+                self.log_operation("duplicate_content", f"Content already exists: {existing_item.id}")
+                # Link existing knowledge base item to current notebook
+                notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
+                knowledge_item, created = KnowledgeItem.objects.get_or_create(
+                    notebook=notebook,
+                    knowledge_base_item=existing_item,
+                    defaults={
+                        'notes': f"Imported from {metadata.get('filename', 'unknown source')}"
+                    }
+                )
+                return existing_item.id
             
-            # Save metadata
-            metadata_path = file_dir / "metadata.json"
-            with open(metadata_path, 'w', encoding='utf-8') as f:
-                json.dump(file_metadata, f, indent=2)
+            # Create new knowledge base item
+            title = self._generate_title_from_metadata(metadata)
+            content_type = self._determine_content_type(metadata)
             
-            # Update index
-            await self._update_file_index(file_id, file_metadata)
+            # Create the knowledge base item
+            kb_item = KnowledgeBaseItem.objects.create(
+                user_id=user_id,
+                title=title,
+                content_type=content_type,
+                content=content,  # Store content inline for now
+                metadata=metadata,
+                source_hash=content_hash,
+                tags=self._extract_tags_from_metadata(metadata)
+            )
             
-            self.log_operation("store_file", f"file_id={file_id}, filename={metadata.get('filename')}")
-            return file_id
+            # Optionally save as file if content is large
+            if len(content) > 10000:  # 10KB threshold
+                self._save_content_as_file(kb_item, content)
+            
+            # Link to current notebook
+            notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
+            KnowledgeItem.objects.create(
+                notebook=notebook,
+                knowledge_base_item=kb_item,
+                notes=f"Processed from {metadata.get('filename', 'source')}"
+            )
+            
+            self.log_operation("store_knowledge_item", f"kb_item_id={kb_item.id}, user_id={user_id}, notebook_id={notebook_id}")
+            return str(kb_item.id)
             
         except Exception as e:
             self.log_operation("store_file_error", str(e), "error")
             raise
     
-    async def get_file_content(self, file_id: str) -> Optional[str]:
-        """Retrieve file content by ID."""
+    def _save_content_as_file(self, kb_item: 'KnowledgeBaseItem', content: str):
+        """Save large content as a file in the knowledge base."""
+        filename = f"{kb_item.id}.md"
+        content_file = ContentFile(content.encode('utf-8'))
+        kb_item.file.save(filename, content_file, save=True)
+        # Clear inline content since we now have a file
+        kb_item.content = ""
+        kb_item.save(update_fields=['content'])
+    
+    def _generate_title_from_metadata(self, metadata: Dict[str, Any]) -> str:
+        """Generate a meaningful title from metadata."""
+        if 'original_filename' in metadata:
+            return os.path.splitext(metadata['original_filename'])[0]
+        elif 'source_url' in metadata:
+            from urllib.parse import urlparse
+            parsed = urlparse(metadata['source_url'])
+            return parsed.hostname or 'Web Content'
+        else:
+            return f"Content {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+    
+    def _determine_content_type(self, metadata: Dict[str, Any]) -> str:
+        """Determine content type from metadata."""
+        if 'source_url' in metadata:
+            return 'webpage'
+        elif 'file_extension' in metadata:
+            ext = metadata['file_extension'].lower()
+            if ext in ['.pdf', '.doc', '.docx', '.txt']:
+                return 'document'
+            elif ext in ['.mp3', '.mp4', '.wav', '.avi']:
+                return 'media'
+        return 'text'
+    
+    def _extract_tags_from_metadata(self, metadata: Dict[str, Any]) -> List[str]:
+        """Extract relevant tags from metadata."""
+        tags = []
+        if 'file_extension' in metadata:
+            tags.append(metadata['file_extension'].replace('.', ''))
+        if 'content_type' in metadata:
+            tags.append(metadata['content_type'].split('/')[0])
+        return tags
+    
+    def get_file_content(self, file_id: str, user_id: int = None) -> Optional[str]:
+        """Retrieve file content by knowledge base item ID."""
         try:
-            content_path = self.processed_files_dir / file_id / "content.md"
-            if content_path.exists():
-                with open(content_path, 'r', encoding='utf-8') as f:
-                    return f.read()
+            # Import here to avoid circular imports
+            from ...models import KnowledgeBaseItem
+            
+            # Query the database for the knowledge base item
+            kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
+            if user_id:
+                kb_query = kb_query.filter(user_id=user_id)
+            
+            kb_item = kb_query.first()
+            if not kb_item:
+                return None
+            
+            # Return inline content if available
+            if kb_item.content:
+                return kb_item.content
+            
+            # Otherwise read from file
+            if kb_item.file:
+                try:
+                    # Use Django's file field to read content
+                    with kb_item.file.open('r') as f:
+                        return f.read()
+                except (FileNotFoundError, OSError) as e:
+                    self.log_operation("get_content_file_error", f"kb_item_id={file_id}, error={str(e)}", "error")
+                    return None
+            
             return None
         except Exception as e:
-            self.log_operation("get_content_error", f"file_id={file_id}, error={str(e)}", "error")
+            self.log_operation("get_content_error", f"file_id={file_id}, user_id={user_id}, error={str(e)}", "error")
             return None
     
-    async def get_file_metadata(self, file_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve file metadata by ID."""
+    def get_user_knowledge_base(self, user_id: int, content_type: str = None, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """Get all knowledge base items for a user."""
         try:
-            metadata_path = self.processed_files_dir / file_id / "metadata.json"
-            if metadata_path.exists():
-                with open(metadata_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            return None
+            from ...models import KnowledgeBaseItem
+            
+            query = KnowledgeBaseItem.objects.filter(user_id=user_id)
+            if content_type:
+                query = query.filter(content_type=content_type)
+            
+            items = query.order_by('-created_at')[offset:offset + limit]
+            
+            result = []
+            for item in items:
+                result.append({
+                    'id': str(item.id),
+                    'title': item.title,
+                    'content_type': item.content_type,
+                    'tags': item.tags,
+                    'created_at': item.created_at.isoformat(),
+                    'updated_at': item.updated_at.isoformat(),
+                    'has_file': bool(item.file),
+                    'has_content': bool(item.content),
+                    'metadata': item.metadata or {}
+                })
+            
+            return result
         except Exception as e:
-            self.log_operation("get_metadata_error", f"file_id={file_id}, error={str(e)}", "error")
-            return None
-    
-    async def get_file_by_upload_id(self, upload_file_id: str) -> Optional[Dict[str, Any]]:
-        """Get file by upload file ID."""
-        try:
-            index = await self._load_file_index()
-            for file_id, file_info in index.items():
-                if file_info.get("upload_file_id") == upload_file_id:
-                    content = await self.get_file_content(file_id)
-                    metadata = await self.get_file_metadata(file_id)
-                    return {
-                        "file_id": file_id,
-                        "content": content,
-                        "metadata": metadata
-                    }
-            return None
-        except Exception as e:
-            self.log_operation("get_by_upload_id_error", f"upload_id={upload_file_id}, error={str(e)}", "error")
-            return None
-    
-    async def list_files(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
-        """List stored files with pagination."""
-        try:
-            files = []
-            for file_dir in self.processed_files_dir.iterdir():
-                if file_dir.is_dir():
-                    metadata_path = file_dir / "metadata.json"
-                    if metadata_path.exists():
-                        try:
-                            with open(metadata_path, 'r', encoding='utf-8') as f:
-                                metadata = json.load(f)
-                                files.append(metadata)
-                        except Exception as e:
-                            self.log_operation("list_file_error", f"file_id={file_dir.name}, error={str(e)}", "error")
-                            continue
-            
-            # Sort by upload timestamp (newest first)
-            files.sort(key=lambda x: x.get("upload_timestamp", ""), reverse=True)
-            
-            # Apply pagination
-            paginated_files = files[offset:offset + limit]
-            
-            self.log_operation("list_files", f"found {len(files)} files, returned {len(paginated_files)}")
-            return paginated_files
-            
-        except Exception as e:
-            self.log_operation("list_files_error", str(e), "error")
+            self.log_operation("get_knowledge_base_error", f"user_id={user_id}, error={str(e)}", "error")
             return []
     
-    async def delete_file(self, file_id: str) -> bool:
-        """Delete a stored file and its metadata."""
+    def link_knowledge_item_to_notebook(self, kb_item_id: str, notebook_id: int, user_id: int, notes: str = "") -> bool:
+        """Link an existing knowledge base item to a notebook."""
         try:
-            file_dir = self.processed_files_dir / file_id
-            if file_dir.exists():
-                shutil.rmtree(file_dir)
-                
-                # Remove from index
-                await self._remove_from_index(file_id)
-                
-                self.log_operation("delete_file", f"file_id={file_id}")
-                return True
-            return False
+            from ...models import KnowledgeBaseItem, KnowledgeItem, Notebook
+            
+            # Verify ownership
+            kb_item = KnowledgeBaseItem.objects.filter(id=kb_item_id, user_id=user_id).first()
+            if not kb_item:
+                return False
+            
+            notebook = Notebook.objects.filter(id=notebook_id, user_id=user_id).first()
+            if not notebook:
+                return False
+            
+            # Create or get the link
+            knowledge_item, created = KnowledgeItem.objects.get_or_create(
+                notebook=notebook,
+                knowledge_base_item=kb_item,
+                defaults={'notes': notes}
+            )
+            
+            self.log_operation("link_knowledge_item", f"kb_item_id={kb_item_id}, notebook_id={notebook_id}, created={created}")
+            return True
             
         except Exception as e:
-            self.log_operation("delete_file_error", f"file_id={file_id}, error={str(e)}", "error")
-            return False
-    
-    async def delete_file_by_upload_id(self, upload_file_id: str) -> bool:
-        """Delete a file by upload file ID."""
-        try:
-            # Find the file by upload_file_id
-            file_data = await self.get_file_by_upload_id(upload_file_id)
-            if file_data and file_data.get("file_id"):
-                file_id = file_data["file_id"]
-                return await self.delete_file(file_id)
-            return False
-        except Exception as e:
-            self.log_operation("delete_file_by_upload_id_error", f"upload_id={upload_file_id}, error={str(e)}", "error")
+            self.log_operation("link_knowledge_item_error", f"kb_item_id={kb_item_id}, notebook_id={notebook_id}, error={str(e)}", "error")
             return False
     
-    async def store_extraction_result(
-        self, 
-        file_id: str, 
-        extraction_type: str, 
-        result: Dict[str, Any]
-    ) -> str:
-        """Store feature extraction results."""
+    def delete_knowledge_base_item(self, kb_item_id: str, user_id: int) -> bool:
+        """Delete a knowledge base item and all its notebook links."""
         try:
-            # Create extraction directory
-            file_dir = self.processed_files_dir / file_id
-            extractions_dir = file_dir / "extractions"
-            extractions_dir.mkdir(exist_ok=True)
+            from ...models import KnowledgeBaseItem
             
-            # Generate extraction ID
-            extraction_id = f"{extraction_type}_{self.generate_id()[:8]}"
+            kb_item = KnowledgeBaseItem.objects.filter(id=kb_item_id, user_id=user_id).first()
+            if not kb_item:
+                return False
             
-            # Store extraction result
-            extraction_path = extractions_dir / f"{extraction_id}.json"
-            extraction_data = {
-                "extraction_id": extraction_id,
-                "extraction_type": extraction_type,
-                "file_id": file_id,
-                "result": result,
-                "created_at": datetime.now(UTC).isoformat()
-            }
+            # Delete the file if it exists
+            if kb_item.file:
+                try:
+                    kb_item.file.delete(save=False)
+                except (FileNotFoundError, OSError):
+                    pass  # File already gone, that's fine
             
-            with open(extraction_path, 'w', encoding='utf-8') as f:
-                json.dump(extraction_data, f, indent=2)
+            # Delete the knowledge base item (this will cascade delete notebook links)
+            kb_item.delete()
             
-            self.log_operation("store_extraction", f"file_id={file_id}, type={extraction_type}")
-            return extraction_id
+            self.log_operation("delete_knowledge_item", f"kb_item_id={kb_item_id}, user_id={user_id}")
+            return True
             
         except Exception as e:
-            self.log_operation("store_extraction_error", str(e), "error")
-            raise
+            self.log_operation("delete_knowledge_item_error", f"kb_item_id={kb_item_id}, user_id={user_id}, error={str(e)}", "error")
+            return False
     
-    async def get_extraction_result(self, file_id: str, extraction_id: str) -> Optional[Dict[str, Any]]:
-        """Get extraction result by ID."""
+    def unlink_knowledge_item_from_notebook(self, kb_item_id: str, notebook_id: int, user_id: int) -> bool:
+        """Remove a knowledge item link from a specific notebook without deleting the knowledge base item."""
         try:
-            extraction_path = self.processed_files_dir / file_id / "extractions" / f"{extraction_id}.json"
-            if extraction_path.exists():
-                with open(extraction_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            return None
-        except Exception as e:
-            self.log_operation("get_extraction_error", f"file_id={file_id}, extraction_id={extraction_id}, error={str(e)}", "error")
-            return None
-    
-    async def _update_file_index(self, file_id: str, metadata: Dict[str, Any]):
-        """Update file index for quick lookups."""
-        try:
-            index = await self._load_file_index()
-            index[file_id] = {
-                "filename": metadata["original_filename"],
-                "file_extension": metadata["file_extension"],
-                "upload_timestamp": metadata["upload_timestamp"],
-                "upload_file_id": metadata.get("upload_file_id"),
-                "features_available": metadata["features_available"]
-            }
+            from ...models import KnowledgeItem, Notebook
             
-            with open(self.index_file, 'w', encoding='utf-8') as f:
-                json.dump(index, f, indent=2)
-                
+            # Verify ownership
+            notebook = Notebook.objects.filter(id=notebook_id, user_id=user_id).first()
+            if not notebook:
+                return False
+            
+            # Delete the link
+            deleted_count, _ = KnowledgeItem.objects.filter(
+                notebook=notebook,
+                knowledge_base_item_id=kb_item_id
+            ).delete()
+            
+            self.log_operation("unlink_knowledge_item", f"kb_item_id={kb_item_id}, notebook_id={notebook_id}, deleted={deleted_count > 0}")
+            return deleted_count > 0
+            
         except Exception as e:
-            self.log_operation("update_index_error", str(e), "error")
+            self.log_operation("unlink_knowledge_item_error", f"kb_item_id={kb_item_id}, notebook_id={notebook_id}, error={str(e)}", "error")
+            return False
+
+    # Legacy methods for backward compatibility
+    def get_file_by_upload_id(self, upload_file_id: str, user_id: int = None) -> Optional[Dict[str, Any]]:
+        """Legacy method for upload file ID lookup."""
+        # This could be used for migration or backward compatibility
+        return None
     
-    async def _load_file_index(self) -> Dict[str, Any]:
-        """Load file index."""
-        try:
-            if self.index_file.exists():
-                with open(self.index_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            return {}
-        except Exception as e:
-            self.log_operation("load_index_error", str(e), "error")
-            return {}
+    def delete_file_by_upload_id(self, upload_file_id: str, user_id: int) -> bool:
+        """Legacy method for upload file deletion."""
+        return False
     
-    async def _remove_from_index(self, file_id: str):
-        """Remove file from index."""
-        try:
-            index = await self._load_file_index()
-            if file_id in index:
-                del index[file_id]
-                with open(self.index_file, 'w', encoding='utf-8') as f:
-                    json.dump(index, f, indent=2)
-        except Exception as e:
-            self.log_operation("remove_index_error", str(e), "error")
+    def delete_file(self, file_id: str, user_id: int) -> bool:
+        """Legacy method - redirects to delete_knowledge_base_item."""
+        return self.delete_knowledge_base_item(file_id, user_id)
 
 
 # Global singleton instance to prevent repeated initialization

@@ -22,7 +22,7 @@ class ContentIndexingService(BaseService):
         # Load existing index
         self._load_search_index()
     
-    async def index_content(
+    def index_content(
         self, 
         file_id: str, 
         content: str, 
@@ -63,7 +63,7 @@ class ContentIndexingService(BaseService):
             }
             
             # Persist index
-            await self._save_search_index()
+            self._save_search_index()
             
             self.log_operation("index_content", f"file_id={file_id}, stage={processing_stage}, keywords={len(keywords)}")
             
@@ -159,7 +159,7 @@ class ContentIndexingService(BaseService):
             if file_id in self.file_index:
                 del self.file_index[file_id]
             
-            await self._save_search_index()
+            self._save_search_index()
             
             self.log_operation("remove_from_index", f"file_id={file_id}")
             
@@ -335,7 +335,7 @@ class ContentIndexingService(BaseService):
             self.search_index = {}
             self.file_index = {}
     
-    async def _save_search_index(self):
+    def _save_search_index(self):
         """Save search index to disk."""
         try:
             index_file = self.data_dir / "search_index.json"

@@ -7,7 +7,9 @@ from .views import (
     FileListView,
     FileUploadView,
     FileStatusView,
+    FileStatusStreamView,
     FileDeleteView,
+    KnowledgeBaseView,
 )
 
 urlpatterns = [
@@ -41,10 +43,24 @@ urlpatterns = [
         name='file-status'
     ),
 
+    # 3.1) SSE streaming status updates for an in‐flight upload
+    path(
+        'notebooks/<int:notebook_id>/files/<str:upload_file_id>/status/stream',
+        FileStatusStreamView.as_view(),
+        name='file-status-stream'
+    ),
+
     # 4) delete either an in‐flight upload or a completed file
     path(
         'notebooks/<int:notebook_id>/files/<str:file_or_upload_id>/',
         FileDeleteView.as_view(),
         name='file-delete'
+    ),
+
+    # 5) knowledge base management
+    path(
+        'notebooks/<int:notebook_id>/knowledge-base/',
+        KnowledgeBaseView.as_view(),
+        name='knowledge-base'
     ),
 ]
