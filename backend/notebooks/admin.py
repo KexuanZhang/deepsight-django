@@ -2,8 +2,6 @@ from django.contrib import admin
 from .models import (
     Notebook,
     Source,
-    UploadedFile,
-    PastedTextFile,
     URLProcessingResult,
     ProcessingJob,
     # SearchResult,
@@ -12,16 +10,7 @@ from .models import (
 )
 
 
-class UploadedFileInline(admin.StackedInline):
-    model = UploadedFile
-    readonly_fields = ("content_type", "original_name", "uploaded_at")
-    extra = 0
 
-
-class PastedTextFileInline(admin.StackedInline):
-    model = PastedTextFile
-    readonly_fields = ("created_at",)
-    extra = 0
 
 
 class URLProcessingResultInline(admin.StackedInline):
@@ -59,8 +48,6 @@ class SourceAdmin(admin.ModelAdmin):
     search_fields = ("title",)
     readonly_fields = ("created_at",)
     inlines = [
-        UploadedFileInline,
-        PastedTextFileInline,
         URLProcessingResultInline,
         ProcessingJobInline,
         # SearchResultInline,
@@ -94,7 +81,7 @@ class SourceAdminNoInline(admin.ModelAdmin):
     list_filter = ("source_type", "processing_status", "needs_processing")
     search_fields = ("title",)
     readonly_fields = ("created_at",)
-    inlines = [UploadedFileInline, PastedTextFileInline, URLProcessingResultInline, ProcessingJobInline]
+    inlines = [URLProcessingResultInline, ProcessingJobInline]
 
 
 @admin.register(ProcessingJob)
@@ -143,7 +130,5 @@ class KnowledgeItemAdmin(admin.ModelAdmin):
 
 
 # Register remaining models in default fashion
-admin.site.register(UploadedFile)
-admin.site.register(PastedTextFile)
 admin.site.register(URLProcessingResult)
 # admin.site.register(SearchResult)

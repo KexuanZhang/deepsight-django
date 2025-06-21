@@ -6,6 +6,7 @@ import json
 import shutil
 import os
 import hashlib
+import re
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime, UTC
@@ -24,12 +25,115 @@ class FileStorageService(BaseService):
         # Use Django's MEDIA_ROOT for file storage
         media_root = Path(settings.MEDIA_ROOT)
         
-        # Create storage directories that match Django models
-        self.source_uploads_dir = media_root / "source_uploads"
+        # Create knowledge base directory (source_uploads are no longer used)
         self.knowledge_base_dir = media_root / "knowledge_base"
-        
-        self.source_uploads_dir.mkdir(exist_ok=True)
         self.knowledge_base_dir.mkdir(exist_ok=True)
+    
+    def _clean_filename(self, filename: str, max_length: int = 100) -> str:
+        """
+        Clean filename according to FilenameCleanup rules for cross-platform compatibility.
+        
+        Rules:
+        - ASCII letters (A–Z, a–z), digits (0–9), hyphens (-), underscores (_), single period (.)
+        - No null character, directory separators, Windows-forbidden symbols, whitespace
+        - No names starting/ending with hyphens, underscores, periods, or whitespace
+        - Length constraints: filename ≤ 255 characters; we use max_length for practical limits
+        """
+        if not filename:
+            return "unnamed_file"
+        
+        # Split filename and extension
+        name_parts = filename.rsplit('.', 1)
+        basename = name_parts[0] if name_parts else filename
+        extension = name_parts[1] if len(name_parts) > 1 else ""
+        
+        # Clean basename: replace invalid characters with underscores
+        # Keep only ASCII letters, digits, hyphens, underscores
+        basename_cleaned = re.sub(r'[^A-Za-z0-9_-]', '_', basename)
+        
+        # Remove leading/trailing hyphens, underscores, periods
+        basename_cleaned = re.sub(r'^[_.-]+|[_.-]+$', '', basename_cleaned)
+        
+        # Ensure it doesn't start or end with invalid characters
+        if not basename_cleaned or not re.match(r'^[A-Za-z0-9]', basename_cleaned):
+            basename_cleaned = 'file_' + basename_cleaned
+        
+        # Ensure it doesn't end with invalid characters
+        if not re.match(r'.*[A-Za-z0-9]$', basename_cleaned):
+            basename_cleaned = basename_cleaned + '_file'
+        
+        # Clean extension similarly
+        if extension:
+            extension_cleaned = re.sub(r'[^A-Za-z0-9_-]', '', extension)
+            if not extension_cleaned:
+                extension_cleaned = 'bin'  # fallback for binary files
+        else:
+            extension_cleaned = ""
+        
+        # Check against Windows reserved names
+        windows_reserved = {
+            'CON', 'PRN', 'AUX', 'NUL', 
+            'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+            'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+        }
+        
+        if basename_cleaned.upper() in windows_reserved:
+            basename_cleaned = f"file_{basename_cleaned}"
+        
+        # Construct final filename
+        if extension_cleaned:
+            final_filename = f"{basename_cleaned}.{extension_cleaned}"
+        else:
+            final_filename = basename_cleaned
+        
+        # Enforce length constraint
+        if len(final_filename) > max_length:
+            # Truncate basename while preserving extension
+            available_length = max_length - len(f".{extension_cleaned}") if extension_cleaned else max_length
+            basename_truncated = basename_cleaned[:max(1, available_length)]
+            final_filename = f"{basename_truncated}.{extension_cleaned}" if extension_cleaned else basename_truncated
+        
+        # Final validation with regex (simplified version of the full regex)
+        if not re.match(r'^[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)?$', final_filename):
+            # Fallback to a safe name
+            timestamp = int(datetime.now().timestamp())
+            final_filename = f"file_{timestamp}.{extension_cleaned}" if extension_cleaned else f"file_{timestamp}"
+        
+        return final_filename
+    
+    def _generate_knowledge_base_paths(self, user_id: int, original_filename: str, kb_item_id: str) -> Dict[str, str]:
+        """
+        Generate organized file paths for knowledge base storage.
+        
+        Returns:
+            {
+                'base_dir': '/knowledge_base/user_X/cleaned_filename/',
+                'original_file_path': '/knowledge_base/user_X/cleaned_filename/cleaned_filename.ext',
+                'content_dir': '/knowledge_base/user_X/cleaned_filename/content/',
+                'content_file_path': '/knowledge_base/user_X/cleaned_filename/content/extracted_content.md'
+            }
+        """
+        # Clean the filename
+        cleaned_filename = self._clean_filename(original_filename)
+        
+        # Remove extension for directory name
+        dir_name = cleaned_filename.rsplit('.', 1)[0] if '.' in cleaned_filename else cleaned_filename
+        
+        # Ensure unique directory name by appending kb_item_id if needed
+        unique_dir_name = f"{dir_name}_{kb_item_id}"
+        
+        # Build paths
+        base_dir = f"knowledge_base/user_{user_id}/{unique_dir_name}"
+        content_dir = f"{base_dir}/content"
+        
+        return {
+            'base_dir': base_dir,
+            'original_file_path': f"{base_dir}/{cleaned_filename}",
+            'content_dir': content_dir,
+            'content_file_path': f"{content_dir}/extracted_content.md",
+            'cleaned_filename': cleaned_filename,
+            'unique_dir_name': unique_dir_name
+        }
     
     def _calculate_content_hash(self, content: str) -> str:
         """Calculate SHA-256 hash of content for deduplication."""
@@ -42,9 +146,10 @@ class FileStorageService(BaseService):
         processing_result: Dict[str, Any],
         user_id: int,
         notebook_id: int,
-        source_id: Optional[int] = None
+        source_id: Optional[int] = None,
+        original_file_path: Optional[str] = None
     ) -> str:
-        """Store processed file content in user's knowledge base."""
+        """Store processed file content in user's knowledge base with organized structure."""
         try:
             # Import here to avoid circular imports
             from ...models import KnowledgeBaseItem, KnowledgeItem, Notebook, Source
@@ -76,9 +181,9 @@ class FileStorageService(BaseService):
                         'notes': f"Imported from {metadata.get('filename', 'unknown source')}"
                     }
                 )
-                return existing_item.id
+                return str(existing_item.id)
             
-            # Create new knowledge base item
+            # Create new knowledge base item (without files initially)
             title = self._generate_title_from_metadata(metadata)
             content_type = self._determine_content_type(metadata)
             
@@ -87,15 +192,30 @@ class FileStorageService(BaseService):
                 user_id=user_id,
                 title=title,
                 content_type=content_type,
-                content=content,  # Store content inline for now
+                content="",  # We'll store in organized file structure
                 metadata=metadata,
                 source_hash=content_hash,
                 tags=self._extract_tags_from_metadata(metadata)
             )
             
-            # Optionally save as file if content is large
-            if len(content) > 10000:  # 10KB threshold
-                self._save_content_as_file(kb_item, content)
+            # Generate organized file paths
+            original_filename = metadata.get('original_filename', metadata.get('filename', 'unknown_file'))
+            paths = self._generate_knowledge_base_paths(user_id, original_filename, str(kb_item.id))
+            
+            # Create directories
+            media_root = Path(settings.MEDIA_ROOT)
+            base_dir = media_root / paths['base_dir']
+            content_dir = media_root / paths['content_dir']
+            
+            base_dir.mkdir(parents=True, exist_ok=True)
+            content_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Store original file with cleaned name if provided
+            if original_file_path and os.path.exists(original_file_path):
+                self._save_organized_original_file(kb_item, original_file_path, paths)
+            
+            # Store extracted content in organized structure
+            self._save_organized_content_file(kb_item, content, paths)
             
             # Link to current notebook
             notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
@@ -109,24 +229,75 @@ class FileStorageService(BaseService):
                 notebook=notebook,
                 knowledge_base_item=kb_item,
                 source=source,
-                notes=f"Processed from {metadata.get('filename', 'source')}"
+                notes=f"Processed from {original_filename}"
             )
             
-            self.log_operation("store_knowledge_item", f"kb_item_id={kb_item.id}, user_id={user_id}, notebook_id={notebook_id}, source_id={source_id}")
+            self.log_operation("store_knowledge_item", f"kb_item_id={kb_item.id}, user_id={user_id}, organized_structure=True")
             return str(kb_item.id)
             
         except Exception as e:
             self.log_operation("store_file_error", str(e), "error")
             raise
     
-    def _save_content_as_file(self, kb_item: 'KnowledgeBaseItem', content: str):
-        """Save large content as a file in the knowledge base."""
-        filename = f"{kb_item.id}.md"
-        content_file = ContentFile(content.encode('utf-8'))
-        kb_item.file.save(filename, content_file, save=True)
-        # Clear inline content since we now have a file
-        kb_item.content = ""
-        kb_item.save(update_fields=['content'])
+    def _save_organized_original_file(self, kb_item: 'KnowledgeBaseItem', original_file_path: str, paths: Dict[str, str]):
+        """Save the original binary file in organized structure."""
+        try:
+            # Read the original file and save it with cleaned filename
+            with open(original_file_path, 'rb') as f:
+                content_file = ContentFile(f.read())
+                kb_item.original_file.save(paths['original_file_path'], content_file, save=True)
+            
+            self.log_operation("save_organized_original_file", f"Saved original file: {paths['original_file_path']}")
+            
+        except Exception as e:
+            self.log_operation("save_organized_original_file_error", f"kb_item_id={kb_item.id}, error={str(e)}", "error")
+    
+    def _save_organized_content_file(self, kb_item: 'KnowledgeBaseItem', content: str, paths: Dict[str, str]):
+        """Save the extracted content in organized structure."""
+        try:
+            # Save content in the content subdirectory
+            content_file = ContentFile(content.encode('utf-8'))
+            kb_item.file.save(paths['content_file_path'], content_file, save=True)
+            
+            self.log_operation("save_organized_content_file", f"Saved content file: {paths['content_file_path']}")
+            
+        except Exception as e:
+            self.log_operation("save_organized_content_file_error", f"kb_item_id={kb_item.id}, error={str(e)}", "error")
+    
+    def _delete_organized_structure(self, kb_item: 'KnowledgeBaseItem', user_id: int):
+        """Delete the entire organized directory structure for a knowledge base item."""
+        try:
+            # Try to determine the organized directory from the file paths
+            if kb_item.original_file or kb_item.file:
+                media_root = Path(settings.MEDIA_ROOT)
+                
+                # Get the directory path from either original_file or file
+                file_path = None
+                if kb_item.original_file:
+                    file_path = kb_item.original_file.name
+                elif kb_item.file:
+                    file_path = kb_item.file.name
+                
+                if file_path:
+                    # Extract the base directory (should be like knowledge_base/user_X/filename_id/)
+                    path_parts = Path(file_path).parts
+                    
+                    # Look for pattern: knowledge_base/user_X/filename_id/
+                    if len(path_parts) >= 3 and path_parts[0] == 'knowledge_base' and path_parts[1].startswith('user_'):
+                        base_dir = media_root / path_parts[0] / path_parts[1] / path_parts[2]
+                        
+                        if base_dir.exists() and base_dir.is_dir():
+                            # Safety check: ensure it's the right user and contains our kb_item_id
+                            if f"user_{user_id}" in str(base_dir) and str(kb_item.id) in str(base_dir):
+                                shutil.rmtree(base_dir)
+                                self.log_operation("delete_organized_structure", f"Deleted directory: {base_dir}")
+                            else:
+                                self.log_operation("delete_organized_structure_skip", f"Safety check failed for: {base_dir}")
+            
+        except Exception as e:
+            self.log_operation("delete_organized_structure_error", f"kb_item_id={kb_item.id}, error={str(e)}", "error")
+    
+
     
     def _generate_title_from_metadata(self, metadata: Dict[str, Any]) -> str:
         """Generate a meaningful title from metadata."""
@@ -216,6 +387,7 @@ class FileStorageService(BaseService):
                     'updated_at': item.updated_at.isoformat(),
                     'has_file': bool(item.file),
                     'has_content': bool(item.content),
+                    'has_original_file': bool(item.original_file),
                     'metadata': item.metadata or {}
                 })
             
@@ -253,70 +425,22 @@ class FileStorageService(BaseService):
             return False
     
     def delete_knowledge_base_item(self, kb_item_id: str, user_id: int) -> bool:
-        """Delete a knowledge base item and all its notebook links and related source files."""
+        """Delete a knowledge base item and its organized directory structure."""
         try:
-            from ...models import KnowledgeBaseItem, KnowledgeItem, Source
+            from ...models import KnowledgeBaseItem
             
             kb_item = KnowledgeBaseItem.objects.filter(id=kb_item_id, user_id=user_id).first()
             if not kb_item:
                 return False
             
-            # Find all knowledge items that link to this knowledge base item
-            knowledge_items = KnowledgeItem.objects.filter(knowledge_base_item=kb_item)
+            # Delete the entire organized directory structure
+            # This will remove both the original file and content files
+            self._delete_organized_structure(kb_item, user_id)
             
-            # Collect all related source files to delete
-            source_files_to_delete = []
-            
-            for ki in knowledge_items:
-                self.log_operation("delete_source_check", f"Checking KnowledgeItem {ki.id}, has_source: {bool(ki.source)}")
-                if ki.source:
-                    source = ki.source
-                    self.log_operation("delete_source_check", f"Source {source.id} type: {source.source_type}")
-                    
-                    # Delete uploaded files (original files uploaded by user)
-                    if hasattr(source, 'upload') and source.upload:
-                        upload = source.upload
-                        if upload.file:
-                            source_files_to_delete.append(('uploaded_file', upload.file))
-                            self.log_operation("delete_source_file", f"Queued uploaded file: {upload.file.name}")
-                    
-                    # Delete pasted text files
-                    if hasattr(source, 'pasted_text_file') and source.pasted_text_file:
-                        text_file = source.pasted_text_file
-                        if text_file.file:
-                            source_files_to_delete.append(('pasted_text_file', text_file.file))
-                            self.log_operation("delete_source_file", f"Queued pasted text file: {text_file.file.name}")
-                    
-                    # Delete URL processing result files
-                    if hasattr(source, 'url_result') and source.url_result:
-                        url_result = source.url_result
-                        if url_result.downloaded_file:
-                            source_files_to_delete.append(('url_result_file', url_result.downloaded_file))
-                            self.log_operation("delete_source_file", f"Queued URL result file: {url_result.downloaded_file.name}")
-                else:
-                    self.log_operation("delete_source_check", f"KnowledgeItem {ki.id} has no source - cannot delete original files")
-            
-            # Delete the knowledge base item's processed content file
-            if kb_item.file:
-                source_files_to_delete.append(('knowledge_base_file', kb_item.file))
-                self.log_operation("delete_source_file", f"Queued knowledge base file: {kb_item.file.name}")
-            
-            # Now delete all collected files
-            for file_type, file_field in source_files_to_delete:
-                try:
-                    file_field.delete(save=False)
-                    self.log_operation("delete_source_file", f"Deleted {file_type}: {file_field.name}")
-                except (FileNotFoundError, OSError) as e:
-                    # File already gone, that's fine - log but continue
-                    self.log_operation("delete_source_file", f"File already deleted {file_type}: {getattr(file_field, 'name', 'unknown')} - {str(e)}", "warning")
-                except Exception as e:
-                    # Log other errors but continue
-                    self.log_operation("delete_source_file", f"Error deleting {file_type}: {getattr(file_field, 'name', 'unknown')} - {str(e)}", "error")
-            
-            # Delete the knowledge base item (this will cascade delete notebook links and sources)
+            # Delete the knowledge base item (this will cascade delete notebook links)
             kb_item.delete()
             
-            self.log_operation("delete_knowledge_item", f"kb_item_id={kb_item_id}, user_id={user_id}, deleted_files_count={len(source_files_to_delete)}")
+            self.log_operation("delete_knowledge_item", f"kb_item_id={kb_item_id}, user_id={user_id}, organized_structure_deleted=True")
             return True
             
         except Exception as e:
@@ -357,19 +481,7 @@ class FileStorageService(BaseService):
             self.log_operation("unlink_knowledge_item_error", f"kb_item_id={kb_item_id}, notebook_id={notebook_id}, error={str(e)}", "error")
             return False
 
-    # Legacy methods for backward compatibility
-    def get_file_by_upload_id(self, upload_file_id: str, user_id: int = None) -> Optional[Dict[str, Any]]:
-        """Legacy method for upload file ID lookup."""
-        # This could be used for migration or backward compatibility
-        return None
-    
-    def delete_file_by_upload_id(self, upload_file_id: str, user_id: int) -> bool:
-        """Legacy method for upload file deletion."""
-        return False
-    
-    def delete_file(self, file_id: str, user_id: int) -> bool:
-        """Legacy method - redirects to delete_knowledge_base_item."""
-        return self.delete_knowledge_base_item(file_id, user_id)
+
 
 
 # Global singleton instance to prevent repeated initialization

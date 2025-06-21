@@ -2,8 +2,6 @@ from rest_framework import serializers
 from .models import (
     Notebook,
     Source,
-    UploadedFile,
-    PastedTextFile,
     URLProcessingResult,
     ProcessingJob,
     # SearchResult,
@@ -26,11 +24,7 @@ class FileUploadSerializer(serializers.Serializer):
     upload_file_id = serializers.CharField(required=False)
 
 
-class PastedTextFileSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PastedTextFile
-        fields = ['id', 'file', 'created_at']
-        read_only_fields = ['id', 'created_at']
+
 
 
 class URLProcessingResultSerializer(serializers.ModelSerializer):
@@ -69,8 +63,6 @@ class KnowledgeItemSerializer(serializers.ModelSerializer):
 
 
 class SourceSerializer(serializers.ModelSerializer):
-    upload = FileUploadSerializer(read_only=True)
-    pasted_text_file = PastedTextFileSerializer(read_only=True)
     url_result = URLProcessingResultSerializer(read_only=True)
     jobs = ProcessingJobSerializer(many=True, read_only=True)
     # search_results = SearchResultSerializer(many=True, read_only=True)
@@ -80,10 +72,10 @@ class SourceSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'notebook', 'source_type', 'title', 'created_at',
             'needs_processing', 'processing_status',
-            'upload', 'pasted_text_file', 'url_result', 'jobs'
+            'url_result', 'jobs'
         ]
         read_only_fields = [
             'id', 'created_at', 'processing_status',
-            'upload', 'pasted_text_file', 'url_result', 'jobs'
+            'url_result', 'jobs'
         ]
 

@@ -79,121 +79,30 @@ class Source(models.Model):
         return f"{self.get_source_type_display()} — {self.title or self.pk}"
 
 
-# Optimized file upload path functions with proper date formatting
-def user_notebook_source_upload_path(instance, filename):
-    """Generate organized upload path for source files with proper date formatting."""
-    user_id = instance.source.notebook.user.pk
-    notebook_id = instance.source.notebook.pk
-    now = timezone.now()
-    
-    # Create a clean, organized path structure
-    # Format: source_uploads/user_1/notebook_2/2024/12/20/filename.pdf
-    return f"source_uploads/user_{user_id}/notebook_{notebook_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/{filename}"
-
-
-def user_notebook_pasted_text_path(instance, filename):
-    """Generate organized upload path for pasted text files with proper date formatting."""
-    user_id = instance.source.notebook.user.pk
-    notebook_id = instance.source.notebook.pk
-    now = timezone.now()
-    
-    # Format: pasted_text/user_1/notebook_2/2024/12/20/paste_123456789.txt
-    return f"pasted_text/user_{user_id}/notebook_{notebook_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/{filename}"
-
+# File upload path functions
 
 def user_knowledge_base_path(instance, filename):
-    """Generate organized path for knowledge base processed content with proper date formatting."""
-    user_id = instance.user.pk
-    now = timezone.now()
+    """
+    Generate organized path for knowledge base files.
     
-    # Format: knowledge_base/user_1/2024/12/20/processed_content.md
-    return f"knowledge_base/user_{user_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/{filename}"
+    New organized structure: knowledge_base/user_X/cleaned_filename_id/content/extracted_content.md
+    The FileStorageService will pass the full path including directory structure.
+    """
+    # The FileStorageService provides the full organized path
+    return filename
 
 
 def user_url_processing_path(instance, filename):
-    """Generate organized path for URL processing downloads with proper date formatting."""
+    """Generate path for URL processing downloads."""
     user_id = instance.source.notebook.user.pk
-    notebook_id = instance.source.notebook.pk
-    now = timezone.now()
-    
-    # Format: url_downloads/user_1/notebook_2/2024/12/20/downloaded_file.ext
-    return f"url_downloads/user_{user_id}/notebook_{notebook_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/{filename}"
+    return f"url_downloads/user_{user_id}/{filename}"
 
 
 def user_processing_results_path(instance, filename):
-    """Generate organized path for processing result files with proper date formatting."""
+    """Generate path for processing result files."""
     user_id = instance.source.notebook.user.pk
-    notebook_id = instance.source.notebook.pk
-    now = timezone.now()
-    
-    # Format: processing_results/user_1/notebook_2/2024/12/20/result_file.md
-    return f"processing_results/user_{user_id}/notebook_{notebook_id}/{now.year:04d}/{now.month:02d}/{now.day:02d}/{filename}"
+    return f"processing_results/user_{user_id}/{filename}"
 
-
-class UploadedFile(models.Model):
-    """
-    Stores any binary the user uploaded for a Source of type "file."
-    These are notebook-specific raw files.
-    """
-    source = models.OneToOneField(
-        Source,
-        on_delete=models.CASCADE,
-        related_name="upload",
-    )
-    file = models.FileField(
-        upload_to=user_notebook_source_upload_path,
-        help_text="Original user-uploaded file (PDF, MP3, MP4, etc.) - notebook specific",
-    )
-    content_type = models.CharField(
-        max_length=100,
-        blank=True,
-        help_text="Guessed MIME type, e.g. application/pdf, audio/mpeg…",
-    )
-    original_name = models.CharField(
-        max_length=255,
-        help_text="Filename as uploaded by the user",
-    )
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-
-    def save(self, *args, **kwargs):
-        # On first save, auto-populate MIME type and original name
-        if not self.pk:
-            self.content_type = mimetypes.guess_type(self.file.name)[0] or ""
-            self.original_name = os.path.basename(self.file.name)
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return self.original_name
-
-
-class PastedTextFile(models.Model):
-    """
-    When the user pastes raw text, we write it out as a .txt and store it here.
-    These are notebook-specific.
-    """
-    source = models.OneToOneField(
-        Source,
-        on_delete=models.CASCADE,
-        related_name="pasted_text_file",
-    )
-    file = models.FileField(
-        upload_to=user_notebook_pasted_text_path,
-        validators=[FileExtensionValidator(allowed_extensions=["txt"] )],
-        help_text="Auto-generated .txt of pasted content - notebook specific",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def save(self, *args, **kwargs):
-        # You must assign self._raw_text before calling save()
-        if not self.pk and hasattr(self, "_raw_text"):
-            filename = f"paste-{self.source.pk}-{int(timezone.now().timestamp())}.txt"
-            from django.core.files.base import ContentFile
-
-            self.file.save(filename, ContentFile(self._raw_text), save=False)
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return os.path.basename(self.file.name)
 
 
 class URLProcessingResult(models.Model):
@@ -299,6 +208,12 @@ class KnowledgeBaseItem(models.Model):
         null=True,
         validators=[FileExtensionValidator(allowed_extensions=["md", "txt"])],
         help_text="Processed content file in the user's knowledge base",
+    )
+    original_file = models.FileField(
+        upload_to=user_knowledge_base_path,
+        blank=True,
+        null=True,
+        help_text="Original binary file (PDF, audio, video, etc.) in the user's knowledge base",
     )
     content = models.TextField(
         blank=True,

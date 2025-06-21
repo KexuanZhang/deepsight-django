@@ -14,7 +14,7 @@ from django.core.exceptions import PermissionDenied
 from uuid import uuid4    
 import mimetypes
 
-from .models import Source, UploadedFile, PastedTextFile, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook
+from .models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook
 from .serializers import (
     NotebookSerializer,
     FileUploadSerializer,
@@ -56,7 +56,6 @@ class FileUploadView(APIView):
             needs_processing=False,
             processing_status="done",
         )
-        UploadedFile.objects.create(source=source, file=inbound_file)
 
         # The upload processor now returns a knowledge base item ID
         kb_item_id = result['file_id']
@@ -142,25 +141,10 @@ class FileListView(APIView):
                     "source_status": source.processing_status,
                 })
                 
-                # Add specific source file information
-                if source.source_type == "file" and hasattr(source, 'upload'):
-                    upload = source.upload
-                    file_data.update({
-                        "original_filename": upload.original_name,
-                        "file_extension": os.path.splitext(upload.original_name)[1],
-                        "content_type": upload.content_type,
-                        "uploaded_at": upload.uploaded_at.isoformat() if upload.uploaded_at else None,
-                        "source_file_path": upload.file.name if upload.file else None,
-                        "source_file_url": upload.file.url if upload.file else None,
-                    })
-                    
-                    # Safely get file size from database
-                    try:
-                        if upload.file:
-                            file_data["file_size"] = upload.file.size
-                    except (FileNotFoundError, OSError) as e:
-                        print(f"Warning: File not found for upload {upload.id}: {e}")
-                        file_data["file_size"] = None
+                # Legacy source file information - now handled by knowledge base
+                if source.source_type == "file":
+                    # File information now comes from knowledge base metadata
+                    pass
                 
                 elif source.source_type == "url" and hasattr(source, 'url_result'):
                     url_result = source.url_result
@@ -177,22 +161,12 @@ class FileListView(APIView):
                         file_data["downloaded_file_path"] = url_result.downloaded_file.name
                         file_data["downloaded_file_url"] = url_result.downloaded_file.url
                 
-                elif source.source_type == "text" and hasattr(source, 'pasted_text_file'):
-                    text_file = source.pasted_text_file
+                elif source.source_type == "text":
+                    # Text content now handled by knowledge base
                     file_data.update({
-                        "original_filename": os.path.basename(text_file.file.name),
+                        "original_filename": f"{source.title}.txt",
                         "file_extension": ".txt",
-                        "uploaded_at": text_file.created_at.isoformat() if text_file.created_at else None,
-                        "text_file_path": text_file.file.name if text_file.file else None,
                     })
-                    
-                    try:
-                        if text_file.file:
-                            file_data["file_size"] = text_file.file.size
-                            file_data["text_file_url"] = text_file.file.url
-                    except (FileNotFoundError, OSError) as e:
-                        print(f"Warning: File not found for text file {text_file.id}: {e}")
-                        file_data["file_size"] = None
             
             # Add knowledge base file information
             if kb_item.file:
@@ -704,7 +678,26 @@ class FileRawView(APIView):
             # TODO: Log successful file access
             # logger.info(f"User {request.user.id} downloaded file {file_id} from notebook {notebook_id}")
             
-            # FIRST: Try to serve original source file (this is the raw binary file we want)
+            # FIRST: Try to serve original file from knowledge base (new original_file field)
+            if kb_item.original_file:
+                # Determine content type
+                content_type, _ = mimetypes.guess_type(kb_item.original_file.name)
+                if not content_type:
+                    content_type = 'application/octet-stream'
+                
+                # Return file response
+                response = FileResponse(
+                    kb_item.original_file.open('rb'),
+                    content_type=content_type,
+                    as_attachment=False
+                )
+                response['Content-Disposition'] = f'inline; filename="{kb_item.title}"'
+                # TODO: Add security headers
+                # response['X-Content-Type-Options'] = 'nosniff'
+                # response['X-Frame-Options'] = 'DENY'
+                return response
+            
+            # SECOND: Try to serve original source file (legacy support)
             if knowledge_item.source:
                 source = knowledge_item.source
                 
@@ -723,7 +716,7 @@ class FileRawView(APIView):
                         response['Content-Disposition'] = f'inline; filename="{upload.original_name or kb_item.title}"'
                         return response
             
-            # FALLBACK: Try to serve the file from knowledge base item
+            # FALLBACK: Try to serve the processed file from knowledge base item
             # (This would be processed content like .md files, not ideal for raw access)
             if kb_item.file:
                 # TODO: Add file size limits for security
@@ -780,7 +773,26 @@ class FileRawSimpleView(APIView):
             # TODO: Log successful file access
             # logger.info(f"User {request.user.id} downloaded raw file {file_id}")
             
-            # FIRST: Try to find original source file (this is the raw binary file we want)
+            # FIRST: Try to serve original file from knowledge base (new original_file field)
+            if kb_item.original_file:
+                # Determine content type
+                content_type, _ = mimetypes.guess_type(kb_item.original_file.name)
+                if not content_type:
+                    content_type = 'application/octet-stream'
+                
+                # Return file response
+                response = FileResponse(
+                    kb_item.original_file.open('rb'),
+                    content_type=content_type,
+                    as_attachment=False
+                )
+                response['Content-Disposition'] = f'inline; filename="{kb_item.title}"'
+                # TODO: Add security headers
+                # response['X-Content-Type-Options'] = 'nosniff'
+                # response['X-Frame-Options'] = 'DENY'
+                return response
+            
+            # SECOND: Try to find original source file (legacy support)
             # Look for any knowledge item that links to this kb_item for the user
             knowledge_items = KnowledgeItem.objects.filter(
                 knowledge_base_item=kb_item,
@@ -806,7 +818,7 @@ class FileRawSimpleView(APIView):
                             response['Content-Disposition'] = f'inline; filename="{upload.original_name or kb_item.title}"'
                             return response
             
-            # FALLBACK: If no original source file found, try knowledge base file
+            # FALLBACK: If no original files found, try knowledge base processed file
             # (This would be processed content like .md files, not ideal for raw access)
             if kb_item.file:
                 # TODO: Add file size limits for security

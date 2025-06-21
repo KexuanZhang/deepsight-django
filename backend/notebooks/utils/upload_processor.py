@@ -169,7 +169,8 @@ class UploadProcessor(BaseService):
                 metadata=file_metadata,
                 processing_result=processing_result,
                 user_id=user_pk,
-                notebook_id=notebook_id
+                notebook_id=notebook_id,
+                original_file_path=temp_path
             )
             
             # Index content for search
