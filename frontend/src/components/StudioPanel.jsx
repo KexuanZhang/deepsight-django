@@ -705,7 +705,6 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
   // Load available models and existing reports on component mount
   useEffect(() => {
     loadAvailableModels();
-    checkBackendHealth();
     loadExistingReports();
     loadExistingPodcasts();
   }, []);
@@ -925,11 +924,21 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
       console.log('Backend is healthy');
     } catch (error) {
       console.error('Backend health check failed:', error);
-      toast({
-        title: "Backend Connection Issue",
-        description: "Unable to connect to the backend. Please check if the server is running.",
-        variant: "destructive",
-      });
+      // Only show error toast if this is a persistent connection issue
+      // Add a delay and retry before showing the error to avoid false positives during page navigation
+      setTimeout(async () => {
+        try {
+          await apiService.healthCheck();
+          console.log('Backend is healthy on retry');
+        } catch (retryError) {
+          console.error('Backend health check failed on retry:', retryError);
+          toast({
+            title: "Backend Connection Issue",
+            description: "Unable to connect to the backend. Please check if the server is running.",
+            variant: "destructive",
+          });
+        }
+      }, 2000); // Wait 2 seconds before retry
     }
   };
 
