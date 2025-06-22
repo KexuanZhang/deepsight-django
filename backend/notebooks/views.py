@@ -1,70 +1,82 @@
 import os
 import json
-import asyncio
 import time
+import mimetypes
+from uuid import uuid4
+
 from django.db import transaction
-from django.core.files.base import ContentFile
-from django.http import StreamingHttpResponse, HttpResponse, Http404, FileResponse
-from rest_framework import status, permissions, authentication, generics 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, JSONParser
+from django.http import StreamingHttpResponse, Http404, FileResponse
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import PermissionDenied
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
-from uuid import uuid4    
-import mimetypes
+
+from rest_framework import status, permissions, authentication, generics
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, JSONParser
 
 from .models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook
-from .serializers import (
-    NotebookSerializer,
-    FileUploadSerializer,
-    # TextUploadSerializer,
-    # URLUploadSerializer,
-)
+from .serializers import NotebookSerializer, FileUploadSerializer
 from .utils.upload_processor import UploadProcessor
-from .utils.services.file_storage import FileStorageService
+from .utils.file_storage import FileStorageService
+from .utils.view_mixins import (
+    StandardAPIView,
+    NotebookPermissionMixin,
+    KnowledgeBasePermissionMixin,
+    FileAccessValidatorMixin,
+    PaginationMixin,
+    FileListResponseMixin,
+)
 
 upload_processor = UploadProcessor()
-file_storage     = FileStorageService()
+file_storage = FileStorageService()
 
-class FileUploadView(APIView):
-    permission_classes     = [permissions.IsAuthenticated]
-    authentication_classes = [authentication.SessionAuthentication]
-    parser_classes         = [MultiPartParser]
+class FileUploadView(StandardAPIView, NotebookPermissionMixin):
+    """Handle file uploads to notebooks."""
+    
+    parser_classes = [MultiPartParser]
 
     @transaction.atomic
     def post(self, request, notebook_id):
-        """Handle /api/sources/upload/"""
-        print(request.data)
-        ser = FileUploadSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-        notebook = get_object_or_404(Notebook, pk=notebook_id, user=request.user)
-        inbound_file = ser.validated_data["file"]
-        upload_id    = ser.validated_data.get("upload_file_id") or uuid4().hex
-
-        result = upload_processor.process_upload(
-            inbound_file, 
-            upload_id,
-            user_pk=request.user.pk,
-            notebook_id=notebook.id
-        )
-
-        source = Source.objects.create(
-            notebook=notebook,
-            source_type="file",
-            title=inbound_file.name,
-            needs_processing=False,
-            processing_status="done",
-        )
-
-        # The upload processor now returns a knowledge base item ID
-        kb_item_id = result['file_id']
-        
-        # Get or create the knowledge base item link
+        """Handle file upload to notebook."""
         try:
-            kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=request.user)
+            # Validate request data
+            serializer = FileUploadSerializer(data=request.data)
+            if not serializer.is_valid():
+                return self.error_response(
+                    "Invalid request data", 
+                    details=serializer.errors
+                )
+            
+            # Verify notebook access
+            notebook = self.get_user_notebook(notebook_id, request.user)
+            
+            # Extract file and upload ID
+            inbound_file = serializer.validated_data["file"]
+            upload_id = serializer.validated_data.get("upload_file_id") or uuid4().hex
+
+            # Process the upload
+            result = upload_processor.process_upload(
+                inbound_file, 
+                upload_id,
+                user_pk=request.user.pk,
+                notebook_id=notebook.id
+            )
+
+            # Create source record
+            source = Source.objects.create(
+                notebook=notebook,
+                source_type="file",
+                title=inbound_file.name,
+                needs_processing=False,
+                processing_status="done",
+            )
+
+            # Link to knowledge base
+            kb_item_id = result['file_id']
+            kb_item = get_object_or_404(KnowledgeBaseItem, id=kb_item_id, user=request.user)
+            
             ki, created = KnowledgeItem.objects.get_or_create(
                 notebook=notebook,
                 knowledge_base_item=kb_item,
@@ -74,255 +86,162 @@ class FileUploadView(APIView):
                 }
             )
             
-            # If the KnowledgeItem already existed but didn't have a source, update it
+            # Update source if needed
             if not created and not ki.source:
                 ki.source = source
                 ki.save(update_fields=['source'])
-        except KnowledgeBaseItem.DoesNotExist:
-            return Response({
-                "success": False,
-                "error": "Failed to create knowledge base item"
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response({
-            "success": True,
-            "file_id": kb_item_id,
-            "knowledge_item_id": ki.id,
-        }, status=status.HTTP_201_CREATED)
+            return Response({
+                "success": True,
+                "file_id": kb_item_id,
+                "knowledge_item_id": ki.id,
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return self.error_response(
+                "File upload failed",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)}
+            )
     
-class FileListView(APIView):
-    """
-    GET /api/notebooks/{notebook_id}/files/
-    Return the list of all knowledge items linked to this notebook.
-    """
-    permission_classes     = [permissions.IsAuthenticated]
-    authentication_classes = [authentication.SessionAuthentication]
+class FileListView(StandardAPIView, NotebookPermissionMixin, FileListResponseMixin):
+    """List all knowledge items linked to a notebook."""
 
     def get(self, request, notebook_id):
-        # Only include files for notebooks the user owns
-        notebook = get_object_or_404(Notebook, id=notebook_id, user=request.user)
+        """Get all files linked to the notebook."""
+        try:
+            # Verify notebook access
+            notebook = self.get_user_notebook(notebook_id, request.user)
 
-        # Get all KnowledgeItems for this notebook
-        knowledge_items = KnowledgeItem.objects.filter(
-            notebook=notebook
-        ).select_related('knowledge_base_item', 'source').order_by("-added_at")
+            # Get all KnowledgeItems for this notebook with optimized query
+            knowledge_items = KnowledgeItem.objects.filter(
+                notebook=notebook
+            ).select_related(
+                'knowledge_base_item', 'source', 'source__url_result'
+            ).order_by("-added_at")
 
-        files = []
-        for ki in knowledge_items:
-            kb_item = ki.knowledge_base_item
-            source = ki.source
+            # Build response data using mixin
+            files = [self.build_file_response_data(ki) for ki in knowledge_items]
+
+            return self.success_response(files)
             
-            file_data = {
-                "file_id": str(kb_item.id),
-                "knowledge_item_id": ki.id,
-                "title": kb_item.title,
-                "content_type": kb_item.content_type,
-                "tags": kb_item.tags,
-                "created_at": kb_item.created_at.isoformat(),
-                "updated_at": kb_item.updated_at.isoformat(),
-                "added_to_notebook_at": ki.added_at.isoformat(),
-                "notes": ki.notes,
-                "metadata": kb_item.metadata or {},
-                "has_file": bool(kb_item.file),
-                "has_content": bool(kb_item.content),
-                "parsing_status": "completed",  # Knowledge base items are always processed
-                
-                # Legacy fields for compatibility - prioritize original file information from metadata
-                "original_filename": self._get_original_filename_from_metadata(kb_item.metadata, kb_item.title),
-                "file_extension": self._get_extension_from_metadata(kb_item.metadata),
-                "file_size": self._get_file_size_from_metadata(kb_item.metadata),
-                "uploaded_at": kb_item.created_at.isoformat(),
-            }
-            
-            # Add source-specific information if available
-            if source:
-                file_data.update({
-                    "source_id": source.id,
-                    "source_type": source.source_type,
-                    "source_title": source.title,
-                    "source_status": source.processing_status,
-                })
-                
-                # Legacy source file information - now handled by knowledge base
-                if source.source_type == "file":
-                    # File information now comes from knowledge base metadata
-                    pass
-                
-                elif source.source_type == "url" and hasattr(source, 'url_result'):
-                    url_result = source.url_result
-                    file_data.update({
-                        "source_url": source.title,
-                        "content_length": len(url_result.content_md) if url_result.content_md else 0,
-                        "processing_method": "web_scraping",
-                        "extraction_type": "url_extractor",
-                        "original_filename": f"{source.title}_processed.md",
-                        "file_extension": ".md",
-                    })
-                    
-                    if url_result.downloaded_file:
-                        file_data["downloaded_file_path"] = url_result.downloaded_file.name
-                        file_data["downloaded_file_url"] = url_result.downloaded_file.url
-                
-                elif source.source_type == "text":
-                    # Text content now handled by knowledge base
-                    file_data.update({
-                        "original_filename": f"{source.title}.txt",
-                        "file_extension": ".txt",
-                    })
-            
-            # Add knowledge base file information
-            if kb_item.file:
-                file_data.update({
-                    "knowledge_file_path": kb_item.file.name,
-                    "knowledge_file_url": kb_item.file.url,
-                })
+        except Exception as e:
+            return self.error_response(
+                "Failed to retrieve files",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)}
+            )
 
-            files.append(file_data)
 
-        return Response({"success": True, "data": files})
+class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixin):
+    """Manage user's knowledge base items."""
     
-    def _get_extension_from_metadata(self, metadata):
-        """Extract file extension from metadata."""
-        if not metadata:
-            return ""
-        
-        # Try various sources for file extension
-        extension = metadata.get('file_extension', '')
-        if not extension and 'original_filename' in metadata and '.' in metadata['original_filename']:
-            extension = '.' + metadata['original_filename'].split('.')[-1]
-        elif not extension and 'filename' in metadata and '.' in metadata['filename']:
-            extension = '.' + metadata['filename'].split('.')[-1]
-        
-        return extension
-    
-    def _get_original_filename_from_metadata(self, metadata, fallback_title):
-        """Extract original filename from metadata, with fallback to title."""
-        if not metadata:
-            return fallback_title
-        
-        # Priority order for original filename
-        original_filename = metadata.get('original_filename') or \
-                           metadata.get('filename') or \
-                           fallback_title
-        
-        # If we have a filename but no extension, and we can get extension from metadata, combine them
-        if original_filename and not '.' in original_filename:
-            extension = metadata.get('file_extension', '')
-            if extension:
-                if not extension.startswith('.'):
-                    extension = '.' + extension
-                original_filename = original_filename + extension
-        
-        return original_filename
-    
-    def _get_file_size_from_metadata(self, metadata):
-        """Extract file size from metadata."""
-        if not metadata:
-            return None
-        
-        # Try various sources for file size
-        return metadata.get('file_size') or \
-               metadata.get('content_length') or \
-               None
-
-
-class KnowledgeBaseView(APIView):
-    """
-    GET /api/notebooks/{notebook_id}/knowledge-base/
-    Get all knowledge base items for the user (not just this notebook).
-    POST /api/notebooks/{notebook_id}/knowledge-base/link/
-    Link an existing knowledge base item to this notebook.
-    """
-    permission_classes = [permissions.IsAuthenticated]
-    authentication_classes = [authentication.SessionAuthentication]
     parser_classes = [JSONParser, MultiPartParser]
     
     def get(self, request, notebook_id):
-        """Get user's entire knowledge base."""
-        # Verify notebook ownership
-        notebook = get_object_or_404(Notebook, id=notebook_id, user=request.user)
-        
-        content_type = request.GET.get('content_type')
-        limit = int(request.GET.get('limit', 50))
-        offset = int(request.GET.get('offset', 0))
-        
-        # Get knowledge base items
-        knowledge_base = file_storage.get_user_knowledge_base(
-            user_id=request.user.pk,
-            content_type=content_type,
-            limit=limit,
-            offset=offset
-        )
-        
-        # Check which items are already linked to this notebook
-        linked_kb_item_ids = set(
-            KnowledgeItem.objects.filter(notebook=notebook)
-            .values_list('knowledge_base_item_id', flat=True)
-        )
-        
-        # Add linked status to each item
-        for item in knowledge_base:
-            item['linked_to_notebook'] = int(item['id']) in linked_kb_item_ids
-        
-        return Response({
-            "success": True, 
-            "data": knowledge_base,
-            "notebook_id": notebook_id
-        })
+        """Get user's entire knowledge base with linkage status."""
+        try:
+            # Verify notebook ownership
+            notebook = self.get_user_notebook(notebook_id, request.user)
+            
+            # Get query parameters
+            content_type = request.GET.get('content_type')
+            limit, offset = self.get_pagination_params(request)
+            
+            # Get knowledge base items
+            knowledge_base = file_storage.get_user_knowledge_base(
+                user_id=request.user.pk,
+                content_type=content_type,
+                limit=limit,
+                offset=offset
+            )
+            
+            # Check which items are already linked to this notebook
+            linked_kb_item_ids = set(
+                KnowledgeItem.objects.filter(notebook=notebook)
+                .values_list('knowledge_base_item_id', flat=True)
+            )
+            
+            # Add linked status to each item
+            for item in knowledge_base:
+                item['linked_to_notebook'] = int(item['id']) in linked_kb_item_ids
+            
+            return self.success_response({
+                "items": knowledge_base,
+                "notebook_id": notebook_id,
+                "pagination": {"limit": limit, "offset": offset}
+            })
+            
+        except Exception as e:
+            return self.error_response(
+                "Failed to retrieve knowledge base",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)}
+            )
     
     def post(self, request, notebook_id):
         """Link a knowledge base item to this notebook."""
-        notebook = get_object_or_404(Notebook, id=notebook_id, user=request.user)
-        
-        kb_item_id = request.data.get('knowledge_base_item_id')
-        notes = request.data.get('notes', '')
-        
-        if not kb_item_id:
-            return Response({
-                "success": False,
-                "error": "knowledge_base_item_id is required"
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Link the item
-        success = file_storage.link_knowledge_item_to_notebook(
-            kb_item_id=kb_item_id,
-            notebook_id=notebook_id,
-            user_id=request.user.pk,
-            notes=notes
-        )
-        
-        if success:
-            return Response({"success": True})
-        else:
-            return Response({
-                "success": False,
-                "error": "Failed to link knowledge item"
-            }, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # Verify notebook ownership
+            notebook = self.get_user_notebook(notebook_id, request.user)
+            
+            # Validate request data
+            kb_item_id = request.data.get('knowledge_base_item_id')
+            notes = request.data.get('notes', '')
+            
+            if not kb_item_id:
+                return self.error_response("knowledge_base_item_id is required")
+            
+            # Link the item
+            success = file_storage.link_knowledge_item_to_notebook(
+                kb_item_id=kb_item_id,
+                notebook_id=notebook_id,
+                user_id=request.user.pk,
+                notes=notes
+            )
+            
+            if success:
+                return self.success_response({"linked": True})
+            else:
+                return self.error_response("Failed to link knowledge item")
+                
+        except Exception as e:
+            return self.error_response(
+                "Link operation failed",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)}
+            )
     
     def delete(self, request, notebook_id):
         """Delete a knowledge base item entirely from user's knowledge base."""
-        # Verify notebook ownership (for permission check)
-        notebook = get_object_or_404(Notebook, id=notebook_id, user=request.user)
-        
-        kb_item_id = request.data.get('knowledge_base_item_id')
-        
-        if not kb_item_id:
-            return Response({
-                "success": False,
-                "error": "knowledge_base_item_id is required"
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Delete the knowledge base item entirely
-        success = file_storage.delete_knowledge_base_item(
-            kb_item_id, request.user.pk
-        )
-        
-        if success:
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        else:
-            return Response({
-                "detail": "Knowledge base item not found or access denied"
-            }, status=status.HTTP_404_NOT_FOUND)
+        try:
+            # Verify notebook ownership (for permission check)
+            self.get_user_notebook(notebook_id, request.user)
+            
+            # Validate request data
+            kb_item_id = request.data.get('knowledge_base_item_id')
+            if not kb_item_id:
+                return self.error_response("knowledge_base_item_id is required")
+            
+            # Delete the knowledge base item entirely
+            success = file_storage.delete_knowledge_base_item(
+                kb_item_id, request.user.pk
+            )
+            
+            if success:
+                return Response(status=status.HTTP_204_NO_CONTENT)
+            else:
+                return self.error_response(
+                    "Knowledge base item not found or access denied",
+                    status_code=status.HTTP_404_NOT_FOUND
+                )
+                
+        except Exception as e:
+            return self.error_response(
+                "Delete operation failed",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)}
+            )
 
 
 class FileStatusView(APIView):
@@ -597,223 +516,139 @@ class NotebookRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView
         return Notebook.objects.filter(user=self.request.user)
 
 
-class FileContentView(APIView):
-    """
-    GET /api/v1/files/{file_id}/content/
-    Serve parsed content from knowledge base item
-    """
-    permission_classes = [permissions.IsAuthenticated]
-    authentication_classes = [authentication.SessionAuthentication]
+class FileContentView(StandardAPIView, KnowledgeBasePermissionMixin):
+    """Serve parsed content from knowledge base items."""
 
     def get(self, request, file_id):
+        """Get processed content for a knowledge base item."""
         try:
-            # TODO: Add rate limiting to prevent abuse
-            # from django_ratelimit.decorators import ratelimit
-            # @ratelimit(key='user', rate='100/h', method='GET')
-            
-            # Get the knowledge base item
-            kb_item = get_object_or_404(KnowledgeBaseItem, id=file_id, user=request.user)
-            
-            # TODO: Log access attempts for security monitoring
-            # logger.info(f"User {request.user.id} accessed file content {file_id}")
+            # Get the knowledge base item (verifies ownership)
+            kb_item = self.get_user_kb_item(file_id, request.user)
             
             # Get content from storage service
             content = file_storage.get_file_content(file_id, user_id=request.user.pk)
             
             if content is None:
-                # TODO: Log failed access attempts
-                # logger.warning(f"User {request.user.id} attempted to access unavailable content {file_id}")
-                return Response({
-                    "success": False,
-                    "error": "Content not found or not accessible"
-                }, status=status.HTTP_404_NOT_FOUND)
+                return self.error_response(
+                    "Content not found or not accessible",
+                    status_code=status.HTTP_404_NOT_FOUND
+                )
             
-            return Response({
-                "success": True,
-                "data": {
-                    "content": content,
-                    "title": kb_item.title,
-                    "content_type": kb_item.content_type,
-                    "metadata": kb_item.metadata or {}
-                }
+            return self.success_response({
+                "content": content,
+                "title": kb_item.title,
+                "content_type": kb_item.content_type,
+                "metadata": kb_item.metadata or {}
             })
             
         except Exception as e:
-            # TODO: Log security exceptions
-            # logger.error(f"Security exception in FileContentView: user={request.user.id}, file_id={file_id}, error={str(e)}")
-            return Response({
-                "success": False,
-                "error": str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return self.error_response(
+                "Failed to retrieve content",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)}
+            )
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class FileRawView(APIView):
-    """
-    GET /api/v1/notebooks/{notebook_id}/files/{file_id}/raw/
-    Serve raw file content (PDFs, videos, audio, etc.)
-    """
-    permission_classes = [permissions.IsAuthenticated]
-    authentication_classes = [authentication.SessionAuthentication]
+class FileRawView(StandardAPIView, FileAccessValidatorMixin):
+    """Serve raw file content (PDFs, videos, audio, etc.)."""
 
     def get(self, request, notebook_id, file_id):
+        """Serve raw file through notebook context."""
         try:
-            # TODO: Add rate limiting for file downloads
-            # @ratelimit(key='user', rate='50/h', method='GET')
+            # Validate access through notebook
+            notebook, kb_item, knowledge_item = self.validate_notebook_file_access(
+                notebook_id, file_id, request.user
+            )
             
-            # Verify notebook ownership
-            notebook = get_object_or_404(Notebook, id=notebook_id, user=request.user)
-            
-            # Get the knowledge base item
-            kb_item = get_object_or_404(KnowledgeBaseItem, id=file_id, user=request.user)
-            
-            # Check if user has access to this file through the notebook
-            knowledge_item = KnowledgeItem.objects.filter(
-                notebook=notebook,
-                knowledge_base_item=kb_item
-            ).first()
-            
-            if not knowledge_item:
-                # TODO: Log unauthorized access attempts
-                # logger.warning(f"User {request.user.id} attempted unauthorized access: notebook={notebook_id}, file={file_id}")
-                raise PermissionDenied("File not linked to this notebook")
-            
-            # TODO: Log successful file access
-            # logger.info(f"User {request.user.id} downloaded file {file_id} from notebook {notebook_id}")
-            
-            # FIRST: Try to serve original file from knowledge base (new original_file field)
+            # Try to serve original file first
             if kb_item.original_file:
-                # Determine content type
-                content_type, _ = mimetypes.guess_type(kb_item.original_file.name)
-                if not content_type:
-                    content_type = 'application/octet-stream'
-                
-                # Return file response
-                response = FileResponse(
-                    kb_item.original_file.open('rb'),
-                    content_type=content_type,
-                    as_attachment=False
-                )
-                response['Content-Disposition'] = f'inline; filename="{kb_item.title}"'
-                # TODO: Add security headers
-                # response['X-Content-Type-Options'] = 'nosniff'
-                # response['X-Frame-Options'] = 'DENY'
-                return response
+                return self._serve_file(kb_item.original_file, kb_item.title)
             
-            # SECOND: Legacy support for old Upload model - removed
-            # This code was referencing a non-existent Upload model relationship
-            # All files now use the original_file field in KnowledgeBaseItem
-            
-            # FALLBACK: Try to serve the processed file from knowledge base item
-            # (This would be processed content like .md files, not ideal for raw access)
+            # Fallback to processed file
             if kb_item.file:
-                # TODO: Add file size limits for security
-                # if kb_item.file.size > settings.MAX_FILE_DOWNLOAD_SIZE:
-                #     raise ValidationError("File too large to download")
-                
-                # Determine content type
-                content_type, _ = mimetypes.guess_type(kb_item.file.name)
-                if not content_type:
-                    content_type = 'application/octet-stream'
-                
-                # Return file response
-                response = FileResponse(
-                    kb_item.file.open('rb'),
-                    content_type=content_type,
-                    as_attachment=False
-                )
-                response['Content-Disposition'] = f'inline; filename="{kb_item.title}"'
-                # TODO: Add security headers
-                # response['X-Content-Type-Options'] = 'nosniff'
-                # response['X-Frame-Options'] = 'DENY'
-                return response
+                return self._serve_file(kb_item.file, kb_item.title)
             
             raise Http404("Raw file not found")
             
-        except PermissionDenied:
-            return Response({
-                "error": "Permission denied"
-            }, status=status.HTTP_403_FORBIDDEN)
+        except PermissionDenied as e:
+            return self.error_response(
+                str(e), 
+                status_code=status.HTTP_403_FORBIDDEN
+            )
+        except Http404 as e:
+            return self.error_response(
+                str(e),
+                status_code=status.HTTP_404_NOT_FOUND
+            )
         except Exception as e:
-            # TODO: Log all security-related exceptions
-            # logger.error(f"FileRawView exception: user={request.user.id}, notebook={notebook_id}, file={file_id}, error={str(e)}")
-            return Response({
-                "error": str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return self.error_response(
+                "File access failed",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)}
+            )
+    
+    def _serve_file(self, file_field, title):
+        """Helper to serve a file with proper headers."""
+        content_type, _ = mimetypes.guess_type(file_field.name)
+        if not content_type:
+            content_type = 'application/octet-stream'
+        
+        response = FileResponse(
+            file_field.open('rb'),
+            content_type=content_type,
+            as_attachment=False
+        )
+        response['Content-Disposition'] = f'inline; filename="{title}"'
+        response['X-Content-Type-Options'] = 'nosniff'
+        response['X-Frame-Options'] = 'DENY'
+        return response
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class FileRawSimpleView(APIView):
-    """
-    GET /api/v1/files/{file_id}/raw/
-    Serve raw file content (PDFs, videos, audio, etc.) without requiring notebook context
-    """
-    permission_classes = [permissions.IsAuthenticated]
-    authentication_classes = [authentication.SessionAuthentication]
+class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
+    """Serve raw file content without requiring notebook context."""
 
     def get(self, request, file_id):
+        """Serve raw file directly by knowledge base item ID."""
         try:
-            # TODO: Add rate limiting for file downloads
-            # @ratelimit(key='user', rate='50/h', method='GET')
+            # Get the knowledge base item (verifies ownership)
+            kb_item = self.get_user_kb_item(file_id, request.user)
             
-            # Get the knowledge base item - only files owned by the user
-            kb_item = get_object_or_404(KnowledgeBaseItem, id=file_id, user=request.user)
-            
-            # TODO: Log successful file access
-            # logger.info(f"User {request.user.id} downloaded raw file {file_id}")
-            
-            # FIRST: Try to serve original file from knowledge base (new original_file field)
+            # Try to serve original file first
             if kb_item.original_file:
-                # Determine content type
-                content_type, _ = mimetypes.guess_type(kb_item.original_file.name)
-                if not content_type:
-                    content_type = 'application/octet-stream'
-                
-                # Return file response
-                response = FileResponse(
-                    kb_item.original_file.open('rb'),
-                    content_type=content_type,
-                    as_attachment=False
-                )
-                response['Content-Disposition'] = f'inline; filename="{kb_item.title}"'
-                # TODO: Add security headers
-                # response['X-Content-Type-Options'] = 'nosniff'
-                # response['X-Frame-Options'] = 'DENY'
-                return response
+                return self._serve_file(kb_item.original_file, kb_item.title)
             
-            # SECOND: Legacy support for old Upload model - removed
-            # This code was referencing a non-existent Upload model relationship
-            # All files now use the original_file field in KnowledgeBaseItem
-            
-            # FALLBACK: If no original files found, try knowledge base processed file
-            # (This would be processed content like .md files, not ideal for raw access)
+            # Fallback to processed file
             if kb_item.file:
-                # TODO: Add file size limits for security
-                # if kb_item.file.size > settings.MAX_FILE_DOWNLOAD_SIZE:
-                #     raise ValidationError("File too large to download")
-                
-                # Determine content type
-                content_type, _ = mimetypes.guess_type(kb_item.file.name)
-                if not content_type:
-                    content_type = 'application/octet-stream'
-                
-                # Return file response
-                response = FileResponse(
-                    kb_item.file.open('rb'),
-                    content_type=content_type,
-                    as_attachment=False
-                )
-                response['Content-Disposition'] = f'inline; filename="{kb_item.title}"'
-                # TODO: Add security headers
-                # response['X-Content-Type-Options'] = 'nosniff'
-                # response['X-Frame-Options'] = 'DENY'
-                return response
+                return self._serve_file(kb_item.file, kb_item.title)
             
             raise Http404("Raw file not found")
             
+        except Http404 as e:
+            return self.error_response(
+                str(e),
+                status_code=status.HTTP_404_NOT_FOUND
+            )
         except Exception as e:
-            # TODO: Log all security-related exceptions
-            # logger.error(f"FileRawSimpleView exception: user={request.user.id}, file={file_id}, error={str(e)}")
-            return Response({
-                "error": str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return self.error_response(
+                "File access failed",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)}
+            )
+    
+    def _serve_file(self, file_field, title):
+        """Helper to serve a file with proper headers."""
+        content_type, _ = mimetypes.guess_type(file_field.name)
+        if not content_type:
+            content_type = 'application/octet-stream'
+        
+        response = FileResponse(
+            file_field.open('rb'),
+            content_type=content_type,
+            as_attachment=False
+        )
+        response['Content-Disposition'] = f'inline; filename="{title}"'
+        response['X-Content-Type-Options'] = 'nosniff'
+        response['X-Frame-Options'] = 'DENY'
+        return response

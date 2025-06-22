@@ -667,7 +667,10 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       const response = await apiService.getKnowledgeBase(notebookId);
       
       if (response.success) {
-        setKnowledgeBaseItems(response.data);
+        // Backend returns {items: [...], notebook_id: ..., pagination: ...}
+        // Extract the items array for the frontend
+        const items = response.data?.items || [];
+        setKnowledgeBaseItems(items);
       } else {
         throw new Error(response.error || "Failed to load knowledge base");
       }

@@ -14,7 +14,10 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 
 from .base_service import BaseService
-from ..core.config import settings as config_settings
+try:
+    from .config import config as config_settings
+except ImportError:
+    config_settings = None
 
 class FileStorageService(BaseService):
     """Service for storing and managing processed files in user knowledge base."""
@@ -152,7 +155,7 @@ class FileStorageService(BaseService):
         """Store processed file content in user's knowledge base with organized structure."""
         try:
             # Import here to avoid circular imports
-            from ...models import KnowledgeBaseItem, KnowledgeItem, Notebook, Source
+            from ..models import KnowledgeBaseItem, KnowledgeItem, Notebook, Source
             
             # Calculate content hash for deduplication
             content_hash = self._calculate_content_hash(content)
@@ -335,7 +338,7 @@ class FileStorageService(BaseService):
         """Retrieve file content by knowledge base item ID."""
         try:
             # Import here to avoid circular imports
-            from ...models import KnowledgeBaseItem
+            from ..models import KnowledgeBaseItem
             
             # Query the database for the knowledge base item
             kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
@@ -368,7 +371,7 @@ class FileStorageService(BaseService):
     def get_user_knowledge_base(self, user_id: int, content_type: str = None, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
         """Get all knowledge base items for a user."""
         try:
-            from ...models import KnowledgeBaseItem
+            from ..models import KnowledgeBaseItem
             
             query = KnowledgeBaseItem.objects.filter(user_id=user_id)
             if content_type:
@@ -399,7 +402,7 @@ class FileStorageService(BaseService):
     def link_knowledge_item_to_notebook(self, kb_item_id: str, notebook_id: int, user_id: int, notes: str = "") -> bool:
         """Link an existing knowledge base item to a notebook."""
         try:
-            from ...models import KnowledgeBaseItem, KnowledgeItem, Notebook
+            from ..models import KnowledgeBaseItem, KnowledgeItem, Notebook
             
             # Verify ownership
             kb_item = KnowledgeBaseItem.objects.filter(id=kb_item_id, user_id=user_id).first()
@@ -427,7 +430,7 @@ class FileStorageService(BaseService):
     def delete_knowledge_base_item(self, kb_item_id: str, user_id: int) -> bool:
         """Delete a knowledge base item and its organized directory structure."""
         try:
-            from ...models import KnowledgeBaseItem
+            from ..models import KnowledgeBaseItem
             
             kb_item = KnowledgeBaseItem.objects.filter(id=kb_item_id, user_id=user_id).first()
             if not kb_item:
@@ -450,7 +453,7 @@ class FileStorageService(BaseService):
     def unlink_knowledge_item_from_notebook(self, kb_item_id: str, notebook_id: int, user_id: int) -> bool:
         """Remove a knowledge item link from a specific notebook without deleting the knowledge base item."""
         try:
-            from ...models import KnowledgeItem, Notebook
+            from ..models import KnowledgeItem, Notebook
             
             self.log_operation("unlink_knowledge_item", f"Starting unlink: kb_item_id={kb_item_id}, notebook_id={notebook_id}, user_id={user_id}")
             

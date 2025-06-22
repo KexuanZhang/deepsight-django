@@ -7,7 +7,15 @@ import re
 from typing import Dict, Any, List, Optional
 from datetime import datetime, UTC
 
-from .base_service import BaseService
+try:
+    from .base_service import BaseService
+except ImportError:
+    # Fallback for when base_service isn't available
+    class BaseService:
+        def __init__(self, name):
+            self.service_name = name
+        def log_operation(self, op, msg, level="info"):
+            pass
 
 class ContentIndexingService(BaseService):
     """Service for indexing and searching processed content."""

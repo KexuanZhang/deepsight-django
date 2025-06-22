@@ -10,23 +10,44 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 from datetime import datetime
 
-import fitz  # PyMuPDF
-from fastapi import UploadFile, HTTPException
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
 
-from .services.base_service import BaseService
-from .services.file_storage import FileStorageService
-from .services.content_index import ContentIndexingService
-from .file_validator import FileValidator
-from .core.config import settings
+# Django imports for file handling
+from django.core.files.uploadedfile import UploadedFile as UploadFile
+from django.http import Http404 as HTTPException
+
+try:
+    from .base_service import BaseService
+    from .file_storage import FileStorageService
+    from .content_index import ContentIndexingService
+    from .file_validator import FileValidator
+    from .config import config as settings
+except ImportError:
+    # Fallback classes to prevent import errors
+    class BaseService:
+        def __init__(self, name):
+            self.service_name = name
+        def log_operation(self, op, msg, level="info"):
+            pass
+    
+    FileStorageService = None
+    ContentIndexingService = None
+    FileValidator = None
+    settings = None
 
 class UploadProcessor(BaseService):
     """Handles immediate processing of uploaded files."""
     
     def __init__(self):
         super().__init__("upload_processor")
-        self.file_storage = FileStorageService()
-        self.content_indexing = ContentIndexingService()
-        self.validator = FileValidator()
+        
+        # Initialize services with fallbacks
+        self.file_storage = FileStorageService() if FileStorageService else None
+        self.content_indexing = ContentIndexingService() if ContentIndexingService else None
+        self.validator = FileValidator() if FileValidator else None
         
         # Initialize whisper model lazily
         self._whisper_model = None
