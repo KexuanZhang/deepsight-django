@@ -25,7 +25,7 @@ class TranslateText(dspy.Signature):
 class TranslateModule(dspy.Module):
     """Module to translate text from English to Chinese."""
     
-    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def __init__(self, engine: dspy.LM):
         super().__init__()
         self.translate = dspy.Predict(TranslateText)
         self.engine = engine
@@ -44,7 +44,7 @@ class ArticleTranslationModule:
 
     def __init__(
         self,
-        translation_lm: Union[dspy.dsp.LM, dspy.dsp.HFModel],
+        translation_lm: dspy.LM,
     ):
         self.translation_lm = translation_lm
         self.translator = TranslateModule(engine=self.translation_lm)

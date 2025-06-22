@@ -52,7 +52,7 @@ class UserInputTopicImprover(dspy.Signature):
 
 
 class TopicImprover(dspy.Module):
-    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def __init__(self, engine: dspy.LM):
         super().__init__()
         self.engine = engine
         self.topic_generator = dspy.Predict(TopicGenerator)
@@ -186,25 +186,25 @@ class STORMWikiLMConfigs(LMConfigs):
                 "No valid OpenAI API provider is provided. Cannot use default LLM configurations."
             )
 
-    def set_conv_simulator_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def set_conv_simulator_lm(self, model: dspy.LM):
         self.conv_simulator_lm = model
 
-    def set_question_asker_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def set_question_asker_lm(self, model: dspy.LM):
         self.question_asker_lm = model
 
-    def set_outline_gen_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def set_outline_gen_lm(self, model: dspy.LM):
         self.outline_gen_lm = model
 
-    def set_article_gen_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def set_article_gen_lm(self, model: dspy.LM):
         self.article_gen_lm = model
 
-    def set_article_polish_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def set_article_polish_lm(self, model: dspy.LM):
         self.article_polish_lm = model
 
-    def set_topic_improver_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def set_topic_improver_lm(self, model: dspy.LM):
         self.topic_improver_lm = model
         
-    def set_conceptualize_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def set_conceptualize_lm(self, model: dspy.LM):
         self.conceptualize_lm = model
 
 

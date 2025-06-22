@@ -22,7 +22,7 @@ class GenPersona(dspy.Signature):
 
 class CreateWriterWithPersona(dspy.Module):
     """Discover different perspectives of researching the topic by reading Wikipedia pages of related topics."""
-    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def __init__(self, engine: dspy.LM):
         super().__init__()
         self.find_related_topic = dspy.ChainOfThought(FindRelatedTopic)
         self.gen_persona = dspy.ChainOfThought(GenPersona)
@@ -39,7 +39,7 @@ class StormPersonaGenerator:
     """
     A generator class for creating personas based on a given transcript and optional topic.
     """
-    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def __init__(self, engine: dspy.LM):
         self.create_writer_with_persona = CreateWriterWithPersona(engine=engine)
 
     def generate_persona(self, transcript: str, max_num_persona: int = 3, topic: Optional[str] = None, old_outline: Optional[str] = None) -> List[str]:

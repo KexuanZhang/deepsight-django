@@ -17,6 +17,9 @@ const fileIcons = {
   mp3: Music,
   mp4: Video,
   wav: Music,
+  m4a: Music,
+  avi: Video,
+  mov: Video,
   url: Link2,
   website: Globe,
   media: Video
@@ -956,7 +959,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
   };
 
   const validateFile = (file) => {
-    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav"];
+    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav", "m4a", "avi", "mov"];
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
     const maxSize = 100 * 1024 * 1024; // 100MB
     const minSize = 100; // 100 bytes minimum
@@ -991,7 +994,10 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         "md": "text/markdown",
         "mp3": "audio/mpeg",
         "mp4": "video/mp4",
-        "wav": "audio/wav"
+        "wav": "audio/wav",
+        "m4a": "audio/mp4",
+        "avi": "video/x-msvideo",
+        "mov": "video/quicktime"
       };
       
       const expectedType = expectedTypes[extension];
@@ -1658,11 +1664,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           type="file"
           className="hidden"
           onChange={handleFileChange}
-          accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav"
+          accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav,.m4a,.avi,.mov"
         />
         
         <p className="text-xs text-gray-400 mt-2 text-center">
-          Supports PDF, TXT, MD, PPT, MP3, MP4, WAV (max 100MB)
+          Supports PDF, TXT, MD, PPT, MP3, MP4, WAV, M4A, AVI, MOV (max 100MB)
         </p>
         <p className="text-xs text-gray-300 mt-1 text-center">
           💡 Files shown are original uploads • Extracted content used for processing
@@ -1755,7 +1761,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                     </div>
                   </div>
                   <p className="text-sm text-gray-500 mt-6">
-                    Supported file types: PDF, .txt, Markdown, Audio (mp3, wav), Video (mp4)
+                    Supported file types: PDF, .txt, Markdown, Audio (mp3, wav, m4a), Video (mp4, avi, mov)
                   </p>
                 </div>
               )}

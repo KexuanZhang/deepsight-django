@@ -156,7 +156,7 @@ class EnhancedStormInformationTable(StormInformationTable):
             snippet: The original snippet
             full_document: The full document text
             title: Document title
-            lm: Language model instance conforming to dspy.dsp.LM interface
+            lm: Language model instance conforming to dspy.LM interface
 
         Returns:
             Contextualized snippet (original snippet with context prepended, or a fallback)

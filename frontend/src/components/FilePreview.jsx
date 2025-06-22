@@ -64,10 +64,23 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
     if (isOpen && source && supportsPreview(source.metadata?.file_extension, source.metadata)) {
       loadPreview();
     }
+    
+    // Cleanup function to revoke blob URLs
+    return () => {
+      if (state.preview?.audioUrl && state.preview.audioUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(state.preview.audioUrl);
+      }
+      if (state.preview?.videoUrl && state.preview.videoUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(state.preview.videoUrl);
+      }
+    };
   }, [isOpen, source, notebookId]);
 
   const loadPreview = async () => {
     if (!source) return;
+    
+    console.log('FilePreview: Loading preview for source:', source);
+    console.log('FilePreview: Notebook ID:', notebookId);
     
     updateState({
       isLoading: true,
@@ -80,8 +93,10 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
     
     try {
       const previewData = await generatePreview(source, notebookId);
+      console.log('FilePreview: Preview data loaded:', previewData);
       updateState({ preview: previewData, isLoading: false });
     } catch (err) {
+      console.error('FilePreview: Error loading preview:', err);
       updateState({ error: err.message, isLoading: false });
     }
   };
@@ -264,7 +279,13 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
           preload="metadata"
           controlsList="nodownload"
           onError={(e) => {
-            console.log('Audio load error:', e);
+            console.error('Audio load error:', e);
+            console.error('Audio error details:', {
+              error: e.target?.error,
+              networkState: e.target?.networkState,
+              readyState: e.target?.readyState,
+              src: e.target?.src
+            });
             updateState({ audioError: true });
           }}
           onLoadedMetadata={() => {
@@ -275,8 +296,12 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
           }}
         >
           <source 
-            src={state.preview.audioUrl || getRawFileUrl(source?.file_id)} 
-            type={`audio/${state.preview.format.toLowerCase()}`} 
+            src={state.preview.audioUrl} 
+            type={
+              state.preview.format.toLowerCase() === 'm4a' ? 'audio/mp4' : 
+              state.preview.format.toLowerCase() === 'mp3' ? 'audio/mpeg' :
+              `audio/${state.preview.format.toLowerCase()}`
+            } 
           />
           Your browser does not support the audio element.
         </audio>
@@ -384,7 +409,7 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
           }}
         >
           <source 
-            src={state.preview.videoUrl || getRawFileUrl(source?.file_id)} 
+            src={state.preview.videoUrl} 
             type={`video/${state.preview.format.toLowerCase()}`} 
           />
           Your browser does not support the video element.
@@ -614,6 +639,18 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
       </div>
     </div>
   );
+
+  // Clean up blob URLs when component closes
+  useEffect(() => {
+    if (!isOpen && state.preview) {
+      if (state.preview.audioUrl && state.preview.audioUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(state.preview.audioUrl);
+      }
+      if (state.preview.videoUrl && state.preview.videoUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(state.preview.videoUrl);
+      }
+    }
+  }, [isOpen, state.preview]);
 
   if (!isOpen) return null;
 

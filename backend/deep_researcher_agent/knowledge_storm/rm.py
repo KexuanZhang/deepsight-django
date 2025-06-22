@@ -5,7 +5,8 @@ from typing import Callable, Union, List
 import backoff
 import dspy
 import requests
-from dsp import backoff_hdlr, giveup_hdlr
+# Import backoff handlers from our own lm module instead of the old dsp module
+from .lm import backoff_hdlr, giveup_hdlr
 
 from .utils import WebPageHelper
 # Add import for the combined_set from retriever module

@@ -11,6 +11,8 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import PermissionDenied
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 from uuid import uuid4    
 import mimetypes
 
@@ -645,6 +647,7 @@ class FileContentView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class FileRawView(APIView):
     """
     GET /api/v1/notebooks/{notebook_id}/files/{file_id}/raw/
@@ -697,24 +700,9 @@ class FileRawView(APIView):
                 # response['X-Frame-Options'] = 'DENY'
                 return response
             
-            # SECOND: Try to serve original source file (legacy support)
-            if knowledge_item.source:
-                source = knowledge_item.source
-                
-                if source.source_type == "file" and hasattr(source, 'upload'):
-                    upload = source.upload
-                    if upload.file:
-                        content_type, _ = mimetypes.guess_type(upload.file.name)
-                        if not content_type:
-                            content_type = 'application/octet-stream'
-                        
-                        response = FileResponse(
-                            upload.file.open('rb'),
-                            content_type=content_type,
-                            as_attachment=False
-                        )
-                        response['Content-Disposition'] = f'inline; filename="{upload.original_name or kb_item.title}"'
-                        return response
+            # SECOND: Legacy support for old Upload model - removed
+            # This code was referencing a non-existent Upload model relationship
+            # All files now use the original_file field in KnowledgeBaseItem
             
             # FALLBACK: Try to serve the processed file from knowledge base item
             # (This would be processed content like .md files, not ideal for raw access)
@@ -754,6 +742,7 @@ class FileRawView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class FileRawSimpleView(APIView):
     """
     GET /api/v1/files/{file_id}/raw/
@@ -792,31 +781,9 @@ class FileRawSimpleView(APIView):
                 # response['X-Frame-Options'] = 'DENY'
                 return response
             
-            # SECOND: Try to find original source file (legacy support)
-            # Look for any knowledge item that links to this kb_item for the user
-            knowledge_items = KnowledgeItem.objects.filter(
-                knowledge_base_item=kb_item,
-                notebook__user=request.user
-            )
-            
-            for knowledge_item in knowledge_items:
-                if knowledge_item.source:
-                    source = knowledge_item.source
-                    
-                    if source.source_type == "file" and hasattr(source, 'upload'):
-                        upload = source.upload
-                        if upload.file:
-                            content_type, _ = mimetypes.guess_type(upload.file.name)
-                            if not content_type:
-                                content_type = 'application/octet-stream'
-                            
-                            response = FileResponse(
-                                upload.file.open('rb'),
-                                content_type=content_type,
-                                as_attachment=False
-                            )
-                            response['Content-Disposition'] = f'inline; filename="{upload.original_name or kb_item.title}"'
-                            return response
+            # SECOND: Legacy support for old Upload model - removed
+            # This code was referencing a non-existent Upload model relationship
+            # All files now use the original_file field in KnowledgeBaseItem
             
             # FALLBACK: If no original files found, try knowledge base processed file
             # (This would be processed content like .md files, not ideal for raw access)

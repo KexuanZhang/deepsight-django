@@ -12,8 +12,8 @@ export const FILE_CATEGORIES = {
   TEXT: ['txt', 'md'],
   PDF: ['pdf'],
   PRESENTATION: ['ppt', 'pptx'],
-  AUDIO: ['mp3', 'wav'],
-  VIDEO: ['mp4'],
+  AUDIO: ['mp3', 'wav', 'm4a'],
+  VIDEO: ['mp4', 'avi', 'mov'],
   URL: ['url']
 };
 
@@ -81,7 +81,7 @@ export function supportsPreview(fileExtension, metadata = {}) {
 /**
  * Generate preview data for different file types
  */
-export async function generatePreview(source) {
+export async function generatePreview(source, notebookId = null) {
   try {
     const { metadata, file_id } = source;
     const previewType = getPreviewType(metadata.file_extension || '', metadata);
@@ -97,10 +97,10 @@ export async function generatePreview(source) {
         return await generateUrlPreview(metadata);
       
       case PREVIEW_TYPES.AUDIO_INFO:
-        return await generateAudioPreview(metadata);
+        return await generateAudioPreview(file_id, metadata, notebookId);
       
       case PREVIEW_TYPES.VIDEO_INFO:
-        return await generateVideoPreview(metadata);
+        return await generateVideoPreview(file_id, metadata, notebookId);
       
       case PREVIEW_TYPES.METADATA:
       default:
@@ -183,10 +183,43 @@ async function generateUrlPreview(metadata) {
 /**
  * Generate audio file preview
  */
-async function generateAudioPreview(metadata) {
-  // Use the raw endpoint to serve the actual audio binary file
-  const fileId = metadata.file_id;
-  const audioUrl = `${API_BASE_URL}/files/${fileId}/raw`;
+async function generateAudioPreview(fileId, metadata, notebookId = null) {
+  console.log('Generating audio preview for fileId:', fileId, 'metadata:', metadata, 'notebookId:', notebookId);
+  
+  // Validate required data
+  if (!fileId) {
+    throw new Error('File ID is required for audio preview');
+  }
+  
+  // Create a blob URL for the audio file to handle authentication properly
+  let audioUrl = null;
+  try {
+    const rawUrl = notebookId ? 
+      `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
+      `${API_BASE_URL}/files/${fileId}/raw`;
+    
+    // Fetch the audio file with credentials
+    const response = await fetch(rawUrl, {
+      credentials: 'include',
+      headers: {
+        'Accept': 'audio/*,*/*'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch audio file: ${response.status}`);
+    }
+    
+    const blob = await response.blob();
+    audioUrl = URL.createObjectURL(blob);
+    console.log('Audio blob URL created:', audioUrl);
+  } catch (error) {
+    console.error('Failed to create audio blob URL:', error);
+    // Fallback to direct URL (might not work in Chrome due to authentication issues)
+    audioUrl = notebookId ? 
+      `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
+      `${API_BASE_URL}/files/${fileId}/raw`;
+  }
   
   // Check if we have parsed transcript content
   let transcriptContent = null;
@@ -199,12 +232,15 @@ async function generateAudioPreview(metadata) {
       transcriptContent = response.data.content;
       hasTranscript = transcriptContent.trim().length > 0;
       wordCount = transcriptContent.split(/\s+/).filter(word => word.length > 0).length;
+      console.log('Audio transcript loaded successfully, word count:', wordCount);
+    } else {
+      console.log('No transcript content in response:', response);
     }
   } catch (error) {
     console.log('No transcript available for audio file:', error);
   }
   
-  return {
+  const previewData = {
     type: PREVIEW_TYPES.AUDIO_INFO,
     title: metadata.original_filename || 'Audio File',
     content: hasTranscript ? transcriptContent : 'Audio file ready for playback',
@@ -219,15 +255,51 @@ async function generateAudioPreview(metadata) {
     audioUrl: audioUrl,
     fileId: fileId
   };
+  
+  console.log('Audio preview data generated:', previewData);
+  return previewData;
 }
 
 /**
  * Generate video file preview
  */
-async function generateVideoPreview(metadata) {
-  // Use the raw endpoint to serve the actual video binary file
-  const fileId = metadata.file_id;
-  const videoUrl = `${API_BASE_URL}/files/${fileId}/raw`;
+async function generateVideoPreview(fileId, metadata, notebookId = null) {
+  console.log('Generating video preview for fileId:', fileId, 'metadata:', metadata, 'notebookId:', notebookId);
+  
+  // Validate required data
+  if (!fileId) {
+    throw new Error('File ID is required for video preview');
+  }
+  
+  // Create a blob URL for the video file to handle authentication properly
+  let videoUrl = null;
+  try {
+    const rawUrl = notebookId ? 
+      `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
+      `${API_BASE_URL}/files/${fileId}/raw`;
+    
+    // Fetch the video file with credentials
+    const response = await fetch(rawUrl, {
+      credentials: 'include',
+      headers: {
+        'Accept': 'video/*,*/*'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch video file: ${response.status}`);
+    }
+    
+    const blob = await response.blob();
+    videoUrl = URL.createObjectURL(blob);
+    console.log('Video blob URL created:', videoUrl);
+  } catch (error) {
+    console.error('Failed to create video blob URL:', error);
+    // Fallback to direct URL (might not work in Chrome due to authentication issues)
+    videoUrl = notebookId ? 
+      `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
+      `${API_BASE_URL}/files/${fileId}/raw`;
+  }
   
   // Check if we have parsed transcript content
   let transcriptContent = null;
@@ -240,12 +312,15 @@ async function generateVideoPreview(metadata) {
       transcriptContent = response.data.content;
       hasTranscript = transcriptContent.trim().length > 0;
       wordCount = transcriptContent.split(/\s+/).filter(word => word.length > 0).length;
+      console.log('Video transcript loaded successfully, word count:', wordCount);
+    } else {
+      console.log('No transcript content in response:', response);
     }
   } catch (error) {
     console.log('No transcript available for video file:', error);
   }
   
-  return {
+  const previewData = {
     type: PREVIEW_TYPES.VIDEO_INFO,
     title: metadata.original_filename || 'Video File',
     content: hasTranscript ? transcriptContent : 'Video file ready for playback',
@@ -260,6 +335,9 @@ async function generateVideoPreview(metadata) {
     videoUrl: videoUrl,
     fileId: fileId
   };
+  
+  console.log('Video preview data generated:', previewData);
+  return previewData;
 }
 
 /**
