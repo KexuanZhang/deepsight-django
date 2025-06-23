@@ -6,7 +6,7 @@ import os
 import random
 import requests
 import threading
-from typing import Optional, Literal, Any, Union
+from typing import Optional, Literal, Any
 import ujson
 from pathlib import Path
 
@@ -239,7 +239,7 @@ class LitellmModel(LM):
 
     def __init__(
         self,
-        model: str = "openai/gpt-4o-mini",
+        model: str = "openai/gpt-4.1-mini",
         api_key: Optional[str] = None,
         model_type: Literal["chat", "text"] = "chat",
         **kwargs,
@@ -316,11 +316,11 @@ class LitellmModel(LM):
 
 
 class OpenAIModel(dspy.LM):
-    """A wrapper class for dspy.OpenAI."""
+    """A wrapper class for dspy.LM."""
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-4.1-mini",
         api_key: Optional[str] = None,
         model_type: Literal["chat", "text"] = None,
         **kwargs,
@@ -406,7 +406,7 @@ class OpenAIModel(dspy.LM):
 
 
 class DeepSeekModel(dspy.LM):
-    """A wrapper class for DeepSeek API, compatible with dspy.OpenAI."""
+    """A wrapper class for DeepSeek API, compatible with dspy.LM."""
 
     def __init__(
         self,
@@ -650,7 +650,7 @@ class AzureOpenAIModel(dspy.LM):
 
 
 class GroqModel(dspy.LM):
-    """A wrapper class for Groq API (https://console.groq.com/), compatible with dspy.OpenAI."""
+    """A wrapper class for Groq API (https://console.groq.com/), compatible with dspy.LM."""
 
     def __init__(
         self,
@@ -773,7 +773,7 @@ class ClaudeModel(dspy.LM):
         api_base: Optional[str] = None,
         **kwargs,
     ):
-        super().__init__(model)
+        super().__init__(model=model, **kwargs)
         try:
             from anthropic import Anthropic
         except ImportError as err:

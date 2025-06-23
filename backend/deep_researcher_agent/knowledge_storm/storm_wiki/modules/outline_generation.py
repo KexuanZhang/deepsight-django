@@ -115,9 +115,6 @@ class WriteOutline(dspy.Module):
                 
                 # Rate and reorder the initial outline if rater is available
                 if self.outline_rater:
-                    # Debug: log the outline before rating
-                    logger.info(f"Original outline before rating (first 500 chars): {old_outline[:500] if old_outline else 'None'}")
-                    
                     # Normalize heading levels: ensure L1 headings start with single #
                     normalized_outline = self._normalize_heading_levels(old_outline)
                     

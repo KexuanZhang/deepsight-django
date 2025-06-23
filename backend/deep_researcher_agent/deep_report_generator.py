@@ -1,24 +1,27 @@
-# CRITICAL: Set macOS safety environment variables BEFORE any imports
-# This prevents Objective-C forking issues in PyTorch, CLIP, EasyOCR, etc.
 import os
 import sys
 
 if sys.platform == 'darwin':  # macOS
     # Core macOS forking safety
     os.environ.setdefault('OBJC_DISABLE_INITIALIZE_FORK_SAFETY', 'YES')
-    
+
     # PyTorch/OpenMP/MKL safety
     os.environ.setdefault('KMP_DUPLICATE_LIB_OK', 'TRUE')
     os.environ.setdefault('OMP_NUM_THREADS', '1')
     os.environ.setdefault('MKL_NUM_THREADS', '1')
     os.environ.setdefault('PYTORCH_ENABLE_MPS_FALLBACK', '1')
-    
+
+    # Disable MPS completely due to Metal Performance Shaders kernel compilation issues
+    os.environ.setdefault('PYTORCH_MPS_HIGH_WATERMARK_RATIO', '0.0')
+    os.environ.setdefault('PYTORCH_DISABLE_MPS', '1')
+
     # Library-specific safety
     os.environ.setdefault('OPENCV_LOG_LEVEL', 'SILENT')
     os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
     os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '3')
 
 import glob
+import json
 import logging
 import pathlib
 import tempfile
@@ -44,6 +47,7 @@ from knowledge_storm.rm import (
     SearXNG,
     AzureAISearch,
 )
+from knowledge_storm.storm_wiki.modules.retriever import get_whitelisted_domains, is_valid_source
 from knowledge_storm.utils import (
     FileIOHelper,
     QueryLogger,
@@ -58,7 +62,6 @@ from utils.paper_processing import (
 )
 from utils.post_processing import process_file
 from prompts import PromptType, configure_prompts
-from utils.image_extractor.main import process_video
 
 # Get the directory where the script is located
 SCRIPT_DIR = pathlib.Path(__file__).parent.absolute()
@@ -122,6 +125,8 @@ class ReportGenerationConfig:
     # Optional parameters
     time_range: Optional[TimeRange] = None
     include_domains: bool = False
+    whitelist_domains: Optional[List[str]] = None
+    search_depth: str = "basic"  # "basic" or "advanced" for TavilySearchRM
     old_outline_path: Optional[str] = None
     skip_rewrite_outline: bool = False
     
@@ -132,8 +137,7 @@ class ReportGenerationConfig:
     paper_path: Optional[List[str]] = None
     csv_path: Optional[str] = None
     author_json: Optional[str] = None
-    video_url: Optional[str] = None
-    video_path: Optional[str] = None
+    caption_files: Optional[List[str]] = None
     
     # CSV processing options (for non-interactive API use)
     csv_session_code: Optional[str] = None
@@ -204,10 +208,10 @@ class DeepReportGenerator:
             raise ValueError("OPENAI_API_KEY not found. Please set it in secrets.toml or environment variables.")
         
         # Model names for OpenAI
-        conversation_model_name = "gpt-4o-mini"
-        outline_gen_model_name = "gpt-4o"
-        generation_model_name = "gpt-4o"
-        conceptualize_model_name = "gpt-4o-mini"
+        conversation_model_name = "gpt-4.1-mini"
+        outline_gen_model_name = "gpt-4.1"
+        generation_model_name = "gpt-4.1"
+        conceptualize_model_name = "gpt-4.1-nano"
         
         # Configure OpenAI language models
         conv_simulator_lm = OpenAIModel(
@@ -223,14 +227,12 @@ class DeepReportGenerator:
             model=generation_model_name, max_tokens=3000, **openai_kwargs
         )
         article_polish_lm = OpenAIModel(
-            model=generation_model_name, max_tokens=3000, **openai_kwargs
+            model=generation_model_name, max_tokens=20000, **openai_kwargs
         )
         topic_improver_lm = OpenAIModel(
             model=generation_model_name, max_tokens=500, **openai_kwargs
         )
-        conceptualize_lm = OpenAIModel(
-            model=conceptualize_model_name, max_tokens=100, **openai_kwargs
-        )
+
         
         lm_configs.set_conv_simulator_lm(conv_simulator_lm)
         lm_configs.set_question_asker_lm(question_asker_lm)
@@ -238,7 +240,6 @@ class DeepReportGenerator:
         lm_configs.set_article_gen_lm(article_gen_lm)
         lm_configs.set_article_polish_lm(article_polish_lm)
         lm_configs.set_topic_improver_lm(topic_improver_lm)
-        lm_configs.set_conceptualize_lm(conceptualize_lm)
         
         return lm_configs
     
@@ -268,7 +269,7 @@ class DeepReportGenerator:
         article_gen_lm = GoogleModel(model=generation_model_name, max_tokens=3000, **gemini_kwargs)
         article_polish_lm = GoogleModel(model=polish_model_name, max_tokens=30000, **gemini_kwargs)
         topic_improver_lm = GoogleModel(model=topic_improver_model_name, max_tokens=500, **gemini_kwargs)
-        conceptualize_lm = GoogleModel(model=conversation_model_name, max_tokens=100, **gemini_kwargs)
+
         
         lm_configs.set_conv_simulator_lm(conv_simulator_lm)
         lm_configs.set_question_asker_lm(question_asker_lm)
@@ -276,7 +277,6 @@ class DeepReportGenerator:
         lm_configs.set_article_gen_lm(article_gen_lm)
         lm_configs.set_article_polish_lm(article_polish_lm)
         lm_configs.set_topic_improver_lm(topic_improver_lm)
-        lm_configs.set_conceptualize_lm(conceptualize_lm)
         
         return lm_configs
     
@@ -284,22 +284,33 @@ class DeepReportGenerator:
         """Setup the retrieval model based on the configured retriever type."""
         time_range = config.time_range.value if config.time_range else None
         
+        # Determine domains to include based on configuration
+        domains_to_include = None
+        if config.whitelist_domains:
+            domains_to_include = config.whitelist_domains
+        elif config.include_domains:
+            # Use predefined whitelisted domains when include_domains is True but no specific domains provided
+            domains_to_include = get_whitelisted_domains()
+            
         if config.retriever == RetrieverType.TAVILY:
             return TavilySearchRM(
                 tavily_search_api_key=os.getenv("TAVILY_API_KEY"),
                 k=engine_args.search_top_k,
-                include_raw_content=True,
+                include_raw_content=False,
                 include_answer=False,
                 time_range=time_range,
-                search_depth="advanced",
-                include_domains=["x.com"] if config.include_domains else None,
+                search_depth=config.search_depth,
+                chunks_per_source=3,
+                include_domains=domains_to_include,
+                is_valid_source=is_valid_source,
             )
         elif config.retriever == RetrieverType.BRAVE:
             return BraveRM(
                 brave_search_api_key=os.getenv("BRAVE_API_KEY"),
                 k=engine_args.search_top_k,
                 time_range=time_range,
-                include_domains=["x.com"] if config.include_domains else None,
+                include_domains=domains_to_include,
+                is_valid_source=is_valid_source,
             )
         elif config.retriever == RetrieverType.SERPER:
             serper_api_key = os.getenv("SERPER_API_KEY")
@@ -319,20 +330,25 @@ class DeepReportGenerator:
             return YouRM(
                 ydc_api_key=os.getenv("YDC_API_KEY"),
                 k=engine_args.search_top_k,
+                is_valid_source=is_valid_source,
             )
         elif config.retriever == RetrieverType.BING:
             return BingSearch(
                 bing_search_api_key=os.getenv("BING_SEARCH_API_KEY"),
                 k=engine_args.search_top_k,
+                is_valid_source=is_valid_source,
             )
         elif config.retriever == RetrieverType.DUCKDUCKGO:
             return DuckDuckGoSearchRM(
                 k=engine_args.search_top_k,
+                is_valid_source=is_valid_source,
             )
         elif config.retriever == RetrieverType.SEARXNG:
             return SearXNG(
-                searxng_url=os.getenv("SEARXNG_URL"),
+                searxng_api_url=os.getenv("searxng_api_url"),
                 k=engine_args.search_top_k,
+                time_range=time_range,
+                is_valid_source=is_valid_source,
             )
         elif config.retriever == RetrieverType.AZURE_AI_SEARCH:
             return AzureAISearch(
@@ -340,6 +356,7 @@ class DeepReportGenerator:
                 azure_ai_search_endpoint=os.getenv("AZURE_AI_SEARCH_ENDPOINT"),
                 azure_ai_search_index=os.getenv("AZURE_AI_SEARCH_INDEX"),
                 k=engine_args.search_top_k,
+                is_valid_source=is_valid_source,
             )
         else:
             raise ValueError(
@@ -590,46 +607,74 @@ class DeepReportGenerator:
         return loaded_paper_input, figure_data_for_runner, original_paper_paths_for_images
     
     def _process_video(self, config: ReportGenerationConfig, article_output_dir: str) -> Optional[List[Dict]]:
-        """Process video and extract figure data."""
-        if not (config.video_url or config.video_path):
+        """Process caption files to extract figure data."""
+        if not config.caption_files:
             return None
-        
-        self.logger.info("Processing video from provided URL or path...")
-        
-        # Get absolute path to secrets.toml
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        secrets_path = os.path.join(script_dir, "..", self.secrets_path)
-        if not os.path.exists(secrets_path):
-            secrets_path = os.path.join(script_dir, self.secrets_path)
-            if not os.path.exists(secrets_path):
-                self.logger.warning("Could not find secrets.toml file. Caption generation may fail.")
-                secrets_path = None
-        
-        # Process the video directly in the article directory
-        caption_file = process_video(
-            url=config.video_url,
-            video_path=config.video_path,
-            output_dir=article_output_dir,
-            secrets_path=secrets_path,
-        )
-        
-        if caption_file:
-            self.logger.info(f"Video processing completed. Caption file saved to: {caption_file}")
-            
-            # Extract figure data from the video caption file
+
+        self.logger.info("Processing caption files for figure extraction...")
+
+        all_figure_data = []
+
+        for caption_file in config.caption_files:
+            if not os.path.exists(caption_file):
+                self.logger.warning(f"Caption file not found: {caption_file}")
+                continue
+
+            self.logger.info(f"Processing caption file: {caption_file}")
+
+            # Load and process caption data
             try:
+                with open(caption_file, 'r', encoding='utf-8') as f:
+                    caption_data = json.load(f)
+
+                if not isinstance(caption_data, list):
+                    self.logger.warning(f"Expected list in caption file {caption_file}, got {type(caption_data)}")
+                    continue
+
+                # Extract figure data from caption data
                 video_figure_data = extract_figure_data(caption_file)
-                if video_figure_data:
-                    self.logger.info(f"Successfully extracted {len(video_figure_data)} figures from video captions.")
-                    return video_figure_data
-                else:
-                    self.logger.info("No figures found in video caption file.")
+                if not video_figure_data:
+                    self.logger.info(f"No figures found in caption file {caption_file}.")
+                    continue
+
+                # Update paths in figure data to be relative to article output directory
+                base_dir = os.path.dirname(caption_file)  # extractions directory
+
+                for fig_dict in video_figure_data:
+                    if 'image_path' in fig_dict:
+                        image_path = fig_dict['image_path']
+
+                        # If path is absolute, make it relative to article output directory
+                        if os.path.isabs(image_path):
+                            try:
+                                # Try to make path relative to article output directory
+                                rel_path = os.path.relpath(image_path, article_output_dir)
+                                fig_dict['image_path'] = rel_path
+                            except ValueError:
+                                # If paths are on different drives, keep filename only
+                                fig_dict['image_path'] = os.path.basename(image_path)
+                        elif not image_path.startswith('.'):
+                            # If it's a relative path but doesn't start with '.', make it relative to base_dir
+                            full_path = os.path.join(base_dir, image_path)
+                            try:
+                                rel_path = os.path.relpath(full_path, article_output_dir)
+                                fig_dict['image_path'] = rel_path
+                            except ValueError:
+                                fig_dict['image_path'] = os.path.basename(image_path)
+
+                all_figure_data.extend(video_figure_data)
+                self.logger.info(f"Successfully extracted {len(video_figure_data)} figures from {caption_file}.")
+
             except Exception as e:
-                self.logger.error(f"Failed to extract figure data from video caption file {caption_file}: {e}")
+                self.logger.error(f"Failed to process caption file {caption_file}: {e}")
+                continue
+
+        if all_figure_data:
+            self.logger.info(f"Total figures extracted from all caption files: {len(all_figure_data)}")
+            return all_figure_data
         else:
-            self.logger.warning("Failed to process video or generate captions.")
-        
-        return None
+            self.logger.info("No figures found in any caption files.")
+            return None
     
     def generate_report(self, config: ReportGenerationConfig) -> ReportGenerationResult:
         """Generate a research report based on the provided configuration.
@@ -653,8 +698,8 @@ class DeepReportGenerator:
             processing_logs.append(f"Prompts configured for {config.prompt_type.value} type")
             
             # Validate inputs
-            if not config.topic and not config.transcript_path and not config.paper_path and not config.csv_path:
-                raise ValueError("Either a topic, transcript, paper, or CSV file must be provided.")
+            if not config.topic and not config.transcript_path and not config.paper_path and not config.csv_path and not config.caption_files:
+                raise ValueError("Either a topic, transcript, paper, CSV file, or caption files must be provided.")
             
             # Setup language models and configurations
             lm_configs = self._setup_language_models(config)
@@ -717,7 +762,7 @@ class DeepReportGenerator:
             runner.article_dir_name = folder_name
             
             # Update figure data paths
-            if not (config.video_url or config.video_path) and runner.figure_data and runner.article_dir_name:
+            if not config.caption_files and runner.figure_data and runner.article_dir_name:
                 image_output_subfolder_name = f"Images_{runner.article_dir_name}"
                 updated_figure_data_list = []
                 for fig_dict in runner.figure_data:

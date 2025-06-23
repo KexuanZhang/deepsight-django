@@ -105,7 +105,6 @@ class STORMWikiLMConfigs(LMConfigs):
         self.article_gen_lm = None
         self.article_polish_lm = None
         self.topic_improver_lm = None
-        self.conceptualize_lm = None
 
     def init_openai_model(
         self,
@@ -133,54 +132,47 @@ class STORMWikiLMConfigs(LMConfigs):
         }
         if openai_type and openai_type == "openai":
             self.conv_simulator_lm = LitellmModel(
-                model="gpt-4.1-mini-2025-04-14", max_tokens=500, **openai_kwargs
+                model="gpt-4.1-mini", max_tokens=500, **openai_kwargs
             )
             self.question_asker_lm = LitellmModel(
-                model="gpt-4.1-mini-2025-04-14", max_tokens=500, **openai_kwargs
+                model="gpt-4.1-mini", max_tokens=500, **openai_kwargs
             )
             self.outline_gen_lm = LitellmModel(
-                model="gpt-4.1-2025-04-14", max_tokens=1500, **openai_kwargs
+                model="gpt-4.1", max_tokens=3000, **openai_kwargs
             )
             self.article_gen_lm = LitellmModel(
-                model="gpt-4.1-2025-04-14", max_tokens=2000, **openai_kwargs
+                model="gpt-4.1", max_tokens=3000, **openai_kwargs
             )
             self.article_polish_lm = LitellmModel(
-                model="gpt-4.1-2025-04-14", max_tokens=8000, **openai_kwargs
+                model="gpt-4.1", max_tokens=20000, **openai_kwargs
             )
-            self.conceptualize_lm = LitellmModel(
-                model="gpt-4.1-mini-2025-04-14", max_tokens=200, **openai_kwargs
-            )
+
         elif openai_type and openai_type == "azure":
             self.conv_simulator_lm = LitellmModel(
-                model="azure/gpt-4o-mini-2024-07-18", max_tokens=500, **openai_kwargs
+                model="azure/gpt-4.1-mini", max_tokens=500, **openai_kwargs
             )
             self.question_asker_lm = LitellmModel(
-                model="azure/gpt-4o-mini-2024-07-18",
+                model="azure/gpt-4.1-mini",
                 max_tokens=500,
                 **azure_kwargs,
                 model_type="chat",
             )
             self.outline_gen_lm = LitellmModel(
-                model="azure/gpt-4o", max_tokens=400, **azure_kwargs, model_type="chat"
+                model="azure/gpt-4.1", max_tokens=2000, **azure_kwargs, model_type="chat"
             )
             self.article_gen_lm = LitellmModel(
-                model="azure/gpt-4o-mini-2024-07-18",
-                max_tokens=700,
+                model="azure/gpt-4.1",
+                max_tokens=3000,
                 **azure_kwargs,
                 model_type="chat",
             )
             self.article_polish_lm = LitellmModel(
-                model="azure/gpt-4o-mini-2024-07-18",
-                max_tokens=4000,
+                model="azure/gpt-4.1",
+                max_tokens=20000,
                 **azure_kwargs,
                 model_type="chat",
             )
-            self.conceptualize_lm = LitellmModel(
-                model="azure/gpt-4o-mini-2024-07-18",
-                max_tokens=200,
-                **azure_kwargs,
-                model_type="chat",
-            )
+
         else:
             logging.warning(
                 "No valid OpenAI API provider is provided. Cannot use default LLM configurations."
@@ -204,8 +196,7 @@ class STORMWikiLMConfigs(LMConfigs):
     def set_topic_improver_lm(self, model: dspy.LM):
         self.topic_improver_lm = model
         
-    def set_conceptualize_lm(self, model: dspy.LM):
-        self.conceptualize_lm = model
+
 
 
 @dataclass
@@ -256,7 +247,6 @@ class STORMWikiRunner(Engine):
             article_gen_lm=self.lm_configs.article_gen_lm,
             max_thread_num=self.args.max_thread_num,
             reranker_model_name="cross-encoder/ms-marco-MiniLM-L6-v2",
-            conceptualize_lm=self.lm_configs.conceptualize_lm,
             initial_retrieval_k=self.args.initial_retrieval_k,
             final_context_k=self.args.final_context_k,
             reranker_threshold=self.args.reranker_threshold

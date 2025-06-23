@@ -194,7 +194,7 @@ class PolishPage(dspy.Signature):
     __doc__ = prompts.PolishPage_docstring
 
     draft_page = dspy.InputField(prefix="原始英文草稿:\n", format=str)
-    page = dspy.OutputField(prefix="修订后的中文报告（严禁删除文章中任何未重复的部分以及篡改原始引文编号顺序，必须严格保留原始 HTML <img> tag行），禁止删除或进行任何修改:\n", format=str)
+    page = dspy.OutputField(prefix="修订后的中文报告（WARNING: 必须100%保留所有HTML <img>标签，严禁删除任何图片标签！严禁删除文章中任何未重复的部分以及篡改原始引文编号顺序，必须严格保留原始 HTML <img> tag行），禁止删除或进行任何修改:\n", format=str)
 
 class PolishPageModule(dspy.Module):
     def __init__(

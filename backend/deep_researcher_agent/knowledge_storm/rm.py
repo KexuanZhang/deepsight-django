@@ -5,11 +5,8 @@ from typing import Callable, Union, List
 import backoff
 import dspy
 import requests
-# Import backoff handlers from our own lm module instead of the old dsp module
 from .lm import backoff_hdlr, giveup_hdlr
-
 from .utils import WebPageHelper
-# Add import for the combined_set from retriever module
 from .storm_wiki.modules.retriever import GENERALLY_UNRELIABLE, DEPRECATED, BLACKLISTED
 
 
@@ -679,6 +676,8 @@ class SearXNG(dspy.Retrieve):
         searxng_api_key=None,
         k=3,
         is_valid_source: Callable = None,
+        time_range: str = None,  # "day", "month", "year"
+        engines: List[str] = None,  # Specific engines to use that support time filtering
     ):
         """Initialize the SearXNG search retriever.
         Please set up SearXNG according to https://docs.searxng.org/index.html.
@@ -689,12 +688,16 @@ class SearXNG(dspy.Retrieve):
             k (int, optional): The number of top passages to retrieve. Defaults to 3.
             is_valid_source (Callable, optional): A function that takes a URL and returns a boolean indicating if the
             source is valid. Defaults to None.
+            time_range (str, optional): Time range of search for engines which support it. Options: "day", "month", "year". Defaults to None.
+            engines (List[str], optional): List of specific search engines to use (e.g., ["google", "bing"]). Some engines support time filtering better than others.
         """
         super().__init__(k=k)
         if not searxng_api_url:
             raise RuntimeError("You must supply searxng_api_url")
         self.searxng_api_url = searxng_api_url
         self.searxng_api_key = searxng_api_key
+        self.time_range = time_range
+        self.engines = engines
         self.usage = 0
 
         if is_valid_source:
@@ -734,22 +737,40 @@ class SearXNG(dspy.Retrieve):
 
         for query in queries:
             try:
+                # Build search parameters
                 params = {"q": query, "format": "json"}
+                
+                # Add specific engines if specified
+                if self.engines:
+                    params["engines"] = ",".join(self.engines)
+                
+                # Add time filtering if specified
+                if self.time_range:
+                    params["time_range"] = self.time_range
+                
                 response = requests.get(
-                    self.searxng_api_url, headers=headers, params=params
+                    self.searxng_api_url, headers=headers, params=params, timeout=30, proxies={"http": None, "https": None}
                 )
-                results = response.json()
-
-                for r in results["results"]:
-                    if self.is_valid_source(r["url"]) and r["url"] not in exclude_urls:
-                        collected_results.append(
-                            {
-                                "description": r.get("content", ""),
-                                "snippets": [r.get("content", "")],
-                                "title": r.get("title", ""),
-                                "url": r["url"],
-                            }
-                        )
+                
+                if response.status_code == 200:
+                    results = response.json()
+                    
+                    if "results" in results and results["results"]:
+                        for r in results["results"]:
+                            if self.is_valid_source(r["url"]) and r["url"] not in exclude_urls:
+                                collected_results.append(
+                                    {
+                                        "description": r.get("content", ""),
+                                        "snippets": [r.get("content", "")],
+                                        "title": r.get("title", ""),
+                                        "url": r["url"],
+                                    }
+                                )
+                    else:
+                        logging.error(f"No results found for query: {query}")
+                else:
+                    logging.error(f"Search failed for query: {query}. HTTP {response.status_code}: {response.text[:200]}")
+                
             except Exception as e:
                 logging.error(f"Error occurs when searching query {query}: {e}")
 
@@ -895,11 +916,12 @@ class TavilySearchRM(dspy.Retrieve):
         min_char_count: int = 150,
         snippet_chunk_size: int = 1000,
         webpage_helper_max_threads: int = 10,
-        include_raw_content: bool = True,
+        include_raw_content: bool = False,
         include_answer: bool = False,
         include_domains: List[str] = None,
         time_range: str = None,  # e.g., "day", "week", "month"
         search_depth: str = None,  # "basic" or "advanced"
+        chunks_per_source: int = 3,  # Number of content chunks to retrieve from each source
     ):
         super().__init__(k=k)
         try:
@@ -920,6 +942,7 @@ class TavilySearchRM(dspy.Retrieve):
         self.usage = 0
         self.time_range = time_range  # Store time_range for use in forward
         self.search_depth = search_depth  # Store search_depth for use in forward
+        self.chunks_per_source = chunks_per_source  # Store chunks_per_source for use in forward
         self.tavily_client = TavilyClient(api_key=self.tavily_search_api_key)
         self.include_raw_content = include_raw_content
         self.include_answer = include_answer
@@ -962,6 +985,9 @@ class TavilySearchRM(dspy.Retrieve):
                 
             if self.search_depth:
                 args["search_depth"] = self.search_depth
+                
+            if self.chunks_per_source:
+                args["chunks_per_source"] = self.chunks_per_source
 
             try:
                 response_data = self.tavily_client.search(query, **args)
@@ -1184,7 +1210,6 @@ class AzureAISearch(dspy.Retrieve):
 
         self.usage = 0
 
-        # If not None, is_valid_source shall be a function that takes a URL and returns a boolean.
         if is_valid_source:
             self.is_valid_source = is_valid_source
         else:

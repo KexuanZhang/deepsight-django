@@ -22,8 +22,8 @@ def get_device():
     """Detect the best available device: 'cuda', 'mps', or 'cpu'. """
     if torch.cuda.is_available():
         return "cuda"
-    if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-        return "mps"
+    # if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+    #     return "mps"
     return "cpu"
 
 class QueryRewrite(dspy.Signature):
@@ -94,7 +94,6 @@ class StormArticleGenerationModule(ArticleGenerationModule):
         max_thread_num: int = 10,
         reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L6-v2",
         rerank_top_k: int = None,
-        conceptualize_lm: dspy.LM = None,
         initial_retrieval_k: int = 150,
         final_context_k: int = 20,
         reranker_threshold: float = 0.5
@@ -110,7 +109,6 @@ class StormArticleGenerationModule(ArticleGenerationModule):
         self.reranker = CrossEncoder(reranker_model_name, device=device, activation_fn=torch.nn.Sigmoid(), trust_remote_code=True)
         self.rerank_top_k = rerank_top_k
         self.query_logger = None
-        self.conceptualize_lm = conceptualize_lm
         self.query_rewrite = dspy.Predict(QueryRewrite)
         self.reranker_threshold = reranker_threshold
 
@@ -136,19 +134,11 @@ class StormArticleGenerationModule(ArticleGenerationModule):
             enhanced_table = EnhancedStormInformationTable(
                 reranker_threshold=self.reranker_threshold
             ).from_standard_table(information_table)
-            
-            # Generate contextual information for snippets if not already done
-            if not enhanced_table.url_to_contextualized_info:
-                logging.info("Generating contextual information for snippets")
-                enhanced_table.generate_contextualized_snippets(self.article_gen_lm)
                 
             # Prepare the table for retrieval
             enhanced_table.prepare_table_for_retrieval()
         else:
             enhanced_table = information_table
-            
-        # Retrieve information using the enhanced pipeline
-        logging.info(f"Retrieving information for section: {section_name!r}")
         
         # Rewrite the queries to improve retrieval
         logging.info(f"Original search queries: {section_query}")
@@ -214,10 +204,6 @@ class StormArticleGenerationModule(ArticleGenerationModule):
         if not isinstance(information_table, EnhancedStormInformationTable):
             logging.info("Converting to enhanced information table for article generation")
             enhanced_table = EnhancedStormInformationTable().from_standard_table(information_table)
-            
-            # Use conceptualize_lm if available, otherwise fall back to article_gen_lm
-            contextualize_model = self.conceptualize_lm if self.conceptualize_lm else self.article_gen_lm
-            enhanced_table.generate_contextualized_snippets(contextualize_model)
             
             enhanced_table.prepare_table_for_retrieval()
             information_table = enhanced_table

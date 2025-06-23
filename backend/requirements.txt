@@ -1,15 +1,20 @@
+aiofiles>=23.2.1
 anthropic
 backoff
+diskcache
 Django
 django-cors-headers
 djangorestframework
 drf_yasg
 dspy
+dspy-ai
 duckduckgo_search
 easyocr
 fastapi
 ffmpeg
+ffmpeg-python
 PyMuPDF
+google-generativeai
 google_api_python_client
 httpx
 imagehash
@@ -28,6 +33,7 @@ pydantic_settings
 pytesseract
 python-dotenv
 python-magic
+python-multipart>=0.0.6
 pytz
 qdrant_client
 rank_bm25
@@ -37,6 +43,8 @@ Requests
 rq
 scikit_learn
 sentence_transformers
+tabulate
+tavily-python
 toml
 torch
 tqdm
@@ -45,4 +53,5 @@ transformers
 ujson
 uvicorn
 whisper
+wikipedia==1.4.0
 yt_dlp
