@@ -6,22 +6,23 @@ import json
 import re
 from typing import Dict, Any, List, Optional
 from datetime import datetime, UTC
+from pathlib import Path
+from django.conf import settings
 
-try:
-    from .base_service import BaseService
-except ImportError:
-    # Fallback for when base_service isn't available
-    class BaseService:
-        def __init__(self, name):
-            self.service_name = name
-        def log_operation(self, op, msg, level="info"):
-            pass
+import logging
 
-class ContentIndexingService(BaseService):
+
+class ContentIndexingService:
     """Service for indexing and searching processed content."""
     
     def __init__(self):
-        super().__init__("content_indexing")
+        self.service_name = "content_indexing"
+        self.logger = logging.getLogger(f"{__name__}.content_indexing")
+        
+        # Use Django's MEDIA_ROOT instead of legacy data directory
+        media_root = Path(settings.MEDIA_ROOT)
+        self.index_dir = media_root / "search_index"
+        self.index_dir.mkdir(exist_ok=True)
         
         # Simple in-memory search index (can be enhanced with Elasticsearch later)
         self.search_index = {}
@@ -29,6 +30,16 @@ class ContentIndexingService(BaseService):
         
         # Load existing index
         self._load_search_index()
+        
+        self.logger.info("Content indexing service initialized")
+    
+    def log_operation(self, operation: str, details: str = "", level: str = "info"):
+        """Log service operations with consistent formatting."""
+        message = f"[{self.service_name}] {operation}"
+        if details:
+            message += f": {details}"
+        
+        getattr(self.logger, level)(message)
     
     def index_content(
         self, 
@@ -330,7 +341,7 @@ class ContentIndexingService(BaseService):
     def _load_search_index(self):
         """Load search index from disk."""
         try:
-            index_file = self.data_dir / "search_index.json"
+            index_file = self.index_dir / "search_index.json"
             if index_file.exists():
                 with open(index_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
@@ -346,7 +357,7 @@ class ContentIndexingService(BaseService):
     def _save_search_index(self):
         """Save search index to disk."""
         try:
-            index_file = self.data_dir / "search_index.json"
+            index_file = self.index_dir / "search_index.json"
             data = {
                 "search_index": self.search_index,
                 "file_index": self.file_index,

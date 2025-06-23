@@ -211,6 +211,130 @@ class ApiService {
     };
     return es;
   }
+
+  // ─── URL PARSING ─────────────────────────────────────────────────────────
+
+  async parseUrl(url, searchMethod = 'cosine', uploadFileId = null) {
+    const body = {
+      url: url,
+      search_method: searchMethod
+    };
+    if (uploadFileId) body.upload_file_id = uploadFileId;
+
+    return this.request('/parse-url/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async parseUrlWithMedia(url, searchMethod = 'cosine', uploadFileId = null) {
+    const body = {
+      url: url,
+      search_method: searchMethod,
+      media_processing: true
+    };
+    if (uploadFileId) body.upload_file_id = uploadFileId;
+
+    return this.request('/parse-url/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  // ─── REPORTS & AI GENERATION ─────────────────────────────────────────────
+
+  async getAvailableModels() {
+    // Return default models as fallback
+    return {
+      providers: ['openai', 'google'],
+      retrievers: ['tavily', 'brave', 'serper', 'you', 'bing', 'duckduckgo', 'searxng'],
+      time_ranges: ['day', 'week', 'month', 'year'],
+    };
+  }
+
+  async generateReport(config) {
+    // Placeholder for report generation
+    console.warn('generateReport not implemented yet');
+    return { job_id: 'mock_job_' + Date.now() };
+  }
+
+  async generateReportWithSourceIds(requestData) {
+    // Placeholder for report generation with source IDs
+    console.warn('generateReportWithSourceIds not implemented yet');
+    return { job_id: 'mock_job_' + Date.now() };
+  }
+
+  async listJobs(limit = 50) {
+    // Placeholder for listing jobs
+    console.warn('listJobs not implemented yet');
+    return { jobs: [] };
+  }
+
+  async getReportContent(jobId) {
+    // Placeholder for getting report content
+    console.warn('getReportContent not implemented yet');
+    return { content: `# Mock Report\n\nThis is a placeholder report for job ${jobId}.` };
+  }
+
+  async listJobFiles(jobId) {
+    // Placeholder for listing job files
+    console.warn('listJobFiles not implemented yet');
+    return { files: [] };
+  }
+
+  async downloadFile(jobId, filename = null) {
+    // Placeholder for file download
+    console.warn('downloadFile not implemented yet');
+    const content = `Mock file content for job ${jobId}`;
+    return new Blob([content], { type: 'text/plain' });
+  }
+
+  async cancelJob(jobId) {
+    // Placeholder for canceling jobs
+    console.warn('cancelJob not implemented yet');
+    return { success: true };
+  }
+
+  // ─── PODCASTS ────────────────────────────────────────────────────────────
+
+  async generatePodcast(formData) {
+    // Placeholder for podcast generation
+    console.warn('generatePodcast not implemented yet');
+    return { job_id: 'mock_podcast_' + Date.now() };
+  }
+
+  async listPodcastJobs() {
+    // Placeholder for listing podcast jobs
+    console.warn('listPodcastJobs not implemented yet');
+    return { jobs: [] };
+  }
+
+  async cancelPodcastJob(jobId) {
+    // Placeholder for canceling podcast jobs
+    console.warn('cancelPodcastJob not implemented yet');
+    return { success: true };
+  }
+
+  // ─── HEALTH CHECK ────────────────────────────────────────────────────────
+
+  async healthCheck() {
+    try {
+      // Simple health check - try to make a basic request
+      const response = await fetch('/api/health/', { credentials: 'include' });
+      return response.ok;
+    } catch (error) {
+      console.warn('Health check failed:', error);
+      return false;
+    }
+  }
 }
 
 const apiService = new ApiService();

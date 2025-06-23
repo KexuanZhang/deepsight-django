@@ -6,6 +6,7 @@ import os
 import tempfile
 import subprocess
 import asyncio
+import logging
 from typing import Dict, Any, Optional
 from pathlib import Path
 from datetime import datetime
@@ -20,29 +21,23 @@ from django.core.files.uploadedfile import UploadedFile as UploadFile
 from django.http import Http404 as HTTPException
 
 try:
-    from .base_service import BaseService
     from .file_storage import FileStorageService
     from .content_index import ContentIndexingService
     from .file_validator import FileValidator
     from .config import config as settings
 except ImportError:
     # Fallback classes to prevent import errors
-    class BaseService:
-        def __init__(self, name):
-            self.service_name = name
-        def log_operation(self, op, msg, level="info"):
-            pass
-    
     FileStorageService = None
     ContentIndexingService = None
     FileValidator = None
     settings = None
 
-class UploadProcessor(BaseService):
+class UploadProcessor:
     """Handles immediate processing of uploaded files."""
     
     def __init__(self):
-        super().__init__("upload_processor")
+        self.service_name = "upload_processor"
+        self.logger = logging.getLogger(f"{__name__}.upload_processor")
         
         # Initialize services with fallbacks
         self.file_storage = FileStorageService() if FileStorageService else None
@@ -54,6 +49,16 @@ class UploadProcessor(BaseService):
         
         # Track upload statuses in memory (in production, use Redis or database)
         self._upload_statuses = {}
+        
+        self.logger.info("Upload processor service initialized")
+    
+    def log_operation(self, operation: str, details: str = "", level: str = "info"):
+        """Log service operations with consistent formatting."""
+        message = f"[{self.service_name}] {operation}"
+        if details:
+            message += f": {details}"
+        
+        getattr(self.logger, level)(message)
     
     @property
     def whisper_model(self):

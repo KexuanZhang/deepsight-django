@@ -7,23 +7,24 @@ import shutil
 import os
 import hashlib
 import re
+import logging
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime, UTC
 from django.conf import settings
 from django.core.files.base import ContentFile
 
-from .base_service import BaseService
 try:
     from .config import config as config_settings
 except ImportError:
     config_settings = None
 
-class FileStorageService(BaseService):
+class FileStorageService:
     """Service for storing and managing processed files in user knowledge base."""
     
     def __init__(self):
-        super().__init__("file_storage")
+        self.service_name = "file_storage"
+        self.logger = logging.getLogger(f"{__name__}.file_storage")
         
         # Use Django's MEDIA_ROOT for file storage
         media_root = Path(settings.MEDIA_ROOT)
@@ -31,6 +32,16 @@ class FileStorageService(BaseService):
         # Create knowledge base directory (source_uploads are no longer used)
         self.knowledge_base_dir = media_root / "knowledge_base"
         self.knowledge_base_dir.mkdir(exist_ok=True)
+        
+        self.logger.info("File storage service initialized")
+    
+    def log_operation(self, operation: str, details: str = "", level: str = "info"):
+        """Log service operations with consistent formatting."""
+        message = f"[{self.service_name}] {operation}"
+        if details:
+            message += f": {details}"
+        
+        getattr(self.logger, level)(message)
     
     def _clean_filename(self, filename: str, max_length: int = 100) -> str:
         """

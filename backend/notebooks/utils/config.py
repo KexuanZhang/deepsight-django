@@ -49,20 +49,7 @@ class NotebooksConfig:
             return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
     
-    @property
-    def data_dir(self) -> Path:
-        """Get data directory path."""
-        return Path(self.PROJECT_ROOT) / "data"
-    
-    @property
-    def upload_dir(self) -> Path:
-        """Get upload directory path."""
-        return self.data_dir / "uploads"
-    
-    @property
-    def processed_files_dir(self) -> Path:
-        """Get processed files directory path."""
-        return self.data_dir / "processed_files"
+    # Legacy data directory properties removed - now using Django's MEDIA_ROOT
 
 
 # Create a single shared settings instance
