@@ -31,7 +31,7 @@ class FileStorageService:
         
         # Create knowledge base directory (source_uploads are no longer used)
         self.knowledge_base_dir = media_root / "knowledge_base"
-        self.knowledge_base_dir.mkdir(exist_ok=True)
+        self.knowledge_base_dir.mkdir(parents=True, exist_ok=True)
         
         self.logger.info("File storage service initialized")
     
