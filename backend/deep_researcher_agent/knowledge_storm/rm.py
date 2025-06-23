@@ -5,7 +5,8 @@ from typing import Callable, Union, List
 import backoff
 import dspy
 import requests
-from .lm import backoff_hdlr, giveup_hdlr
+from dsp import backoff_hdlr, giveup_hdlr
+
 from .utils import WebPageHelper
 from .storm_wiki.modules.retriever import GENERALLY_UNRELIABLE, DEPRECATED, BLACKLISTED
 

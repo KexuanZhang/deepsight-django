@@ -4,7 +4,6 @@ import json
 import logging
 import tempfile
 import multiprocessing
-import asyncio
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
@@ -41,84 +40,99 @@ if sys.platform == 'darwin':
         # start_method already set, that's fine
         pass
 
-# Import application modules after environment setup
-from app.core.config import settings
-from app.services.storage.file_storage import file_storage_service
-from app.services.extraction.url_extractor import url_feature_extractor
-from app.models.reports import JobStatus
+# Django imports
+import django
+from django.conf import settings
+from django.core.files.base import ContentFile
+
+# Initialize Django if not already done
+if not hasattr(settings, 'DATABASES'):
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+    django.setup()
+
+from reports.models import Report
+from reports.queue_service import report_queue_service
+from notebooks.utils.file_storage import file_storage_service
 
 logger = logging.getLogger(__name__)
 
-def process_report_generation(job_id: str, request_data: Dict[str, Any]) -> Dict[str, Any]:
+def process_report_generation(report_id: int) -> Dict[str, Any]:
     """
-    Main worker function for processing report generation jobs.
-    This function is executed by RQ workers.
-    
-    Enhanced for macOS compatibility with comprehensive environment safety.
+    Main worker function for processing report generation jobs in Django.
+    This function is executed by Django-RQ workers.
     """
-    # Import here to avoid circular imports
-    from app.services.queue_management.report_queue_service import report_queue
-    
     try:
-        logger.info(f"Starting report generation job {job_id} on platform: {sys.platform}")
-        logger.info(f"Environment safety vars set: OBJC_DISABLE_INITIALIZE_FORK_SAFETY={os.environ.get('OBJC_DISABLE_INITIALIZE_FORK_SAFETY')}")
+        logger.info(f"Starting report generation for report {report_id} on platform: {sys.platform}")
+        
+        # Get the report from database
+        try:
+            report = Report.objects.get(id=report_id)
+        except Report.DoesNotExist:
+            error_msg = f"Report {report_id} not found"
+            logger.error(error_msg)
+            raise Exception(error_msg)
         
         # Update job status to running
-        report_queue.update_job_progress(
-            job_id, 
-            "Initializing report generation...", 
-            JobStatus.RUNNING
+        report.update_status(
+            Report.STATUS_RUNNING,
+            progress="Initializing report generation..."
         )
         
-        # Create output directory for this job
-        job_output_dir = Path(settings.reports_output_dir) / job_id
+        # Create output directory following new storage structure
+        from notebooks.utils.config import storage_config
+        current_date = datetime.now()
+        year_month = current_date.strftime('%Y-%m')
+        
+        job_output_dir = storage_config.get_report_path(
+            user_id=report.user.pk,
+            year_month=year_month,
+            report_id=str(report.id)
+        )
         job_output_dir.mkdir(parents=True, exist_ok=True)
         
         # Process the request using direct import (no subprocess)
-        result = generate_report_direct(job_id, request_data, job_output_dir)
+        result = generate_report_direct(report, job_output_dir)
         
         # Update job with final result
-        report_queue.update_job_result(job_id, result, JobStatus.COMPLETED)
+        report_queue_service.update_job_result(report.job_id, result, Report.STATUS_COMPLETED)
         
-        logger.info(f"Report generation job {job_id} completed successfully")
+        logger.info(f"Report generation for report {report_id} completed successfully")
         return result
         
     except Exception as e:
         error_msg = f"Report generation failed: {str(e)}"
-        logger.error(f"Job {job_id} failed: {error_msg}", exc_info=True)
+        logger.error(f"Report {report_id} failed: {error_msg}", exc_info=True)
         
         # Update job with error
-        report_queue.update_job_error(job_id, error_msg)
+        try:
+            report = Report.objects.get(id=report_id)
+            report_queue_service.update_job_error(report.job_id, error_msg)
+        except Report.DoesNotExist:
+            logger.error(f"Could not update error for report {report_id} - report not found")
         
         # Re-raise for RQ to handle
         raise
 
-
-def generate_report_direct(job_id: str, request_data: Dict[str, Any], output_dir: Path) -> Dict[str, Any]:
+def generate_report_direct(report: Report, output_dir: Path) -> Dict[str, Any]:
     """
-    Generate report using direct import of DeepReportGenerator (no subprocess)
-    Enhanced with comprehensive macOS compatibility and library-specific safety.
+    Generate report using direct import of DeepReportGenerator.
+    Adapted for Django models and storage system.
     """
-    # Import here to avoid circular imports
-    from app.services.queue_management.report_queue_service import report_queue
-    
     try:
-        logger.info(f"Starting direct report generation for job {job_id}")
+        logger.info(f"Starting direct report generation for report {report.id}")
         
         # Add deep_researcher_agent to Python path
-        deep_researcher_path = settings.deep_researcher_dir
+        deep_researcher_path = Path(__file__).parent.parent.parent / "deep_researcher_agent"
         if str(deep_researcher_path) not in sys.path:
             sys.path.insert(0, str(deep_researcher_path))
         
         # Log library-specific safety measures
         logger.info(f"macOS safety env vars: OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS')}, "
-                   f"KMP_DUPLICATE_LIB_OK={os.environ.get('KMP_DUPLICATE_LIB_OK')}, "
-                   f"MULTIPROCESSING_START_METHOD={os.environ.get('MULTIPROCESSING_START_METHOD')}")
+                   f"KMP_DUPLICATE_LIB_OK={os.environ.get('KMP_DUPLICATE_LIB_OK')}")
         
-        # Import the report generator classes with enhanced error handling
+        # Import the report generator classes
         try:
-            # These imports might trigger PyTorch/CLIP/other problematic libraries
-            logger.info("Importing report generator modules (this may take a moment on macOS)...")
+            logger.info("Importing report generator modules...")
             from deep_report_generator import (
                 DeepReportGenerator, 
                 ReportGenerationConfig,
@@ -133,32 +147,39 @@ def generate_report_direct(job_id: str, request_data: Dict[str, Any], output_dir
             raise Exception(f"Report generator import failed: {e}")
         
         # Update progress
-        report_queue.update_job_progress(job_id, "Preparing configuration...")
+        report_queue_service.update_job_progress(report.job_id, "Preparing configuration...")
         
         # Prepare input data from knowledge base if needed
-        input_data = prepare_input_data(job_id, request_data)
-        
-        # Add input data to request_data for configuration
-        enhanced_request_data = request_data.copy()
-        enhanced_request_data["input_data"] = input_data
+        input_data = prepare_input_data(report)
         
         # Create configuration
-        config = create_report_config_direct(job_id, enhanced_request_data, output_dir)
+        config = create_report_config_direct(report, input_data, output_dir)
         
         # Update progress
-        report_queue.update_job_progress(job_id, "Starting report generator...")
+        report_queue_service.update_job_progress(report.job_id, "Starting report generator...")
         
-        # Create report generator instance with error handling
+        # Create report generator instance
         try:
             logger.info("Initializing DeepReportGenerator...")
-            generator = DeepReportGenerator(secrets_path=str(settings.secrets_path))
+            # Look for secrets.toml in the backend directory (correct location)
+            backend_path = Path(__file__).parent.parent.parent  # Go up from worker -> reports -> backend
+            secrets_path = backend_path / "secrets.toml"
+            
+            # Check if secrets.toml exists in the expected location
+            if not secrets_path.exists():
+                logger.warning(f"secrets.toml not found at {secrets_path}, trying deep_researcher_agent directory...")
+                # Fallback to the original location
+                secrets_path = deep_researcher_path / "secrets.toml"
+            
+            logger.info(f"Using secrets.toml from: {secrets_path}")
+            generator = DeepReportGenerator(secrets_path=str(secrets_path))
             logger.info("DeepReportGenerator initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize DeepReportGenerator: {e}")
             raise Exception(f"Generator initialization failed: {e}")
         
         # Generate the report
-        report_queue.update_job_progress(job_id, "Generating report content...")
+        report_queue_service.update_job_progress(report.job_id, "Generating report content...")
         
         try:
             logger.info("Starting report generation process...")
@@ -173,30 +194,36 @@ def generate_report_direct(job_id: str, request_data: Dict[str, Any], output_dir
             logger.error(f"Report generation unsuccessful: {error_msg}")
             raise Exception(error_msg)
         
+        # Store the generated files using Django's file system
+        stored_files = store_generated_files(report, result, output_dir)
+        
         # Convert result to dictionary format expected by the API
         api_result = {
             "success": result.success,
-            "job_id": job_id,
+            "report_id": report.id,
+            "job_id": report.job_id,
             "article_title": result.article_title,
-            "output_directory": result.output_directory,
-            "generated_files": result.generated_files,
-            "main_report_file": find_main_report_file(result.generated_files),
+            "output_directory": str(output_dir),
+            "generated_files": stored_files,
+            "main_report_file": find_main_report_file(stored_files),
             "processing_logs": result.processing_logs or [],
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         
-        logger.info(f"Report generation completed successfully for job {job_id}")
+        # Store the main report content in the database
+        if result.success and hasattr(result, 'report_content'):
+            api_result["report_content"] = result.report_content
+        
+        logger.info(f"Report generation completed successfully for report {report.id}")
         return api_result
         
     except Exception as e:
-        logger.error(f"Error in generate_report_direct for job {job_id}: {e}", exc_info=True)
+        logger.error(f"Error in generate_report_direct for report {report.id}: {e}", exc_info=True)
         raise
 
-
-def create_report_config_direct(job_id: str, request_data: Dict[str, Any], output_dir: Path) -> 'ReportGenerationConfig':
+def create_report_config_direct(report: Report, input_data: Dict[str, Any], output_dir: Path) -> 'ReportGenerationConfig':
     """
-    Create ReportGenerationConfig object from request data
-    Enhanced with better validation and error handling.
+    Create ReportGenerationConfig object from Django Report model.
     """
     try:
         # Import the classes we need
@@ -211,7 +238,7 @@ def create_report_config_direct(job_id: str, request_data: Dict[str, Any], outpu
         logger.error(f"Failed to import configuration classes: {e}")
         raise Exception(f"Configuration import failed: {e}")
     
-    # Map string values to enum values with error handling
+    # Map string values to enum values
     model_provider_map = {
         "openai": ModelProvider.OPENAI,
         "google": ModelProvider.GOOGLE
@@ -240,88 +267,190 @@ def create_report_config_direct(job_id: str, request_data: Dict[str, Any], outpu
         "financial": PromptType.FINANCIAL
     }
     
-    # Create configuration with validation
+    # Create configuration
     try:
         config = ReportGenerationConfig(
             # Basic settings
-            topic=request_data.get("topic"),
-            article_title=request_data.get("article_title", "Research Report"),
+            topic=report.topic,
+            article_title=report.article_title,
             output_dir=str(output_dir),
-            model_provider=model_provider_map.get(request_data.get("model_provider", "openai"), ModelProvider.OPENAI),
-            retriever=retriever_map.get(request_data.get("retriever", "tavily"), RetrieverType.TAVILY),
-            temperature=request_data.get("temperature", 0.2),
-            top_p=request_data.get("top_p", 0.4),
-            prompt_type=prompt_type_map.get(request_data.get("prompt_type", "general"), PromptType.GENERAL),
+            model_provider=model_provider_map.get(report.model_provider, ModelProvider.OPENAI),
+            retriever=retriever_map.get(report.retriever, RetrieverType.TAVILY),
+            temperature=report.temperature,
+            top_p=report.top_p,
+            prompt_type=prompt_type_map.get(report.prompt_type, PromptType.GENERAL),
             
             # Generation flags
-            do_research=request_data.get("do_research", True),
-            do_generate_outline=request_data.get("do_generate_outline", True),
-            do_generate_article=request_data.get("do_generate_article", True),
-            do_polish_article=request_data.get("do_polish_article", True),
-            remove_duplicate=request_data.get("remove_duplicate", True),
-            post_processing=request_data.get("post_processing", True),
+            do_research=report.do_research,
+            do_generate_outline=report.do_generate_outline,
+            do_generate_article=report.do_generate_article,
+            do_polish_article=report.do_polish_article,
+            remove_duplicate=report.remove_duplicate,
+            post_processing=report.post_processing,
             
             # Search and generation parameters
-            max_conv_turn=request_data.get("max_conv_turn", 3),
-            max_perspective=request_data.get("max_perspective", 3),
-            search_top_k=request_data.get("search_top_k", 10),
-            initial_retrieval_k=request_data.get("initial_retrieval_k", 150),
-            final_context_k=request_data.get("final_context_k", 20),
-            reranker_threshold=request_data.get("reranker_threshold", 0.5),
-            max_thread_num=request_data.get("max_thread_num", 10),
+            max_conv_turn=report.max_conv_turn,
+            max_perspective=report.max_perspective,
+            search_top_k=report.search_top_k,
+            initial_retrieval_k=report.initial_retrieval_k,
+            final_context_k=report.final_context_k,
+            reranker_threshold=report.reranker_threshold,
+            max_thread_num=report.max_thread_num,
             
             # Optional parameters
-            time_range=time_range_map.get(request_data.get("time_range")) if request_data.get("time_range") else None,
-            include_domains=request_data.get("include_domains", False),
-            skip_rewrite_outline=request_data.get("skip_rewrite_outline", False),
+            time_range=time_range_map.get(report.time_range) if report.time_range else None,
+            include_domains=report.include_domains,
+            skip_rewrite_outline=report.skip_rewrite_outline,
+            whitelist_domains=report.domain_list if report.domain_list else None,
+            search_depth=report.search_depth,
             
             # CSV processing
-            csv_session_code=request_data.get("csv_session_code"),
-            csv_date_filter=request_data.get("csv_date_filter"),
-            
-            # Video processing
-            video_url=request_data.get("video_url"),
-            video_path=request_data.get("video_path")
+            csv_session_code=report.csv_session_code,
+            csv_date_filter=report.csv_date_filter,
         )
     except Exception as e:
         logger.error(f"Failed to create report configuration: {e}")
         raise Exception(f"Configuration creation failed: {e}")
     
     # Process knowledge base content if provided
-    input_data = request_data.get("input_data", {})
-    
-    # Handle file content
-    if input_data.get("files_content"):
+    if input_data.get("paper_files") or input_data.get("transcript_files"):
         try:
-            # For now, we'll create temporary files for the content
-            # In the future, this could be optimized to pass content directly
-            temp_files = []
-            for file_data in input_data["files_content"]:
-                content = file_data.get("content", "")
-                filename = file_data.get("filename", "file.txt")
+            # Process paper files
+            if input_data.get("paper_files"):
+                paper_temp_files = []
+                for paper_file in input_data["paper_files"]:
+                    content = paper_file.get("content", "")
+                    filename = paper_file.get("filename", "paper.md")
+                    
+                    # Create temporary file for paper content
+                    safe_filename = filename.replace(" ", "_").replace("/", "_")
+                    temp_file = tempfile.NamedTemporaryFile(mode='w', suffix=f"_{safe_filename}", delete=False)
+                    temp_file.write(content)
+                    temp_file.close()
+                    paper_temp_files.append(temp_file.name)
                 
-                # Create temporary file with .md extension (deep_report_generator only accepts .txt or .md)
-                safe_filename = filename.replace(" ", "_").replace("/", "_")
-                temp_file = tempfile.NamedTemporaryFile(mode='w', suffix=f"_{safe_filename}.md", delete=False)
-                temp_file.write(content)
-                temp_file.close()
-                temp_files.append(temp_file.name)
+                if paper_temp_files:
+                    config.paper_path = paper_temp_files
+                    logger.info(f"Added {len(paper_temp_files)} paper files to config")
             
-            if temp_files:
-                if file_data.get("type") == "paper":
-                    config.paper_path = temp_files
-                else:
-                    config.transcript_path = temp_files
+            # Process transcript files
+            if input_data.get("transcript_files"):
+                transcript_temp_files = []
+                for transcript_file in input_data["transcript_files"]:
+                    content = transcript_file.get("content", "")
+                    filename = transcript_file.get("filename", "transcript.md")
+                    
+                    # Create temporary file for transcript content
+                    safe_filename = filename.replace(" ", "_").replace("/", "_")
+                    temp_file = tempfile.NamedTemporaryFile(mode='w', suffix=f"_{safe_filename}", delete=False)
+                    temp_file.write(content)
+                    temp_file.close()
+                    transcript_temp_files.append(temp_file.name)
+                
+                if transcript_temp_files:
+                    config.transcript_path = transcript_temp_files
+                    logger.info(f"Added {len(transcript_temp_files)} transcript files to config")
+        
         except Exception as e:
-            logger.error(f"Failed to process file content: {e}")
+            logger.error(f"Failed to process input files: {e}")
             # Don't fail the entire job for this, just log the error
     
     return config
 
+def prepare_input_data(report: Report) -> Dict[str, Any]:
+    """
+    Prepare input data from the knowledge base based on selected file IDs.
+    """
+    input_data = {
+        "paper_files": [],
+        "transcript_files": [],
+        "caption_files": []
+    }
+    
+    try:
+        # Process selected file IDs
+        if report.selected_file_ids:
+            for file_id in report.selected_file_ids:
+                try:
+                    content = file_storage_service.get_file_content(file_id, report.user.pk)
+                    if content:
+                        # Determine file type based on content or metadata
+                        # For now, assume all are transcript files unless filename suggests otherwise
+                        file_data = {
+                            "content": content,
+                            "filename": f"knowledge_base_item_{file_id}.md",
+                            "file_id": file_id
+                        }
+                        
+                        # Could add logic here to distinguish between paper and transcript files
+                        # based on metadata or filename patterns
+                        input_data["transcript_files"].append(file_data)
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to load content for file ID {file_id}: {e}")
+                    continue
+        
+        # Note: URL IDs processing would go here if needed
+        # if report.selected_url_ids:
+        #     process URL content...
+        
+        logger.info(f"Prepared input data: {len(input_data['paper_files'])} papers, "
+                   f"{len(input_data['transcript_files'])} transcripts")
+        
+        return input_data
+        
+    except Exception as e:
+        logger.error(f"Error preparing input data for report {report.id}: {e}")
+        return input_data
+
+def store_generated_files(report: Report, result, output_dir: Path) -> List[str]:
+    """
+    Store generated files using Django's file storage system.
+    All files are stored directly in the r_{report_id} folder.
+    Returns list of stored file paths.
+    """
+    stored_files = []
+    
+    try:
+        if result.generated_files:
+            for file_path in result.generated_files:
+                try:
+                    source_path = Path(file_path)
+                    if source_path.exists() and source_path.is_file():
+                        # Read the file content
+                        with open(source_path, 'rb') as f:
+                            file_content = f.read()
+                        
+                        # Create a ContentFile
+                        django_file = ContentFile(file_content)
+                        
+                        # Use original filename directly
+                        filename = source_path.name
+                        
+                        # Save using the report's file field (if this is the main report)
+                        if "polished" in filename.lower() or "report" in filename.lower():
+                            report.main_report_file.save(filename, django_file, save=True)
+                            stored_files.append(report.main_report_file.name)
+                        else:
+                            # For other files, create additional FileField or store reference
+                            # For now, we'll track the filename for the generated_files list
+                            # All files go directly in the r_{report_id} folder
+                            stored_files.append(f"Users/u_{report.user.pk}/report/{datetime.now().strftime('%Y-%m')}/r_{report.id}/{filename}")
+                        
+                        logger.info(f"Stored file directly in report folder: {filename}")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to store file {file_path}: {e}")
+                    continue
+    
+    except Exception as e:
+        logger.error(f"Error storing generated files for report {report.id}: {e}")
+    
+    return stored_files
 
 def find_main_report_file(generated_files: List[str]) -> Optional[str]:
     """
-    Find the main report file from the list of generated files
+    Find the main report file from the list of generated files.
     """
     for filename in generated_files:
         basename = os.path.basename(filename)
@@ -335,110 +464,4 @@ def find_main_report_file(generated_files: List[str]) -> Optional[str]:
         if filename.endswith('.md'):
             return os.path.basename(filename)
     
-    return None
-
-
-def prepare_input_data(job_id: str, request_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Prepare input data from knowledge base files and URLs
-    """
-    from app.services.queue_management.report_queue_service import report_queue
-    
-    input_data = {
-        "files_content": [],
-        "urls_content": [],
-        "video_content": None
-    }
-    
-    file_storage = file_storage_service
-    url_extractor = url_feature_extractor
-    
-    # Process selected files from knowledge base
-    selected_file_ids = request_data.get("selected_file_ids", [])
-    if selected_file_ids:
-        report_queue.update_job_progress(job_id, f"Loading {len(selected_file_ids)} files from knowledge base...")
-        
-        for file_id in selected_file_ids:
-            try:
-                # Use asyncio.run for sync context since this worker function isn't async
-                content = asyncio.run(file_storage.get_file_content(file_id))
-                metadata = asyncio.run(file_storage.get_file_metadata(file_id))
-                
-                if content and metadata:
-                    file_data = {
-                        "id": file_id,
-                        "filename": metadata.get("original_filename", "Unknown"),
-                        "content": content,
-                        "type": get_content_type(metadata.get("file_extension", "")),
-                        "metadata": metadata
-                    }
-                    input_data["files_content"].append(file_data)
-                    logger.info(f"Loaded file {file_id} for job {job_id}")
-                else:
-                    logger.warning(f"Could not load file {file_id} for job {job_id}")
-                    
-            except Exception as e:
-                logger.error(f"Error loading file {file_id} for job {job_id}: {e}")
-    
-    # Process selected URLs from knowledge base
-    selected_url_ids = request_data.get("selected_url_ids", [])
-    if selected_url_ids:
-        report_queue.update_job_progress(job_id, f"Loading {len(selected_url_ids)} URLs from knowledge base...")
-        
-        for url_id in selected_url_ids:
-            try:
-                content = asyncio.run(url_extractor.get_url_content(url_id))
-                metadata = asyncio.run(url_extractor.get_url_metadata(url_id))
-                
-                if content and metadata:
-                    url_data = {
-                        "id": url_id,
-                        "url": metadata.get("source_url", "Unknown"),
-                        "content": content,
-                        "type": "web_content",
-                        "metadata": metadata
-                    }
-                    input_data["urls_content"].append(url_data)
-                    logger.info(f"Loaded URL {url_id} for job {job_id}")
-                else:
-                    logger.warning(f"Could not load URL {url_id} for job {job_id}")
-                    
-            except Exception as e:
-                logger.error(f"Error loading URL {url_id} for job {job_id}: {e}")
-    
-    # Process video URL if provided (for transcript generation)
-    video_url = request_data.get("video_url")
-    if video_url:
-        report_queue.update_job_progress(job_id, "Processing video URL for transcript...")
-        input_data["video_content"] = {
-            "url": video_url,
-            "type": "video_url"
-        }
-    
-    # Process video file path if provided
-    video_path = request_data.get("video_path")
-    if video_path:
-        report_queue.update_job_progress(job_id, "Processing video file for transcript...")
-        input_data["video_content"] = {
-            "path": video_path,
-            "type": "video_file"
-        }
-    
-    return input_data
-
-
-def get_content_type(file_extension: str) -> str:
-    """
-    Determine content type based on file extension
-    """
-    ext = file_extension.lower()
-    if ext == '.pdf':
-        return 'paper'
-    elif ext in ['.mp3', '.mp4', '.wav', '.m4a']:
-        return 'transcript'
-    elif ext in ['.txt', '.md']:
-        return 'text'
-    elif ext in ['.pptx', '.ppt']:
-        return 'presentation'
-    else:
-        return 'other' 
+    return None 

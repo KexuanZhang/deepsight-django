@@ -90,7 +90,7 @@ class StormArticleGenerationModule(ArticleGenerationModule):
 
     def __init__(
         self,
-        article_gen_lm: dspy.LM,
+        article_gen_lm: Union[dspy.dsp.LM, dspy.dsp.HFModel],
         max_thread_num: int = 10,
         reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L6-v2",
         rerank_top_k: int = None,
@@ -386,7 +386,7 @@ class StormArticleGenerationModule(ArticleGenerationModule):
 class ConvToSection(dspy.Module):
     """Use the information collected from the information-seeking conversation to write a section."""
 
-    def __init__(self, engine: dspy.LM):
+    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         super().__init__()
         self.write_section = dspy.Predict(WriteSection)
         self.engine = engine

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class StormOutlineGenerationModule(OutlineGenerationModule):
-    def __init__(self, outline_gen_lm: dspy.LM):
+    def __init__(self, outline_gen_lm: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         super().__init__()
         self.outline_gen_lm = outline_gen_lm
         self.write_outline = WriteOutline(engine=self.outline_gen_lm)
@@ -48,7 +48,7 @@ class StormOutlineGenerationModule(OutlineGenerationModule):
 
 
 class WriteOutline(dspy.Module):
-    def __init__(self, engine: dspy.LM):
+    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         super().__init__()
         self.draft_page_outline = dspy.Predict(WritePageOutline)
         self.write_page_outline = dspy.Predict(WritePageOutlineFromConv)

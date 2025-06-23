@@ -17,7 +17,7 @@ prompts = import_prompts()
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 class ConvSimulator(dspy.Module):
-    def __init__(self, topic_expert_engine: dspy.LM, question_asker_engine: dspy.LM, retriever: Retriever, max_search_queries_per_turn: int, search_top_k: int, max_turn: int):
+    def __init__(self, topic_expert_engine: Union[dspy.dsp.LM, dspy.dsp.HFModel], question_asker_engine: Union[dspy.dsp.LM, dspy.dsp.HFModel], retriever: Retriever, max_search_queries_per_turn: int, search_top_k: int, max_turn: int):
         super().__init__()
         self.wiki_writer = WikiWriter(engine=question_asker_engine)
         self.topic_expert = TopicExpert(engine=topic_expert_engine, max_search_queries=max_search_queries_per_turn, search_top_k=search_top_k, retriever=retriever)
@@ -47,7 +47,7 @@ class ConvSimulator(dspy.Module):
         return dspy.Prediction(dlg_history=dlg_history)
 
 class WikiWriter(dspy.Module):
-    def __init__(self, engine: dspy.LM):
+    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         super().__init__()
         self.ask_question_with_persona = dspy.ChainOfThought(AskQuestionWithPersona)
         self.ask_question = dspy.ChainOfThought(AskQuestion)
@@ -102,7 +102,7 @@ class AnswerQuestion(dspy.Signature):
     answer = dspy.OutputField(prefix="Now give your response.\n", format=str)
 
 class TopicExpert(dspy.Module):
-    def __init__(self, engine: dspy.LM, max_search_queries: int, search_top_k: int, retriever: Retriever):
+    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel], max_search_queries: int, search_top_k: int, retriever: Retriever):
         super().__init__()
         self.generate_queries = dspy.Predict(QuestionToQuery)
         self.retriever = retriever
@@ -134,7 +134,7 @@ class TopicExpert(dspy.Module):
         return dspy.Prediction(queries=queries, searched_results=searched_results, answer=answer)
 
 class StormKnowledgeCurationModule(KnowledgeCurationModule):
-    def __init__(self, retriever: Retriever, persona_generator: Optional[StormPersonaGenerator], conv_simulator_lm: dspy.LM, question_asker_lm: dspy.LM, max_search_queries_per_turn: int, search_top_k: int, max_conv_turn: int, max_thread_num: int):
+    def __init__(self, retriever: Retriever, persona_generator: Optional[StormPersonaGenerator], conv_simulator_lm: Union[dspy.dsp.LM, dspy.dsp.HFModel], question_asker_lm: Union[dspy.dsp.LM, dspy.dsp.HFModel], max_search_queries_per_turn: int, search_top_k: int, max_conv_turn: int, max_thread_num: int):
         self.retriever = retriever
         self.persona_generator = persona_generator
         self.conv_simulator_lm = conv_simulator_lm

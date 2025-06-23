@@ -1,6 +1,16 @@
 # reports/models.py
 from django.db import models
 from django.conf import settings
+import json
+
+def user_report_path(instance, filename):
+    """Generate path for report files following the new storage structure."""
+    from datetime import datetime
+    user_id = instance.user.pk
+    current_date = datetime.now()
+    year_month = current_date.strftime('%Y-%m')
+    report_id = instance.pk
+    return f"Users/u_{user_id}/report/{year_month}/r_{report_id}/{filename}"
 
 class Report(models.Model):
     # Associations
@@ -18,17 +28,24 @@ class Report(models.Model):
         related_name='reports'
     )
 
-    # Input parameters for report generation
-    topic = models.CharField(max_length=255, blank=True)
-    transcript_content = models.TextField(blank=True)
-    paper_content = models.TextField(blank=True)
+    # Core input parameters
+    topic = models.CharField(max_length=500, blank=True, help_text="Research topic")
     article_title = models.CharField(max_length=255, default='Research Report')
+    
+    # Content inputs from knowledge base
+    selected_file_ids = models.JSONField(default=list, blank=True, help_text="List of file IDs from knowledge base")
+    selected_url_ids = models.JSONField(default=list, blank=True, help_text="List of URL IDs from knowledge base")
+    
+    # CSV processing options
+    csv_session_code = models.CharField(max_length=100, blank=True)
+    csv_date_filter = models.CharField(max_length=20, blank=True)
 
-    # Configuration choices
+    # Model and retriever configuration
     MODEL_PROVIDER_OPENAI = 'openai'
+    MODEL_PROVIDER_GOOGLE = 'google'
     MODEL_PROVIDER_CHOICES = [
         (MODEL_PROVIDER_OPENAI, 'OpenAI'),
-        # add other providers if needed
+        (MODEL_PROVIDER_GOOGLE, 'Google'),
     ]
     model_provider = models.CharField(
         max_length=50,
@@ -37,9 +54,22 @@ class Report(models.Model):
     )
 
     RETRIEVER_TAVILY = 'tavily'
+    RETRIEVER_BRAVE = 'brave'
+    RETRIEVER_SERPER = 'serper'
+    RETRIEVER_YOU = 'you'
+    RETRIEVER_BING = 'bing'
+    RETRIEVER_DUCKDUCKGO = 'duckduckgo'
+    RETRIEVER_SEARXNG = 'searxng'
+    RETRIEVER_AZURE_AI_SEARCH = 'azure_ai_search'
     RETRIEVER_CHOICES = [
         (RETRIEVER_TAVILY, 'Tavily'),
-        # add other retriever options
+        (RETRIEVER_BRAVE, 'Brave'),
+        (RETRIEVER_SERPER, 'Serper'),
+        (RETRIEVER_YOU, 'You'),
+        (RETRIEVER_BING, 'Bing'),
+        (RETRIEVER_DUCKDUCKGO, 'DuckDuckGo'),
+        (RETRIEVER_SEARXNG, 'SearXNG'),
+        (RETRIEVER_AZURE_AI_SEARCH, 'Azure AI Search'),
     ]
     retriever = models.CharField(
         max_length=50,
@@ -47,34 +77,161 @@ class Report(models.Model):
         default=RETRIEVER_TAVILY
     )
 
-    temperature = models.FloatField(default=0.2)
-    top_p = models.FloatField(default=0.4)
-    max_conv_turn = models.PositiveIntegerField(default=3)
+    # Generation parameters
+    temperature = models.FloatField(default=0.2, help_text="Temperature for LLM generation (0.0-2.0)")
+    top_p = models.FloatField(default=0.4, help_text="Top-p for LLM generation (0.0-1.0)")
+    
+    PROMPT_TYPE_GENERAL = 'general'
+    PROMPT_TYPE_FINANCIAL = 'financial'
+    PROMPT_TYPE_CHOICES = [
+        (PROMPT_TYPE_GENERAL, 'General'),
+        (PROMPT_TYPE_FINANCIAL, 'Financial'),
+    ]
+    prompt_type = models.CharField(
+        max_length=50,
+        choices=PROMPT_TYPE_CHOICES,
+        default=PROMPT_TYPE_GENERAL
+    )
+
+    # Generation flags
+    do_research = models.BooleanField(default=True)
+    do_generate_outline = models.BooleanField(default=True)
+    do_generate_article = models.BooleanField(default=True)
+    do_polish_article = models.BooleanField(default=True)
+    remove_duplicate = models.BooleanField(default=True)
+    post_processing = models.BooleanField(default=True)
+
+    # Search and generation parameters
+    max_conv_turn = models.PositiveIntegerField(default=3, help_text="Maximum conversation turns (1-10)")
+    max_perspective = models.PositiveIntegerField(default=3, help_text="Maximum perspectives (1-10)")
+    search_top_k = models.PositiveIntegerField(default=10, help_text="Top K search results (5-50)")
+    initial_retrieval_k = models.PositiveIntegerField(default=150, help_text="Initial retrieval K (50-500)")
+    final_context_k = models.PositiveIntegerField(default=20, help_text="Final context K (10-100)")
+    reranker_threshold = models.FloatField(default=0.5, help_text="Reranker threshold (0.0-1.0)")
+    max_thread_num = models.PositiveIntegerField(default=10, help_text="Maximum threads (1-20)")
+
+    # Optional parameters
+    TIME_RANGE_DAY = 'day'
+    TIME_RANGE_WEEK = 'week'
+    TIME_RANGE_MONTH = 'month'
+    TIME_RANGE_YEAR = 'year'
+    TIME_RANGE_CHOICES = [
+        (TIME_RANGE_DAY, 'Day'),
+        (TIME_RANGE_WEEK, 'Week'),
+        (TIME_RANGE_MONTH, 'Month'),
+        (TIME_RANGE_YEAR, 'Year'),
+    ]
+    time_range = models.CharField(
+        max_length=20,
+        choices=TIME_RANGE_CHOICES,
+        blank=True,
+        null=True
+    )
+    
+    include_domains = models.BooleanField(default=False)
+    skip_rewrite_outline = models.BooleanField(default=False)
+    domain_list = models.JSONField(default=list, blank=True, help_text="Whitelist domains")
+    
+    SEARCH_DEPTH_BASIC = 'basic'
+    SEARCH_DEPTH_ADVANCED = 'advanced'
+    SEARCH_DEPTH_CHOICES = [
+        (SEARCH_DEPTH_BASIC, 'Basic'),
+        (SEARCH_DEPTH_ADVANCED, 'Advanced'),
+    ]
+    search_depth = models.CharField(
+        max_length=20,
+        choices=SEARCH_DEPTH_CHOICES,
+        default=SEARCH_DEPTH_BASIC
+    )
 
     # Status tracking
     STATUS_PENDING = 'pending'
     STATUS_RUNNING = 'running'
     STATUS_COMPLETED = 'completed'
     STATUS_FAILED = 'failed'
+    STATUS_CANCELLED = 'cancelled'
     STATUS_CHOICES = [
         (STATUS_PENDING, 'Pending'),
         (STATUS_RUNNING, 'Running'),
         (STATUS_COMPLETED, 'Completed'),
         (STATUS_FAILED, 'Failed'),
+        (STATUS_CANCELLED, 'Cancelled'),
     ]
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
         default=STATUS_PENDING
     )
+    
+    progress = models.CharField(max_length=500, blank=True, help_text="Current progress message")
 
-    # Result of generation (JSON or text)
-    result_content = models.TextField(blank=True)
+    # Results and files
+    result_content = models.TextField(blank=True, help_text="Generated report content")
+    result_metadata = models.JSONField(default=dict, blank=True, help_text="Additional result metadata")
     error_message = models.TextField(blank=True)
+    
+    # File storage following new storage structure
+    main_report_file = models.FileField(upload_to=user_report_path, blank=True)
+    generated_files = models.JSONField(default=list, blank=True, help_text="List of generated file paths")
+    processing_logs = models.JSONField(default=list, blank=True, help_text="Processing log messages")
+
+    # Job management
+    job_id = models.CharField(max_length=100, unique=True, blank=True, help_text="Background job ID for tracking")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['job_id']),
+            models.Index(fields=['created_at']),
+        ]
+
     def __str__(self):
-        return f"Report {self.id} ({self.status}) for {self.user.username}"
+        return f"Report {self.id} ({self.status}) - {self.article_title} for {self.user.username}"
+    
+    def get_configuration_dict(self):
+        """Get the configuration as a dictionary for the report generator."""
+        return {
+            'topic': self.topic,
+            'article_title': self.article_title,
+            'model_provider': self.model_provider,
+            'retriever': self.retriever,
+            'temperature': self.temperature,
+            'top_p': self.top_p,
+            'prompt_type': self.prompt_type,
+            'do_research': self.do_research,
+            'do_generate_outline': self.do_generate_outline,
+            'do_generate_article': self.do_generate_article,
+            'do_polish_article': self.do_polish_article,
+            'remove_duplicate': self.remove_duplicate,
+            'post_processing': self.post_processing,
+            'max_conv_turn': self.max_conv_turn,
+            'max_perspective': self.max_perspective,
+            'search_top_k': self.search_top_k,
+            'initial_retrieval_k': self.initial_retrieval_k,
+            'final_context_k': self.final_context_k,
+            'reranker_threshold': self.reranker_threshold,
+            'max_thread_num': self.max_thread_num,
+            'time_range': self.time_range,
+            'include_domains': self.include_domains,
+            'skip_rewrite_outline': self.skip_rewrite_outline,
+            'domain_list': self.domain_list,
+            'search_depth': self.search_depth,
+            'selected_file_ids': self.selected_file_ids,
+            'selected_url_ids': self.selected_url_ids,
+            'csv_session_code': self.csv_session_code,
+            'csv_date_filter': self.csv_date_filter,
+        }
+    
+    def update_status(self, status, progress=None, error=None):
+        """Update the report status and optional progress/error."""
+        self.status = status
+        if progress:
+            self.progress = progress
+        if error:
+            self.error_message = error
+        self.save(update_fields=['status', 'progress', 'error_message', 'updated_at'])

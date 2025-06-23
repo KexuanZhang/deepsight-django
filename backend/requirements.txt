@@ -6,8 +6,7 @@ Django
 django-cors-headers
 djangorestframework
 drf_yasg
-dspy
-dspy-ai
+dspy_ai==2.4.9
 duckduckgo_search
 easyocr
 fastapi
@@ -21,7 +20,7 @@ imagehash
 langchain_huggingface
 langchain_qdrant
 langchain_text_splitters
-litellm
+litellm==1.59.3
 numpy
 open-clip-torch
 openai

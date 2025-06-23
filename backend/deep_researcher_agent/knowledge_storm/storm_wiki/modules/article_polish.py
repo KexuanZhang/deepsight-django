@@ -33,8 +33,8 @@ class GenerateOverallTitle(dspy.Signature):
 class StormArticlePolishingModule(ArticlePolishingModule):
     def __init__(
         self,
-        article_gen_lm: dspy.LM,
-        article_polish_lm: dspy.LM,
+        article_gen_lm: Union[dspy.dsp.LM, dspy.dsp.HFModel],
+        article_polish_lm: Union[dspy.dsp.LM, dspy.dsp.HFModel],
     ):
         self.article_gen_lm = article_gen_lm
         self.article_polish_lm = article_polish_lm
@@ -199,8 +199,8 @@ class PolishPage(dspy.Signature):
 class PolishPageModule(dspy.Module):
     def __init__(
         self,
-        write_lead_engine: dspy.LM,
-        polish_engine: dspy.LM,
+        write_lead_engine: Union[dspy.dsp.LM, dspy.dsp.HFModel],
+        polish_engine: Union[dspy.dsp.LM, dspy.dsp.HFModel],
     ):
         super().__init__()
         self.write_lead_engine = write_lead_engine
