@@ -85,23 +85,32 @@ def user_knowledge_base_path(instance, filename):
     """
     Generate organized path for knowledge base files.
     
-    New organized structure: knowledge_base/user_X/cleaned_filename_id/content/extracted_content.md
+    New organized structure: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/content/extracted_content.md
     The FileStorageService will pass the full path including directory structure.
     """
     # The FileStorageService provides the full organized path
     return filename
 
+def user_report_path(instance, filename):
+    """Generate path for report files."""
+    # Assuming instance has a user attribute or user_id
+    user_id = getattr(instance, 'user_id', None) or getattr(instance.user, 'pk', None)
+    current_date = datetime.now()
+    year_month = current_date.strftime('%Y-%m')
+    # Use instance ID as report ID if available
+    report_id = getattr(instance, 'id', 'temp')
+    return f"Users/u_{user_id}/report/{year_month}/r_{report_id}/{filename}"
 
-def user_url_processing_path(instance, filename):
-    """Generate path for URL processing downloads."""
-    user_id = instance.source.notebook.user.pk
-    return f"url_downloads/user_{user_id}/{filename}"
 
-
-def user_processing_results_path(instance, filename):
-    """Generate path for processing result files."""
-    user_id = instance.source.notebook.user.pk
-    return f"processing_results/user_{user_id}/{filename}"
+def user_podcast_path(instance, filename):
+    """Generate path for podcast files."""
+    # Assuming instance has a user attribute or user_id
+    user_id = getattr(instance, 'user_id', None) or getattr(instance.user, 'pk', None)
+    current_date = datetime.now()
+    year_month = current_date.strftime('%Y-%m')
+    # Use instance ID as podcast ID if available
+    podcast_id = getattr(instance, 'id', 'temp')
+    return f"Users/u_{user_id}/podcast/{year_month}/p_{podcast_id}/{filename}"
 
 
 
@@ -120,7 +129,7 @@ class URLProcessingResult(models.Model):
         help_text="Markdown extracted from a webpage, if applicable",
     )
     downloaded_file = models.FileField(
-        upload_to=user_url_processing_path,
+        upload_to=user_knowledge_base_path,
         blank=True,
         null=True,
         help_text="Media file downloaded from the URL, if any",
@@ -161,7 +170,7 @@ class ProcessingJob(models.Model):
         default="queued",
     )
     result_file = models.FileField(
-        upload_to=user_processing_results_path,
+        upload_to=user_knowledge_base_path,
         blank=True,
         null=True,
         help_text="Generated .md or other output file",

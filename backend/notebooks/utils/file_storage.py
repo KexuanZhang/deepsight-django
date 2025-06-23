@@ -15,9 +15,10 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 
 try:
-    from .config import config as config_settings
+    from .config import config as config_settings, storage_config
 except ImportError:
     config_settings = None
+    storage_config = None
 
 class FileStorageService:
     """Service for storing and managing processed files in user knowledge base."""
@@ -26,14 +27,13 @@ class FileStorageService:
         self.service_name = "file_storage"
         self.logger = logging.getLogger(f"{__name__}.file_storage")
         
-        # Use Django's MEDIA_ROOT for file storage
-        media_root = Path(settings.MEDIA_ROOT)
+        # Use the new DeepSight data storage path
+        self.base_data_root = Path(settings.MEDIA_ROOT)
         
-        # Create knowledge base directory (source_uploads are no longer used)
-        self.knowledge_base_dir = media_root / "knowledge_base"
-        self.knowledge_base_dir.mkdir(exist_ok=True)
+        # Create base directory structure if it doesn't exist
+        self.base_data_root.mkdir(parents=True, exist_ok=True)
         
-        self.logger.info("File storage service initialized")
+        self.logger.info(f"File storage service initialized with base path: {self.base_data_root}")
     
     def log_operation(self, operation: str, details: str = "", level: str = "info"):
         """Log service operations with consistent formatting."""
@@ -118,26 +118,26 @@ class FileStorageService:
     def _generate_knowledge_base_paths(self, user_id: int, original_filename: str, kb_item_id: str) -> Dict[str, str]:
         """
         Generate organized file paths for knowledge base storage.
+        New structure: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/title.pdf
+        Content: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/content/extracted_content.md
         
         Returns:
             {
-                'base_dir': '/knowledge_base/user_X/cleaned_filename/',
-                'original_file_path': '/knowledge_base/user_X/cleaned_filename/cleaned_filename.ext',
-                'content_dir': '/knowledge_base/user_X/cleaned_filename/content/',
-                'content_file_path': '/knowledge_base/user_X/cleaned_filename/content/extracted_content.md'
+                'base_dir': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/',
+                'original_file_path': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/title.pdf',
+                'content_dir': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/content/',
+                'content_file_path': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/content/extracted_content.md'
             }
         """
         # Clean the filename
         cleaned_filename = self._clean_filename(original_filename)
         
-        # Remove extension for directory name
-        dir_name = cleaned_filename.rsplit('.', 1)[0] if '.' in cleaned_filename else cleaned_filename
+        # Get current year-month for organization
+        current_date = datetime.now()
+        year_month = current_date.strftime('%Y-%m')
         
-        # Ensure unique directory name by appending kb_item_id if needed
-        unique_dir_name = f"{dir_name}_{kb_item_id}"
-        
-        # Build paths
-        base_dir = f"knowledge_base/user_{user_id}/{unique_dir_name}"
+        # Build paths according to new structure with prefixed IDs
+        base_dir = f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{kb_item_id}"
         content_dir = f"{base_dir}/content"
         
         return {
@@ -146,7 +146,7 @@ class FileStorageService:
             'content_dir': content_dir,
             'content_file_path': f"{content_dir}/extracted_content.md",
             'cleaned_filename': cleaned_filename,
-            'unique_dir_name': unique_dir_name
+            'year_month': year_month
         }
     
     def _calculate_content_hash(self, content: str) -> str:
@@ -216,10 +216,13 @@ class FileStorageService:
             original_filename = metadata.get('original_filename', metadata.get('filename', 'unknown_file'))
             paths = self._generate_knowledge_base_paths(user_id, original_filename, str(kb_item.id))
             
-            # Create directories
-            media_root = Path(settings.MEDIA_ROOT)
-            base_dir = media_root / paths['base_dir']
-            content_dir = media_root / paths['content_dir']
+            # Ensure user directories exist
+            if storage_config:
+                storage_config.ensure_user_directories(user_id)
+            
+            # Create specific directories for this file
+            base_dir = self.base_data_root / paths['base_dir']
+            content_dir = self.base_data_root / paths['content_dir']
             
             base_dir.mkdir(parents=True, exist_ok=True)
             content_dir.mkdir(parents=True, exist_ok=True)
@@ -283,8 +286,6 @@ class FileStorageService:
         try:
             # Try to determine the organized directory from the file paths
             if kb_item.original_file or kb_item.file:
-                media_root = Path(settings.MEDIA_ROOT)
-                
                 # Get the directory path from either original_file or file
                 file_path = None
                 if kb_item.original_file:
@@ -293,16 +294,20 @@ class FileStorageService:
                     file_path = kb_item.file.name
                 
                 if file_path:
-                    # Extract the base directory (should be like knowledge_base/user_X/filename_id/)
+                    # Extract the base directory (should be like Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/)
                     path_parts = Path(file_path).parts
                     
-                    # Look for pattern: knowledge_base/user_X/filename_id/
-                    if len(path_parts) >= 3 and path_parts[0] == 'knowledge_base' and path_parts[1].startswith('user_'):
-                        base_dir = media_root / path_parts[0] / path_parts[1] / path_parts[2]
+                    # Look for pattern: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/
+                    if (len(path_parts) >= 5 and 
+                        path_parts[0] == 'Users' and 
+                        path_parts[2] == 'knowledge_base_item' and 
+                        f"u_{user_id}" in path_parts[1]):
+                        
+                        base_dir = self.base_data_root / path_parts[0] / path_parts[1] / path_parts[2] / path_parts[3] / path_parts[4]
                         
                         if base_dir.exists() and base_dir.is_dir():
                             # Safety check: ensure it's the right user and contains our kb_item_id
-                            if f"user_{user_id}" in str(base_dir) and str(kb_item.id) in str(base_dir):
+                            if f"u_{user_id}" in str(base_dir) and f"f_{kb_item.id}" in str(base_dir):
                                 shutil.rmtree(base_dir)
                                 self.log_operation("delete_organized_structure", f"Deleted directory: {base_dir}")
                             else:
