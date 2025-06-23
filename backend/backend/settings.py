@@ -25,12 +25,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-b3_n&4f$_bldflhyvw3%5@afxen*grlmhuk^*oan#*swy0znk+'
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-b3_n&4f$_bldflhyvw3%5@afxen*grlmhuk^*oan#*swy0znk+')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = []
+# Host Configuration - Set HOST_IP environment variable for server deployment
+HOST_IP = os.getenv('HOST_IP', 'localhost')
+BACKEND_PORT = os.getenv('BACKEND_PORT', '8000')
+FRONTEND_PORT = os.getenv('FRONTEND_PORT', '5173')
+
+ALLOWED_HOSTS = [HOST_IP, 'localhost', '127.0.0.1', '*']  # '*' allows all hosts (be careful in production)
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -82,13 +87,15 @@ CORS_ALLOW_CREDENTIALS = True
 
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5175",  # your React/Vite dev server
-    "http://localhost:5173",
+    f"http://{HOST_IP}:{FRONTEND_PORT}",  # Configurable frontend server
+    f"http://localhost:{FRONTEND_PORT}",  # Keep localhost for local development
+    "http://localhost:5175",  # Legacy port support
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5175",
-    "http://localhost:5173",
+    f"http://{HOST_IP}:{FRONTEND_PORT}",  # Configurable frontend server
+    f"http://localhost:{FRONTEND_PORT}",  # Keep localhost for local development
+    "http://localhost:5175",  # Legacy port support
 ]
 
 MIDDLEWARE.insert(0, "corsheaders.middleware.CorsMiddleware")

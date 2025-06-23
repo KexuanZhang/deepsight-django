@@ -1,7 +1,9 @@
 import apiService from './api';
 
 // API Base URL for raw file access (should match the one in api.js)
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+import { config } from '../config.js';
+
+const API_BASE_URL = config.API_BASE_URL;
 
 /**
  * File preview utilities for different file types

@@ -9,7 +9,8 @@ import json
 from datetime import datetime
 import sys
 
-BASE_URL = "http://localhost:8000"
+import os
+BASE_URL = f"http://{os.getenv('HOST_IP', 'localhost')}:{os.getenv('BACKEND_PORT', '8000')}"
 
 async def monitor_jobs():
     """Monitor all active jobs in real-time"""

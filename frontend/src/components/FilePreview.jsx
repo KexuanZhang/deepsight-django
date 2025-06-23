@@ -10,7 +10,9 @@ import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 
 // API Base URL for raw file access
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+import { config } from '../config.js';
+
+const API_BASE_URL = config.API_BASE_URL;
 
 // Memoized markdown content component (same as StudioPanel)
 const MarkdownContent = React.memo(({ content }) => (

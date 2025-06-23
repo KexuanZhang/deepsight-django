@@ -1,4 +1,6 @@
-const API_BASE_URL = 'http://localhost:8000/api/v1/notebooks';
+import { config } from '../config.js';
+
+const API_BASE_URL = `${config.API_BASE_URL}/notebooks`;
 
 // Helper to get CSRF token from cookie
 function getCookie(name) {
@@ -63,7 +65,7 @@ class ApiService {
   async getParsedFile(fileId) {
     // Get file content from knowledge base item
     // Use absolute URL since this endpoint is outside the notebooks namespace
-    return this.request(`http://localhost:8000/api/v1/files/${fileId}/content/`);
+    return this.request(`${config.API_BASE_URL.replace('/notebooks', '')}/files/${fileId}/content/`);
   }
 
   async getFileRaw(fileId, notebookId) {
