@@ -62,7 +62,6 @@ INSTALLED_APPS = [
     'publications',
     'events',
     'people',
-    'media',
     'tags',
     'drf_yasg',
 ]

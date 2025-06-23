@@ -4,6 +4,8 @@ import time
 import mimetypes
 from uuid import uuid4
 
+from .utils.rag_engine import RAGChatbot
+
 from django.db import transaction
 from django.http import StreamingHttpResponse, Http404, FileResponse
 from django.shortcuts import get_object_or_404
@@ -28,6 +30,7 @@ from .utils.view_mixins import (
     PaginationMixin,
     FileListResponseMixin,
 )
+
 
 upload_processor = UploadProcessor()
 file_storage = FileStorageService()
@@ -131,6 +134,78 @@ class FileListView(StandardAPIView, NotebookPermissionMixin, FileListResponseMix
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details={"error": str(e)}
             )
+        
+class RAGChatFromKBView(StandardAPIView, NotebookPermissionMixin):
+    def post(self, request):
+        file_ids = request.data.get("file_ids", [])
+        question = request.data.get("question")
+
+        if not file_ids or not question:
+            return Response({"error": "file_ids and question are required"}, status=400)
+
+        # Filter user's KB items
+        kb_items = KnowledgeBaseItem.objects.filter(
+            id__in=file_ids,
+            user=request.user,
+            file__isnull=False
+        )
+
+        if not kb_items.exists():
+            return Response({"error": "No valid files found"}, status=404)
+
+        # Read file contents
+        docs = []
+        for item in kb_items:
+            with item.file.open("r") as f:
+                content = f.read()
+                docs.append({
+                    "content": content
+                })
+
+        # Initialize and run RAG chatbot
+        bot = RAGChatbot(docs)
+        answer = bot.ask(question)
+
+        return Response({"answer": answer})
+
+        
+
+class MarkdownBatchContentView(StandardAPIView, NotebookPermissionMixin):
+    """Return the content of selected .md or .txt files."""
+
+    def post(self, request, notebook_id):
+        file_ids = request.data.get("file_ids", [])
+        if not isinstance(file_ids, list) or not file_ids:
+            return self.error_response("file_ids must be a non-empty list")
+
+        notebook = self.get_user_notebook(notebook_id, request.user)
+
+        knowledge_items = KnowledgeItem.objects.filter(
+            notebook=notebook,
+            knowledge_base_item_id__in=file_ids
+        ).select_related("knowledge_base_item")
+
+        result = []
+        for ki in knowledge_items:
+            kb = ki.knowledge_base_item
+            if kb.file and kb.file.name.endswith((".md", ".txt")):
+                try:
+                    with kb.file.open("r", encoding="utf-8") as f:
+                        content = f.read()
+                    result.append({
+                        "id": str(kb.id),
+                        "title": kb.title,
+                        "content": content
+                    })
+                except Exception as e:
+                    result.append({
+                        "id": str(kb.id),
+                        "title": kb.title,
+                        "error": str(e)
+                    })
+
+        return self.success_response({"items": result})
+
 
 
 class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixin):
