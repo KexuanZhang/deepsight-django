@@ -757,25 +757,25 @@ class DeepReportGenerator:
             if not config.topic and not runner.transcript and not runner.paper:
                 raise ValueError("Either a topic, transcript, or paper content must be provided for report generation.")
             
-            # Set article directory name
-            folder_name = truncate_filename(article_title.replace(" ", "_").replace("/", "_"))
-            runner.article_dir_name = folder_name
+            # Don't create subfolder based on article_title - store directly in output_dir
+            # All files should go directly to the r_{report_id} folder
+            runner.article_dir_name = ""  # Empty to avoid subfolder creation
             
-            # Update figure data paths
-            if not config.caption_files and runner.figure_data and runner.article_dir_name:
-                image_output_subfolder_name = f"Images_{runner.article_dir_name}"
+            # Update figure data paths to not use subfolders
+            if not config.caption_files and runner.figure_data:
+                # Store images directly in the output directory
                 updated_figure_data_list = []
                 for fig_dict in runner.figure_data:
                     original_image_path = fig_dict.get("image_path")
                     if original_image_path:
                         base_image_filename = os.path.basename(original_image_path)
-                        new_relative_image_path = os.path.join(image_output_subfolder_name, base_image_filename)
-                        fig_dict["image_path"] = new_relative_image_path
+                        # Store image files directly in output directory without subfolder
+                        fig_dict["image_path"] = base_image_filename
                     updated_figure_data_list.append(fig_dict)
                 runner.figure_data = updated_figure_data_list
             
-            # Create output directory and setup query logger
-            article_output_dir = os.path.join(config.output_dir, runner.article_dir_name)
+            # Use output directory directly without creating article subfolder
+            article_output_dir = config.output_dir
             os.makedirs(article_output_dir, exist_ok=True)
             runner.storm_article_generation.query_logger = QueryLogger(article_output_dir)
             
@@ -835,7 +835,7 @@ class DeepReportGenerator:
             if config.post_processing:
                 polished_article_path = os.path.join(article_output_dir, "storm_gen_article_polished.md")
                 if os.path.exists(polished_article_path):
-                    clean_folder_name = "".join(e for e in folder_name if e.isalnum() or e == "_")
+                    clean_folder_name = "".join(e for e in article_title if e.isalnum() or e == "_")
                     output_file = os.path.join(article_output_dir, f"{clean_folder_name}.md")
                     process_file(polished_article_path, output_file, config.post_processing)
                     generated_files.append(output_file)

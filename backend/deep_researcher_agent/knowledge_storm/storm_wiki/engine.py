@@ -533,12 +533,16 @@ class STORMWikiRunner(Engine):
                 logging.error("Generated topic is critically missing and could not be derived. Check TopicImprover logic and inputs.")
                 raise ValueError("Failed to determine a topic for the report. All inputs (topic, transcript, paper) might be missing or topic generation failed.")
         
-        if not hasattr(self, 'article_dir_name') or not self.article_dir_name:
+        if not hasattr(self, 'article_dir_name') or self.article_dir_name is None:
             if not self.article_title:
                 self.article_title = self.generated_topic if self.generated_topic else "Untitled_Report"
             self.article_dir_name = truncate_filename(self.article_title.replace(" ", "_").replace("/", "_"))
         
-        self.article_output_dir = os.path.join(self.args.output_dir, self.article_dir_name)
+        # Use output directory directly if article_dir_name is explicitly empty (no subfolder)
+        if self.article_dir_name == "":
+            self.article_output_dir = self.args.output_dir
+        else:
+            self.article_output_dir = os.path.join(self.args.output_dir, self.article_dir_name)
         os.makedirs(self.article_output_dir, exist_ok=True)
 
         old_outline = None

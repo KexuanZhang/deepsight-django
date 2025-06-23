@@ -167,7 +167,6 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
     
     # Basic settings
     topic = serializers.CharField(required=False, allow_blank=True, max_length=500)
-    article_title = serializers.CharField(default="Research Report", max_length=255)
     model_provider = serializers.ChoiceField(choices=Report.MODEL_PROVIDER_CHOICES, default=Report.MODEL_PROVIDER_OPENAI)
     retriever = serializers.ChoiceField(choices=Report.RETRIEVER_CHOICES, default=Report.RETRIEVER_TAVILY)
     temperature = serializers.FloatField(default=0.2, min_value=0.0, max_value=2.0)

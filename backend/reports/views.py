@@ -4,6 +4,7 @@ import shutil
 import logging
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
@@ -115,6 +116,9 @@ class ReportViewSet(viewsets.ModelViewSet):
             
             # Create a new Report with status 'pending'
             report_data = serializer.validated_data.copy()
+            # Set default article_title since it's not provided in the request anymore
+            report_data['article_title'] = f"Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
             report = Report.objects.create(
                 user=request.user,
                 status=Report.STATUS_PENDING,

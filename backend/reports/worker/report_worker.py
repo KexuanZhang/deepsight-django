@@ -406,7 +406,7 @@ def prepare_input_data(report: Report) -> Dict[str, Any]:
 def store_generated_files(report: Report, result, output_dir: Path) -> List[str]:
     """
     Store generated files using Django's file storage system.
-    All files are stored directly in the r_{report_id} folder.
+    All files are stored directly in the r_{report_id} folder without any subfolders.
     Returns list of stored file paths.
     """
     stored_files = []
@@ -424,7 +424,7 @@ def store_generated_files(report: Report, result, output_dir: Path) -> List[str]
                         # Create a ContentFile
                         django_file = ContentFile(file_content)
                         
-                        # Use original filename directly
+                        # Use original filename directly - no subfolders
                         filename = source_path.name
                         
                         # Save using the report's file field (if this is the main report)
@@ -432,10 +432,10 @@ def store_generated_files(report: Report, result, output_dir: Path) -> List[str]
                             report.main_report_file.save(filename, django_file, save=True)
                             stored_files.append(report.main_report_file.name)
                         else:
-                            # For other files, create additional FileField or store reference
-                            # For now, we'll track the filename for the generated_files list
-                            # All files go directly in the r_{report_id} folder
-                            stored_files.append(f"Users/u_{report.user.pk}/report/{datetime.now().strftime('%Y-%m')}/r_{report.id}/{filename}")
+                            # For other files, they are already stored directly in the output directory
+                            # Record the path relative to the report folder (directly in r_{report_id})
+                            relative_path = f"Users/u_{report.user.pk}/report/{datetime.now().strftime('%Y-%m')}/r_{report.id}/{filename}"
+                            stored_files.append(relative_path)
                         
                         logger.info(f"Stored file directly in report folder: {filename}")
                         
