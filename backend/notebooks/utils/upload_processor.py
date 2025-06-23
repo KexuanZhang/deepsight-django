@@ -6,33 +6,59 @@ import os
 import tempfile
 import subprocess
 import asyncio
+import logging
 from typing import Dict, Any, Optional
 from pathlib import Path
 from datetime import datetime
 
-import fitz  # PyMuPDF
-from fastapi import UploadFile, HTTPException
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
 
-from .services.base_service import BaseService
-from .services.file_storage import FileStorageService
-from .services.content_index import ContentIndexingService
-from .file_validator import FileValidator
-from .core.config import settings
+# Django imports for file handling
+from django.core.files.uploadedfile import UploadedFile as UploadFile
+from django.http import Http404 as HTTPException
 
-class UploadProcessor(BaseService):
+try:
+    from .file_storage import FileStorageService
+    from .content_index import ContentIndexingService
+    from .file_validator import FileValidator
+    from .config import config as settings
+except ImportError:
+    # Fallback classes to prevent import errors
+    FileStorageService = None
+    ContentIndexingService = None
+    FileValidator = None
+    settings = None
+
+class UploadProcessor:
     """Handles immediate processing of uploaded files."""
     
     def __init__(self):
-        super().__init__("upload_processor")
-        self.file_storage = FileStorageService()
-        self.content_indexing = ContentIndexingService()
-        self.validator = FileValidator()
+        self.service_name = "upload_processor"
+        self.logger = logging.getLogger(f"{__name__}.upload_processor")
+        
+        # Initialize services with fallbacks
+        self.file_storage = FileStorageService() if FileStorageService else None
+        self.content_indexing = ContentIndexingService() if ContentIndexingService else None
+        self.validator = FileValidator() if FileValidator else None
         
         # Initialize whisper model lazily
         self._whisper_model = None
         
         # Track upload statuses in memory (in production, use Redis or database)
         self._upload_statuses = {}
+        
+        self.logger.info("Upload processor service initialized")
+    
+    def log_operation(self, operation: str, details: str = "", level: str = "info"):
+        """Log service operations with consistent formatting."""
+        message = f"[{self.service_name}] {operation}"
+        if details:
+            message += f": {details}"
+        
+        getattr(self.logger, level)(message)
     
     @property
     def whisper_model(self):

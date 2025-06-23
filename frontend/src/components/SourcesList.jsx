@@ -1,5 +1,5 @@
 import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback, useMemo } from "react";
-import { ArrowUpDown, Trash2, Plus, ChevronLeft, RefreshCw, CheckCircle, AlertCircle, Clock, X, Upload, Link2, FileText, Globe, Youtube, Group, File, Music, Video, Presentation, Loader2, Eye } from "lucide-react";
+import { ArrowUpDown, Trash2, Plus, ChevronLeft, RefreshCw, CheckCircle, AlertCircle, Clock, X, Upload, Link2, FileText, Globe, Youtube, Group, File, Music, Video, Presentation, Loader2, Eye, Database } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -579,21 +579,94 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     refreshSources: loadParsedFiles
   }));
 
-  const toggleSource = (id) => {
+  const toggleSource = useCallback((id) => {
     setSources((prev) => {
       const newSources = prev.map((source) =>
         source.id === id ? { ...source, selected: !source.selected } : source
       );
       
-      // Notify parent component about selection change
-      if (onSelectionChange) {
-        // Use setTimeout to ensure state update is complete
-        setTimeout(() => onSelectionChange(), 0);
-      }
-      
       return newSources;
     });
-  };
+  }, []);
+
+  // Reusable SourceItem component for consistent rendering - Memoized to prevent unnecessary re-renders
+  const SourceItem = React.memo(({ source, index, onToggle, onPreview, getSourceTooltip, getPrincipleFileIcon, renderFileStatus, isInitialLoad = false }) => {
+    const handleCheckboxChange = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onToggle();
+    }, [onToggle]);
+
+    const handleItemClick = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    }, []);
+
+    const handlePreviewClick = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onPreview(source);
+    }, [onPreview, source]);
+
+    return (
+      <div
+        className="px-6 py-4 border-b border-gray-100 hover:bg-gray-50/50 transition-colors group"
+        onClick={handleItemClick}
+      >
+        <div className="flex items-center space-x-4">
+          <input
+            type="checkbox"
+            checked={source.selected}
+            onChange={handleCheckboxChange}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 focus:ring-offset-0 shadow-sm"
+          />
+          
+          <div className="flex-shrink-0">
+            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-hover:bg-gray-200 transition-colors">
+              {React.createElement(getPrincipleFileIcon(source), {
+                className: "h-5 w-5 text-gray-600"
+              })}
+            </div>
+          </div>
+          
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center space-x-2 mb-1">
+              <h4 className="font-medium text-gray-900 truncate">{source.title}</h4>
+              {renderFileStatus(source)}
+            </div>
+            <p className="text-sm text-gray-500 truncate">{source.authors}</p>
+          </div>
+          
+          <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            {supportsPreview(source.metadata?.file_extension || source.ext || '', source.metadata) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600"
+                onClick={handlePreviewClick}
+                title={getSourceTooltip(source)}
+              >
+                <Eye className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  });
+  
+  // Separate effect to handle selection change notifications - optimized to prevent flashing
+  const selectedIds = useMemo(() => sources.filter(s => s.selected).map(s => s.id), [sources]);
+  const selectedIdsString = useMemo(() => selectedIds.join(','), [selectedIds]);
+  
+  useEffect(() => {
+    if (onSelectionChange) {
+      // Debounce the callback to prevent excessive calls and reduce flashing
+      const timer = setTimeout(() => onSelectionChange(), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedIdsString, onSelectionChange]); // Use string comparison to avoid array reference changes
 
   const handleDeleteSelected = async () => {
     const selectedSources = sources.filter(source => source.selected);
@@ -667,7 +740,10 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       const response = await apiService.getKnowledgeBase(notebookId);
       
       if (response.success) {
-        setKnowledgeBaseItems(response.data);
+        // Backend returns {items: [...], notebook_id: ..., pagination: ...}
+        // Extract the items array for the frontend
+        const items = response.data?.items || [];
+        setKnowledgeBaseItems(items);
       } else {
         throw new Error(response.error || "Failed to load knowledge base");
       }
@@ -685,8 +761,8 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     setLinkUrl('');
     setPasteText('');
     setSelectedKnowledgeItems(new Set());
-    // Load knowledge base when modal opens
-    loadKnowledgeBase();
+    // Only load knowledge base when user actually switches to the knowledge tab
+    // loadKnowledgeBase();
   };
 
   // Modified file upload handler
@@ -1230,8 +1306,21 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         // All links successful
         setShowUploadModal(false);
         setSelectedKnowledgeItems(new Set());
-        // Refresh the sources list to show newly linked items
-        setTimeout(loadParsedFiles, 500);
+        
+        // Update the knowledge base items status to show they're linked
+        setKnowledgeBaseItems(prev => prev.map(item => 
+          selectedKnowledgeItems.has(item.id) 
+            ? { ...item, linked_to_notebook: true }
+            : item
+        ));
+        
+        // Refresh the sources list to immediately show the newly linked items
+        await loadParsedFiles();
+        
+        // Notify parent of changes if needed
+        if (onSelectionChange) {
+          setTimeout(() => onSelectionChange(), 100);
+        }
       } else {
         throw new Error(`Failed to link ${failedLinks.length} item(s)`);
       }
@@ -1269,8 +1358,8 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       
       setSelectedKnowledgeItems(new Set());
       
-      // Refresh the sources list in case any were linked to current notebook
-      setTimeout(loadParsedFiles, 500);
+      // No need to refresh the entire sources list for knowledge base deletions
+      // The knowledge base items are separate from the current notebook sources
 
       const failedDeletes = results.filter(result => result.success === false);
       if (failedDeletes.length > 0) {
@@ -1282,77 +1371,84 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     }
   };
 
+
+
   return (
-    <div className="h-full flex flex-col relative">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-        <div className="flex items-center space-x-2 min-w-0 flex-1">
-                      <h2 className="text-lg font-semibold text-red-600 truncate">Knowledge Base</h2>
-          {isLoading ? (
-            <RefreshCw className="h-3 w-3 animate-spin text-gray-400 flex-shrink-0" />
-          ) : (
-            <Badge variant="secondary" className="text-xs flex-shrink-0">
-              {sources.length}
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center space-x-1 flex-shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-gray-500 hover:text-gray-700"
-            onClick={handleSortToggle}
-            title={`Sort by ${sortOrder === 'newest' ? 'oldest first' : 'newest first'}`}
-          >
-            <ArrowUpDown className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-gray-500 hover:text-gray-700"
-            onClick={handleGroupToggle}
-            title={isGrouped ? 'Ungroup by type' : 'Group by type'}
-          >
-            <Group className="h-3 w-3" />
-          </Button>
-          {onToggleCollapse && (
+    <div className="h-full flex flex-col bg-white">
+      {/* Simple Header */}
+      <div className="flex-shrink-0 px-4 py-3 bg-white border-b border-gray-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="w-6 h-6 bg-gray-100 rounded-md flex items-center justify-center">
+              <Database className="h-3 w-3 text-gray-600" />
+            </div>
+            <h3 className="text-sm font-medium text-gray-900">Sources</h3>
+          </div>
+          <div className="flex items-center space-x-1">
             <Button
               variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all duration-200 group"
-              onClick={onToggleCollapse}
-              title="Collapse Sources Panel"
+              size="sm"
+              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleSortToggle();
+              }}
             >
-              <motion.div
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                transition={{ duration: 0.2 }}
-                className="flex items-center justify-center"
-              >
-                <ChevronLeft className="h-4 w-4 group-hover:text-red-600 transition-colors duration-200" />
-              </motion.div>
+              <ArrowUpDown className="h-3 w-3 mr-1" />
+              Sort
             </Button>
-          )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleGroupToggle();
+              }}
+            >
+              <Group className="h-3 w-3 mr-1" />
+              Group
+            </Button>
+            {onToggleCollapse && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onToggleCollapse();
+                }}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+            {isLoading && (
+              <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Error Display */}
+      {/* Error Display with unified styling */}
       <AnimatePresence>
         {error && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="p-4 border-b border-gray-200"
+            className="flex-shrink-0 p-4 border-b border-gray-200"
           >
-            <Alert variant="destructive">
+            <Alert variant="destructive" className="border-red-200 bg-red-50">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="text-sm">
+              <AlertDescription className="text-sm text-red-800">
                 {error}
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="ml-2 h-6 px-2"
+                  className="ml-2 h-6 px-2 text-red-600 hover:text-red-800"
                   onClick={() => setError(null)}
                 >
                   Dismiss
@@ -1363,59 +1459,56 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         )}
       </AnimatePresence>
 
-      {/* Select All & Actions */}
-      <div className="px-4 py-3 border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="selectAll"
-              className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
-              checked={sources.length > 0 && selectedCount === sources.length}
-              onChange={(e) => {
-                const checked = e.target.checked;
-                setSources((prev) => {
-                  const newSources = prev.map((s) => ({ ...s, selected: checked }));
-                  
-                  // Notify parent component about selection change
-                  if (onSelectionChange) {
-                    setTimeout(() => onSelectionChange(), 0);
-                  }
-                  
-                  return newSources;
-                });
-              }}
-            />
-            <label htmlFor="selectAll" className="text-sm text-gray-700">
-              Select All
-            </label>
-            {selectedCount > 0 && (
-              <Badge variant="outline" className="text-xs">
-                {selectedCount} selected
-              </Badge>
-            )}
-          </div>
-          
-          {selectedCount > 0 && (
+      {/* Simple Selection Bar */}
+      {sources.length > 0 && (
+        <div className="flex-shrink-0 px-6 py-3 bg-gray-50 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                id="selectAll"
+                className="h-4 w-4 rounded border-gray-300 text-gray-600 focus:ring-gray-500"
+                checked={sources.length > 0 && selectedCount === sources.length}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setSources((prev) => prev.map((s) => ({ ...s, selected: checked })));
+                  // onSelectionChange will be triggered by the useEffect watching selectedIds
+                }}
+              />
+              <label htmlFor="selectAll" className="text-sm text-gray-600">
+                Select All ({selectedCount}/{sources.length})
+              </label>
+            </div>
+            
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
-              onClick={handleDeleteSelected}
-              title="Remove Selected"
+              className={`h-8 px-2 transition-colors ${
+                selectedCount > 0 
+                  ? 'text-gray-500 hover:text-red-600' 
+                  : 'text-gray-300 cursor-not-allowed'
+              }`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (selectedCount > 0) {
+                  handleDeleteSelected();
+                }
+              }}
+              disabled={selectedCount === 0}
             >
               <Trash2 className="h-3 w-3 mr-1" />
               Remove
             </Button>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Source List */}
+      {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto">
         <AnimatePresence mode="wait">
           {isGrouped ? (
-            // Grouped rendering
+            // Grouped rendering with unified styling
             <motion.div
               key="grouped"
               initial={{ opacity: 0 }}
@@ -1432,99 +1525,38 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.3, ease: "easeOut" }}
                 >
-                  <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-200 sticky top-0">
-                    <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                      {type.toUpperCase()} ({groupSources.length})
-                    </h4>
+                  <div className="px-6 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 sticky top-0">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-6 h-6 bg-gray-200 rounded-md flex items-center justify-center">
+                        {React.createElement(fileIcons[type] || File, {
+                          className: "h-3 w-3 text-gray-600"
+                        })}
+                      </div>
+                      <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                        {type.toUpperCase()}
+                      </h4>
+                      <Badge variant="outline" className="text-xs bg-white border-gray-300">
+                        {groupSources.length}
+                      </Badge>
+                    </div>
                   </div>
-                  <AnimatePresence>
-                    {groupSources.map((source, index) => (
-                      <motion.div
-                        key={source.id}
-                        layout
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        transition={{ duration: 0.2, ease: "easeOut" }}
-                        className={`px-4 py-2 border-b border-gray-200 flex items-center ${
-                          source.selected 
-                            ? "bg-red-50 hover:bg-red-100" 
-                            : index % 2 === 0 
-                              ? "bg-white hover:bg-gray-100/70" 
-                              : "bg-gray-50/50 hover:bg-gray-100/70"
-                        } ${source.parsing_status === 'error' ? 'border-l-4 border-l-red-300' : ''} transition-colors duration-150`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={source.selected}
-                          onChange={() => toggleSource(source.id)}
-                          className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 flex-shrink-0"
-                          disabled={['pending', 'parsing'].includes(source.parsing_status)}
-                        />
-                        <div className="ml-3 flex items-center space-x-2 flex-1 min-w-0">
-                          <div className="flex-shrink-0">
-                            {React.createElement(getPrincipleFileIcon(source), {
-                              className: "h-4 w-4 text-gray-500"
-                            })}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center space-x-2">
-                              <div className="flex-1 min-w-0">
-                                <h3 
-                                  className="text-sm font-medium text-gray-900 truncate"
-                                  title={getSourceTooltip(source)}
-                                >
-                                {source.title}
-                              </h3>
-                                <p className="text-xs text-gray-500">{source.authors}</p>
-                              </div>
-                              
-                              <div className="flex items-center space-x-1 flex-shrink-0">
-                                {/* Preview Button */}
-                                {source.parsing_status === 'completed' && supportsPreview(source.metadata?.file_extension, source.metadata) && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 w-6 p-0 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handlePreviewFile(source);
-                                    }}
-                                    title="Preview file content"
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                  </Button>
-                                )}
-                              {source.parsing_status && (
-                                <div className="flex-shrink-0">
-                                  {getStatusIcon(
-                                    source.parsing_status, 
-                                    ['pending', 'parsing'].includes(source.parsing_status)
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                            </div>
-                            
-                            {/* Loading indicator for ongoing uploads/parsing */}
-                            {renderFileStatus(source)}
-                            
-                            {/* Error message display */}
-                            {source.error_message && (
-                              <p className="text-xs text-red-600 mt-1 truncate" title={source.error_message}>
-                                Error: {source.error_message}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
+                  {groupSources.map((source, index) => (
+                    <SourceItem
+                      key={`source-${source.id}-${source.file_id || source.upload_file_id}`}
+                      source={source}
+                      index={index}
+                      onToggle={() => toggleSource(source.id)}
+                      onPreview={() => handlePreviewFile(source)}
+                      getSourceTooltip={getSourceTooltip}
+                      getPrincipleFileIcon={getPrincipleFileIcon}
+                      renderFileStatus={renderFileStatus}
+                    />
+                  ))}
                 </motion.div>
               ))}
             </motion.div>
           ) : (
-            // Ungrouped rendering
+            // Ungrouped rendering with unified styling
             <motion.div
               key="ungrouped"
               initial={{ opacity: 0 }}
@@ -1533,148 +1565,64 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
               transition={{ duration: 0.2 }}
             >
               {processedSources.map((source, index) => (
-                <motion.div
-                  key={source.id}
-                  layout
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
-                  className={`px-4 py-2 border-b border-gray-200 flex items-center ${
-                    source.selected 
-                      ? "bg-red-50 hover:bg-red-100" 
-                      : index % 2 === 0 
-                        ? "bg-white hover:bg-gray-100/70" 
-                        : "bg-gray-50/50 hover:bg-gray-100/70"
-                  } ${source.parsing_status === 'error' ? 'border-l-4 border-l-red-300' : ''} transition-colors duration-150`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={source.selected}
-                    onChange={() => toggleSource(source.id)}
-                    className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 flex-shrink-0"
-                    disabled={['pending', 'parsing'].includes(source.parsing_status)}
-                  />
-                  <div className="ml-3 flex items-center space-x-2 flex-1 min-w-0">
-                    <div className="flex-shrink-0">
-                      {React.createElement(getPrincipleFileIcon(source), {
-                        className: "h-4 w-4 text-gray-500"
-                      })}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2">
-                        <div className="flex-1 min-w-0">
-                          <h3 
-                            className="text-sm font-medium text-gray-900 truncate"
-                            title={getSourceTooltip(source)}
-                          >
-                          {source.title}
-                        </h3>
-                          <p className="text-xs text-gray-500">{source.authors}</p>
-                        </div>
-                        
-                        <div className="flex items-center space-x-1 flex-shrink-0">
-                          {/* Preview Button */}
-                          {source.parsing_status === 'completed' && supportsPreview(source.metadata?.file_extension, source.metadata) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handlePreviewFile(source);
-                              }}
-                              title="Preview file content"
-                            >
-                              <Eye className="h-3 w-3" />
-                            </Button>
-                          )}
-                        {source.parsing_status && (
-                          <div className="flex-shrink-0">
-                            {getStatusIcon(
-                              source.parsing_status, 
-                              ['pending', 'parsing'].includes(source.parsing_status)
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      </div>
-                      
-                      {/* Loading indicator for ongoing uploads/parsing */}
-                      {renderFileStatus(source)}
-                      
-                      {/* Error message display */}
-                      {source.error_message && (
-                        <p className="text-xs text-red-600 mt-1 truncate" title={source.error_message}>
-                          Error: {source.error_message}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
+                <SourceItem
+                  key={`source-${source.id}-${source.file_id || source.upload_file_id}`}
+                  source={source}
+                  index={index}
+                  onToggle={() => toggleSource(source.id)}
+                  onPreview={() => handlePreviewFile(source)}
+                  getSourceTooltip={getSourceTooltip}
+                  getPrincipleFileIcon={getPrincipleFileIcon}
+                  renderFileStatus={renderFileStatus}
+                />
               ))}
             </motion.div>
           )}
         </AnimatePresence>
         
-        {/* Empty state */}
+        {/* Empty/Loading States */}
         {!isLoading && sources.length === 0 && (
-          <div className="p-8 text-center text-gray-500">
-            <Upload className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-sm">No files in knowledge base</p>
-            <p className="text-xs text-gray-400 mt-1">Upload your first file to get started</p>
+          <div className="p-8 text-center">
+            <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-3 flex items-center justify-center">
+              <Upload className="h-6 w-6 text-gray-400" />
+            </div>
+            <h3 className="text-sm font-medium text-gray-900 mb-1">No files yet</h3>
+            <p className="text-xs text-gray-500">Add files to get started</p>
           </div>
         )}
         
-        {/* Loading state */}
         {isLoading && sources.length === 0 && (
-          <div className="p-8 text-center text-gray-500">
-            <RefreshCw className="h-12 w-12 mx-auto mb-4 text-gray-300 animate-spin" />
-            <p className="text-sm">Loading files...</p>
+          <div className="p-8 text-center">
+            <RefreshCw className="h-6 w-6 text-gray-400 animate-spin mx-auto mb-3" />
+            <p className="text-sm text-gray-500">Loading...</p>
           </div>
         )}
       </div>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-gray-200">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs text-gray-500">
-            {sources.length} total • {selectedCount} selected
-          </p>
-          {Object.keys(uploadProgress).length > 0 && (
-            <p className="text-xs text-blue-600">
-              {Object.keys(uploadProgress).length} processing...
-            </p>
-          )}
-        </div>
-        
+      {/* Simple Footer */}
+      <div className="flex-shrink-0 p-4 bg-white border-t border-gray-200">
         <Button
           variant="outline"
           size="sm"
-          className="w-full flex items-center justify-center"
-          onClick={handleAddSource}
+          className="w-full h-9 border-gray-300 text-gray-700"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleAddSource();
+          }}
           disabled={isLoading}
         >
           <Plus className="h-4 w-4 mr-2" />
-          Add Source
+          Add Files
         </Button>
-        
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden"
-          onChange={handleFileChange}
-          accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav,.m4a,.avi,.mov"
-        />
-        
-        <p className="text-xs text-gray-400 mt-2 text-center">
-          Supports PDF, TXT, MD, PPT, MP3, MP4, WAV, M4A, AVI, MOV (max 100MB)
-        </p>
-        <p className="text-xs text-gray-300 mt-1 text-center">
-          💡 Files shown are original uploads • Extracted content used for processing
-        </p>
+        {Object.keys(uploadProgress).length > 0 && (
+          <div className="mt-2 text-center text-xs text-gray-500">
+            {Object.keys(uploadProgress).length} processing...
+          </div>
+        )}
       </div>
 
+      {/* Existing modals and components */}
       {/* Upload Modal */}
       <AnimatePresence>
         {showUploadModal && (
@@ -1683,7 +1631,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[60] p-4"
-            onClick={() => setShowUploadModal(false)}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setShowUploadModal(false);
+            }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -1699,7 +1651,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setShowUploadModal(false)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowUploadModal(false);
+                  }}
                   className="text-gray-400 hover:text-white hover:bg-gray-800"
                 >
                   <X className="h-6 w-6" />
@@ -1709,7 +1665,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
               {/* Tab Navigation - Fixed at top */}
               <div className="flex space-x-1 mb-8 bg-gray-800 p-1 rounded-lg">
                 <button
-                  onClick={() => setActiveTab('file')}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setActiveTab('file');
+                  }}
                   className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                     activeTab === 'file'
                       ? 'bg-blue-600 text-white'
@@ -1719,7 +1679,15 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   Upload Files
                 </button>
                 <button
-                  onClick={() => setActiveTab('knowledge')}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setActiveTab('knowledge');
+                    // Load knowledge base only when switching to this tab
+                    if (knowledgeBaseItems.length === 0 && !isLoadingKnowledgeBase) {
+                      loadKnowledgeBase();
+                    }
+                  }}
                   className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                     activeTab === 'knowledge'
                       ? 'bg-purple-600 text-white'
@@ -1752,7 +1720,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                       <p className="text-gray-400">
                         Drag & drop or{' '}
                         <button
-                          onClick={() => fileInputRef.current?.click()}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            fileInputRef.current?.click();
+                          }}
                           className="text-blue-400 hover:text-blue-300 underline"
                         >
                           choose file to upload
@@ -1786,7 +1758,9 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                             ? 'bg-blue-600 hover:bg-blue-700' 
                             : 'bg-gray-700 hover:bg-gray-600'
                         }`}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setActiveTab('link');
                           setUrlProcessingType('website');
                         }}
@@ -1804,7 +1778,9 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                             ? 'bg-red-600 hover:bg-red-700' 
                             : 'bg-gray-700 hover:bg-gray-600'
                         }`}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setActiveTab('link');
                           setUrlProcessingType('media');
                         }}
@@ -1859,7 +1835,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   <div className="space-y-3">
                     <button 
                       className="flex items-center space-x-2 p-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors w-full"
-                      onClick={() => setActiveTab('text')}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setActiveTab('text');
+                      }}
                     >
                       <FileText className="h-4 w-4 text-gray-300" />
                       <span className="text-sm text-gray-300">Copied text</span>
@@ -1911,7 +1891,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                       <h4 className="text-md font-medium text-white">知识库项目</h4>
                       <div className="flex items-center space-x-2">
                         <Button
-                          onClick={loadKnowledgeBase}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            loadKnowledgeBase();
+                          }}
                           variant="outline"
                           size="sm"
                           className="border-gray-600 text-gray-300 hover:bg-gray-700"
@@ -1978,13 +1962,21 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                                     ? 'bg-gray-700 border-gray-600 hover:border-gray-500'
                                     : 'bg-gray-700 border-gray-600 hover:border-gray-500'
                                 }`}
-                                onClick={() => handleKnowledgeItemSelect(item.id)}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleKnowledgeItemSelect(item.id);
+                                }}
                               >
                                 <div className="flex items-center space-x-3">
                                                                       <input
                                       type="checkbox"
                                       checked={selectedKnowledgeItems.has(item.id)}
-                                      onChange={() => handleKnowledgeItemSelect(item.id)}
+                                      onChange={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleKnowledgeItemSelect(item.id);
+                                      }}
                                       className="h-4 w-4 rounded border-gray-500 text-purple-600 focus:ring-purple-500"
                                       onClick={(e) => e.stopPropagation()}
                                     />
@@ -2032,7 +2024,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                     {selectedKnowledgeItems.size > 0 && (
                       <div className="flex space-x-3 mt-6 pt-4 border-t border-gray-700">
                         <Button
-                          onClick={handleLinkSelectedKnowledgeItems}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleLinkSelectedKnowledgeItems();
+                          }}
                           className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
                           disabled={selectedKnowledgeItems.size === 0 || Array.from(selectedKnowledgeItems).every(id => 
                             knowledgeBaseItems.find(item => item.id === id)?.linked_to_notebook
@@ -2042,7 +2038,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                           Link to Notebook ({selectedKnowledgeItems.size})
                         </Button>
                         <Button
-                          onClick={handleDeleteKnowledgeBaseItems}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDeleteKnowledgeBaseItems();
+                          }}
                           variant="outline"
                           className="border-red-600 text-red-400 hover:bg-red-900/20"
                         >
@@ -2058,6 +2058,16 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           </motion.div>
         )}
       </AnimatePresence>
+
+
+      {/* Hidden File Input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        onChange={handleFileChange}
+        style={{ display: 'none' }}
+        accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav,.m4a,.avi,.mov"
+      />
 
       {/* File Preview Modal */}
       <FilePreview

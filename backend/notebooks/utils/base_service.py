@@ -8,10 +8,20 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional, Any, List
 from datetime import datetime, UTC
 from pathlib import Path
-from redis import Redis
-from rq import Queue
 
-from ..core.config import settings
+try:
+    from redis import Redis
+    from rq import Queue
+    redis_available = True
+except ImportError:
+    Redis = None
+    Queue = None
+    redis_available = False
+
+try:
+    from .config import config as settings
+except ImportError:
+    settings = None
 
 
 class BaseService(ABC):
@@ -30,8 +40,14 @@ class BaseService(ABC):
         self.logger = logging.getLogger(f"{__name__}.{service_name}")
         
         # Create service-specific data directory
-        self.data_dir = Path(settings.PROJECT_ROOT) / "data" / service_name
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        if settings and hasattr(settings, 'PROJECT_ROOT'):
+            self.data_dir = Path(settings.PROJECT_ROOT) / "data" / service_name
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            # Fallback to a default data directory
+            import tempfile
+            self.data_dir = Path(tempfile.gettempdir()) / "deepsight_data" / service_name
+            self.data_dir.mkdir(parents=True, exist_ok=True)
         
         self.logger.info(f"{service_name} service initialized")
     
@@ -66,17 +82,32 @@ class BaseQueueService(BaseService):
     def __init__(self, service_name: str, queue_name: str):
         super().__init__(service_name)
         
-        # Redis connection (without string decoding for RQ compatibility)
-        self.redis_client = Redis.from_url(settings.redis_url, decode_responses=False)
+        if not redis_available or not settings:
+            self.logger.warning(f"Redis/RQ not available for {service_name}")
+            self.redis_client = None
+            self.queue = None
+            self.queue_name = queue_name
+            self.job_metadata_key = f"{service_name}_metadata"
+            return
         
-        # RQ Queue
-        self.queue = Queue(queue_name, connection=self.redis_client)
-        self.queue_name = queue_name
-        
-        # Job metadata storage key
-        self.job_metadata_key = f"{service_name}_metadata"
-        
-        self.logger.info(f"Queue service {service_name} initialized with queue: {queue_name}")
+        try:
+            # Redis connection (without string decoding for RQ compatibility)
+            self.redis_client = Redis.from_url(settings.redis_url, decode_responses=False)
+            
+            # RQ Queue
+            self.queue = Queue(queue_name, connection=self.redis_client)
+            self.queue_name = queue_name
+            
+            # Job metadata storage key
+            self.job_metadata_key = f"{service_name}_metadata"
+            
+            self.logger.info(f"Queue service {service_name} initialized with queue: {queue_name}")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize Redis for {service_name}: {e}")
+            self.redis_client = None
+            self.queue = None
+            self.queue_name = queue_name
+            self.job_metadata_key = f"{service_name}_metadata"
     
     def _decode_redis_hash(self, data: Dict) -> Dict[str, str]:
         """Decode Redis hash data from bytes to strings."""
@@ -94,6 +125,10 @@ class BaseQueueService(BaseService):
     
     def store_job_metadata(self, job_id: str, metadata: Dict[str, Any]) -> None:
         """Store job metadata in Redis."""
+        if not self.redis_client:
+            self.log_operation("store_metadata_skipped", f"Redis not available for job_id={job_id}")
+            return
+            
         try:
             # Ensure all values are strings for Redis storage
             redis_data = {}
@@ -116,6 +151,9 @@ class BaseQueueService(BaseService):
     
     def get_job_metadata(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve job metadata from Redis."""
+        if not self.redis_client:
+            return None
+            
         try:
             raw_data = self.redis_client.hgetall(f"{self.job_metadata_key}:{job_id}")
             if not raw_data:
@@ -140,6 +178,9 @@ class BaseQueueService(BaseService):
     
     def update_job_progress(self, job_id: str, progress: str, status: Optional[str] = None, percentage: Optional[int] = None):
         """Update job progress in Redis."""
+        if not self.redis_client:
+            return
+            
         try:
             update_data = {
                 "progress": progress,
@@ -174,6 +215,9 @@ class BaseQueueService(BaseService):
     
     def update_job_result(self, job_id: str, result: Dict[str, Any], status: str = "completed"):
         """Update job with final result."""
+        if not self.redis_client:
+            return
+            
         try:
             import json
             update_data = {
@@ -202,6 +246,9 @@ class BaseQueueService(BaseService):
     
     def update_job_error(self, job_id: str, error: str):
         """Update job with error information."""
+        if not self.redis_client:
+            return
+            
         try:
             update_data = {
                 "status": "error",
@@ -231,6 +278,9 @@ class BaseQueueService(BaseService):
     
     def _publish_status_update(self, job_id: str, status_data: Dict[str, Any]):
         """Publish status update to Redis pub/sub for real-time notifications."""
+        if not self.redis_client:
+            return
+            
         try:
             import json
             channel_name = f"file_parsing_status:{job_id}"
@@ -243,6 +293,9 @@ class BaseQueueService(BaseService):
     
     def delete_job_metadata(self, job_id: str) -> bool:
         """Delete job metadata from Redis."""
+        if not self.redis_client:
+            return False
+            
         try:
             result = self.redis_client.delete(f"{self.job_metadata_key}:{job_id}")
             self.log_operation("delete_metadata", f"job_id={job_id}")

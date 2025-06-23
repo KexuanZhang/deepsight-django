@@ -31,6 +31,7 @@ import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 import apiService from "@/lib/api";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { Badge } from "@/components/ui/badge";
 
 // Utility function for formatting model names
 const formatModelName = (value) => {
@@ -103,7 +104,7 @@ const ProgressCard = ({
   };
 
   return (
-    <div className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+    <div className="border rounded-lg p-4 bg-gray-50 border-gray-200">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-3">
           <StatusIcon isGenerating={isGenerating} error={error} />
@@ -181,15 +182,15 @@ const PodcastGenerationSection = ({
   return (
     <div className="border rounded-lg overflow-hidden">
       <div 
-        className="p-4 bg-gradient-to-r from-orange-50 to-red-50 border-b cursor-pointer"
+        className="p-4 bg-gray-50 border-b cursor-pointer hover:bg-gray-100 transition-colors"
         onClick={onToggleCollapse}
       >
         <div className="flex items-center justify-between">
           <h3 className="font-medium text-gray-900 flex items-center">
-            <Play className="h-4 w-4 mr-2 text-orange-600" />
+            <Play className="h-4 w-4 mr-2 text-gray-600" />
             Generate Panel Discussion
           </h3>
-          {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          {isCollapsed ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronUp className="h-4 w-4 text-gray-500" />}
         </div>
       </div>
       
@@ -273,7 +274,7 @@ const PodcastGenerationSection = ({
             className={`w-full font-medium py-3 transition-all duration-200 ${
               !hasSelectedFiles && !podcastGenerationState.isGenerating
                 ? 'bg-gray-400 hover:bg-gray-500 text-white cursor-not-allowed'
-                : 'bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white'
+                : 'bg-gray-900 hover:bg-gray-800 text-white'
             }`}
             onClick={onGeneratePodcast}
             disabled={podcastGenerationState.isGenerating || !hasSelectedFiles}
@@ -324,12 +325,12 @@ const ReportConfigSection = ({
   return (
     <div className="border rounded-lg overflow-hidden">
       <div 
-        className="p-4 bg-gradient-to-r from-blue-50 to-cyan-50 border-b cursor-pointer"
+        className="p-4 bg-gray-50 border-b cursor-pointer hover:bg-gray-100 transition-colors"
         onClick={onToggleCollapse}
       >
         <div className="flex items-center justify-between">
           <h3 className="font-medium text-gray-900 flex items-center">
-            <FileText className="h-4 w-4 mr-2 text-blue-600" />
+            <FileText className="h-4 w-4 mr-2 text-gray-600" />
             Generate Research Report
           </h3>
           <div className="flex items-center space-x-2">
@@ -340,12 +341,12 @@ const ReportConfigSection = ({
                 e.stopPropagation();
                 onShowCustomize();
               }}
-              className="text-xs"
+              className="text-xs border-gray-300 text-gray-600 hover:bg-gray-50"
             >
               <Settings className="mr-1 h-3 w-3" />
               Customize
             </Button>
-            {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+            {isCollapsed ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronUp className="h-4 w-4 text-gray-500" />}
           </div>
         </div>
       </div>
@@ -409,7 +410,7 @@ const ReportConfigSection = ({
           </div>
 
           <Button
-            className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-medium py-3"
+            className="w-full bg-gray-900 hover:bg-gray-800 text-white font-medium py-3"
             onClick={onGenerateReport}
             disabled={isGenerating || !hasValidInput}
           >
@@ -606,7 +607,7 @@ const MarkdownContent = React.memo(({ content }) => (
 ));
 
 // Main StudioPanel Component
-const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
+const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   // UI State
   const [files, setFiles] = useState([]);
   const [podcastFiles, setPodcastFiles] = useState([]);
@@ -633,14 +634,21 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
     }
   }, [sourcesListRef]);
   
-  // Initialize selected files on mount and register callback with parent
+  // Register callback with parent component only once
   useEffect(() => {
-    updateSelectedFiles();
-    // Register our update function with the parent component
     if (onSelectionChange) {
       onSelectionChange(updateSelectedFiles);
     }
-  }, [updateSelectedFiles, onSelectionChange]);
+  }, [onSelectionChange, updateSelectedFiles]);
+  
+  // Initial load with a small delay to avoid race conditions
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      updateSelectedFiles();
+    }, 200);
+    
+    return () => clearTimeout(timer);
+  }, []); // Empty dependency array for one-time initial load
   
   // Collapsible sections state
   const [collapsedSections, setCollapsedSections] = useState({
@@ -1594,40 +1602,57 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
   }, []);
 
   return (
-    <div className="h-full flex flex-col relative bg-gray-50">
-      {/* Header */}
-      <div className="p-6 bg-white border-b border-gray-200 shadow-sm">
+    <div className="h-full flex flex-col bg-white">
+      {/* Simple Header */}
+      <div className="flex-shrink-0 px-4 py-3 bg-white border-b border-gray-200">
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">Studio</h2>
-            <p className="text-sm text-gray-600 mt-1">Generate research reports and panel discussions</p>
-          </div>
           <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="text-xs text-gray-600">Live</span>
+            <div className="w-6 h-6 bg-gray-100 rounded-md flex items-center justify-center">
+              <FileText className="h-3 w-3 text-gray-600" />
+            </div>
+            <h3 className="text-sm font-medium text-gray-900">Studio</h3>
+          </div>
+          <div className="flex items-center space-x-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+              onClick={() => {
+                loadExistingReports();
+                loadExistingPodcasts();
+              }}
+            >
+              Refresh
+            </Button>
+            {(reportGenerationState.isGenerating || podcastGenerationState.isGenerating) && (
+              <span className="text-xs text-gray-500">generating...</span>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto">
         {/* Report Generation Status */}
         {(reportGenerationState.isGenerating || reportGenerationState.error || reportGenerationState.progress) && (
-          <ProgressCard
-            title="Generating Report"
-            isGenerating={reportGenerationState.isGenerating}
-            progress={reportGenerationState.progress}
-            error={reportGenerationState.error}
-            onCancel={handleCancelGeneration}
-            jobId={reportGenerationState.currentJobId}
-            showCancel={true}
-            isConnected={isConnected}
-            connectionError={connectionError}
-          />
+          <div className="p-6 border-b border-gray-200">
+            <ProgressCard
+              title="Generating Report"
+              isGenerating={reportGenerationState.isGenerating}
+              progress={reportGenerationState.progress}
+              error={reportGenerationState.error}
+              onCancel={handleCancelGeneration}
+              jobId={reportGenerationState.currentJobId}
+              showCancel={true}
+              isConnected={isConnected}
+              connectionError={connectionError}
+            />
+          </div>
         )}
 
         {/* Main Generation Sections - Only show when no file is selected */}
         {!selectedFile && (
-          <div className="space-y-6">
+          <div className="p-6 space-y-6">
             {/* Panel Discussion Generation Section */}
             <PodcastGenerationSection
               podcastGenerationState={podcastGenerationState}
@@ -1658,244 +1683,134 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
           </div>
         )}
 
-        {/* Customize Report Modal */}
-        {showCustomizeReport && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-            <div className="bg-white rounded-lg shadow-lg w-[90%] max-w-lg p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold">Customize Report Generation</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Configure advanced settings for your research report.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowCustomizeReport(false)}
-                  className="text-gray-500 hover:text-gray-800"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Temperature</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                      value={reportConfig.temperature}
-                      onChange={(e) => setReportConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Top P</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                      value={reportConfig.top_p}
-                      onChange={(e) => setReportConfig(prev => ({ ...prev, top_p: parseFloat(e.target.value) }))}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Max Conversations</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                      value={reportConfig.max_conv_turn}
-                      onChange={(e) => setReportConfig(prev => ({ ...prev, max_conv_turn: parseInt(e.target.value) }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Max Perspectives</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                      value={reportConfig.max_perspective}
-                      onChange={(e) => setReportConfig(prev => ({ ...prev, max_perspective: parseInt(e.target.value) }))}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">Search Results</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="50"
-                    className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                    value={reportConfig.search_top_k}
-                    onChange={(e) => setReportConfig(prev => ({ ...prev, search_top_k: parseInt(e.target.value) }))}
-                />
-              </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium">Generation Options</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={reportConfig.do_research}
-                        onChange={(e) => setReportConfig(prev => ({ ...prev, do_research: e.target.checked }))}
-                      />
-                      <span className="text-sm">Research</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={reportConfig.do_generate_outline}
-                        onChange={(e) => setReportConfig(prev => ({ ...prev, do_generate_outline: e.target.checked }))}
-                      />
-                      <span className="text-sm">Generate Outline</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={reportConfig.do_generate_article}
-                        onChange={(e) => setReportConfig(prev => ({ ...prev, do_generate_article: e.target.checked }))}
-                      />
-                      <span className="text-sm">Generate Article</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={reportConfig.do_polish_article}
-                        onChange={(e) => setReportConfig(prev => ({ ...prev, do_polish_article: e.target.checked }))}
-                      />
-                      <span className="text-sm">Polish Article</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={reportConfig.remove_duplicate}
-                        onChange={(e) => setReportConfig(prev => ({ ...prev, remove_duplicate: e.target.checked }))}
-                      />
-                      <span className="text-sm">Remove Duplicates</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={reportConfig.post_processing}
-                        onChange={(e) => setReportConfig(prev => ({ ...prev, post_processing: e.target.checked }))}
-                      />
-                      <span className="text-sm">Post Processing</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end mt-6 space-x-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowCustomizeReport(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    setShowCustomizeReport(false);
-                    handleGenerateReport();
-                  }}
-                  disabled={reportGenerationState.isGenerating || (!reportConfig.topic.trim() && !selectedFiles.length)}
-                >
-                  {reportGenerationState.isGenerating ? "Generating..." : "Generate Report"}
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Generated Podcasts List */}
         {podcastFiles.length > 0 && !selectedFile && (
-          <div className="bg-white rounded-lg border shadow-sm overflow-visible">
-            <div className="p-4 bg-gradient-to-r from-orange-50 to-red-50 border-b">
-              <h3 className="font-medium text-gray-900 flex items-center">
-                <Play className="h-4 w-4 mr-2 text-orange-600" />
-                Generated Panel Discussions ({podcastFiles.length})
-              </h3>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {podcastFiles.map((podcast) => (
-                <PodcastListItem
-                  key={podcast.id}
-                  podcast={podcast}
-                  onDownload={handleDownloadPodcast}
-                  onMenuToggle={(podcastId) => setActiveMenuFileId(activeMenuFileId === podcastId ? null : podcastId)}
-                  isMenuOpen={activeMenuFileId === podcast.id}
-                  onDelete={(podcastId) => {
-                    setPodcastFiles((prev) => prev.filter((p) => p.id !== podcastId));
-                    setActiveMenuFileId(null);
-                  }}
-                />
-              ))}
+          <div className="mx-6 mb-6">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                    <Play className="h-4 w-4 text-gray-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Generated Panel Discussions</h3>
+                    <p className="text-sm text-gray-600">{podcastFiles.length} audio files available</p>
+                  </div>
+                </div>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {podcastFiles.map((podcast) => (
+                  <PodcastListItem
+                    key={podcast.id}
+                    podcast={podcast}
+                    onDownload={handleDownloadPodcast}
+                    onMenuToggle={(podcastId) => setActiveMenuFileId(activeMenuFileId === podcastId ? null : podcastId)}
+                    isMenuOpen={activeMenuFileId === podcast.id}
+                    onDelete={(podcastId) => {
+                      setPodcastFiles((prev) => prev.filter((p) => p.id !== podcastId));
+                      setActiveMenuFileId(null);
+                    }}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         )}
 
         {/* Generated Files List */}
         {files.length > 0 && !selectedFile && (
-          <div className="bg-white rounded-lg border shadow-sm overflow-visible">
-            <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 border-b">
-              <h3 className="font-medium text-gray-900 flex items-center">
-                <FileText className="h-4 w-4 mr-2 text-green-600" />
-                Generated Reports ({files.length})
-              </h3>
+          <div className="mx-6 mb-6">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                    <FileText className="h-4 w-4 text-gray-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Generated Research Reports</h3>
+                    <p className="text-sm text-gray-600">{files.length} reports available</p>
+                  </div>
+                </div>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {files.map((file) => (
+                  <FileListItem
+                    key={file.id}
+                    file={file}
+                    isSelected={selectedFile?.id === file.id}
+                    onFileClick={handleFileClick}
+                    onDownload={handleDownloadFile}
+                    onMenuToggle={(fileId) => setActiveMenuFileId(activeMenuFileId === fileId ? null : fileId)}
+                    isMenuOpen={activeMenuFileId === file.id}
+                    onEdit={(file) => {
+                      setModalContent(file.content);
+                      setSelectedFile(file);
+                      setModalOpen(true);
+                      setActiveMenuFileId(null);
+                    }}
+                    onDelete={(fileId) => {
+                      setFiles((prev) => prev.filter((f) => f.id !== fileId));
+                      setActiveMenuFileId(null);
+                    }}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="divide-y divide-gray-100">
-              {files.map((file) => (
-                <FileListItem
-                  key={file.id}
-                  file={file}
-                  isSelected={selectedFile?.id === file.id}
-                  onFileClick={handleFileClick}
-                  onDownload={handleDownloadFile}
-                  onMenuToggle={(fileId) => setActiveMenuFileId(activeMenuFileId === fileId ? null : fileId)}
-                  isMenuOpen={activeMenuFileId === file.id}
-                  onEdit={(file) => {
-                    setModalContent(file.content);
-                    setSelectedFile(file);
-                    setModalOpen(true);
-                    setActiveMenuFileId(null);
-                  }}
-                  onDelete={(fileId) => {
-                    setFiles((prev) => prev.filter((f) => f.id !== fileId));
-                    setActiveMenuFileId(null);
-                  }}
-                />
-              ))}
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!selectedFile && files.length === 0 && podcastFiles.length === 0 && !reportGenerationState.isGenerating && !podcastGenerationState.isGenerating && (
+          <div className="flex-1 flex items-center justify-center p-12">
+            <div className="text-center max-w-md">
+              <div className="w-16 h-16 bg-gray-100 rounded-2xl mx-auto mb-4 flex items-center justify-center">
+                <FileText className="h-8 w-8 text-gray-500" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Welcome to AI Studio</h3>
+              <p className="text-sm text-gray-500 mb-6">Generate comprehensive research reports and engaging panel discussions from your knowledge base</p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs bg-white hover:bg-gray-50 border-gray-300 text-gray-700 hover:text-gray-900"
+                  onClick={() => toggleSection('report')}
+                >
+                  Create Report
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs bg-white hover:bg-gray-50 border-gray-300 text-gray-700 hover:text-gray-900"
+                  onClick={() => toggleSection('podcast')}
+                >
+                  Generate Podcast
+                </Button>
+              </div>
             </div>
           </div>
         )}
 
         {/* Report Viewer */}
         {selectedFile && (
-          <div className="space-y-4">
+          <div className="p-6 space-y-6">
             {/* File Navigation Bar */}
             {files.length > 0 && (
-              <div className="bg-white rounded-lg border p-4 shadow-sm">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-medium text-gray-900 flex items-center">
-                    <FileText className="h-4 w-4 mr-2 text-blue-600" />
-                    Reports ({files.length})
-                  </h3>
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                      <FileText className="h-4 w-4 text-gray-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">Research Reports</h3>
+                      <p className="text-sm text-gray-600">{files.length} reports generated</p>
+                    </div>
+                  </div>
                   <Button 
                     variant="outline" 
                     size="sm" 
                     onClick={handleClose}
-                    className="text-gray-600 hover:text-gray-900"
+                    className="text-gray-600 hover:text-gray-900 border-gray-300"
                   >
                     <X className="h-4 w-4 mr-1" />
                     Close
@@ -1905,9 +1820,9 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
                   {files.map((file) => (
                     <button
                       key={file.id}
-                      className={`px-3 py-2 text-sm border rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                      className={`px-4 py-2 text-sm border rounded-lg transition-all duration-200 flex items-center gap-2 ${
                         selectedFile?.id === file.id 
-                          ? 'bg-blue-100 border-blue-300 text-blue-800 shadow-sm' 
+                          ? 'bg-gray-900 border-gray-900 text-white' 
                           : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
                       }`}
                       onClick={() => handleFileClick(file)}
@@ -1922,18 +1837,18 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
             
             {/* Report Display Panel */}
             <div
-              className={`bg-white rounded-lg border shadow-lg flex flex-col transition-all duration-300 ${
+              className={`bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col transition-all duration-300 ${
                 isExpanded ? "fixed inset-4 z-50" : "min-h-[500px]"
               }`}
             >
               {/* Toolbar */}
-              <div className="px-6 py-4 border-b bg-gray-50 rounded-t-lg">
+              <div className="px-6 py-4 border-b bg-gray-50 rounded-t-xl">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center space-x-1">
                     <button
                       className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
                         viewMode === "preview"
-                          ? "bg-blue-600 text-white shadow-sm"
+                          ? "bg-gray-900 text-white"
                           : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
                       }`}
                       onClick={() => setViewMode("preview")}
@@ -1943,7 +1858,7 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
                     <button
                       className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
                         viewMode === "code"
-                          ? "bg-blue-600 text-white shadow-sm"
+                          ? "bg-gray-900 text-white"
                           : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
                       }`}
                       onClick={() => setViewMode("code")}
@@ -1958,6 +1873,7 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
                       size="sm" 
                       onClick={handleEdit}
                       title="Edit Report"
+                      className="hover:bg-gray-100 text-gray-600 hover:text-gray-900"
                     >
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -1965,6 +1881,7 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
                       variant="ghost" 
                       size="sm"
                       title="Share Report"
+                      className="hover:bg-gray-100 text-gray-600 hover:text-gray-900"
                     >
                       <Share2 className="h-4 w-4" />
                     </Button>
@@ -1973,6 +1890,7 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
                       size="sm"
                       onClick={() => setIsExpanded(!isExpanded)}
                       title={isExpanded ? "Minimize" : "Maximize"}
+                      className="hover:bg-gray-100 text-gray-600 hover:text-gray-900"
                     >
                       {isExpanded ? (
                         <Minimize2 className="h-4 w-4" />
@@ -1985,6 +1903,7 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
                       size="sm" 
                       onClick={handleClose}
                       title="Close Report"
+                      className="hover:bg-gray-100 text-gray-600 hover:text-gray-900"
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -2010,75 +1929,272 @@ const StudioPanel = ({ sourcesListRef, onSelectionChange }) => {
           </div>
         )}
 
-        {/* Edit Modal */}
-        {modalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl w-[95%] h-[90%] max-w-6xl flex flex-col animate-in fade-in duration-200">
-              {/* Modal Header */}
-              <div className="px-6 py-4 border-b bg-gray-50 rounded-t-xl">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="text-xl font-semibold text-gray-900">Edit Report</h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Modify your report content below
-                    </p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Button 
-                      onClick={handleSave}
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                      Save Changes
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setModalOpen(false)}
-                      className="text-gray-600 hover:text-gray-900"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Modal Content */}
-              <div className="flex-1 p-6 overflow-hidden">
-                <textarea
-                  value={modalContent}
-                  onChange={(e) => setModalContent(e.target.value)}
-                  className="w-full h-full p-4 border border-gray-300 rounded-lg font-mono text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Edit your report content here..."
-                  autoFocus
-                />
-              </div>
-              
-              {/* Modal Footer */}
-              <div className="px-6 py-4 border-t bg-gray-50 rounded-b-xl">
-                <div className="flex justify-between items-center">
-                  <div className="text-sm text-gray-500">
-                    Use Markdown syntax for formatting
-                  </div>
-                  <div className="flex space-x-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setModalOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      onClick={handleSave}
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      Save Changes
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+                 {/* Customize Report Modal */}
+         {showCustomizeReport && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+             <div className="bg-white rounded-xl shadow-2xl w-[90%] max-w-2xl p-6">
+               <div className="flex justify-between items-start mb-6">
+                 <div className="flex items-center space-x-3">
+                   <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                     <Settings className="h-5 w-5 text-gray-600" />
+                   </div>
+                   <div>
+                     <h3 className="text-xl font-semibold text-gray-900">Customize Report Generation</h3>
+                     <p className="text-sm text-gray-600 mt-1">
+                       Configure advanced settings for your research report
+                     </p>
+                   </div>
+                 </div>
+                 <Button
+                   variant="ghost"
+                   size="sm"
+                   onClick={() => setShowCustomizeReport(false)}
+                   className="text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                 >
+                   <X className="w-5 h-5" />
+                 </Button>
+               </div>
+
+               <div className="space-y-6">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div className="space-y-2">
+                     <label className="block text-sm font-medium text-gray-700">Temperature</label>
+                     <input
+                       type="number"
+                       min="0"
+                       max="2"
+                       step="0.1"
+                       className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                       value={reportConfig.temperature}
+                       onChange={(e) => setReportConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+                     />
+                   </div>
+                   <div className="space-y-2">
+                     <label className="block text-sm font-medium text-gray-700">Top P</label>
+                     <input
+                       type="number"
+                       min="0"
+                       max="1"
+                       step="0.1"
+                       className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                       value={reportConfig.top_p}
+                       onChange={(e) => setReportConfig(prev => ({ ...prev, top_p: parseFloat(e.target.value) }))}
+                     />
+                   </div>
+                 </div>
+
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div className="space-y-2">
+                     <label className="block text-sm font-medium text-gray-700">Max Conversations</label>
+                     <input
+                       type="number"
+                       min="1"
+                       max="10"
+                       className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                       value={reportConfig.max_conv_turn}
+                       onChange={(e) => setReportConfig(prev => ({ ...prev, max_conv_turn: parseInt(e.target.value) }))}
+                     />
+                   </div>
+                   <div className="space-y-2">
+                     <label className="block text-sm font-medium text-gray-700">Max Perspectives</label>
+                     <input
+                       type="number"
+                       min="1"
+                       max="10"
+                       className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                       value={reportConfig.max_perspective}
+                       onChange={(e) => setReportConfig(prev => ({ ...prev, max_perspective: parseInt(e.target.value) }))}
+                     />
+                   </div>
+                 </div>
+
+                 <div className="space-y-2">
+                   <label className="block text-sm font-medium text-gray-700">Search Results</label>
+                   <input
+                     type="number"
+                     min="1"
+                     max="50"
+                     className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                     value={reportConfig.search_top_k}
+                     onChange={(e) => setReportConfig(prev => ({ ...prev, search_top_k: parseInt(e.target.value) }))}
+                 />
+               </div>
+
+                 <div className="space-y-3">
+                   <label className="block text-sm font-medium text-gray-700">Generation Options</label>
+                   <div className="grid grid-cols-2 gap-3">
+                     <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                       <input
+                         type="checkbox"
+                         checked={reportConfig.do_research}
+                         onChange={(e) => setReportConfig(prev => ({ ...prev, do_research: e.target.checked }))}
+                         className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                       />
+                       <span className="text-sm font-medium text-gray-700">Research</span>
+                     </label>
+                     <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                       <input
+                         type="checkbox"
+                         checked={reportConfig.do_generate_outline}
+                         onChange={(e) => setReportConfig(prev => ({ ...prev, do_generate_outline: e.target.checked }))}
+                         className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                       />
+                       <span className="text-sm font-medium text-gray-700">Generate Outline</span>
+                     </label>
+                     <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                       <input
+                         type="checkbox"
+                         checked={reportConfig.do_generate_article}
+                         onChange={(e) => setReportConfig(prev => ({ ...prev, do_generate_article: e.target.checked }))}
+                         className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                       />
+                       <span className="text-sm font-medium text-gray-700">Generate Article</span>
+                     </label>
+                     <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                       <input
+                         type="checkbox"
+                         checked={reportConfig.do_polish_article}
+                         onChange={(e) => setReportConfig(prev => ({ ...prev, do_polish_article: e.target.checked }))}
+                         className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                       />
+                       <span className="text-sm font-medium text-gray-700">Polish Article</span>
+                     </label>
+                     <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                       <input
+                         type="checkbox"
+                         checked={reportConfig.remove_duplicate}
+                         onChange={(e) => setReportConfig(prev => ({ ...prev, remove_duplicate: e.target.checked }))}
+                         className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                       />
+                       <span className="text-sm font-medium text-gray-700">Remove Duplicates</span>
+                     </label>
+                     <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                       <input
+                         type="checkbox"
+                         checked={reportConfig.post_processing}
+                         onChange={(e) => setReportConfig(prev => ({ ...prev, post_processing: e.target.checked }))}
+                         className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                       />
+                       <span className="text-sm font-medium text-gray-700">Post Processing</span>
+                     </label>
+                   </div>
+                 </div>
+               </div>
+
+               <div className="flex justify-end mt-8 space-x-3 pt-6 border-t border-gray-200">
+                 <Button
+                   variant="outline"
+                   onClick={() => setShowCustomizeReport(false)}
+                   className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                 >
+                   Cancel
+                 </Button>
+                 <Button
+                   onClick={() => {
+                     setShowCustomizeReport(false);
+                     handleGenerateReport();
+                   }}
+                   disabled={reportGenerationState.isGenerating || (!reportConfig.topic.trim() && !selectedFiles.length)}
+                   className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
+                 >
+                   {reportGenerationState.isGenerating ? (
+                     <>
+                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                       Generating...
+                     </>
+                   ) : (
+                     "Generate Report"
+                   )}
+                 </Button>
+               </div>
+             </div>
+           </div>
+         )}
+
+         {/* Edit Modal */}
+         {modalOpen && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm">
+             <div className="bg-white rounded-xl shadow-2xl w-[95%] h-[90%] max-w-6xl flex flex-col animate-in fade-in duration-200">
+               {/* Modal Header */}
+               <div className="px-6 py-4 border-b bg-gradient-to-r from-gray-50 to-slate-50 rounded-t-xl">
+                 <div className="flex justify-between items-center">
+                   <div className="flex items-center space-x-3">
+                     <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center shadow-sm">
+                       <Edit className="h-5 w-5 text-white" />
+                     </div>
+                     <div>
+                       <h3 className="text-xl font-semibold text-gray-900">Edit Report</h3>
+                       <p className="text-sm text-gray-600 mt-1">
+                         Modify your report content using Markdown syntax
+                       </p>
+                     </div>
+                   </div>
+                   <div className="flex items-center space-x-2">
+                     <Button 
+                       onClick={handleSave}
+                       className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
+                     >
+                       <CheckCircle className="mr-2 h-4 w-4" />
+                       Save Changes
+                     </Button>
+                     <Button 
+                       variant="outline" 
+                       onClick={() => setModalOpen(false)}
+                       className="text-gray-600 hover:text-gray-900 border-gray-300"
+                     >
+                       <X className="h-4 w-4" />
+                     </Button>
+                   </div>
+                 </div>
+               </div>
+               
+               {/* Modal Content */}
+               <div className="flex-1 p-6 overflow-hidden">
+                 <textarea
+                   value={modalContent}
+                   onChange={(e) => setModalContent(e.target.value)}
+                   className="w-full h-full p-4 border border-gray-300 rounded-lg font-mono text-sm resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent shadow-sm"
+                   placeholder="Edit your report content here..."
+                   autoFocus
+                 />
+               </div>
+               
+               {/* Modal Footer */}
+               <div className="px-6 py-4 border-t bg-gradient-to-r from-gray-50 to-slate-50 rounded-b-xl">
+                 <div className="flex justify-between items-center">
+                   <div className="text-sm text-gray-500">
+                     💡 Use Markdown syntax for formatting • Support for headers, lists, links, and more
+                   </div>
+                   <div className="flex space-x-2">
+                     <Button 
+                       variant="outline" 
+                       onClick={() => setModalOpen(false)}
+                       className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                     >
+                       Cancel
+                     </Button>
+                     <Button 
+                       onClick={handleSave}
+                       className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
+                     >
+                       Save Changes
+                     </Button>
+                   </div>
+                 </div>
+               </div>
+             </div>
+           </div>
+         )}
       </div>
+
+      {/* Simple Footer */}
+      {(files.length > 0 || podcastFiles.length > 0) && (
+        <div className="flex-shrink-0 p-4 bg-white border-t border-gray-200">
+          <div className="text-center text-xs text-gray-500">
+            {files.length} reports • {podcastFiles.length} podcasts
+          </div>
+        </div>
+      )}
     </div>
   );
 };

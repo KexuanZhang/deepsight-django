@@ -4,11 +4,14 @@ Enhanced file validation service.
 
 import os
 import magic
-from typing import Dict, List
+from typing import Dict, List, Union
 from pathlib import Path
-from fastapi import UploadFile
+from django.core.files.uploadedfile import UploadedFile
 
-from .core.config import settings
+try:
+    from .config import config as settings
+except ImportError:
+    settings = None
 
 # Constants for file validation
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
@@ -33,7 +36,7 @@ class FileValidator:
         self.max_file_size = MAX_FILE_SIZE
         self.allowed_extensions = ALLOWED_FILE_EXTENSIONS
     
-    def validate_file(self, file: UploadFile) -> Dict[str, any]:
+    def validate_file(self, file: Union[UploadedFile, any]) -> Dict[str, any]:
         """Validate uploaded file with comprehensive checks."""
         errors = []
         warnings = []
