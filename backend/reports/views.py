@@ -125,10 +125,9 @@ class ReportViewSet(viewsets.ModelViewSet):
                 **report_data
             )
             
-            # Set unique article_title using report ID and current timestamp with microseconds
-            # This prevents duplicate filenames even when multiple reports are generated rapidly
-            timestamp = datetime.now()
-            report.article_title = f"Report_{timestamp.strftime('%Y%m%d_%H%M%S')}_{timestamp.microsecond:06d}_r{report.id}"
+            # Set simple article_title using report ID only
+            # This prevents duplicate filenames and follows the user's requirement
+            report.article_title = f"Report_r{report.id}"
             report.save(update_fields=['article_title'])
             
             # Add job to queue

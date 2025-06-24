@@ -829,19 +829,20 @@ class DeepReportGenerator:
             runner.summary()
             processing_logs.append("Report generation completed")
             
-            # Collect generated files (storm files now have image paths fixed during generation)
-            generated_files.extend([
+            # Always collect the basic storm files
+            basic_storm_files = [
                 os.path.join(article_output_dir, "storm_gen_outline.txt"),
                 os.path.join(article_output_dir, "storm_gen_article.md"),
                 os.path.join(article_output_dir, "storm_gen_article_polished.md"),
-            ])
+            ]
+            generated_files.extend(basic_storm_files)
             
-            # Always apply full post-processing to create the final Report file if requested
+            # Only create the final Report file if post_processing is enabled
             if config.post_processing:
                 polished_article_path = os.path.join(article_output_dir, "storm_gen_article_polished.md")
                 if os.path.exists(polished_article_path):
-                    clean_folder_name = "".join(e for e in article_title if e.isalnum() or e == "_")
-                    output_file = os.path.join(article_output_dir, f"{clean_folder_name}.md")
+                    # Use article_title directly for the output file name
+                    output_file = os.path.join(article_output_dir, f"{article_title}.md")
                     
                     # Apply full post-processing (image paths + citations removal + etc.)
                     if config.selected_files_paths:
@@ -878,6 +879,9 @@ class DeepReportGenerator:
                         processing_logs.append(f"Traditional post-processing applied to Report file: {output_file}")
                     
                     generated_files.append(output_file)
+                    processing_logs.append(f"Generated final Report file: {article_title}.md")
+            else:
+                processing_logs.append("Post-processing disabled: Only storm_gen_article.md and storm_gen_article_polished.md generated")
 
             # Copy paper images if applicable
             if original_paper_paths_for_images:
