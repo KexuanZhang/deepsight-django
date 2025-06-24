@@ -95,22 +95,48 @@ def user_report_path(instance, filename):
     """Generate path for report files."""
     # Assuming instance has a user attribute or user_id
     user_id = getattr(instance, 'user_id', None) or getattr(instance.user, 'pk', None)
+    
+    # Get notebook_id from the instance
+    notebook_id = None
+    if hasattr(instance, 'notebooks') and instance.notebooks:
+        notebook_id = instance.notebooks.pk
+    elif hasattr(instance, 'notebook') and instance.notebook:
+        notebook_id = instance.notebook.pk
+    
     current_date = datetime.now()
     year_month = current_date.strftime('%Y-%m')
     # Use instance ID as report ID if available
     report_id = getattr(instance, 'id', 'temp')
-    return f"Users/u_{user_id}/report/{year_month}/r_{report_id}/{filename}"
+    
+    if notebook_id:
+        return f"Users/u_{user_id}/n_{notebook_id}/report/{year_month}/r_{report_id}/{filename}"
+    else:
+        # Fallback to old structure if no notebook is associated
+        return f"Users/u_{user_id}/report/{year_month}/r_{report_id}/{filename}"
 
 
 def user_podcast_path(instance, filename):
     """Generate path for podcast files."""
     # Assuming instance has a user attribute or user_id
     user_id = getattr(instance, 'user_id', None) or getattr(instance.user, 'pk', None)
+    
+    # Get notebook_id from the instance
+    notebook_id = None
+    if hasattr(instance, 'notebooks') and instance.notebooks:
+        notebook_id = instance.notebooks.pk
+    elif hasattr(instance, 'notebook') and instance.notebook:
+        notebook_id = instance.notebook.pk
+    
     current_date = datetime.now()
     year_month = current_date.strftime('%Y-%m')
     # Use instance ID as podcast ID if available
     podcast_id = getattr(instance, 'id', 'temp')
-    return f"Users/u_{user_id}/podcast/{year_month}/p_{podcast_id}/{filename}"
+    
+    if notebook_id:
+        return f"Users/u_{user_id}/n_{notebook_id}/podcast/{year_month}/p_{podcast_id}/{filename}"
+    else:
+        # Fallback to old structure if no notebook is associated
+        return f"Users/u_{user_id}/podcast/{year_month}/p_{podcast_id}/{filename}"
 
 
 

@@ -2,8 +2,29 @@ from django.db import models
 from django.contrib.auth import get_user_model
 import uuid
 import json
+from datetime import datetime
 
 User = get_user_model()
+
+def user_podcast_audio_path(instance, filename):
+    """Generate path for podcast audio files following the new storage structure."""
+    user_id = instance.user.pk
+    current_date = datetime.now()
+    year_month = current_date.strftime('%Y-%m')
+    podcast_id = instance.pk or 'temp'
+    
+    # Get notebook_id from the instance
+    notebook_id = None
+    if hasattr(instance, 'notebooks') and instance.notebooks:
+        notebook_id = instance.notebooks.pk
+    elif hasattr(instance, 'notebook') and instance.notebook:
+        notebook_id = instance.notebook.pk
+    
+    if notebook_id:
+        return f"Users/u_{user_id}/n_{notebook_id}/podcast/{year_month}/p_{podcast_id}/{filename}"
+    else:
+        # Fallback to old structure if no notebook is associated
+        return f"Users/u_{user_id}/podcast/{year_month}/p_{podcast_id}/{filename}"
 
 class PodcastJob(models.Model):
     STATUS_CHOICES = [
@@ -16,6 +37,15 @@ class PodcastJob(models.Model):
     
     job_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    
+    # Optional linking to a notebook
+    notebooks = models.ForeignKey(
+        'notebooks.Notebook',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='podcasts'
+    )
     
     # Celery task tracking
     celery_task_id = models.CharField(max_length=255, null=True, blank=True)
@@ -33,7 +63,7 @@ class PodcastJob(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     # Results
-    audio_file = models.FileField(upload_to='podcasts/audio/', null=True, blank=True)
+    audio_file = models.FileField(upload_to=user_podcast_audio_path, null=True, blank=True)
     conversation_text = models.TextField(blank=True, default="")
     error_message = models.TextField(blank=True, default="")
     

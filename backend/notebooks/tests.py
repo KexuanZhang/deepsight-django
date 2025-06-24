@@ -9,7 +9,7 @@ from rest_framework import status
 
 from .models import Notebook, Source, KnowledgeBaseItem, KnowledgeItem
 from .utils.file_validator import FileValidator
-from .utils.services.file_storage import FileStorageService
+from .utils.file_storage import FileStorageService
 
 User = get_user_model()
 

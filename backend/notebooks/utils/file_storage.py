@@ -216,11 +216,7 @@ class FileStorageService:
             original_filename = metadata.get('original_filename', metadata.get('filename', 'unknown_file'))
             paths = self._generate_knowledge_base_paths(user_id, original_filename, str(kb_item.id))
             
-            # Ensure user directories exist
-            if storage_config:
-                storage_config.ensure_user_directories(user_id)
-            
-            # Create specific directories for this file
+            # Create specific directories for this file (only knowledge base directories)
             base_dir = self.base_data_root / paths['base_dir']
             content_dir = self.base_data_root / paths['content_dir']
             
@@ -294,7 +290,7 @@ class FileStorageService:
                     file_path = kb_item.file.name
                 
                 if file_path:
-                    # Extract the base directory (should be like Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/)
+                    # Extract the base directory (should be like Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/
                     path_parts = Path(file_path).parts
                     
                     # Look for pattern: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/

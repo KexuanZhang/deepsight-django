@@ -93,15 +93,21 @@ class DeepSightStorageConfig:
         """Get the knowledge base path for a specific file."""
         return self.get_user_base_path(user_id) / "knowledge_base_item" / year_month / f"f_{file_id}"
     
-
-    
-    def get_report_path(self, user_id: int, year_month: str, report_id: str) -> Path:
+    def get_report_path(self, user_id: int, year_month: str, report_id: str, notebook_id: int = None) -> Path:
         """Get the report path for a specific report."""
-        return self.get_user_base_path(user_id) / "report" / year_month / f"r_{report_id}"
+        if notebook_id:
+            return self.get_user_base_path(user_id) / f"n_{notebook_id}" / "report" / year_month / f"r_{report_id}"
+        else:
+            # Fallback to old structure if no notebook_id provided
+            return self.get_user_base_path(user_id) / "report" / year_month / f"r_{report_id}"
     
-    def get_podcast_path(self, user_id: int, year_month: str, podcast_id: str) -> Path:
+    def get_podcast_path(self, user_id: int, year_month: str, podcast_id: str, notebook_id: int = None) -> Path:
         """Get the podcast path for a specific podcast."""
-        return self.get_user_base_path(user_id) / "podcast" / year_month / f"p_{podcast_id}"
+        if notebook_id:
+            return self.get_user_base_path(user_id) / f"n_{notebook_id}" / "podcast" / year_month / f"p_{podcast_id}"
+        else:
+            # Fallback to old structure if no notebook_id provided
+            return self.get_user_base_path(user_id) / "podcast" / year_month / f"p_{podcast_id}"
     
     def get_global_path(self) -> Path:
         """Get the global shared folder path."""
@@ -112,10 +118,43 @@ class DeepSightStorageConfig:
         user_base = self.get_user_base_path(user_id)
         user_base.mkdir(parents=True, exist_ok=True)
         
-        # Create standard subdirectories
+        # Create standard subdirectories (for backward compatibility)
         (user_base / "knowledge_base_item").mkdir(exist_ok=True)
         (user_base / "report").mkdir(exist_ok=True)
         (user_base / "podcast").mkdir(exist_ok=True)
+    
+    def ensure_notebook_directories(self, user_id: int, notebook_id: int):
+        """Ensure base notebook directory exists for a specific notebook."""
+        user_base = self.get_user_base_path(user_id)
+        user_base.mkdir(parents=True, exist_ok=True)
+        
+        # Only create the base notebook directory, not the subdirectories
+        notebook_base = user_base / f"n_{notebook_id}"
+        notebook_base.mkdir(exist_ok=True)
+    
+    def ensure_notebook_report_directory(self, user_id: int, notebook_id: int):
+        """Ensure notebook report directory exists when actually needed."""
+        user_base = self.get_user_base_path(user_id)
+        user_base.mkdir(parents=True, exist_ok=True)
+        
+        # Create notebook base and report subdirectory
+        notebook_base = user_base / f"n_{notebook_id}"
+        notebook_base.mkdir(exist_ok=True)
+        (notebook_base / "report").mkdir(exist_ok=True)
+        
+        return notebook_base / "report"
+    
+    def ensure_notebook_podcast_directory(self, user_id: int, notebook_id: int):
+        """Ensure notebook podcast directory exists when actually needed."""
+        user_base = self.get_user_base_path(user_id)
+        user_base.mkdir(parents=True, exist_ok=True)
+        
+        # Create notebook base and podcast subdirectory
+        notebook_base = user_base / f"n_{notebook_id}"
+        notebook_base.mkdir(exist_ok=True)
+        (notebook_base / "podcast").mkdir(exist_ok=True)
+        
+        return notebook_base / "podcast"
 
 
 # Global storage configuration instance

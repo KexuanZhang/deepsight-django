@@ -83,10 +83,16 @@ def process_report_generation(report_id: int) -> Dict[str, Any]:
         current_date = datetime.now()
         year_month = current_date.strftime('%Y-%m')
         
+        # Get notebook_id if the report is associated with a notebook
+        notebook_id = None
+        if hasattr(report, 'notebooks') and report.notebooks:
+            notebook_id = report.notebooks.pk
+        
         job_output_dir = storage_config.get_report_path(
             user_id=report.user.pk,
             year_month=year_month,
-            report_id=str(report.id)
+            report_id=str(report.id),
+            notebook_id=notebook_id  # Pass notebook_id to ensure correct path structure
         )
         
         # Clean the output directory to prevent duplicate files
@@ -494,7 +500,11 @@ def store_generated_files(report: Report, result, output_dir: Path) -> List[str]
                         if filename.startswith("Report_r_") and filename.endswith(".md"):
                             # The deep_report_generator already created this file in the output directory
                             # Don't duplicate it in Django storage, just record the path
-                            relative_path = f"Users/u_{report.user.pk}/report/{datetime.now().strftime('%Y-%m')}/r_{report.id}/{filename}"
+                            notebook_id = report.notebooks.pk if report.notebooks else None
+                            if notebook_id:
+                                relative_path = f"Users/u_{report.user.pk}/n_{notebook_id}/report/{datetime.now().strftime('%Y-%m')}/r_{report.id}/{filename}"
+                            else:
+                                relative_path = f"Users/u_{report.user.pk}/report/{datetime.now().strftime('%Y-%m')}/r_{report.id}/{filename}"
                             stored_files.append(relative_path)
                             logger.info(f"Report file already exists in output directory: {filename}")
                         else:
@@ -507,7 +517,11 @@ def store_generated_files(report: Report, result, output_dir: Path) -> List[str]
                             django_file = ContentFile(file_content)
                             
                             # Record the path relative to the report folder (directly in r_{report_id})
-                            relative_path = f"Users/u_{report.user.pk}/report/{datetime.now().strftime('%Y-%m')}/r_{report.id}/{filename}"
+                            notebook_id = report.notebooks.pk if report.notebooks else None
+                            if notebook_id:
+                                relative_path = f"Users/u_{report.user.pk}/n_{notebook_id}/report/{datetime.now().strftime('%Y-%m')}/r_{report.id}/{filename}"
+                            else:
+                                relative_path = f"Users/u_{report.user.pk}/report/{datetime.now().strftime('%Y-%m')}/r_{report.id}/{filename}"
                             stored_files.append(relative_path)
                             logger.info(f"Stored file directly in report folder: {filename}")
                         
