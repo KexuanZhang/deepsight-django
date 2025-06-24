@@ -1,4 +1,7 @@
-const API_BASE_URL = 'http://localhost:8000/api/v1/notebooks';
+import { config } from '../config.js';
+
+const API_BASE_URL = `${config.API_BASE_URL}/notebooks`;
+const PODCAST_API_BASE_URL = `${config.API_BASE_URL}/podcasts`;
 
 // Helper to get CSRF token from cookie
 function getCookie(name) {
@@ -62,8 +65,8 @@ class ApiService {
 
   async getParsedFile(fileId) {
     // Get file content from knowledge base item
-    // Use absolute URL since this endpoint is outside the notebooks namespace
-    return this.request(`http://localhost:8000/api/v1/files/${fileId}/content/`);
+    // Use the correct notebooks endpoint structure
+    return this.request(`${config.API_BASE_URL}/notebooks/files/${fileId}/content/`);
   }
 
   async getFileRaw(fileId, notebookId) {
@@ -92,7 +95,7 @@ class ApiService {
   //   // …
   // }
   createParsingStatusStream(notebookId, uploadFileId, onMessage, onError, onClose) {
-  const url = `/api/v1/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
+  const url = `${config.API_BASE_URL}/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
   const eventSource = new EventSource(url);
 
   eventSource.onmessage = (event) => {
@@ -306,21 +309,65 @@ class ApiService {
   // ─── PODCASTS ────────────────────────────────────────────────────────────
 
   async generatePodcast(formData) {
-    // Placeholder for podcast generation
-    console.warn('generatePodcast not implemented yet');
-    return { job_id: 'mock_podcast_' + Date.now() };
+    const response = await this.request(`${PODCAST_API_BASE_URL}/jobs/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: formData,
+      // Don't set Content-Type, let browser set it for FormData
+    });
+    return response;
   }
 
   async listPodcastJobs() {
-    // Placeholder for listing podcast jobs
-    console.warn('listPodcastJobs not implemented yet');
-    return { jobs: [] };
+    const response = await this.request(`${PODCAST_API_BASE_URL}/jobs/`);
+    // Transform the response to match expected format
+    return { 
+      jobs: response.results || response || []
+    };
   }
 
   async cancelPodcastJob(jobId) {
-    // Placeholder for canceling podcast jobs
-    console.warn('cancelPodcastJob not implemented yet');
-    return { success: true };
+    const response = await this.request(`${PODCAST_API_BASE_URL}/jobs/${jobId}/cancel/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+    return response;
+  }
+
+  async getPodcastJobStatus(jobId) {
+    const response = await this.request(`${PODCAST_API_BASE_URL}/jobs/${jobId}/`);
+    return response;
+  }
+
+  async downloadPodcastAudio(jobId) {
+    // Use the ViewSet audio endpoint which properly handles authentication
+    const url = `${PODCAST_API_BASE_URL}/jobs/${jobId}/audio/`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include', // This includes session cookies for authentication
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.detail || errorMessage;
+      } catch (e) {
+        // If we can't parse the error response, use the status text
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.blob();
   }
 
   // ─── HEALTH CHECK ────────────────────────────────────────────────────────
@@ -328,7 +375,7 @@ class ApiService {
   async healthCheck() {
     try {
       // Simple health check - try to make a basic request
-      const response = await fetch('/api/health/', { credentials: 'include' });
+      const response = await fetch(`${config.API_BASE_URL}/health/`, { credentials: 'include' });
       return response.ok;
     } catch (error) {
       console.warn('Health check failed:', error);

@@ -98,6 +98,7 @@
 // src/pages/LoginPage.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { config } from "../config";
 
 // helper to read CSRF token from cookies
 function getCookie(name) {
@@ -113,7 +114,7 @@ export default function LoginPage() {
 
   // prime CSRF cookie by hitting the CSRF endpoint
   useEffect(() => {
-    fetch("/api/users/csrf/", {
+    fetch(`${config.API_BASE_URL}/users/csrf/`, {
       method: "GET",
       credentials: "include",
     }).catch(() => {});
@@ -124,7 +125,7 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const response = await fetch("/api/users/login/", {
+      const response = await fetch(`${config.API_BASE_URL}/users/login/`, {
         method: "POST",
         credentials: "include", // send/receive session cookie
         headers: {

@@ -31,7 +31,9 @@ import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 import apiService from "@/lib/api";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { usePodcastJobStatus } from "@/hooks/usePodcastJobStatus";
 import { Badge } from "@/components/ui/badge";
+import { config } from "@/config";
 
 // Utility function for formatting model names
 const formatModelName = (value) => {
@@ -505,31 +507,39 @@ const FileListItem = React.memo(({ file, isSelected, onFileClick, onDownload, on
 ));
 
 // Memoized podcast list item component
-const PodcastListItem = React.memo(({ podcast, onDownload, onMenuToggle, isMenuOpen, onDelete }) => (
-  <div className="p-4 hover:bg-gray-50 transition-colors">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center space-x-3 flex-1 min-w-0">
-        <div className="flex-shrink-0">
-          <Play className="h-5 w-5 text-orange-500" />
+const PodcastListItem = React.memo(({ podcast, onDownload, onMenuToggle, isMenuOpen, onDelete, audioBlob, isLoading }) => (
+  <div className="p-4 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0">
+    {/* Header */}
+    <div className="flex items-start justify-between mb-3">
+      <div className="flex items-start space-x-3 flex-1 min-w-0">
+        <div className="flex-shrink-0 mt-1">
+          {isLoading ? (
+            <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+          ) : (
+            <Play className="h-5 w-5 text-orange-500" />
+          )}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">
+          <h4 className="text-sm font-medium text-gray-900 truncate">
             {podcast.title}
-          </p>
+          </h4>
           {podcast.description && (
             <p className="text-xs text-gray-600 truncate mt-1">
               {podcast.description}
             </p>
           )}
-          {podcast.createdAt && (
-            <p className="text-xs text-gray-500 mt-1">
-              {new Date(podcast.createdAt).toLocaleDateString()}
-            </p>
-          )}
+          <div className="flex items-center space-x-3 mt-2">
+            {podcast.createdAt && (
+              <span className="text-xs text-gray-500">
+                {new Date(podcast.createdAt).toLocaleDateString()}
+              </span>
+            )}
+            <span className="text-xs text-gray-500">MP3</span>
+          </div>
         </div>
       </div>
       
-      <div className="flex items-center space-x-1">
+      <div className="flex items-center space-x-1 ml-3">
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -565,18 +575,29 @@ const PodcastListItem = React.memo(({ podcast, onDownload, onMenuToggle, isMenuO
       </div>
     </div>
     
-    {/* Audio Player */}
-    {podcast.audioUrl && (
-      <div className="mt-3 pl-8">
+    {/* Audio Player - Always visible when loaded */}
+    {audioBlob && (
+      <div className="mt-2">
         <audio 
           controls 
-          className="w-full" 
+          className="w-full rounded-md" 
           preload="metadata"
           controlsList="nodownload"
+          style={{ height: '40px' }}
         >
-          <source src={podcast.audioUrl} type="audio/mpeg" />
+          <source src={audioBlob} type="audio/mpeg" />
           Your browser does not support the audio element.
         </audio>
+      </div>
+    )}
+    
+    {/* Loading indicator */}
+    {isLoading && (
+      <div className="mt-2">
+        <div className="flex items-center p-3 bg-orange-50 rounded-lg border border-orange-200">
+          <Loader2 className="h-4 w-4 animate-spin text-orange-500 mr-2" />
+          <span className="text-sm text-orange-700">Loading audio player...</span>
+        </div>
       </div>
     )}
   </div>
@@ -624,6 +645,10 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [selectedSources, setSelectedSources] = useState([]);
   
+  // State for audio playback
+  const [audioBlobs, setAudioBlobs] = useState(new Map()); // Map of podcast.id -> blob URL
+  const [loadingAudio, setLoadingAudio] = useState(new Set()); // Set of podcast.id being loaded
+  
   // Function to update selected files when Sources panel selection changes
   const updateSelectedFiles = useCallback(() => {
     if (sourcesListRef?.current) {
@@ -631,6 +656,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       const newSelectedSources = sourcesListRef.current.getSelectedSources() || [];
       setSelectedFiles(newSelectedFiles);
       setSelectedSources(newSelectedSources);
+      // console.log("studio files", selectedFiles)
     }
   }, [sourcesListRef]);
   
@@ -717,6 +743,49 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     loadExistingPodcasts();
   }, []);
 
+  // Cleanup blob URLs when component unmounts
+  useEffect(() => {
+    return () => {
+      // Clean up all blob URLs
+      audioBlobs.forEach((blobUrl) => {
+        window.URL.revokeObjectURL(blobUrl);
+      });
+    };
+  }, []);
+
+  // Auto-load audio for new podcasts
+  useEffect(() => {
+    podcastFiles.forEach(podcast => {
+      if (podcast.jobId && 
+          !audioBlobs.has(podcast.id) && 
+          !loadingAudio.has(podcast.id)) {
+        // Auto-load this podcast's audio
+        handlePlayPodcast(podcast);
+      }
+    });
+  }, [podcastFiles]);
+
+  // Clean up blob URLs for deleted podcasts
+  useEffect(() => {
+    const currentPodcastIds = new Set(podcastFiles.map(p => p.id));
+    const blobsToCleanup = [];
+    
+    audioBlobs.forEach((blobUrl, podcastId) => {
+      if (!currentPodcastIds.has(podcastId)) {
+        blobsToCleanup.push(podcastId);
+        window.URL.revokeObjectURL(blobUrl);
+      }
+    });
+    
+    if (blobsToCleanup.length > 0) {
+      setAudioBlobs(prev => {
+        const newMap = new Map(prev);
+        blobsToCleanup.forEach(id => newMap.delete(id));
+        return newMap;
+      });
+    }
+  }, [podcastFiles, audioBlobs]);
+
   // Real-time job status monitoring using WebSocket for reports
   const { 
     status: jobStatus, 
@@ -785,7 +854,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     }
   );
 
-  // Real-time job status monitoring using WebSocket for podcasts
+  // Real-time job status monitoring using SSE for podcasts
   const { 
     status: podcastJobStatus, 
     progress: podcastJobProgress, 
@@ -794,7 +863,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     isConnected: podcastIsConnected,
     connectionError: podcastConnectionError,
     cancelJob: podcastWebSocketCancelJob
-  } = useWebSocket(
+  } = usePodcastJobStatus(
     podcastGenerationState.jobId,
     // onComplete callback
     async (result) => {
@@ -805,7 +874,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       }));
       
       // Add the generated podcast to the podcast files list
-      if (result && (result.audio_url || result.generated_files)) {
+      if (result && (result.audioUrl || result.generated_files)) {
         await loadGeneratedPodcast(result);
       }
       
@@ -902,10 +971,11 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           
           const isGenerating = podcastJobStatus === 'generating' || podcastJobStatus === 'pending';
           const isCancelled = podcastJobStatus === 'cancelled';
+          const isCompleted = podcastJobStatus === 'completed';
           
           return {
             ...prev,
-            isGenerating: isGenerating,
+            isGenerating: isGenerating && !isCompleted && !isCancelled,
             progress: isCancelled ? 'Panel discussion generation was cancelled' : prev.progress,
             error: isCancelled ? 'Cancelled' : prev.error,
           };
@@ -918,7 +988,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         );
       }
       
-      if (podcastJobError) {
+      if (podcastJobError && podcastJobError !== 'Cancelled') {
         setPodcastGenerationState(prev => 
           prev.jobId === currentJobId ? { ...prev, error: podcastJobError } : prev
         );
@@ -1129,7 +1199,6 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
             name: filename,
             title: job.title || 'Panel Discussion',
             description: job.description || '',
-            audioUrl: `${apiService.baseUrl}/podcasts/audio/${filename}`,
             jobId: job.job_id,
             type: 'podcast',
             createdAt: job.created_at || new Date().toISOString(),
@@ -1163,7 +1232,6 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         name: filename,
         title: podcastGenerationState.title || result.title || 'Panel Discussion',
         description: podcastGenerationState.description || result.description || '',
-        audioUrl: `${apiService.baseUrl}/podcasts/audio/${filename}`,
         jobId: podcastGenerationState.jobId,
         type: 'podcast',
         createdAt: new Date().toISOString(),
@@ -1509,8 +1577,58 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     }
   };
 
+  const handlePlayPodcast = async (podcast) => {
+    if (!podcast.jobId) {
+      toast({
+        title: "Playback Not Available",
+        description: "This podcast is not available for playback.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // If audio is already loaded, don't reload
+    if (audioBlobs.has(podcast.id)) {
+      return;
+    }
+
+    // If already loading, don't start another request
+    if (loadingAudio.has(podcast.id)) {
+      return;
+    }
+
+    try {
+      // Mark as loading
+      setLoadingAudio(prev => new Set(prev).add(podcast.id));
+
+      // Download the audio file
+      const blob = await apiService.downloadPodcastAudio(podcast.jobId);
+      
+      // Create blob URL
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      // Store the blob URL
+      setAudioBlobs(prev => new Map(prev).set(podcast.id, blobUrl));
+    } catch (error) {
+      toast({
+        title: "Audio Load Failed",
+        description: error.message || "Failed to load audio for playback",
+        variant: "destructive",
+      });
+    } finally {
+      // Remove from loading set
+      setLoadingAudio(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(podcast.id);
+        return newSet;
+      });
+    }
+  };
+
+
+
   const handleDownloadPodcast = async (podcast) => {
-    if (!podcast.audioUrl) {
+    if (!podcast.jobId) {
       toast({
         title: "Download Not Available",
         description: "This podcast is not available for download.",
@@ -1520,13 +1638,9 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     }
 
     try {
-      // Use fetch to download the audio file directly from the API endpoint
-      const response = await fetch(podcast.audioUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to download: ${response.statusText}`);
-      }
+      // Use the authenticated API service to download the audio file
+      const blob = await apiService.downloadPodcastAudio(podcast.jobId);
       
-      const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.style.display = 'none';
@@ -1687,18 +1801,18 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         {podcastFiles.length > 0 && !selectedFile && (
           <div className="mx-6 mb-6">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+              <div className="px-6 py-4 bg-gradient-to-r from-orange-50 to-red-50 border-b border-gray-200">
                 <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                    <Play className="h-4 w-4 text-gray-600" />
+                  <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                    <Play className="h-4 w-4 text-orange-600" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">Generated Panel Discussions</h3>
-                    <p className="text-sm text-gray-600">{podcastFiles.length} audio files available</p>
+                    <h3 className="font-semibold text-gray-900">Panel Discussions</h3>
+                    <p className="text-sm text-gray-600">{podcastFiles.length} ready to play</p>
                   </div>
                 </div>
               </div>
-              <div className="divide-y divide-gray-100">
+              <div>
                 {podcastFiles.map((podcast) => (
                   <PodcastListItem
                     key={podcast.id}
@@ -1706,7 +1820,19 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
                     onDownload={handleDownloadPodcast}
                     onMenuToggle={(podcastId) => setActiveMenuFileId(activeMenuFileId === podcastId ? null : podcastId)}
                     isMenuOpen={activeMenuFileId === podcast.id}
+                    audioBlob={audioBlobs.get(podcast.id)}
+                    isLoading={loadingAudio.has(podcast.id)}
                     onDelete={(podcastId) => {
+                      // Clean up blob URL if exists
+                      const blobUrl = audioBlobs.get(podcastId);
+                      if (blobUrl) {
+                        window.URL.revokeObjectURL(blobUrl);
+                        setAudioBlobs(prev => {
+                          const newMap = new Map(prev);
+                          newMap.delete(podcastId);
+                          return newMap;
+                        });
+                      }
                       setPodcastFiles((prev) => prev.filter((p) => p.id !== podcastId));
                       setActiveMenuFileId(null);
                     }}

@@ -5,6 +5,7 @@ import { fetchJson } from "../lib/utils"; // simple fetch wrapper
 import ReportCard from "../components/ReportCard";
 import ConferenceCard from "../components/ConferenceCard";
 import OrganizationCard from "../components/OrganizationCard";
+import { config } from "../config";
 
 export default function DashboardPage() {
   const tabs = ["Report", "Conference", "Organization"];
@@ -20,15 +21,15 @@ export default function DashboardPage() {
       setLoading(true);
       try {
         // 1️⃣ Trending reports (admin‐selected)
-        const rpt = await fetchJson("/api/reports/trending");
+        const rpt = await fetchJson(`${config.API_BASE_URL}/reports/trending`);
         setReports(rpt);
 
         // 2️⃣ Conferences overview
-        const confOv = await fetchJson("/api/conferences/overview");
+        const confOv = await fetchJson(`${config.API_BASE_URL}/conferences/overview`);
         setConfsOverview(confOv);
 
         // 3️⃣ Organizations overview
-        const orgOv = await fetchJson("/api/organizations/overview");
+        const orgOv = await fetchJson(`${config.API_BASE_URL}/organizations/overview`);
         setOrgsOverview(orgOv);
       } catch (e) {
         console.error(e);

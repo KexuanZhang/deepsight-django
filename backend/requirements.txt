@@ -32,7 +32,6 @@ pydantic_settings
 pytesseract
 python-dotenv
 python-magic
-python-multipart>=0.0.6
 pytz
 qdrant_client
 rank_bm25
@@ -54,3 +53,6 @@ uvicorn
 whisper
 wikipedia==1.4.0
 yt_dlp
+celery
+langchain_community
+faiss-cpu

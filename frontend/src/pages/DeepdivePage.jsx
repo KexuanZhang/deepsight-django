@@ -8,6 +8,7 @@ import ChatPanel from "@/components/ChatPanel";
 import StudioPanel from "@/components/StudioPanel";
 import "highlight.js/styles/github.css";
 import { Link, useParams, useNavigate } from "react-router-dom";
+import { config } from "../config";
 
 // helper to read CSRF token from cookies
 function getCookie(name) {
@@ -44,7 +45,7 @@ export default function DeepdivePage() {
 
   // prime CSRF on mount
   useEffect(() => {
-    fetch("/api/users/csrf/", {
+    fetch(`${config.API_BASE_URL}/users/csrf/`, {
       method: "GET",
       credentials: "include",
     }).catch(() => {});
@@ -57,7 +58,7 @@ export default function DeepdivePage() {
       setLoadError("");
 
       try {
-        const res = await fetch(`/api/v1/notebooks/${notebookId}/`, {
+        const res = await fetch(`${config.API_BASE_URL}/notebooks/${notebookId}/`, {
           credentials: "include",
         });
 
@@ -165,7 +166,7 @@ export default function DeepdivePage() {
         <div className="flex items-center space-x-4">
           <button
             onClick={async () => {
-              await fetch("/api/users/logout/", {
+              await fetch(`${config.API_BASE_URL}/users/logout/`, {
                 method: "POST",
                 credentials: "include",
                 headers: { "X-CSRFToken": getCookie("csrftoken") },
@@ -232,7 +233,11 @@ export default function DeepdivePage() {
               isSourcesCollapsed ? "flex-1" : "col-span-1 md:col-span-5"
             }`}
           >
-            <ChatPanel notebookId={notebookId} />
+            <ChatPanel 
+              notebookId={notebookId} 
+              sourcesListRef={sourcesListRef}
+              onSelectionChange={registerSelectionCallback}
+            />
           </motion.div>
 
           {/* Studio Panel */}

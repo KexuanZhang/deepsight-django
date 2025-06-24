@@ -27,7 +27,7 @@ class NotebooksConfig:
         self.JOB_TIMEOUT = getattr(django_settings, 'NOTEBOOKS_JOB_TIMEOUT', 3600)
         
         # Redis configuration for job queues (with fallbacks)
-        self.REDIS_HOST = getattr(django_settings, 'REDIS_HOST', 'localhost')
+        self.REDIS_HOST = getattr(django_settings, 'REDIS_HOST', os.getenv('REDIS_HOST', 'localhost'))
         self.REDIS_PORT = getattr(django_settings, 'REDIS_PORT', 6379)
         self.REDIS_DB = getattr(django_settings, 'REDIS_DB', 0)
         self.REDIS_PASSWORD = getattr(django_settings, 'REDIS_PASSWORD', None)
@@ -62,7 +62,7 @@ def get_notebooks_config():
         class MinimalConfig:
             MAX_FILE_SIZE = 100 * 1024 * 1024
             ALLOWED_FILE_TYPES = [".txt", ".md", ".pdf", ".mp3", ".wav", ".m4a", ".mp4", ".avi", ".mov", ".ppt", ".pptx"]
-            redis_url = "redis://localhost:6379/0"
+            redis_url = f"redis://{os.getenv('REDIS_HOST', 'localhost')}:6379/0"
             
         return MinimalConfig()
 

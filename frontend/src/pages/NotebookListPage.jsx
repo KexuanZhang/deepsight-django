@@ -16,6 +16,7 @@ import {
   Edit3,
   Trash2
 } from "lucide-react";
+import { config } from "../config";
 
 // helper to read CSRF token from cookies
 function getCookie(name) {
@@ -42,8 +43,8 @@ export default function NotebookListPage() {
 
   // 1) Prime CSRF & fetch current user
   useEffect(() => {
-    fetch("/api/users/csrf/", { credentials: "include" }).catch(() => {});
-    fetch("/api/users/me/", { credentials: "include" })
+    fetch(`${config.API_BASE_URL}/users/csrf/`, { credentials: "include" }).catch(() => {});
+    fetch(`${config.API_BASE_URL}/users/me/`, { credentials: "include" })
       .then(res => {
         if (res.ok) return res.json();
         throw new Error("Not authenticated");
@@ -62,7 +63,7 @@ export default function NotebookListPage() {
       setLoading(true);
       setError("");
       try {
-        const res = await fetch("/api/v1/notebooks/", { credentials: "include" });
+        const res = await fetch(`${config.API_BASE_URL}/notebooks/`, { credentials: "include" });
         if (res.status === 401) return navigate("/login");
         if (!res.ok) throw new Error();
         let data = await res.json();
@@ -87,7 +88,7 @@ export default function NotebookListPage() {
     setCreating(true);
     setError("");
     try {
-      const res = await fetch("/api/v1/notebooks/", {
+      const res = await fetch(`${config.API_BASE_URL}/notebooks/`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -216,7 +217,7 @@ export default function NotebookListPage() {
             <div className="flex items-center space-x-3">
               <button
                 onClick={async () => {
-                  await fetch("/api/users/logout/", {
+                  await fetch(`${config.API_BASE_URL}/users/logout/`, {
                     method: "POST",
                     credentials: "include",
                     headers: { "X-CSRFToken": getCookie("csrftoken") },
