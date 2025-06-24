@@ -107,7 +107,6 @@ class ReportViewSet(viewsets.ModelViewSet):
     def generate(self, request):
         """
         Generate a research report based on the provided configuration.
-        This replaces the FastAPI /reports/generate endpoint.
         """
         try:
             # Validate input params

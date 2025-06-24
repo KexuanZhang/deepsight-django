@@ -269,6 +269,17 @@ def create_report_config_direct(report: Report, input_data: Dict[str, Any], outp
     
     # Create configuration
     try:
+        # Handle old_outline_path if old_outline content is provided
+        old_outline_path = None
+        if report.old_outline and report.old_outline.strip():
+            # Create a temporary file for the old outline content
+            import tempfile
+            temp_outline_file = tempfile.NamedTemporaryFile(mode='w', suffix='_old_outline.txt', delete=False)
+            temp_outline_file.write(report.old_outline)
+            temp_outline_file.close()
+            old_outline_path = temp_outline_file.name
+            logger.info(f"Created temporary old outline file: {old_outline_path}")
+        
         config = ReportGenerationConfig(
             # Basic settings
             topic=report.topic,
@@ -303,6 +314,7 @@ def create_report_config_direct(report: Report, input_data: Dict[str, Any], outp
             skip_rewrite_outline=report.skip_rewrite_outline,
             whitelist_domains=report.domain_list if report.domain_list else None,
             search_depth=report.search_depth,
+            old_outline_path=old_outline_path,
             
             # CSV processing
             csv_session_code=report.csv_session_code,
@@ -350,6 +362,11 @@ def create_report_config_direct(report: Report, input_data: Dict[str, Any], outp
                 if transcript_temp_files:
                     config.transcript_path = transcript_temp_files
                     logger.info(f"Added {len(transcript_temp_files)} transcript files to config")
+            
+            # Process caption files
+            if input_data.get("caption_files"):
+                config.caption_files = input_data["caption_files"]
+                logger.info(f"Added {len(input_data['caption_files'])} caption files to config")
         
         except Exception as e:
             logger.error(f"Failed to process input files: {e}")
@@ -359,7 +376,8 @@ def create_report_config_direct(report: Report, input_data: Dict[str, Any], outp
 
 def prepare_input_data(report: Report) -> Dict[str, Any]:
     """
-    Prepare input data from the knowledge base based on selected file IDs.
+    Prepare input data from the knowledge base based on selected file folder paths.
+    Looks for _transcript.md and other relevant files in the provided folder paths.
     """
     input_data = {
         "paper_files": [],
@@ -368,34 +386,65 @@ def prepare_input_data(report: Report) -> Dict[str, Any]:
     }
     
     try:
-        # Process selected file IDs
-        if report.selected_file_ids:
-            for file_id in report.selected_file_ids:
+        # Process selected file folder paths
+        if report.selected_files_paths:
+            for folder_path in report.selected_files_paths:
                 try:
-                    content = file_storage_service.get_file_content(file_id, report.user.pk)
-                    if content:
-                        # Determine file type based on content or metadata
-                        # For now, assume all are transcript files unless filename suggests otherwise
-                        file_data = {
-                            "content": content,
-                            "filename": f"knowledge_base_item_{file_id}.md",
-                            "file_id": file_id
-                        }
-                        
-                        # Could add logic here to distinguish between paper and transcript files
-                        # based on metadata or filename patterns
-                        input_data["transcript_files"].append(file_data)
+                    folder_path_obj = Path(folder_path)
+                    if not folder_path_obj.exists() or not folder_path_obj.is_dir():
+                        logger.warning(f"Folder path does not exist or is not a directory: {folder_path}")
+                        continue
+                    
+                    # Look for transcript files
+                    transcript_files = list(folder_path_obj.glob("*_transcript.md"))
+                    for transcript_file in transcript_files:
+                        try:
+                            with open(transcript_file, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            
+                            file_data = {
+                                "content": content,
+                                "filename": transcript_file.name,
+                                "file_path": str(transcript_file)
+                            }
+                            input_data["transcript_files"].append(file_data)
+                            logger.info(f"Loaded transcript file: {transcript_file}")
+                        except Exception as e:
+                            logger.warning(f"Failed to read transcript file {transcript_file}: {e}")
+                    
+                    # Look for other .md files (all non-transcript .md files are treated as paper files)
+                    other_md_files = [f for f in folder_path_obj.glob("*.md") if not f.name.endswith("_transcript.md")]
+                    for md_file in other_md_files:
+                        try:
+                            with open(md_file, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            
+                            file_data = {
+                                "content": content,
+                                "filename": md_file.name,
+                                "file_path": str(md_file)
+                            }
+                            
+                            # All .md files that are not _transcript.md are treated as paper files
+                            input_data["paper_files"].append(file_data)
+                            logger.info(f"Loaded paper file: {md_file}")
+                        except Exception as e:
+                            logger.warning(f"Failed to read file {md_file}: {e}")
+                    
+                    # Look for caption files (JSON files with video metadata)
+                    caption_files = list(folder_path_obj.glob("*.json"))
+                    for caption_file in caption_files:
+                        if 'caption' in caption_file.name.lower():
+                            input_data["caption_files"].append(str(caption_file))
+                            logger.info(f"Found caption file: {caption_file}")
                         
                 except Exception as e:
-                    logger.warning(f"Failed to load content for file ID {file_id}: {e}")
+                    logger.warning(f"Failed to process folder path {folder_path}: {e}")
                     continue
         
-        # Note: URL IDs processing would go here if needed
-        # if report.selected_url_ids:
-        #     process URL content...
-        
         logger.info(f"Prepared input data: {len(input_data['paper_files'])} papers, "
-                   f"{len(input_data['transcript_files'])} transcripts")
+                   f"{len(input_data['transcript_files'])} transcripts, "
+                   f"{len(input_data['caption_files'])} caption files")
         
         return input_data
         

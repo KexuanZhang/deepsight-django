@@ -10,8 +10,8 @@ class ReportSerializer(serializers.ModelSerializer):
             'notebooks',
             'topic',
             'article_title',
-            'selected_file_ids',
-            'selected_url_ids',
+            'old_outline',
+            'selected_files_paths',
             'csv_session_code',
             'csv_date_filter',
             'model_provider',
@@ -60,8 +60,8 @@ class ReportCreateSerializer(serializers.ModelSerializer):
             'notebooks',
             'topic',
             'article_title',
-            'selected_file_ids',
-            'selected_url_ids',
+            'old_outline',
+            'selected_files_paths',
             'csv_session_code',
             'csv_date_filter',
             'model_provider',
@@ -92,12 +92,11 @@ class ReportCreateSerializer(serializers.ModelSerializer):
     def validate(self, data):
         """Validate that at least one input source is provided."""
         topic = data.get('topic', '').strip()
-        selected_file_ids = data.get('selected_file_ids', [])
-        selected_url_ids = data.get('selected_url_ids', [])
+        selected_files_paths = data.get('selected_files_paths', [])
         
-        if not topic and not selected_file_ids and not selected_url_ids:
+        if not topic and not selected_files_paths:
             raise serializers.ValidationError(
-                "At least one of: topic, selected_file_ids, or selected_url_ids must be provided"
+                "At least one of: topic or selected_files_paths must be provided"
             )
         
         return data
@@ -167,6 +166,7 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
     
     # Basic settings
     topic = serializers.CharField(required=False, allow_blank=True, max_length=500)
+    old_outline = serializers.CharField(required=False, allow_blank=True, help_text="User-provided outline content to use as starting point")
     model_provider = serializers.ChoiceField(choices=Report.MODEL_PROVIDER_CHOICES, default=Report.MODEL_PROVIDER_OPENAI)
     retriever = serializers.ChoiceField(choices=Report.RETRIEVER_CHOICES, default=Report.RETRIEVER_TAVILY)
     temperature = serializers.FloatField(default=0.2, min_value=0.0, max_value=2.0)
@@ -198,8 +198,7 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
     search_depth = serializers.ChoiceField(choices=Report.SEARCH_DEPTH_CHOICES, default=Report.SEARCH_DEPTH_BASIC)
     
     # Content inputs from knowledge base
-    selected_file_ids = serializers.ListField(child=serializers.CharField(), required=False, default=list)
-    selected_url_ids = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    selected_files_paths = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     
     # CSV processing options
     csv_session_code = serializers.CharField(required=False, allow_blank=True)
@@ -208,12 +207,11 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
     def validate(self, data):
         """Validate that at least one input source is provided."""
         topic = data.get('topic', '').strip()
-        selected_file_ids = data.get('selected_file_ids', [])
-        selected_url_ids = data.get('selected_url_ids', [])
+        selected_files_paths = data.get('selected_files_paths', [])
         
-        if not topic and not selected_file_ids and not selected_url_ids:
+        if not topic and not selected_files_paths:
             raise serializers.ValidationError(
-                "At least one of: topic, selected_file_ids, or selected_url_ids must be provided"
+                "At least one of: topic or selected_files_paths must be provided"
             )
         
         return data

@@ -31,10 +31,10 @@ class Report(models.Model):
     # Core input parameters
     topic = models.CharField(max_length=500, blank=True, help_text="Research topic")
     article_title = models.CharField(max_length=255, default='Research Report')
+    old_outline = models.TextField(blank=True, help_text="User-provided outline content to use as starting point")
     
     # Content inputs from knowledge base
-    selected_file_ids = models.JSONField(default=list, blank=True, help_text="List of file IDs from knowledge base")
-    selected_url_ids = models.JSONField(default=list, blank=True, help_text="List of URL IDs from knowledge base")
+    selected_files_paths = models.JSONField(default=list, blank=True, help_text="List of file folder paths from knowledge base")
     
     # CSV processing options
     csv_session_code = models.CharField(max_length=100, blank=True)
@@ -198,6 +198,7 @@ class Report(models.Model):
         return {
             'topic': self.topic,
             'article_title': self.article_title,
+            'old_outline': self.old_outline,
             'model_provider': self.model_provider,
             'retriever': self.retriever,
             'temperature': self.temperature,
@@ -221,8 +222,7 @@ class Report(models.Model):
             'skip_rewrite_outline': self.skip_rewrite_outline,
             'domain_list': self.domain_list,
             'search_depth': self.search_depth,
-            'selected_file_ids': self.selected_file_ids,
-            'selected_url_ids': self.selected_url_ids,
+            'selected_files_paths': self.selected_files_paths,
             'csv_session_code': self.csv_session_code,
             'csv_date_filter': self.csv_date_filter,
         }
