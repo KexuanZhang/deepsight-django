@@ -93,7 +93,7 @@ export async function generatePreview(source, notebookId = null) {
         return await generateTextPreview(file_id, metadata);
       
       case PREVIEW_TYPES.PDF_VIEWER:
-        return await generatePdfPreview(file_id, metadata);
+        return await generatePdfPreview(file_id, metadata, notebookId);
       
       case PREVIEW_TYPES.URL_INFO:
         return await generateUrlPreview(metadata);
@@ -198,7 +198,7 @@ async function generateAudioPreview(fileId, metadata, notebookId = null) {
   try {
     const rawUrl = notebookId ? 
       `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
-      `${API_BASE_URL}/files/${fileId}/raw`;
+      `${API_BASE_URL}/notebooks/files/${fileId}/raw/`;
     
     // Fetch the audio file with credentials
     const response = await fetch(rawUrl, {
@@ -220,7 +220,7 @@ async function generateAudioPreview(fileId, metadata, notebookId = null) {
     // Fallback to direct URL (might not work in Chrome due to authentication issues)
     audioUrl = notebookId ? 
       `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
-      `${API_BASE_URL}/files/${fileId}/raw`;
+      `${API_BASE_URL}/notebooks/files/${fileId}/raw/`;
   }
   
   // Check if we have parsed transcript content
@@ -278,7 +278,7 @@ async function generateVideoPreview(fileId, metadata, notebookId = null) {
   try {
     const rawUrl = notebookId ? 
       `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
-      `${API_BASE_URL}/files/${fileId}/raw`;
+      `${API_BASE_URL}/notebooks/files/${fileId}/raw/`;
     
     // Fetch the video file with credentials
     const response = await fetch(rawUrl, {
@@ -300,7 +300,7 @@ async function generateVideoPreview(fileId, metadata, notebookId = null) {
     // Fallback to direct URL (might not work in Chrome due to authentication issues)
     videoUrl = notebookId ? 
       `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
-      `${API_BASE_URL}/files/${fileId}/raw`;
+      `${API_BASE_URL}/notebooks/files/${fileId}/raw/`;
   }
   
   // Check if we have parsed transcript content
@@ -345,9 +345,11 @@ async function generateVideoPreview(fileId, metadata, notebookId = null) {
 /**
  * Generate PDF file preview
  */
-async function generatePdfPreview(fileId, metadata) {
-  // Use the raw endpoint to serve the actual PDF binary file
-  const pdfUrl = `${API_BASE_URL}/files/${fileId}/raw`;
+async function generatePdfPreview(fileId, metadata, notebookId = null) {
+  // Use the raw endpoint to serve the actual PDF binary file - prefer notebook-specific if available
+  const pdfUrl = notebookId ? 
+    `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
+    `${API_BASE_URL}/notebooks/files/${fileId}/raw/`;
   
   // Check if we have parsed PDF content
   let pdfContent = null;

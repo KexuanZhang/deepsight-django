@@ -98,6 +98,21 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5175",  # Legacy port support
 ]
 
+# Additional CORS settings for SSE
+CORS_ALLOW_ALL_ORIGINS = False  # Keep this False for security
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'cache-control',
+]
+
 MIDDLEWARE.insert(0, "corsheaders.middleware.CorsMiddleware")
 
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
@@ -189,4 +204,68 @@ MEDIA_URL = '/media/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
 
+# OpenAI Configuration
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+OPENAI_ORG = os.getenv('OPENAI_ORG')
+OPENAI_PROJECT = os.getenv('OPENAI_PROJECT')
+
+# MiniMax TTS Configuration
+MINIMAX_GROUP_ID = os.getenv('MINIMAX_GROUP_ID')
+MINIMAX_API_KEY = os.getenv('MINIMAX_API_KEY')
+
+# Logging Configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs' / 'django.log',
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    },
+    'root': {
+        'handlers': ['console', 'file'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'podcast': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}
+
+# Create logs directory if it doesn't exist
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)

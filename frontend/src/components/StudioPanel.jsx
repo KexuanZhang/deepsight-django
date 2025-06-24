@@ -31,7 +31,9 @@ import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 import apiService from "@/lib/api";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { usePodcastJobStatus } from "@/hooks/usePodcastJobStatus";
 import { Badge } from "@/components/ui/badge";
+import { config } from "@/config";
 
 // Utility function for formatting model names
 const formatModelName = (value) => {
@@ -785,7 +787,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     }
   );
 
-  // Real-time job status monitoring using WebSocket for podcasts
+  // Real-time job status monitoring using SSE for podcasts
   const { 
     status: podcastJobStatus, 
     progress: podcastJobProgress, 
@@ -794,7 +796,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     isConnected: podcastIsConnected,
     connectionError: podcastConnectionError,
     cancelJob: podcastWebSocketCancelJob
-  } = useWebSocket(
+  } = usePodcastJobStatus(
     podcastGenerationState.jobId,
     // onComplete callback
     async (result) => {
@@ -805,7 +807,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       }));
       
       // Add the generated podcast to the podcast files list
-      if (result && (result.audio_url || result.generated_files)) {
+      if (result && (result.audioUrl || result.generated_files)) {
         await loadGeneratedPodcast(result);
       }
       
@@ -1129,7 +1131,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
             name: filename,
             title: job.title || 'Panel Discussion',
             description: job.description || '',
-            audioUrl: `${apiService.baseUrl}/podcasts/audio/${filename}`,
+                            audioUrl: `${config.API_BASE_URL}/podcasts/audio/${filename}`,
             jobId: job.job_id,
             type: 'podcast',
             createdAt: job.created_at || new Date().toISOString(),

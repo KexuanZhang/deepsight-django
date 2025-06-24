@@ -113,6 +113,7 @@
 // src/pages/SignupPage.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { config } from "../config";
 
 // helper to read CSRF token from cookies
 function getCookie(name) {
@@ -131,7 +132,7 @@ export default function SignupPage() {
   // fetch CSRF (Django sets it automatically on first GET to any view)
   useEffect(() => {
     // make a cheap GET to set the csrftoken cookie
-    fetch("/api/users/me/", {
+    fetch(`${config.API_BASE_URL}/users/me/`, {
       credentials: "include"
     }).catch(() => {});
   }, []);
@@ -146,7 +147,7 @@ export default function SignupPage() {
     }
 
     try {
-      const response = await fetch("/api/users/signup/", {
+      const response = await fetch(`${config.API_BASE_URL}/users/signup/`, {
         method: "POST",
         credentials: "include",                 // send/receive session cookie
         headers: {
