@@ -69,3 +69,54 @@ def get_notebooks_config():
 
 # Global instance
 config = get_notebooks_config()
+
+
+class DeepSightStorageConfig:
+    """Configuration for DeepSight storage system."""
+    
+    def __init__(self):
+        # Base path for all DeepSight data
+        self.base_data_path = Path(django_settings.MEDIA_ROOT)
+        
+        # Ensure base directory exists
+        self.base_data_path.mkdir(parents=True, exist_ok=True)
+        
+        # Ensure Global folder exists
+        global_folder = self.base_data_path / "Global"
+        global_folder.mkdir(exist_ok=True)
+        
+    def get_user_base_path(self, user_id: int) -> Path:
+        """Get the base path for a specific user."""
+        return self.base_data_path / "Users" / f"u_{user_id}"
+    
+    def get_knowledge_base_path(self, user_id: int, year_month: str, file_id: str) -> Path:
+        """Get the knowledge base path for a specific file."""
+        return self.get_user_base_path(user_id) / "knowledge_base_item" / year_month / f"f_{file_id}"
+    
+
+    
+    def get_report_path(self, user_id: int, year_month: str, report_id: str) -> Path:
+        """Get the report path for a specific report."""
+        return self.get_user_base_path(user_id) / "report" / year_month / f"r_{report_id}"
+    
+    def get_podcast_path(self, user_id: int, year_month: str, podcast_id: str) -> Path:
+        """Get the podcast path for a specific podcast."""
+        return self.get_user_base_path(user_id) / "podcast" / year_month / f"p_{podcast_id}"
+    
+    def get_global_path(self) -> Path:
+        """Get the global shared folder path."""
+        return self.base_data_path / "Global"
+    
+    def ensure_user_directories(self, user_id: int):
+        """Ensure all necessary directories exist for a user."""
+        user_base = self.get_user_base_path(user_id)
+        user_base.mkdir(parents=True, exist_ok=True)
+        
+        # Create standard subdirectories
+        (user_base / "knowledge_base_item").mkdir(exist_ok=True)
+        (user_base / "report").mkdir(exist_ok=True)
+        (user_base / "podcast").mkdir(exist_ok=True)
+
+
+# Global storage configuration instance
+storage_config = DeepSightStorageConfig()

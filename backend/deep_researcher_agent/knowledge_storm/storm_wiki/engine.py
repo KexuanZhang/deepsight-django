@@ -52,7 +52,7 @@ class UserInputTopicImprover(dspy.Signature):
 
 
 class TopicImprover(dspy.Module):
-    def __init__(self, engine: dspy.LM):
+    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         super().__init__()
         self.engine = engine
         self.topic_generator = dspy.Predict(TopicGenerator)
@@ -105,7 +105,6 @@ class STORMWikiLMConfigs(LMConfigs):
         self.article_gen_lm = None
         self.article_polish_lm = None
         self.topic_improver_lm = None
-        self.conceptualize_lm = None
 
     def init_openai_model(
         self,
@@ -133,79 +132,71 @@ class STORMWikiLMConfigs(LMConfigs):
         }
         if openai_type and openai_type == "openai":
             self.conv_simulator_lm = LitellmModel(
-                model="gpt-4.1-mini-2025-04-14", max_tokens=500, **openai_kwargs
+                model="gpt-4.1-mini", max_tokens=500, **openai_kwargs
             )
             self.question_asker_lm = LitellmModel(
-                model="gpt-4.1-mini-2025-04-14", max_tokens=500, **openai_kwargs
+                model="gpt-4.1-mini", max_tokens=500, **openai_kwargs
             )
             self.outline_gen_lm = LitellmModel(
-                model="gpt-4.1-2025-04-14", max_tokens=1500, **openai_kwargs
+                model="gpt-4.1", max_tokens=3000, **openai_kwargs
             )
             self.article_gen_lm = LitellmModel(
-                model="gpt-4.1-2025-04-14", max_tokens=2000, **openai_kwargs
+                model="gpt-4.1", max_tokens=3000, **openai_kwargs
             )
             self.article_polish_lm = LitellmModel(
-                model="gpt-4.1-2025-04-14", max_tokens=8000, **openai_kwargs
+                model="gpt-4.1", max_tokens=20000, **openai_kwargs
             )
-            self.conceptualize_lm = LitellmModel(
-                model="gpt-4.1-mini-2025-04-14", max_tokens=200, **openai_kwargs
-            )
+
         elif openai_type and openai_type == "azure":
             self.conv_simulator_lm = LitellmModel(
-                model="azure/gpt-4o-mini-2024-07-18", max_tokens=500, **openai_kwargs
+                model="azure/gpt-4.1-mini", max_tokens=500, **openai_kwargs
             )
             self.question_asker_lm = LitellmModel(
-                model="azure/gpt-4o-mini-2024-07-18",
+                model="azure/gpt-4.1-mini",
                 max_tokens=500,
                 **azure_kwargs,
                 model_type="chat",
             )
             self.outline_gen_lm = LitellmModel(
-                model="azure/gpt-4o", max_tokens=400, **azure_kwargs, model_type="chat"
+                model="azure/gpt-4.1", max_tokens=2000, **azure_kwargs, model_type="chat"
             )
             self.article_gen_lm = LitellmModel(
-                model="azure/gpt-4o-mini-2024-07-18",
-                max_tokens=700,
+                model="azure/gpt-4.1",
+                max_tokens=3000,
                 **azure_kwargs,
                 model_type="chat",
             )
             self.article_polish_lm = LitellmModel(
-                model="azure/gpt-4o-mini-2024-07-18",
-                max_tokens=4000,
+                model="azure/gpt-4.1",
+                max_tokens=20000,
                 **azure_kwargs,
                 model_type="chat",
             )
-            self.conceptualize_lm = LitellmModel(
-                model="azure/gpt-4o-mini-2024-07-18",
-                max_tokens=200,
-                **azure_kwargs,
-                model_type="chat",
-            )
+
         else:
             logging.warning(
                 "No valid OpenAI API provider is provided. Cannot use default LLM configurations."
             )
 
-    def set_conv_simulator_lm(self, model: dspy.LM):
+    def set_conv_simulator_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         self.conv_simulator_lm = model
 
-    def set_question_asker_lm(self, model: dspy.LM):
+    def set_question_asker_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         self.question_asker_lm = model
 
-    def set_outline_gen_lm(self, model: dspy.LM):
+    def set_outline_gen_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         self.outline_gen_lm = model
 
-    def set_article_gen_lm(self, model: dspy.LM):
+    def set_article_gen_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         self.article_gen_lm = model
 
-    def set_article_polish_lm(self, model: dspy.LM):
+    def set_article_polish_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         self.article_polish_lm = model
 
-    def set_topic_improver_lm(self, model: dspy.LM):
+    def set_topic_improver_lm(self, model: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         self.topic_improver_lm = model
         
-    def set_conceptualize_lm(self, model: dspy.LM):
-        self.conceptualize_lm = model
+
 
 
 @dataclass
@@ -256,7 +247,6 @@ class STORMWikiRunner(Engine):
             article_gen_lm=self.lm_configs.article_gen_lm,
             max_thread_num=self.args.max_thread_num,
             reranker_model_name="cross-encoder/ms-marco-MiniLM-L6-v2",
-            conceptualize_lm=self.lm_configs.conceptualize_lm,
             initial_retrieval_k=self.args.initial_retrieval_k,
             final_context_k=self.args.final_context_k,
             reranker_threshold=self.args.reranker_threshold
@@ -384,7 +374,20 @@ class STORMWikiRunner(Engine):
         article_content = draft_article.to_string()
         article_content = preserve_figure_formatting(article_content)
         
-        # Save with preserved formatting
+        # Apply image path fixing if we have selected_files_paths
+        if hasattr(self, 'selected_files_paths') and self.selected_files_paths:
+            try:
+                from deep_researcher_agent.utils.post_processing import fix_image_paths_advanced
+                article_content = fix_image_paths_advanced(
+                    article_content, 
+                    self.selected_files_paths,
+                    report_output_dir=self.article_output_dir
+                )
+                logging.info("Applied image path fixing to storm_gen_article.md")
+            except Exception as e:
+                logging.warning(f"Failed to fix image paths in storm_gen_article.md: {e}")
+        
+        # Save with preserved formatting and fixed image paths
         with open(os.path.join(self.article_output_dir, "storm_gen_article.md"), 'w', encoding='utf-8') as f:
             f.write(article_content)
             
@@ -428,6 +431,19 @@ class STORMWikiRunner(Engine):
         hyperlinked_content_str = preserve_figure_formatting(hyperlinked_content_str)
         # Apply a second time to catch any edge cases
         hyperlinked_content_str = preserve_figure_formatting(hyperlinked_content_str)
+        
+        # Apply image path fixing if we have selected_files_paths
+        if hasattr(self, 'selected_files_paths') and self.selected_files_paths:
+            try:
+                from deep_researcher_agent.utils.post_processing import fix_image_paths_advanced
+                hyperlinked_content_str = fix_image_paths_advanced(
+                    hyperlinked_content_str, 
+                    self.selected_files_paths,
+                    report_output_dir=self.article_output_dir
+                )
+                logging.info("Applied image path fixing to storm_gen_article_polished.md")
+            except Exception as e:
+                logging.warning(f"Failed to fix image paths in storm_gen_article_polished.md: {e}")
         
         FileIOHelper.write_str(hyperlinked_content_str, os.path.join(self.article_output_dir, "storm_gen_article_polished.md"))
         return polished_article
@@ -543,12 +559,13 @@ class STORMWikiRunner(Engine):
                 logging.error("Generated topic is critically missing and could not be derived. Check TopicImprover logic and inputs.")
                 raise ValueError("Failed to determine a topic for the report. All inputs (topic, transcript, paper) might be missing or topic generation failed.")
         
-        if not hasattr(self, 'article_dir_name') or not self.article_dir_name:
+        if not hasattr(self, 'article_dir_name') or self.article_dir_name is None:
             if not self.article_title:
                 self.article_title = self.generated_topic if self.generated_topic else "Untitled_Report"
             self.article_dir_name = truncate_filename(self.article_title.replace(" ", "_").replace("/", "_"))
         
-        self.article_output_dir = os.path.join(self.args.output_dir, self.article_dir_name)
+        # Always use output directory directly without creating subfolder
+        self.article_output_dir = self.args.output_dir
         os.makedirs(self.article_output_dir, exist_ok=True)
 
         old_outline = None

@@ -3,3 +3,4 @@ CLAUDE.md
 .claude/
 .vscode/
 *.DS_Store
+secrets.toml

@@ -115,7 +115,7 @@ SERPER_API_KEY = "your-serper-api-key"
 # Optional: Other retrievers
 YDC_API_KEY = "your-you-com-api-key"
 BING_SEARCH_API_KEY = "your-bing-api-key"
-SEARXNG_URL = "http://your-searxng-instance"
+searxng_api_url = "http://your-searxng-instance"
 EOF
 
 # 3. Create results directory
@@ -366,13 +366,13 @@ curl -X POST "http://localhost:8000/api/reports/generate-advanced" \
   }'
 ```
 
-### Scenario 4: Video Content Analysis
+### Scenario 4: Image Content Analysis
 ```bash
 curl -X POST "http://localhost:8000/api/reports/generate" \
   -H "Content-Type: application/json" \
   -d '{
-    "video_url": "https://youtube.com/watch?v=VIDEO_ID",
-    "article_title": "Video Analysis Report",
+    "img_dir": "/path/to/processed/images",
+    "article_title": "Image Analysis Report",
     "do_research": false,
     "model_provider": "openai"
   }'
@@ -513,8 +513,7 @@ config = ReportGenerationConfig(
     csv_path="path/to/metadata.csv",            # Metadata CSV file
     
     # Media content
-    video_url="https://youtube.com/watch?v=...", # Video URL to process
-    video_path="path/to/video.mp4",             # Local video file
+    img_dir="path/to/processed/images",         # Directory containing processed images and captions
     
     # Author information
     author_json="path/to/authors.json",         # Author metadata
@@ -602,7 +601,7 @@ BRAVE_API_KEY = "your-brave-api-key"
 SERPER_API_KEY = "your-serper-api-key"
 YDC_API_KEY = "your-you-com-api-key"
 BING_SEARCH_API_KEY = "your-bing-api-key"
-SEARXNG_URL = "http://your-searxng-instance"
+searxng_api_url = "http://your-searxng-instance"
 AZURE_AI_SEARCH_API_KEY = "your-azure-search-key"
 AZURE_AI_SEARCH_ENDPOINT = "https://your-search-service.search.windows.net"
 AZURE_AI_SEARCH_INDEX = "your-search-index"
@@ -637,17 +636,17 @@ config = ReportGenerationConfig(
 )
 ```
 
-### 2. Video Content Analysis
+### 2. Image Content Analysis
 ```python
 config = ReportGenerationConfig(
-    video_url="https://youtube.com/watch?v=example",
-    article_title="Video Content Analysis Report",
-    
-    # Focus on video processing
+    img_dir="path/to/processed/images",
+    article_title="Image Content Analysis Report",
+
+    # Focus on image processing
     do_research=False,  # Skip online research
     model_provider=ModelProvider.OPENAI,
-    
-    # Video-specific settings
+
+    # Image-specific settings
     post_processing=True,
 )
 ```
