@@ -190,7 +190,7 @@ export default function DeepdivePage() {
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
-              className="col-span-1 md:col-span-3 border border-gray-200 rounded-lg overflow-auto relative min-h-0"
+              className="col-span-1 md:col-span-2 border border-gray-200 rounded-lg overflow-auto relative min-h-0"
             >
               <SourcesList 
                 ref={sourcesListRef}
@@ -230,7 +230,7 @@ export default function DeepdivePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.1 }}
             className={`border border-gray-200 rounded-lg overflow-auto min-h-0 ${
-              isSourcesCollapsed ? "flex-1" : "col-span-1 md:col-span-5"
+              isSourcesCollapsed ? "flex-[0.618]" : "col-span-1 md:col-span-6"
             }`}
           >
             <ChatPanel 
@@ -246,7 +246,7 @@ export default function DeepdivePage() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3, delay: 0.2 }}
             className={`border border-gray-200 rounded-lg overflow-auto min-h-0 ${
-              isSourcesCollapsed ? "flex-1" : "col-span-1 md:col-span-4"
+              isSourcesCollapsed ? "flex-[0.382]" : "col-span-1 md:col-span-4"
             }`}
           >
             <StudioPanel 

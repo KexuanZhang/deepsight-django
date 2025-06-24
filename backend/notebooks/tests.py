@@ -17,31 +17,27 @@ User = get_user_model()
 
 class NotebookModelTests(TestCase):
     """Test cases for Notebook model."""
-    
+
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
-    
+
     def test_notebook_creation(self):
         """Test notebook creation."""
         notebook = Notebook.objects.create(
-            user=self.user,
-            name="Test Notebook",
-            description="Test description"
+            user=self.user, name="Test Notebook", description="Test description"
         )
-        
+
         self.assertEqual(notebook.user, self.user)
         self.assertEqual(notebook.name, "Test Notebook")
         self.assertEqual(str(notebook), "Test Notebook")
-    
+
     def test_notebook_ordering(self):
         """Test notebook ordering by creation date."""
         notebook1 = Notebook.objects.create(user=self.user, name="First")
         notebook2 = Notebook.objects.create(user=self.user, name="Second")
-        
+
         notebooks = list(Notebook.objects.all())
         self.assertEqual(notebooks[0], notebook2)  # Most recent first
         self.assertEqual(notebooks[1], notebook1)
@@ -52,9 +48,7 @@ class SourceModelTests(TestCase):
     
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
         self.notebook = Notebook.objects.create(
             user=self.user,
@@ -124,7 +118,7 @@ class FileValidatorTests(TestCase):
         result = self.validator.validate_file(test_file)
         self.assertTrue(result["valid"])
         self.assertEqual(result["file_extension"], ".pdf")
-    
+
     def test_invalid_file_extension(self):
         """Test validation of invalid file extension."""
         test_file = SimpleUploadedFile(
@@ -152,81 +146,76 @@ class FileValidatorTests(TestCase):
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class NotebookAPITests(APITestCase):
     """Test cases for Notebook API endpoints."""
-    
+
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
         self.client.force_authenticate(user=self.user)
-    
+
     def test_create_notebook(self):
         """Test notebook creation via API."""
-        url = reverse('notebook-list-create')
-        data = {
-            'name': 'Test Notebook',
-            'description': 'Test description'
-        }
-        
-        response = self.client.post(url, data, format='json')
+        url = reverse("notebook-list-create")
+        data = {"name": "Test Notebook", "description": "Test description"}
+
+        response = self.client.post(url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Notebook.objects.count(), 1)
-        
+
         notebook = Notebook.objects.first()
-        self.assertEqual(notebook.name, 'Test Notebook')
+        self.assertEqual(notebook.name, "Test Notebook")
         self.assertEqual(notebook.user, self.user)
-    
+
     def test_list_notebooks(self):
         """Test notebook listing via API."""
         # Create test notebooks
         Notebook.objects.create(user=self.user, name="Notebook 1")
         Notebook.objects.create(user=self.user, name="Notebook 2")
-        
+
         # Create notebook for another user (should not appear)
         other_user = User.objects.create_user(
-            username='other', email='other@example.com', password='pass'
+            username="other", email="other@example.com", password="pass"
         )
         Notebook.objects.create(user=other_user, name="Other Notebook")
-        
-        url = reverse('notebook-list-create')
+
+        url = reverse("notebook-list-create")
         response = self.client.get(url)
-        
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 2)
-        self.assertEqual(response.data[0]['name'], 'Notebook 2')  # Most recent first
-    
+        self.assertEqual(response.data[0]["name"], "Notebook 2")  # Most recent first
+
     def test_retrieve_notebook(self):
         """Test notebook retrieval via API."""
         notebook = Notebook.objects.create(user=self.user, name="Test Notebook")
-        
-        url = reverse('notebook-detail', kwargs={'pk': notebook.pk})
+
+        url = reverse("notebook-detail", kwargs={"pk": notebook.pk})
         response = self.client.get(url)
-        
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['name'], 'Test Notebook')
-    
+        self.assertEqual(response.data["name"], "Test Notebook")
+
     def test_update_notebook(self):
         """Test notebook update via API."""
         notebook = Notebook.objects.create(user=self.user, name="Original Name")
-        
-        url = reverse('notebook-detail', kwargs={'pk': notebook.pk})
-        data = {'name': 'Updated Name', 'description': 'Updated description'}
-        
-        response = self.client.patch(url, data, format='json')
+
+        url = reverse("notebook-detail", kwargs={"pk": notebook.pk})
+        data = {"name": "Updated Name", "description": "Updated description"}
+
+        response = self.client.patch(url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        
+
         notebook.refresh_from_db()
-        self.assertEqual(notebook.name, 'Updated Name')
-        self.assertEqual(notebook.description, 'Updated description')
-    
+        self.assertEqual(notebook.name, "Updated Name")
+        self.assertEqual(notebook.description, "Updated description")
+
     def test_delete_notebook(self):
         """Test notebook deletion via API."""
         notebook = Notebook.objects.create(user=self.user, name="Test Notebook")
-        
-        url = reverse('notebook-detail', kwargs={'pk': notebook.pk})
+
+        url = reverse("notebook-detail", kwargs={"pk": notebook.pk})
         response = self.client.delete(url)
-        
+
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(Notebook.objects.count(), 0)
 
@@ -237,9 +226,7 @@ class FileUploadAPITests(APITestCase):
     
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
         self.client.force_authenticate(user=self.user)
         self.notebook = Notebook.objects.create(
@@ -304,9 +291,7 @@ class URLParsingAPITests(APITestCase):
     
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
         self.client.force_authenticate(user=self.user)
         self.notebook = Notebook.objects.create(

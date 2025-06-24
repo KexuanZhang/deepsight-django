@@ -678,8 +678,8 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   
   // Collapsible sections state
   const [collapsedSections, setCollapsedSections] = useState({
-    podcast: false,
-    report: false,
+    podcast: true,
+    report: true,
   });
 
   // Report generation state
@@ -1664,6 +1664,42 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     }
   };
 
+  const handleDeletePodcast = async (podcastId) => {
+    try {
+      // Extract job ID from podcast ID (format: "podcast-{jobId}")
+      const jobId = podcastId.replace('podcast-', '');
+      
+      // Call the backend API to delete the podcast
+      await apiService.deletePodcast(jobId);
+      
+      // Clean up blob URL if exists
+      const blobUrl = audioBlobs.get(podcastId);
+      if (blobUrl) {
+        window.URL.revokeObjectURL(blobUrl);
+        setAudioBlobs(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(podcastId);
+          return newMap;
+        });
+      }
+      
+      // Remove from local state
+      setPodcastFiles((prev) => prev.filter((p) => p.id !== podcastId));
+      setActiveMenuFileId(null);
+      
+      toast({
+        title: "Podcast Deleted",
+        description: "The podcast has been deleted successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Delete Failed",
+        description: error.message || "Failed to delete podcast. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
 
 
   const getStatusIcon = () => {
@@ -1822,20 +1858,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
                     isMenuOpen={activeMenuFileId === podcast.id}
                     audioBlob={audioBlobs.get(podcast.id)}
                     isLoading={loadingAudio.has(podcast.id)}
-                    onDelete={(podcastId) => {
-                      // Clean up blob URL if exists
-                      const blobUrl = audioBlobs.get(podcastId);
-                      if (blobUrl) {
-                        window.URL.revokeObjectURL(blobUrl);
-                        setAudioBlobs(prev => {
-                          const newMap = new Map(prev);
-                          newMap.delete(podcastId);
-                          return newMap;
-                        });
-                      }
-                      setPodcastFiles((prev) => prev.filter((p) => p.id !== podcastId));
-                      setActiveMenuFileId(null);
-                    }}
+                    onDelete={handleDeletePodcast}
                   />
                 ))}
               </div>

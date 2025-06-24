@@ -279,7 +279,7 @@ class QdrantVectorStoreManager:
                 "\uff0c",  # Fullwidth comma
                 "\u3001",  # Ideographic comma
                 " ",
-                "\u200B",  # Zero-width space
+                "\u200b",  # Zero-width space
                 "",
             ],
         )
@@ -448,7 +448,9 @@ class ArticleTextProcessing:
             except Exception as e:
                 max_ref_num = 0
             # Make sure search_results is not None before using len()
-            if turn.search_results is not None and max_ref_num > len(turn.search_results):
+            if turn.search_results is not None and max_ref_num > len(
+                turn.search_results
+            ):
                 for i in range(len(turn.search_results), max_ref_num + 1):
                     turn.agent_utterance = turn.agent_utterance.replace(f"[{i}]", "")
             turn.agent_utterance = (
@@ -596,7 +598,7 @@ class ArticleTextProcessing:
         as the value, which includes the 'content' and 'subsections' keys as described above.
         """
         lines = input_string.split("\n")
-        
+
         # More intelligent filtering: preserve lines that are part of figure formatting
         # Keep blank lines that are adjacent to image tags or figure captions
         filtered_lines = []
@@ -608,24 +610,27 @@ class ArticleTextProcessing:
                 # For empty lines, check if they're part of figure formatting
                 # Look at surrounding lines to see if they contain images or figure captions
                 keep_blank_line = False
-                
+
                 # Check previous and next few lines for image or figure content
                 for offset in [-2, -1, 1, 2]:
                     adj_idx = i + offset
                     if 0 <= adj_idx < len(lines):
                         adj_line = lines[adj_idx].strip()
                         # Check for HTML image tags, markdown images, or figure captions
-                        if (adj_line.startswith('<img ') or 
-                            adj_line.startswith('![') or
-                            adj_line.startswith('Figure ') or
-                            adj_line.startswith('图 ') or
-                            'Figure ' in adj_line and ':' in adj_line):
+                        if (
+                            adj_line.startswith("<img ")
+                            or adj_line.startswith("![")
+                            or adj_line.startswith("Figure ")
+                            or adj_line.startswith("图 ")
+                            or "Figure " in adj_line
+                            and ":" in adj_line
+                        ):
                             keep_blank_line = True
                             break
-                
+
                 if keep_blank_line:
                     filtered_lines.append(line)
-        
+
         lines = filtered_lines
         root = {"content": "", "subsections": {}}
         current_path = [(root, -1)]  # (current_dict, level)
@@ -721,7 +726,7 @@ class WebPageHelper:
                 "\uff0c",  # Fullwidth comma
                 "\u3001",  # Ideographic comma
                 " ",
-                "\u200B",  # Zero-width space
+                "\u200b",  # Zero-width space
                 "",
             ],
         )
@@ -847,6 +852,7 @@ def purpose_appropriateness_check(user_input):
         return "Please provide a more detailed explanation on your purpose of requesting this article."
     return "Approved"
 
+
 class QueryLogger:
     """Logger for retrieval and rerank stages, with a clear hierarchical structure.
 
@@ -869,16 +875,17 @@ class QueryLogger:
     pipeline's performance for a specific query. The log file contains one JSON object
     per line (JSONL format).
     """
+
     def __init__(self, output_dir: str):
         self.log_path = os.path.join(output_dir, "rag_retrieve_log.jsonl")
         # self.current_query_log = None # Removed stateful variable
         self.query_counter = 0
-        self._lock = threading.Lock() # Added lock for thread-safe file writing
+        self._lock = threading.Lock()  # Added lock for thread-safe file writing
 
         # Clear existing log file if any
         try:
             with open(self.log_path, "w", encoding="utf-8") as f:
-                pass # Just open and close to clear/create the file
+                pass  # Just open and close to clear/create the file
         except Exception as e:
             logging.error(f"Failed to initialize QueryLogger: {e}")
 
@@ -894,13 +901,15 @@ class QueryLogger:
                                rerank, final).
         """
         try:
-            with self._lock: # Acquire lock before accessing counter and writing file
+            with self._lock:  # Acquire lock before accessing counter and writing file
                 self.query_counter += 1
                 query_id = f"query_{self.query_counter}"
-                query_data["query_id"] = query_id # Add unique ID to the entry
+                query_data["query_id"] = query_id  # Add unique ID to the entry
 
                 with open(self.log_path, "a", encoding="utf-8") as f:
                     json.dump(query_data, f)
                     f.write("\n")
         except Exception as e:
-            logging.error(f"Failed to write log entry for query {query_data.get('queries', 'N/A')}: {e}")
+            logging.error(
+                f"Failed to write log entry for query {query_data.get('queries', 'N/A')}: {e}"
+            )

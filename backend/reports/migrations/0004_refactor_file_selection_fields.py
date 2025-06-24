@@ -4,23 +4,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('reports', '0003_add_old_outline_field'),
+        ("reports", "0003_add_old_outline_field"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='report',
-            name='selected_file_ids',
+            model_name="report",
+            name="selected_file_ids",
         ),
         migrations.RemoveField(
-            model_name='report',
-            name='selected_url_ids',
+            model_name="report",
+            name="selected_url_ids",
         ),
         migrations.AddField(
-            model_name='report',
-            name='selected_files_paths',
-            field=models.JSONField(blank=True, default=list, help_text='List of file folder paths from knowledge base'),
+            model_name="report",
+            name="selected_files_paths",
+            field=models.JSONField(
+                blank=True,
+                default=list,
+                help_text="List of file folder paths from knowledge base",
+            ),
         ),
     ]

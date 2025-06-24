@@ -12,13 +12,15 @@ import torch
 from ...interface import Information, InformationTable, Article, ArticleSectionNode
 from ...utils import ArticleTextProcessing, FileIOHelper
 
+
 def get_device():
-    """Detect the best available device: 'cuda', 'mps', or 'cpu'. """
+    """Detect the best available device: 'cuda', 'mps', or 'cpu'."""
     if torch.cuda.is_available():
         return "cuda"
     # if torch.backends.mps.is_available() and torch.backends.mps.is_built():
     #     return "mps"
     return "cpu"
+
 
 class DialogueTurn:
     def __init__(
@@ -47,7 +49,7 @@ class DialogueTurn:
         search_results_data = []
         if self.search_results is not None:
             search_results_data = [data.to_dict() for data in self.search_results]
-            
+
         return OrderedDict(
             {
                 "agent_utterance": self.agent_utterance,
@@ -63,7 +65,8 @@ class StormInformationTable(InformationTable):
     Base class for information tables in Storm. Provides core functionality for
     storing and retrieving information.
     """
-    ENCODER_MODEL_NAME = "all-mpnet-base-v2" #"Alibaba-NLP/gte-multilingual-base"
+
+    ENCODER_MODEL_NAME = "all-mpnet-base-v2"  # "Alibaba-NLP/gte-multilingual-base"
 
     def __init__(self, conversations=None):
         super().__init__()
@@ -73,7 +76,7 @@ class StormInformationTable(InformationTable):
             if self.conversations
             else {}
         )
-        
+
         # Initialize model-related attributes
         self.encoder = None
         self._predict_lock = threading.Lock()
@@ -92,12 +95,12 @@ class StormInformationTable(InformationTable):
                     self.encoder = SentenceTransformer(
                         self.ENCODER_MODEL_NAME,
                         trust_remote_code=True,
-                        device=self._device
+                        device=self._device,
                     )
 
     @staticmethod
     def construct_url_to_info(
-        conversations: List[Tuple[str, List[DialogueTurn]]]
+        conversations: List[Tuple[str, List[DialogueTurn]]],
     ) -> Dict[str, Information]:
         url_to_info = {}
 
@@ -106,7 +109,7 @@ class StormInformationTable(InformationTable):
                 # Skip if search_results is None
                 if turn.search_results is None:
                     continue
-                    
+
                 for storm_info in turn.search_results:
                     if storm_info.url in url_to_info:
                         url_to_info[storm_info.url].snippets.extend(storm_info.snippets)
@@ -118,7 +121,7 @@ class StormInformationTable(InformationTable):
 
     @staticmethod
     def construct_log_dict(
-        conversations: List[Tuple[str, List[DialogueTurn]]]
+        conversations: List[Tuple[str, List[DialogueTurn]]],
     ) -> List[Dict[str, Union[str, Any]]]:
         conversation_log = []
         for persona, conv in conversations:
@@ -148,21 +151,21 @@ class StormInformationTable(InformationTable):
         Prepare the table for retrieval by encoding snippets.
         """
         self._initialize_encoder()
-        
+
         self.collected_urls = []
         self.collected_snippets = []
-        
+
         for url, information in self.url_to_info.items():
             for snippet in information.snippets:
                 self.collected_urls.append(url)
                 self.collected_snippets.append(snippet)
-                
+
         if self.collected_snippets:
             self.encoded_snippets = self.encoder.encode(
                 self.collected_snippets,
                 # batch_size=2, # for larger models
                 convert_to_tensor=True,
-                show_progress_bar=False
+                show_progress_bar=False,
             )
 
     def retrieve_information(
@@ -173,25 +176,24 @@ class StormInformationTable(InformationTable):
         """
         if not isinstance(queries, list):
             queries = [queries]
-            
+
         if not self.collected_snippets:
             return []
-            
+
         self._initialize_encoder()
-        
+
         selected_urls = []
         selected_snippets = []
-        
+
         for query in queries:
             encoded_query = self.encoder.encode(query, convert_to_tensor=True)
             encoded_query = encoded_query.to(self.encoded_snippets.device)
-            
+
             # Calculate cosine similarities
             sim = cosine_similarity(
-                [encoded_query.cpu().numpy()], 
-                self.encoded_snippets.cpu().numpy()
+                [encoded_query.cpu().numpy()], self.encoded_snippets.cpu().numpy()
             )[0]
-            
+
             sorted_indices = np.argsort(sim)
             for i in sorted_indices[-search_top_k:][::-1]:
                 selected_urls.append(self.collected_urls[i])
@@ -491,7 +493,7 @@ class StormArticle(Article):
         Get first level section names
         """
         return [i.section_name for i in self.root.children]
-        
+
     def get_all_section_levels(self) -> List[str]:
         """
         Get all section names that should have content generated,
@@ -501,14 +503,14 @@ class StormArticle(Article):
         2. All lowest level headings in each branch
         """
         result = []
-        
+
         def traverse_tree(node, level):
             # Skip the root node
             if node == self.root:
                 for child in node.children:
                     traverse_tree(child, 1)
                 return
-                
+
             # For first level headings (level 1)
             if level == 1:
                 # If a first-level heading has no children, include it
@@ -527,7 +529,7 @@ class StormArticle(Article):
                 else:
                     for child in node.children:
                         traverse_tree(child, level + 1)
-                        
+
         traverse_tree(self.root, 0)
         return result
 
@@ -559,19 +561,19 @@ class StormArticle(Article):
             adjust_level = lines[0].startswith("#") and lines[0].replace(
                 "#", ""
             ).strip().lower() == topic.lower().replace("_", " ")
-            
+
             # The first line might be the title, so we skip it if it matches the topic
             if adjust_level:
                 lines = lines[1:]
-                
+
             node_stack = [(0, instance.root)]  # Stack to keep track of (level, node)
 
             for line in lines:
                 level = line.count("#") - adjust_level
                 section_name = line.replace("#", "").strip()
-                
+
                 # Ensure no periods at the end of section names when creating the article structure
-                section_name = section_name.rstrip('.')
+                section_name = section_name.rstrip(".")
 
                 # Skip if section name is the same as topic
                 if section_name.lower() == topic.lower():
@@ -588,7 +590,7 @@ class StormArticle(Article):
 
     def dump_outline_to_file(self, file_path):
         outline = self.get_outline_as_list(add_hashtags=True, include_root=False)
-        
+
         # Check if we should remove the first element (if it appears to be a title)
         if outline and outline[0].startswith("# ") and len(outline) > 1:
             # Check if there are other first-level headings (starting with single #)
@@ -597,25 +599,28 @@ class StormArticle(Article):
                 if outline[i].startswith("# "):
                     has_other_first_level = True
                     break
-            
+
             # If this is the only first-level heading, it might be a title - remove it
             if not has_other_first_level:
                 outline = outline[1:]  # Remove the first item
-        
+
         # If the file name is storm_gen_outline.txt (for revised outline),
         # we need to ensure the last line ends with a period (to check for truncation)
         if file_path.endswith("storm_gen_outline.txt") and outline:
             # Check if the last line ends with a period
-            if not outline[-1].strip().endswith('.'):
+            if not outline[-1].strip().endswith("."):
                 # If the last line doesn't end with a period, it might be truncated - remove it
                 outline = outline[:-1]
-            
+
             # Add periods to each heading for WritePageOutlineFromConv to check for completeness
-            outline_with_periods = [f"{line}." if not line.strip().endswith('.') else line for line in outline]
-            
+            outline_with_periods = [
+                f"{line}." if not line.strip().endswith(".") else line
+                for line in outline
+            ]
+
             # Now remove the periods from the end of each heading for the final output
-            final_outline = [line.rstrip('.') for line in outline_with_periods]
-            
+            final_outline = [line.rstrip(".") for line in outline_with_periods]
+
             # Write the final outline without periods
             FileIOHelper.write_str("\n".join(final_outline), file_path)
         else:
@@ -641,27 +646,29 @@ class StormArticle(Article):
             info_entry = references["url_to_info"][url]
             if isinstance(info_entry, dict):
                 references["url_to_info"][url] = Information.from_dict(info_entry)
-             
+
         article.reference = references
         return article
 
     @classmethod
-    def from_article_str(cls, topic_name: str, article_str: str, url_to_info: dict = None):
+    def from_article_str(
+        cls, topic_name: str, article_str: str, url_to_info: dict = None
+    ):
         """
         Create a StormArticle instance from article text and optional URL info.
-        
+
         Args:
             topic_name (str): The topic name/title for the article
             article_str (str): The article content as a string
             url_to_info (dict, optional): URL to information dictionary
-            
+
         Returns:
             StormArticle: A new article instance
         """
         article_dict = ArticleTextProcessing.parse_article_into_dict(article_str)
         article = cls(topic_name=topic_name)
         article.insert_or_create_section(article_dict=article_dict)
-        
+
         # Handle references if provided
         if url_to_info:
             references = {"url_to_info": {}}
@@ -672,7 +679,7 @@ class StormArticle(Article):
                     # If already an Information object, use it directly
                     references["url_to_info"][url] = info_dict
             article.reference = references
-            
+
         return article
 
     def post_processing(self, skip_reorder_reference=False):
