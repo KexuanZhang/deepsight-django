@@ -100,8 +100,6 @@ CSRF_TRUSTED_ORIGINS = [
 
 MIDDLEWARE.insert(0, "corsheaders.middleware.CorsMiddleware")
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
-
 ROOT_URLCONF = 'backend.urls'
 
 AUTH_USER_MODEL = 'users.User'
