@@ -2,4 +2,5 @@ CLAUDE.md
 .cursor/
 .claude/
 .vscode/
+*.DS_Store
 secrets.toml
