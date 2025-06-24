@@ -238,7 +238,7 @@ def rate_outline(client, old_outline: str, conv_history: Optional[str] = None, t
         for attempt in range(max_retries):
             try:
                 response = client.chat.completions.create(
-                    model="gpt-4.1-2025-04-14",
+                    model="gpt-4.1",
                     messages=[{"role": "user", "content": prompt}],
                     response_format={"type": "json_object"},
                     temperature=0,
@@ -375,7 +375,7 @@ def rate_l2_headings(client, l1_section: str, l1_heading: str, conv_history: Opt
         for attempt in range(max_retries):
             try:
                 response = client.chat.completions.create(
-                    model="gpt-4.1-2025-04-14",
+                    model="gpt-4.1",
                     messages=[{"role": "user", "content": prompt}],
                     response_format={"type": "json_object"},
                     temperature=0,

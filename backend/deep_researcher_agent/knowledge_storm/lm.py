@@ -6,56 +6,14 @@ import os
 import random
 import requests
 import threading
-from typing import Optional, Literal, Any, Union
+from typing import Optional, Literal, Any
 import ujson
 from pathlib import Path
 
-# Define error types for backoff handling
-ERRORS = (requests.RequestException, Exception)
 
-def backoff_hdlr(details):
-    """Backoff handler for retrying requests"""
-    print(f"Backing off {details['wait']:0.1f} seconds after {details['tries']} tries")
-
-def giveup_hdlr(details):
-    """Give up handler when retries are exhausted"""
-    print(f"Giving up after {details['tries']} tries")
-
-def openai_to_hf(**kwargs):
-    """Convert OpenAI-style parameters to HuggingFace format"""
-    # Basic conversion - may need to be enhanced based on actual usage
-    hf_params = {}
-    if 'temperature' in kwargs:
-        hf_params['temperature'] = kwargs['temperature']
-    if 'max_tokens' in kwargs:
-        hf_params['max_new_tokens'] = kwargs['max_tokens']
-    if 'top_p' in kwargs:
-        hf_params['top_p'] = kwargs['top_p']
-    if 'stop' in kwargs:
-        hf_params['stop_sequences'] = kwargs['stop']
-    return hf_params
-
-def send_hftgi_request_v01_wrapped(*args, **kwargs):
-    """Wrapper for HuggingFace TGI requests - simplified implementation"""
-    # This is a simplified implementation that may need to be enhanced
-    # based on the actual usage in the codebase
-    import requests
-    
-    if len(args) > 0:
-        url = args[0]
-    else:
-        url = kwargs.get('url', 'http://localhost:8080')
-    
-    data = kwargs.get('data', {})
-    headers = kwargs.get('headers', {'Content-Type': 'application/json'})
-    
-    try:
-        response = requests.post(url, json=data, headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        print(f"Error in HF TGI request: {e}")
-        return None
+from dsp import ERRORS, backoff_hdlr, giveup_hdlr
+from dsp.modules.hf import openai_to_hf
+from dsp.modules.hf_client import send_hftgi_request_v01_wrapped
 from openai import OpenAI, AzureOpenAI
 from transformers import AutoTokenizer
 
@@ -239,7 +197,7 @@ class LitellmModel(LM):
 
     def __init__(
         self,
-        model: str = "openai/gpt-4o-mini",
+        model: str = "openai/gpt-4.1-mini",
         api_key: Optional[str] = None,
         model_type: Literal["chat", "text"] = "chat",
         **kwargs,
@@ -315,12 +273,12 @@ class LitellmModel(LM):
 # They remain in this file for backward compatibility but will no longer be maintained.
 
 
-class OpenAIModel(dspy.LM):
+class OpenAIModel(dspy.OpenAI):
     """A wrapper class for dspy.OpenAI."""
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-4.1-mini",
         api_key: Optional[str] = None,
         model_type: Literal["chat", "text"] = None,
         **kwargs,
@@ -405,7 +363,7 @@ class OpenAIModel(dspy.LM):
         return completions
 
 
-class DeepSeekModel(dspy.LM):
+class DeepSeekModel(dspy.OpenAI):
     """A wrapper class for DeepSeek API, compatible with dspy.OpenAI."""
 
     def __init__(
@@ -649,7 +607,7 @@ class AzureOpenAIModel(dspy.LM):
         return completions
 
 
-class GroqModel(dspy.LM):
+class GroqModel(dspy.OpenAI):
     """A wrapper class for Groq API (https://console.groq.com/), compatible with dspy.OpenAI."""
 
     def __init__(
@@ -763,7 +721,7 @@ class GroqModel(dspy.LM):
         return completions
 
 
-class ClaudeModel(dspy.LM):
+class ClaudeModel(dspy.dsp.modules.lm.LM):
     """Copied from dspy/dsp/modules/anthropic.py with the addition of tracking token usage."""
 
     def __init__(
@@ -899,7 +857,7 @@ class ClaudeModel(dspy.LM):
         return completions
 
 
-class VLLMClient(dspy.LM):
+class VLLMClient(dspy.dsp.LM):
     """A client compatible with vLLM HTTP server.
 
     vLLM HTTP server is designed to be compatible with the OpenAI API. Use OpenAI client to interact with the server.
@@ -989,7 +947,7 @@ class VLLMClient(dspy.LM):
         return completions
 
 
-class OllamaClient(dspy.LM):
+class OllamaClient(dspy.OllamaLocal):
     """A wrapper class for dspy.OllamaClient."""
 
     def __init__(self, model, port, url="http://localhost", **kwargs):
@@ -1002,7 +960,7 @@ class OllamaClient(dspy.LM):
         self.kwargs = {**self.kwargs, **kwargs}
 
 
-class TGIClient(dspy.LM):
+class TGIClient(dspy.HFClientTGI):
     def __init__(self, model, port, url, http_request_kwargs=None, **kwargs):
         super().__init__(
             model=model,
@@ -1064,7 +1022,7 @@ class TGIClient(dspy.LM):
             raise Exception("Received invalid JSON response from server")
 
 
-class TogetherClient(dspy.LM):
+class TogetherClient(dspy.HFModel):
     """A wrapper class for dspy.Together."""
 
     def __init__(
@@ -1078,7 +1036,7 @@ class TogetherClient(dspy.LM):
     ):
         """Copied from dspy/dsp/modules/hf_client.py with the support of applying tokenizer chat template."""
 
-        super().__init__(model=model, **kwargs)
+        super().__init__(model=model, is_client=True)
         self.session = requests.Session()
         self.api_key = api_key = (
             os.environ.get("TOGETHER_API_KEY") if api_key is None else api_key
@@ -1213,7 +1171,7 @@ class TogetherClient(dspy.LM):
             return response
 
 
-class GoogleModel(dspy.LM):
+class GoogleModel(dspy.dsp.modules.lm.LM):
     """A wrapper class for Google Gemini API."""
 
     def __init__(
@@ -1223,7 +1181,7 @@ class GoogleModel(dspy.LM):
         **kwargs,
     ):
         """You can use `genai.list_models()` to get a list of available models."""
-        super().__init__(model=model, **kwargs)
+        super().__init__(model)
         try:
             import google.generativeai as genai
         except ImportError as err:

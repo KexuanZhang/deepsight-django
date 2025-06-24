@@ -69,7 +69,7 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('job_type', models.CharField(help_text='E.g. ocr, transcribe, pdf2md…', max_length=50)),
                 ('status', models.CharField(choices=[('queued', 'Queued'), ('running', 'Running'), ('finished', 'Finished'), ('failed', 'Failed')], default='queued', max_length=20)),
-                ('result_file', models.FileField(blank=True, help_text='Generated .md or other output file', null=True, upload_to=notebooks.models.user_processing_results_path)),
+                ('result_file', models.FileField(blank=True, help_text='Generated .md or other output file', null=True, upload_to=notebooks.models.user_knowledge_base_path)),
                 ('error_message', models.TextField(blank=True, help_text='Error details if processing failed')),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('completed_at', models.DateTimeField(blank=True, null=True)),
@@ -95,7 +95,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('content_md', models.TextField(blank=True, help_text='Markdown extracted from a webpage, if applicable')),
-                ('downloaded_file', models.FileField(blank=True, help_text='Media file downloaded from the URL, if any', null=True, upload_to=notebooks.models.user_url_processing_path)),
+                ('downloaded_file', models.FileField(blank=True, help_text='Media file downloaded from the URL, if any', null=True, upload_to=notebooks.models.user_knowledge_base_path)),
                 ('error_message', models.TextField(blank=True, help_text='Error details if crawl or download failed')),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('source', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='url_result', to='notebooks.source')),

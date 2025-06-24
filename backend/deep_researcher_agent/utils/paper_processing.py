@@ -11,6 +11,7 @@ if not logging.getLogger().hasHandlers():
 def parse_paper_title(paper_content: str) -> str:
     """
     Extracts and cleans the title from paper content.
+    Priority: markdown headers > first substantial line
     
     Args:
         paper_content (str): The paper content as a string
@@ -23,8 +24,8 @@ def parse_paper_title(paper_content: str) -> str:
         return None
         
     lines = paper_content.strip().split('\n')
-    potential_title = None
     
+    # First pass: Look for markdown headers (prioritize these)
     for line in lines:
         stripped_line = line.strip()
         if not stripped_line:  # Skip empty lines
@@ -32,24 +33,54 @@ def parse_paper_title(paper_content: str) -> str:
         if stripped_line.startswith("![]"):  # Skip image lines
             continue
             
-        # If it's a markdown header, strip the '#' and spaces
+        # Check if this is a markdown header
         if stripped_line.startswith("#"):
+            # Extract content after # symbols
             potential_title = stripped_line.lstrip("#").strip()
-        else:  # Otherwise, take the line as is
-            potential_title = stripped_line
-            
-        if potential_title:  # If we found a non-empty potential title
-            break  # Stop at the first valid candidate
+            if potential_title:
+                cleaned_title = _clean_title_text(potential_title)
+                if cleaned_title:
+                    logging.info(f"Extracted title from markdown header: '{cleaned_title}'")
+                    return cleaned_title
     
-    if not potential_title:
-        logging.info("Could not parse a valid paper title from the provided content.")
+    # Second pass: Fallback to first substantial line if no headers found
+    for line in lines:
+        stripped_line = line.strip()
+        if not stripped_line or stripped_line.startswith("![]"):
+            continue
+            
+        # Take first substantial line as fallback (avoid very short lines)
+        if len(stripped_line) > 10:
+            cleaned_title = _clean_title_text(stripped_line)
+            if cleaned_title:
+                logging.info(f"Extracted title from first substantial line: '{cleaned_title}'")
+                return cleaned_title
+    
+    logging.info("Could not parse a valid paper title from the provided content.")
+    return None
+
+def _clean_title_text(text: str) -> str:
+    """
+    Clean title text by removing HTML tags and normalizing whitespace.
+    
+    Args:
+        text (str): Raw title text that may contain HTML tags
+        
+    Returns:
+        str: Cleaned title text, or None if no valid text remains
+    """
+    if not text:
         return None
         
-    # Clean the title: remove HTML-like tags and spans
-    # Remove <span> tags and similar HTML elements
-    clean_title = re.sub(r'<span[^>]*?>|</_?span>|<_span>', '', potential_title)
+    # First, extract text content from common HTML tags before removing them
+    # Handle <strong>, <em>, <b>, <i> tags by keeping their content
+    clean_title = re.sub(r'<(strong|em|b|i)>(.*?)</\1>', r'\2', text)
     
-    # Remove any remaining HTML tags
+    # Handle span tags that may contain useful text
+    # Extract content from spans but remove the span tags themselves
+    clean_title = re.sub(r'<span[^>]*?>(.*?)</span>', r'\1', clean_title)
+    
+    # Remove any remaining HTML tags (including self-closing ones and those without content)
     clean_title = re.sub(r'<[^>]*?>', '', clean_title)
     
     # Normalize whitespace (collapse multiple spaces into one)

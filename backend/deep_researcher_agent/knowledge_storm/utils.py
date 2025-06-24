@@ -768,7 +768,7 @@ class WebPageHelper:
 
 def user_input_appropriateness_check(user_input):
     my_openai_model = LitellmModel(
-        model="azure/gpt-4o-mini",
+        model="gpt-4.1-mini",
         max_tokens=10,
         temperature=0.0,
         top_p=0.9,
@@ -789,16 +789,16 @@ If the topic is appropriate for the engine to process, output "Yes."; otherwise,
 User input: {user_input}"""
     reject_reason_info = {
         1: "Sorry, this input may be related to sensitive topics. Please try another topic. "
-        "(Our input filtering uses OpenAI GPT-4o-mini, which may result in false positives. "
+        "(Our input filtering uses OpenAI GPT-4.1-mini, which may result in false positives. "
         "We apologize for any inconvenience.)",
         2: "Sorry, the current engine can only support English. Please try another topic. "
-        "(Our input filtering uses OpenAI GPT-4o-mini, which may result in false positives. "
+        "(Our input filtering uses OpenAI GPT-4.1-mini, which may result in false positives. "
         "We apologize for any inconvenience.)",
         3: "Sorry, the current engine cannot process topics related to personal experience. Please try another topic. "
-        "(Our input filtering uses OpenAI GPT-4o-mini, which may result in false positives. "
+        "(Our input filtering uses OpenAI GPT-4.1-mini, which may result in false positives. "
         "We apologize for any inconvenience.)",
         4: "Sorry, STORM cannot follow arbitrary instruction. Please input a topic you want to learn about. "
-        "(Our input filtering uses OpenAI GPT-4o-mini, which may result in false positives. "
+        "(Our input filtering uses OpenAI GPT-4.1-mini, which may result in false positives. "
         "We apologize for any inconvenience.)",
     }
 
@@ -823,7 +823,7 @@ User input: {user_input}"""
 
 def purpose_appropriateness_check(user_input):
     my_openai_model = LitellmModel(
-        model="azure/gpt-4o-mini",
+        model="gpt-4.1-mini",
         max_tokens=10,
         temperature=0.0,
         top_p=0.9,

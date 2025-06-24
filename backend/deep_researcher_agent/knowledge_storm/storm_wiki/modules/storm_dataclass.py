@@ -16,8 +16,8 @@ def get_device():
     """Detect the best available device: 'cuda', 'mps', or 'cpu'. """
     if torch.cuda.is_available():
         return "cuda"
-    if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-        return "mps"
+    # if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+    #     return "mps"
     return "cpu"
 
 class DialogueTurn:

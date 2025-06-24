@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class StormOutlineGenerationModule(OutlineGenerationModule):
-    def __init__(self, outline_gen_lm: dspy.LM):
+    def __init__(self, outline_gen_lm: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         super().__init__()
         self.outline_gen_lm = outline_gen_lm
         self.write_outline = WriteOutline(engine=self.outline_gen_lm)
@@ -48,7 +48,7 @@ class StormOutlineGenerationModule(OutlineGenerationModule):
 
 
 class WriteOutline(dspy.Module):
-    def __init__(self, engine: dspy.LM):
+    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
         super().__init__()
         self.draft_page_outline = dspy.Predict(WritePageOutline)
         self.write_page_outline = dspy.Predict(WritePageOutlineFromConv)
@@ -115,9 +115,6 @@ class WriteOutline(dspy.Module):
                 
                 # Rate and reorder the initial outline if rater is available
                 if self.outline_rater:
-                    # Debug: log the outline before rating
-                    logger.info(f"Original outline before rating (first 500 chars): {old_outline[:500] if old_outline else 'None'}")
-                    
                     # Normalize heading levels: ensure L1 headings start with single #
                     normalized_outline = self._normalize_heading_levels(old_outline)
                     
