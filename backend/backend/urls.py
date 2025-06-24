@@ -34,9 +34,10 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/users/', include('users.urls')),
-    path('api/reports/', include('reports.urls')),
-    path('api/v1/', include('notebooks.urls')),
+    path('api/v1/users/', include('users.urls')),
+    path('api/v1/reports/', include('reports.urls')),
+    path('api/v1/notebooks/', include('notebooks.urls')),
+    path('api/v1/podcasts/', include('podcast.urls')),
 
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     # ReDoc UI (alternative):
