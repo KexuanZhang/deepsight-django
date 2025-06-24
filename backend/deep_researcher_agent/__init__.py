@@ -22,7 +22,7 @@ from .deep_report_generator import (
     ModelProvider,
     RetrieverType,
     TimeRange,
-    generate_report_from_config
+    generate_report_from_config,
 )
 
 # Version info
@@ -31,23 +31,26 @@ __author__ = "DeepSight Team"
 
 # Public API
 __all__ = [
-    'DeepReportGenerator',
-    'ReportGenerationConfig', 
-    'ReportGenerationResult',
-    'ModelProvider',
-    'RetrieverType',
-    'TimeRange',
-    'generate_report_from_config'
+    "DeepReportGenerator",
+    "ReportGenerationConfig",
+    "ReportGenerationResult",
+    "ModelProvider",
+    "RetrieverType",
+    "TimeRange",
+    "generate_report_from_config",
 ]
 
+
 # Package-level configuration
-def configure_logging(level='INFO'):
+def configure_logging(level="INFO"):
     """Configure package-wide logging."""
     import logging
+
     logging.basicConfig(
         level=getattr(logging, level.upper()),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+
 
 # Initialize package
 configure_logging()

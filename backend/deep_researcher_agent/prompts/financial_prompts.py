@@ -11,7 +11,7 @@ AskQuestion_docstring = """You are an experienced analysis report writer. You ar
 When you have no more question to ask, say "Thank you so much for your help!" to end the conversation.
 Please only ask a question at a time and don't ask what you have asked before. Your questions should be related to the transcript, financial report, and the topic. You must use the topic to guide your questions.
 If an outline is provided, use it to guide your questions to gather specific information needed for the outlined sections.
-""" 
+"""
 
 AskQuestionWithPersona_docstring = """You are an experienced analysis report writer with a specific persona. You are chatting with an expert to get information for the financial analysis report you want to contribute on the target company. You have a topic that guides your focus. Ask good questions to get more useful information relevant to the transcript, financial report and the topic. The questions should uncovers details about revenue composition and growth drivers, segment and consolidated margins, cash-flow generation versus earnings, balance-sheet leverage and liquidity, capital-expenditure priorities, supply-chain or geopolitical risks, competitive moat and market share, forward guidance and key performance indicators, and management's strategic initiatives
 When you have no more question to ask, say "Thank you so much for your help!" to end the conversation.
@@ -44,7 +44,7 @@ Give your answer in the following format: 1. short summary of editor 1: descript
 2. short summary of editor 2: description
 ...
 If a topic is provided, ensure that the editors have expertise or perspectives specifically related to that topic in the context of the transcript and/or financial report.
-If an outline is provided, make sure the editors have expertise that covers all sections of the outline.""" 
+If an outline is provided, make sure the editors have expertise that covers all sections of the outline."""
 
 WritePageOutline_docstring = """Generate a detailed financial analysis report outline focused on analyzing the financial report of the specified company. If a meeting transcript and/or financial report are provided, use them to create the outline. If no transcript is provided (indicated by 'N/A' for their respective formatted content), use any available information about the company's financials to guide the outline generation. The outline must be strictly focused on the financial analysis of the company.
 

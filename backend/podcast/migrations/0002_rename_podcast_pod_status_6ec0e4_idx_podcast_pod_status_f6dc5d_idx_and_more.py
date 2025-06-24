@@ -4,20 +4,19 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('podcast', '0001_initial'),
+        ("podcast", "0001_initial"),
     ]
 
     operations = [
         migrations.RenameIndex(
-            model_name='podcastjob',
-            new_name='podcast_pod_status_f6dc5d_idx',
-            old_name='podcast_pod_status_6ec0e4_idx',
+            model_name="podcastjob",
+            new_name="podcast_pod_status_f6dc5d_idx",
+            old_name="podcast_pod_status_6ec0e4_idx",
         ),
         migrations.RenameIndex(
-            model_name='podcastjob',
-            new_name='podcast_pod_user_id_c3bdfe_idx',
-            old_name='podcast_pod_user_id_d04c5d_idx',
+            model_name="podcastjob",
+            new_name="podcast_pod_user_id_c3bdfe_idx",
+            old_name="podcast_pod_user_id_d04c5d_idx",
         ),
     ]
