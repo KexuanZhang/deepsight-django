@@ -35,12 +35,12 @@ urlpatterns = [
     ),
 
     path(
-        'notebooks/<int:notebook_id>/files/md-batch-contents/',
+        '<int:notebook_id>/files/md-batch-contents/',
         MarkdownBatchContentView.as_view(),
         name='file-md-batch-contents'
     ),
 
-    path('notebooks/chat/', RAGChatFromKBView.as_view(), name='chat-rag'),
+    path('chat/', RAGChatFromKBView.as_view(), name='chat-rag'),
 
     # 2) upload & parse a new file
     path(

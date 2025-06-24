@@ -27,7 +27,6 @@ pydantic
 pydantic_settings
 pytesseract
 python-dotenv
-python-magic
 pytz
 qdrant_client
 rank_bm25
@@ -47,4 +46,5 @@ uvicorn
 whisper
 yt_dlp
 celery
-aiofiles
+langchain_community
+faiss-cpu

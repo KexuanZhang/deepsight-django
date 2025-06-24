@@ -378,10 +378,35 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     setIsTyping(true);
     setError(null);
 
-    const selectedFileIds = selectedFiles.map(file => file.file_id);
-    console.log("selected files")
-    console.log(selectedFiles)
-    console.log(selectedFileIds)
+    // Get the LATEST selected files directly from SourcesList ref to ensure we have current data
+    const currentSelectedFiles = sourcesListRef?.current?.getSelectedFiles() || [];
+
+    // Debug: Log selected files structure
+    console.log("=== CHAT DEBUG ===");
+    console.log("State selectedFiles:", selectedFiles.length);
+    console.log("Current selectedFiles from ref:", currentSelectedFiles.length);
+    console.log("currentSelectedFiles structure:", currentSelectedFiles);
+    
+    // Use current files directly from the ref to ensure we have the latest selection
+    const readyFiles = currentSelectedFiles;
+    
+    // Log each file for debugging
+    readyFiles.forEach(file => {
+      console.log(`Ready file "${file.title || file.name}":`, {
+        file_id: file.file_id,
+        file: file.file,
+        parsing_status: file.parsing_status,
+        hasValidId: !!(file.file_id || file.file)
+      });
+    });
+    
+    // Extract file_id which is the knowledge base item ID
+    // Handle both file_id and file properties (as per SourcesList logic)
+    const selectedFileIds = readyFiles.map(file => file.file_id || file.file).filter(id => id);
+    
+    console.log("Filtered readyFiles:", readyFiles);
+    console.log("Final selectedFileIds (knowledge base item IDs):", selectedFileIds);
+    console.log("=== END CHAT DEBUG ===");
 
     try {
       const response = await fetch("/api/v1/notebooks/chat/", {
@@ -396,7 +421,10 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         })
       });
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
 
       const data = await response.json();
 

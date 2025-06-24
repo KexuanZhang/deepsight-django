@@ -140,8 +140,14 @@ class RAGChatFromKBView(StandardAPIView, NotebookPermissionMixin):
         file_ids = request.data.get("file_ids", [])
         question = request.data.get("question")
 
-        if not file_ids or not question:
-            return Response({"error": "file_ids and question are required"}, status=400)
+        if not question:
+            return Response({"error": "question is required"}, status=400)
+
+        # If no file_ids provided, return a helpful message about requiring files for RAG
+        if not file_ids:
+            return Response({
+                "answer": "I need access to your documents to provide specific insights. Please select some files from the Sources panel and try again. I can help you analyze PDFs, papers, transcripts, and other documents once they're selected."
+            })
 
         # Filter user's KB items
         kb_items = KnowledgeBaseItem.objects.filter(
@@ -151,16 +157,24 @@ class RAGChatFromKBView(StandardAPIView, NotebookPermissionMixin):
         )
 
         if not kb_items.exists():
-            return Response({"error": "No valid files found"}, status=404)
+            return Response({"error": "No valid files found. Please make sure the selected files have completed parsing."}, status=404)
 
         # Read file contents
         docs = []
         for item in kb_items:
-            with item.file.open("r") as f:
-                content = f.read()
-                docs.append({
-                    "content": content
-                })
+            try:
+                with item.file.open("r") as f:
+                    content = f.read()
+                    docs.append({
+                        "content": content,
+                        "title": item.title or "Document"
+                    })
+            except Exception as e:
+                # Skip files that can't be read but continue with others
+                continue
+
+        if not docs:
+            return Response({"error": "Could not read any of the selected files. Please check if they have completed parsing."}, status=400)
 
         # Initialize and run RAG chatbot
         bot = RAGChatbot(docs)
