@@ -88,6 +88,17 @@ def process_report_generation(report_id: int) -> Dict[str, Any]:
             year_month=year_month,
             report_id=str(report.id)
         )
+        
+        # Clean the output directory to prevent duplicate files
+        if job_output_dir.exists():
+            try:
+                import shutil
+                # Remove existing directory and recreate it to ensure clean state
+                shutil.rmtree(job_output_dir)
+                logger.info(f"Cleaned existing output directory: {job_output_dir}")
+            except Exception as e:
+                logger.warning(f"Could not clean output directory {job_output_dir}: {e}")
+        
         job_output_dir.mkdir(parents=True, exist_ok=True)
         
         # Process the request using direct import (no subprocess)
@@ -315,6 +326,9 @@ def create_report_config_direct(report: Report, input_data: Dict[str, Any], outp
             search_depth=report.search_depth,
             old_outline_path=old_outline_path,
             
+            # Image path fixing
+            selected_files_paths=report.selected_files_paths,
+            
             # CSV processing
             csv_session_code=report.csv_session_code,
             csv_date_filter=report.csv_date_filter,
@@ -473,6 +487,11 @@ def store_generated_files(report: Report, result, output_dir: Path) -> List[str]
                         with open(source_path, 'rb') as f:
                             file_content = f.read()
                         
+                        # Note: Image path fixing is now done directly in storm_gen_article.md and storm_gen_article_polished.md
+                        # during generation, so we no longer need to apply it during file storage
+                        if source_path.name.endswith('.md') and ("polished" in source_path.name.lower() or "report" in source_path.name.lower()):
+                            logger.info(f"File {source_path.name} already has image paths fixed during generation")
+                        
                         # Create a ContentFile
                         django_file = ContentFile(file_content)
                         
@@ -481,6 +500,15 @@ def store_generated_files(report: Report, result, output_dir: Path) -> List[str]
                         
                         # Save using the report's file field (if this is the main report)
                         if "polished" in filename.lower() or "report" in filename.lower():
+                            # Clear existing file to prevent Django from adding random suffixes
+                            if report.main_report_file:
+                                try:
+                                    # Delete the existing file if it exists
+                                    report.main_report_file.delete(save=False)
+                                except Exception as e:
+                                    logger.warning(f"Could not delete existing main report file: {e}")
+                            
+                            # Save the new file with original filename
                             report.main_report_file.save(filename, django_file, save=True)
                             stored_files.append(report.main_report_file.name)
                         else:

@@ -374,7 +374,20 @@ class STORMWikiRunner(Engine):
         article_content = draft_article.to_string()
         article_content = preserve_figure_formatting(article_content)
         
-        # Save with preserved formatting
+        # Apply image path fixing if we have selected_files_paths
+        if hasattr(self, 'selected_files_paths') and self.selected_files_paths:
+            try:
+                from deep_researcher_agent.utils.post_processing import fix_image_paths_advanced
+                article_content = fix_image_paths_advanced(
+                    article_content, 
+                    self.selected_files_paths,
+                    report_output_dir=self.article_output_dir
+                )
+                logging.info("Applied image path fixing to storm_gen_article.md")
+            except Exception as e:
+                logging.warning(f"Failed to fix image paths in storm_gen_article.md: {e}")
+        
+        # Save with preserved formatting and fixed image paths
         with open(os.path.join(self.article_output_dir, "storm_gen_article.md"), 'w', encoding='utf-8') as f:
             f.write(article_content)
             
@@ -418,6 +431,19 @@ class STORMWikiRunner(Engine):
         hyperlinked_content_str = preserve_figure_formatting(hyperlinked_content_str)
         # Apply a second time to catch any edge cases
         hyperlinked_content_str = preserve_figure_formatting(hyperlinked_content_str)
+        
+        # Apply image path fixing if we have selected_files_paths
+        if hasattr(self, 'selected_files_paths') and self.selected_files_paths:
+            try:
+                from deep_researcher_agent.utils.post_processing import fix_image_paths_advanced
+                hyperlinked_content_str = fix_image_paths_advanced(
+                    hyperlinked_content_str, 
+                    self.selected_files_paths,
+                    report_output_dir=self.article_output_dir
+                )
+                logging.info("Applied image path fixing to storm_gen_article_polished.md")
+            except Exception as e:
+                logging.warning(f"Failed to fix image paths in storm_gen_article_polished.md: {e}")
         
         FileIOHelper.write_str(hyperlinked_content_str, os.path.join(self.article_output_dir, "storm_gen_article_polished.md"))
         return polished_article
@@ -538,11 +564,8 @@ class STORMWikiRunner(Engine):
                 self.article_title = self.generated_topic if self.generated_topic else "Untitled_Report"
             self.article_dir_name = truncate_filename(self.article_title.replace(" ", "_").replace("/", "_"))
         
-        # Use output directory directly if article_dir_name is explicitly empty (no subfolder)
-        if self.article_dir_name == "":
-            self.article_output_dir = self.args.output_dir
-        else:
-            self.article_output_dir = os.path.join(self.args.output_dir, self.article_dir_name)
+        # Always use output directory directly without creating subfolder
+        self.article_output_dir = self.args.output_dir
         os.makedirs(self.article_output_dir, exist_ok=True)
 
         old_outline = None

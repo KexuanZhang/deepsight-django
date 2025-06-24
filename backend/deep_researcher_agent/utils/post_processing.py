@@ -2,6 +2,10 @@ import re
 import argparse
 import os
 from pathlib import Path
+from typing import List, Dict, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 def remove_citations(content, post_processing=True):
     """
@@ -181,6 +185,231 @@ def main():
         return 1
     
     return 0
+
+
+def fix_image_paths(content: str, selected_files_paths: List[str], report_output_dir: Optional[str] = None) -> str:
+    """
+    Fix image paths in generated report content by replacing broken image src paths 
+    with correct relative paths from selected_files_paths/images directories.
+    
+    Args:
+        content (str): The markdown content containing image references
+        selected_files_paths (List[str]): List of folder paths from knowledge base
+        report_output_dir (Optional[str]): Path to the report output directory for calculating relative paths
+        
+    Returns:
+        str: The content with fixed image paths (using relative paths)
+    """
+    if not selected_files_paths:
+        logger.warning("No selected_files_paths provided, skipping image path fixing")
+        return content
+    
+    # Pattern to match img tags with problematic src paths
+    img_pattern = r'<img\s+src="([^"]*_page_\d+_[^"]*\.(?:jpeg|jpg|png|gif))"([^>]*)>'
+    
+    def replace_image_path(match):
+        original_src = match.group(1)
+        other_attributes = match.group(2)
+        image_filename = os.path.basename(original_src)
+        
+        logger.debug(f"Looking for image: {image_filename}")
+        
+        # Search for the image in all selected_files_paths/images directories
+        found_image_path = None
+        for folder_path in selected_files_paths:
+            try:
+                folder_path_obj = Path(folder_path)
+                if not folder_path_obj.exists() or not folder_path_obj.is_dir():
+                    logger.debug(f"Folder path does not exist or is not a directory: {folder_path}")
+                    continue
+                
+                # Look for images directory
+                images_dir = folder_path_obj / "images"
+                if not images_dir.exists() or not images_dir.is_dir():
+                    logger.debug(f"Images directory not found in: {folder_path}")
+                    continue
+                
+                # Look for the specific image file
+                image_file = images_dir / image_filename
+                if image_file.exists() and image_file.is_file():
+                    # Found the image!
+                    found_image_path = str(image_file)
+                    logger.info(f"Found image {image_filename} in {images_dir}")
+                    break
+                    
+            except Exception as e:
+                logger.warning(f"Error processing folder path {folder_path}: {e}")
+                continue
+        
+        if found_image_path:
+            # Calculate relative path if report_output_dir is provided
+            if report_output_dir:
+                try:
+                    # Convert to Path objects for easier manipulation
+                    report_dir = Path(report_output_dir)
+                    image_path = Path(found_image_path)
+                    
+                    # Calculate relative path from report directory to image
+                    relative_path = os.path.relpath(image_path, report_dir)
+                    return f'<img src="{relative_path}"{other_attributes}>'
+                except Exception as e:
+                    logger.warning(f"Could not calculate relative path for {image_filename}: {e}")
+                    # Fall back to absolute path if relative calculation fails
+                    return f'<img src="{found_image_path}"{other_attributes}>'
+            else:
+                # Use absolute path if no report directory provided
+                return f'<img src="{found_image_path}"{other_attributes}>'
+        else:
+            # Image not found in any selected_files_paths/images directory
+            # Skip figure insertion as requested
+            logger.warning(f"Image {image_filename} not found in any images folder, removing img tag")
+            return ""  # Remove the img tag completely
+    
+    # Apply the replacement
+    fixed_content = re.sub(img_pattern, replace_image_path, content, flags=re.IGNORECASE)
+    
+    return fixed_content
+
+
+def resolve_image_conflicts(selected_files_paths: List[str]) -> Dict[str, str]:
+    """
+    Create a mapping of image filenames to their full paths, handling conflicts where
+    multiple directories contain the same image filename but different actual images.
+    
+    Args:
+        selected_files_paths (List[str]): List of folder paths from knowledge base
+        
+    Returns:
+        Dict[str, str]: Mapping of image filename to the full path of the best candidate
+    """
+    image_mapping = {}
+    conflicts = {}
+    processed_files = set()  # Track processed files to avoid duplicates
+    
+    for folder_path in selected_files_paths:
+        try:
+            folder_path_obj = Path(folder_path)
+            if not folder_path_obj.exists() or not folder_path_obj.is_dir():
+                continue
+            
+            images_dir = folder_path_obj / "images"
+            if not images_dir.exists() or not images_dir.is_dir():
+                continue
+            
+            # Find all image files with common patterns
+            image_patterns = [
+                "*_page_*_Picture_*.jpeg",
+                "*_page_*_Picture_*.jpg", 
+                "*_page_*_Picture_*.png",
+                "*_page_*_Figure_*.jpeg",
+                "*_page_*_Figure_*.jpg",
+                "*_page_*_Figure_*.png",
+                "*_page_*.jpeg",
+                "*_page_*.jpg", 
+                "*_page_*.png"
+            ]
+            
+            for pattern in image_patterns:
+                for image_file in images_dir.glob(pattern):
+                    filename = image_file.name
+                    full_path = str(image_file)
+                    
+                    # Skip if we've already processed this exact file
+                    if full_path in processed_files:
+                        continue
+                    processed_files.add(full_path)
+                    
+                    if filename in image_mapping:
+                        # Conflict detected
+                        if filename not in conflicts:
+                            conflicts[filename] = [image_mapping[filename]]
+                        conflicts[filename].append(full_path)
+                        
+                        # Choose the most recent file (latest modification time) as the canonical one
+                        existing_mtime = os.path.getmtime(image_mapping[filename])
+                        new_mtime = os.path.getmtime(full_path)
+                        
+                        if new_mtime > existing_mtime:
+                            image_mapping[filename] = full_path
+                            logger.info(f"Image conflict for {filename}: choosing newer file {full_path}")
+                        else:
+                            logger.info(f"Image conflict for {filename}: keeping existing file {image_mapping[filename]}")
+                    else:
+                        image_mapping[filename] = full_path
+                        
+        except Exception as e:
+            logger.warning(f"Error processing folder path {folder_path}: {e}")
+            continue
+    
+    # Log conflicts for debugging
+    for filename, paths in conflicts.items():
+        logger.warning(f"Multiple images found with same name {filename}: {paths}")
+    
+    return image_mapping
+
+
+def fix_image_paths_advanced(content: str, selected_files_paths: List[str], report_output_dir: Optional[str] = None) -> str:
+    """
+    Advanced version of fix_image_paths that handles conflicts and edge cases.
+    
+    Args:
+        content (str): The markdown content containing image references
+        selected_files_paths (List[str]): List of folder paths from knowledge base
+        report_output_dir (Optional[str]): Path to the report output directory for calculating relative paths
+        
+    Returns:
+        str: The content with fixed image paths (using relative paths)
+    """
+    if not selected_files_paths:
+        logger.warning("No selected_files_paths provided, skipping image path fixing")
+        return content
+    
+    # Create image mapping to handle conflicts
+    image_mapping = resolve_image_conflicts(selected_files_paths)
+    
+    # Pattern to match img tags with problematic src paths (more comprehensive)
+    # This pattern catches any image that starts with an underscore and contains common image extensions
+    img_pattern = r'<img\s+src="([^"]*_[^"]*\.(?:jpeg|jpg|png|gif))"([^>]*)>'
+    
+    def replace_image_path(match):
+        original_src = match.group(1)
+        other_attributes = match.group(2)
+        image_filename = os.path.basename(original_src)
+        
+        if image_mapping and image_filename in image_mapping:
+            absolute_path = image_mapping[image_filename]
+            
+            # Calculate relative path if report_output_dir is provided
+            if report_output_dir:
+                try:
+                    # Convert to Path objects for easier manipulation
+                    report_dir = Path(report_output_dir)
+                    image_path = Path(absolute_path)
+                    
+                    # Calculate relative path from report directory to image
+                    relative_path = os.path.relpath(image_path, report_dir)
+                    return f'<img src="{relative_path}"{other_attributes}>'
+                except Exception as e:
+                    logger.warning(f"Could not calculate relative path for {image_filename}: {e}")
+                    # Fall back to absolute path if relative calculation fails
+                    return f'<img src="{absolute_path}"{other_attributes}>'
+            else:
+                # Use absolute path if no report directory provided
+                return f'<img src="{absolute_path}"{other_attributes}>'
+        else:
+            # Image not found, remove the img tag
+            logger.warning(f"Image {image_filename} not found in any images folder, removing img tag")
+            return ""
+    
+    # Apply the replacement
+    fixed_content = re.sub(img_pattern, replace_image_path, content, flags=re.IGNORECASE)
+    
+    if image_mapping:
+        logger.info(f"Image path fixing completed. Found {len(image_mapping)} images in selected paths.")
+    else:
+        logger.warning("No images found in any selected_files_paths/images directories")
+    
+    return fixed_content
 
 
 if __name__ == "__main__":

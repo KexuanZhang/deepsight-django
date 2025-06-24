@@ -138,6 +138,7 @@ class ReportGenerationConfig:
     csv_path: Optional[str] = None
     author_json: Optional[str] = None
     caption_files: Optional[List[str]] = None
+    selected_files_paths: Optional[List[str]] = None  # For image path fixing
     
     # CSV processing options (for non-interactive API use)
     csv_session_code: Optional[str] = None
@@ -727,6 +728,10 @@ class DeepReportGenerator:
             runner = STORMWikiRunner(engine_args, lm_configs, rm)
             runner.author_json = config.author_json
             
+            # Pass selected_files_paths for image path fixing
+            if config.selected_files_paths:
+                runner.selected_files_paths = config.selected_files_paths
+            
             # Process CSV metadata
             article_title, speakers, csv_transcript_input = self._process_csv_metadata(config)
             processing_logs.append("CSV metadata processed")
@@ -757,24 +762,24 @@ class DeepReportGenerator:
             if not config.topic and not runner.transcript and not runner.paper:
                 raise ValueError("Either a topic, transcript, or paper content must be provided for report generation.")
             
-            # Don't create subfolder based on article_title - store directly in output_dir
-            # All files should go directly to the r_{report_id} folder
-            runner.article_dir_name = ""  # Empty to avoid subfolder creation
+            # Set article directory name (but don't create subfolder - use output_dir directly)
+            folder_name = truncate_filename(article_title.replace(" ", "_").replace("/", "_"))
+            runner.article_dir_name = folder_name
             
-            # Update figure data paths to not use subfolders
-            if not config.caption_files and runner.figure_data:
-                # Store images directly in the output directory
+            # Update figure data paths
+            if not config.caption_files and runner.figure_data and runner.article_dir_name:
+                image_output_subfolder_name = f"Images_{runner.article_dir_name}"
                 updated_figure_data_list = []
                 for fig_dict in runner.figure_data:
                     original_image_path = fig_dict.get("image_path")
                     if original_image_path:
                         base_image_filename = os.path.basename(original_image_path)
-                        # Store image files directly in output directory without subfolder
-                        fig_dict["image_path"] = base_image_filename
+                        new_relative_image_path = os.path.join(image_output_subfolder_name, base_image_filename)
+                        fig_dict["image_path"] = new_relative_image_path
                     updated_figure_data_list.append(fig_dict)
                 runner.figure_data = updated_figure_data_list
             
-            # Use output directory directly without creating article subfolder
+            # Use output directory directly without creating subfolder
             article_output_dir = config.output_dir
             os.makedirs(article_output_dir, exist_ok=True)
             runner.storm_article_generation.query_logger = QueryLogger(article_output_dir)
@@ -824,23 +829,56 @@ class DeepReportGenerator:
             runner.summary()
             processing_logs.append("Report generation completed")
             
-            # Collect generated files
+            # Collect generated files (storm files now have image paths fixed during generation)
             generated_files.extend([
                 os.path.join(article_output_dir, "storm_gen_outline.txt"),
                 os.path.join(article_output_dir, "storm_gen_article.md"),
                 os.path.join(article_output_dir, "storm_gen_article_polished.md"),
             ])
             
-            # Post-process the polished article if requested
+            # Always apply full post-processing to create the final Report file if requested
             if config.post_processing:
                 polished_article_path = os.path.join(article_output_dir, "storm_gen_article_polished.md")
                 if os.path.exists(polished_article_path):
                     clean_folder_name = "".join(e for e in article_title if e.isalnum() or e == "_")
                     output_file = os.path.join(article_output_dir, f"{clean_folder_name}.md")
-                    process_file(polished_article_path, output_file, config.post_processing)
+                    
+                    # Apply full post-processing (image paths + citations removal + etc.)
+                    if config.selected_files_paths:
+                        # Storm files already have image path fixing, but we need to apply it again
+                        # plus other post-processing for the final Report file
+                        with open(polished_article_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        
+                        # Apply image path fixing to ensure final Report file has correct paths
+                        try:
+                            from deep_researcher_agent.utils.post_processing import fix_image_paths_advanced
+                            content = fix_image_paths_advanced(
+                                content, 
+                                config.selected_files_paths,
+                                report_output_dir=article_output_dir
+                            )
+                        except Exception as e:
+                            self.logger.warning(f"Failed to fix image paths in Report file: {e}")
+                        
+                        # Apply other post-processing (citations, captions, placeholders)
+                        from deep_researcher_agent.utils.post_processing import remove_citations, remove_captions, remove_figure_placeholders
+                        content = remove_citations(content, True)
+                        content = remove_captions(content, True)
+                        content = remove_figure_placeholders(content, True)
+                        
+                        # Write the fully processed Report file
+                        with open(output_file, 'w', encoding='utf-8') as f:
+                            f.write(content)
+                        
+                        processing_logs.append(f"Full post-processing applied to Report file: {output_file}")
+                    else:
+                        # No image path fixing needed, just apply traditional post-processing
+                        process_file(polished_article_path, output_file, config.post_processing)
+                        processing_logs.append(f"Traditional post-processing applied to Report file: {output_file}")
+                    
                     generated_files.append(output_file)
-                    processing_logs.append(f"Post-processed article saved to: {output_file}")
-            
+
             # Copy paper images if applicable
             if original_paper_paths_for_images:
                 source_paper_location = original_paper_paths_for_images[0]

@@ -115,15 +115,21 @@ class ReportViewSet(viewsets.ModelViewSet):
             
             # Create a new Report with status 'pending'
             report_data = serializer.validated_data.copy()
-            # Set default article_title since it's not provided in the request anymore
-            report_data['article_title'] = f"Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
+            # Create the report first without article_title to get the ID
             report = Report.objects.create(
                 user=request.user,
                 status=Report.STATUS_PENDING,
                 progress="Report generation job has been queued",
+                article_title="Generating...",  # Temporary title
                 **report_data
             )
+            
+            # Set unique article_title using report ID and current timestamp with microseconds
+            # This prevents duplicate filenames even when multiple reports are generated rapidly
+            timestamp = datetime.now()
+            report.article_title = f"Report_{timestamp.strftime('%Y%m%d_%H%M%S')}_{timestamp.microsecond:06d}_r{report.id}"
+            report.save(update_fields=['article_title'])
             
             # Add job to queue
             job_id = report_queue_service.add_report_job(report)
