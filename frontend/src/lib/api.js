@@ -343,6 +343,33 @@ class ApiService {
     return response;
   }
 
+  async downloadPodcastAudio(jobId) {
+    // Use the ViewSet audio endpoint which properly handles authentication
+    const url = `${PODCAST_API_BASE_URL}/jobs/${jobId}/audio/`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include', // This includes session cookies for authentication
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.detail || errorMessage;
+      } catch (e) {
+        // If we can't parse the error response, use the status text
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.blob();
+  }
+
   // ─── HEALTH CHECK ────────────────────────────────────────────────────────
 
   async healthCheck() {
