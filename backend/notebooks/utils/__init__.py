@@ -26,9 +26,9 @@ except ImportError:
     ContentIndexingService = None
 
 __all__ = [
-    'config',
-    'FileValidator', 
-    'UploadProcessor',
-    'FileStorageService',
-    'ContentIndexingService'
+    "config",
+    "FileValidator",
+    "UploadProcessor",
+    "FileStorageService",
+    "ContentIndexingService",
 ]

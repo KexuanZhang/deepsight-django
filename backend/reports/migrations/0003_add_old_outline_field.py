@@ -4,15 +4,17 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('reports', '0002_alter_report_options_remove_report_paper_content_and_more'),
+        ("reports", "0002_alter_report_options_remove_report_paper_content_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='report',
-            name='old_outline',
-            field=models.TextField(blank=True, help_text='User-provided outline content to use as starting point'),
+            model_name="report",
+            name="old_outline",
+            field=models.TextField(
+                blank=True,
+                help_text="User-provided outline content to use as starting point",
+            ),
         ),
     ]

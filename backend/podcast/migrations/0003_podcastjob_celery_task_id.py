@@ -4,15 +4,17 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('podcast', '0002_rename_podcast_pod_status_6ec0e4_idx_podcast_pod_status_f6dc5d_idx_and_more'),
+        (
+            "podcast",
+            "0002_rename_podcast_pod_status_6ec0e4_idx_podcast_pod_status_f6dc5d_idx_and_more",
+        ),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='podcastjob',
-            name='celery_task_id',
+            model_name="podcastjob",
+            name="celery_task_id",
             field=models.CharField(blank=True, max_length=255, null=True),
         ),
     ]

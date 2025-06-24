@@ -8,7 +8,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -17,108 +16,380 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='KnowledgeBaseItem',
+            name="KnowledgeBaseItem",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('title', models.CharField(help_text='Title or identifier for this knowledge item', max_length=512)),
-                ('content_type', models.CharField(choices=[('text', 'Text Content'), ('document', 'Document'), ('webpage', 'Webpage'), ('media', 'Media File')], default='text', max_length=50)),
-                ('file', models.FileField(blank=True, help_text="Processed content file in the user's knowledge base", null=True, upload_to=notebooks.models.user_knowledge_base_path, validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['md', 'txt'])])),
-                ('original_file', models.FileField(blank=True, help_text="Original binary file (PDF, audio, video, etc.) in the user's knowledge base", null=True, upload_to=notebooks.models.user_knowledge_base_path)),
-                ('content', models.TextField(blank=True, help_text='Inline text content if not stored as file')),
-                ('metadata', models.JSONField(blank=True, help_text='Source metadata, processing info, etc.', null=True)),
-                ('source_hash', models.CharField(blank=True, db_index=True, help_text='Hash of original content to detect duplicates', max_length=64)),
-                ('tags', models.JSONField(default=list, help_text='Tags for categorization and search')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.ForeignKey(help_text='Owner of this knowledge item', on_delete=django.db.models.deletion.CASCADE, related_name='knowledge_base_items', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "title",
+                    models.CharField(
+                        help_text="Title or identifier for this knowledge item",
+                        max_length=512,
+                    ),
+                ),
+                (
+                    "content_type",
+                    models.CharField(
+                        choices=[
+                            ("text", "Text Content"),
+                            ("document", "Document"),
+                            ("webpage", "Webpage"),
+                            ("media", "Media File"),
+                        ],
+                        default="text",
+                        max_length=50,
+                    ),
+                ),
+                (
+                    "file",
+                    models.FileField(
+                        blank=True,
+                        help_text="Processed content file in the user's knowledge base",
+                        null=True,
+                        upload_to=notebooks.models.user_knowledge_base_path,
+                        validators=[
+                            django.core.validators.FileExtensionValidator(
+                                allowed_extensions=["md", "txt"]
+                            )
+                        ],
+                    ),
+                ),
+                (
+                    "original_file",
+                    models.FileField(
+                        blank=True,
+                        help_text="Original binary file (PDF, audio, video, etc.) in the user's knowledge base",
+                        null=True,
+                        upload_to=notebooks.models.user_knowledge_base_path,
+                    ),
+                ),
+                (
+                    "content",
+                    models.TextField(
+                        blank=True,
+                        help_text="Inline text content if not stored as file",
+                    ),
+                ),
+                (
+                    "metadata",
+                    models.JSONField(
+                        blank=True,
+                        help_text="Source metadata, processing info, etc.",
+                        null=True,
+                    ),
+                ),
+                (
+                    "source_hash",
+                    models.CharField(
+                        blank=True,
+                        db_index=True,
+                        help_text="Hash of original content to detect duplicates",
+                        max_length=64,
+                    ),
+                ),
+                (
+                    "tags",
+                    models.JSONField(
+                        default=list, help_text="Tags for categorization and search"
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        help_text="Owner of this knowledge item",
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="knowledge_base_items",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-created_at'],
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='Notebook',
+            name="Notebook",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255)),
-                ('description', models.TextField(blank=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='notebooks', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=255)),
+                ("description", models.TextField(blank=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="notebooks",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'Notebook',
-                'verbose_name_plural': 'Notebooks',
-                'ordering': ['-created_at'],
+                "verbose_name": "Notebook",
+                "verbose_name_plural": "Notebooks",
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='Source',
+            name="Source",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('source_type', models.CharField(choices=[('file', 'File Upload'), ('url', 'URL'), ('text', 'Pasted Text')], max_length=20)),
-                ('title', models.CharField(blank=True, help_text='Optional display title or original filename/URL', max_length=512)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('needs_processing', models.BooleanField(default=False, help_text='Whether this source must go through a background processing job')),
-                ('processing_status', models.CharField(choices=[('pending', 'Pending'), ('in_progress', 'In Progress'), ('done', 'Done'), ('error', 'Error')], default='pending', max_length=20)),
-                ('notebook', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='sources', to='notebooks.notebook')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "source_type",
+                    models.CharField(
+                        choices=[
+                            ("file", "File Upload"),
+                            ("url", "URL"),
+                            ("text", "Pasted Text"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "title",
+                    models.CharField(
+                        blank=True,
+                        help_text="Optional display title or original filename/URL",
+                        max_length=512,
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "needs_processing",
+                    models.BooleanField(
+                        default=False,
+                        help_text="Whether this source must go through a background processing job",
+                    ),
+                ),
+                (
+                    "processing_status",
+                    models.CharField(
+                        choices=[
+                            ("pending", "Pending"),
+                            ("in_progress", "In Progress"),
+                            ("done", "Done"),
+                            ("error", "Error"),
+                        ],
+                        default="pending",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "notebook",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="sources",
+                        to="notebooks.notebook",
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='ProcessingJob',
+            name="ProcessingJob",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('job_type', models.CharField(help_text='E.g. ocr, transcribe, pdf2md…', max_length=50)),
-                ('status', models.CharField(choices=[('queued', 'Queued'), ('running', 'Running'), ('finished', 'Finished'), ('failed', 'Failed')], default='queued', max_length=20)),
-                ('result_file', models.FileField(blank=True, help_text='Generated .md or other output file', null=True, upload_to=notebooks.models.user_knowledge_base_path)),
-                ('error_message', models.TextField(blank=True, help_text='Error details if processing failed')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('completed_at', models.DateTimeField(blank=True, null=True)),
-                ('source', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='jobs', to='notebooks.source')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "job_type",
+                    models.CharField(
+                        help_text="E.g. ocr, transcribe, pdf2md…", max_length=50
+                    ),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("queued", "Queued"),
+                            ("running", "Running"),
+                            ("finished", "Finished"),
+                            ("failed", "Failed"),
+                        ],
+                        default="queued",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "result_file",
+                    models.FileField(
+                        blank=True,
+                        help_text="Generated .md or other output file",
+                        null=True,
+                        upload_to=notebooks.models.user_knowledge_base_path,
+                    ),
+                ),
+                (
+                    "error_message",
+                    models.TextField(
+                        blank=True, help_text="Error details if processing failed"
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("completed_at", models.DateTimeField(blank=True, null=True)),
+                (
+                    "source",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="jobs",
+                        to="notebooks.source",
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='KnowledgeItem',
+            name="KnowledgeItem",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('added_at', models.DateTimeField(auto_now_add=True)),
-                ('notes', models.TextField(blank=True, help_text='Notebook-specific notes about this knowledge item')),
-                ('knowledge_base_item', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='notebook_links', to='notebooks.knowledgebaseitem')),
-                ('notebook', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='knowledge_items', to='notebooks.notebook')),
-                ('source', models.ForeignKey(blank=True, help_text='Original source that created this knowledge item (if any)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='knowledge_items', to='notebooks.source')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("added_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "notes",
+                    models.TextField(
+                        blank=True,
+                        help_text="Notebook-specific notes about this knowledge item",
+                    ),
+                ),
+                (
+                    "knowledge_base_item",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="notebook_links",
+                        to="notebooks.knowledgebaseitem",
+                    ),
+                ),
+                (
+                    "notebook",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="knowledge_items",
+                        to="notebooks.notebook",
+                    ),
+                ),
+                (
+                    "source",
+                    models.ForeignKey(
+                        blank=True,
+                        help_text="Original source that created this knowledge item (if any)",
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="knowledge_items",
+                        to="notebooks.source",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-added_at'],
+                "ordering": ["-added_at"],
             },
         ),
         migrations.CreateModel(
-            name='URLProcessingResult',
+            name="URLProcessingResult",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('content_md', models.TextField(blank=True, help_text='Markdown extracted from a webpage, if applicable')),
-                ('downloaded_file', models.FileField(blank=True, help_text='Media file downloaded from the URL, if any', null=True, upload_to=notebooks.models.user_knowledge_base_path)),
-                ('error_message', models.TextField(blank=True, help_text='Error details if crawl or download failed')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('source', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='url_result', to='notebooks.source')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "content_md",
+                    models.TextField(
+                        blank=True,
+                        help_text="Markdown extracted from a webpage, if applicable",
+                    ),
+                ),
+                (
+                    "downloaded_file",
+                    models.FileField(
+                        blank=True,
+                        help_text="Media file downloaded from the URL, if any",
+                        null=True,
+                        upload_to=notebooks.models.user_knowledge_base_path,
+                    ),
+                ),
+                (
+                    "error_message",
+                    models.TextField(
+                        blank=True,
+                        help_text="Error details if crawl or download failed",
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "source",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="url_result",
+                        to="notebooks.source",
+                    ),
+                ),
             ],
         ),
         migrations.AddIndex(
-            model_name='knowledgebaseitem',
-            index=models.Index(fields=['user', '-created_at'], name='notebooks_k_user_id_d865ea_idx'),
+            model_name="knowledgebaseitem",
+            index=models.Index(
+                fields=["user", "-created_at"], name="notebooks_k_user_id_d865ea_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='knowledgebaseitem',
-            index=models.Index(fields=['user', 'source_hash'], name='notebooks_k_user_id_424da8_idx'),
+            model_name="knowledgebaseitem",
+            index=models.Index(
+                fields=["user", "source_hash"], name="notebooks_k_user_id_424da8_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='knowledgebaseitem',
-            index=models.Index(fields=['user', 'content_type'], name='notebooks_k_user_id_899dcb_idx'),
+            model_name="knowledgebaseitem",
+            index=models.Index(
+                fields=["user", "content_type"], name="notebooks_k_user_id_899dcb_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='knowledgeitem',
-            index=models.Index(fields=['notebook', '-added_at'], name='notebooks_k_noteboo_c452a0_idx'),
+            model_name="knowledgeitem",
+            index=models.Index(
+                fields=["notebook", "-added_at"], name="notebooks_k_noteboo_c452a0_idx"
+            ),
         ),
         migrations.AlterUniqueTogether(
-            name='knowledgeitem',
-            unique_together={('notebook', 'knowledge_base_item')},
+            name="knowledgeitem",
+            unique_together={("notebook", "knowledge_base_item")},
         ),
     ]

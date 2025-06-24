@@ -71,9 +71,9 @@ class LM:
         self.history = []
 
         if "o1-" in model:
-            assert (
-                max_tokens >= 5000 and temperature == 1.0
-            ), "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+            assert max_tokens >= 5000 and temperature == 1.0, (
+                "OpenAI's o1-* models require passing temperature=1.0 and max_tokens >= 5000 to `dspy.LM(...)`"
+            )
 
     def __call__(self, prompt=None, messages=None, **kwargs):
         # Build the request.
@@ -180,7 +180,7 @@ def _inspect_history(lm, n: int = 1):
         print(_green(outputs[0].strip()))
 
         if len(outputs) > 1:
-            choices_text = f" \t (and {len(outputs)-1} other completions)"
+            choices_text = f" \t (and {len(outputs) - 1} other completions)"
             print(_red(choices_text, end=""))
 
     print("\n\n\n")
@@ -218,9 +218,7 @@ class LitellmModel(LM):
     def get_usage_and_reset(self):
         """Get the total tokens used and reset the token usage."""
         usage = {
-            self.model
-            or self.kwargs.get("model")
-            or self.kwargs.get("engine"): {
+            self.model or self.kwargs.get("model") or self.kwargs.get("engine"): {
                 "prompt_tokens": self.prompt_tokens,
                 "completion_tokens": self.completion_tokens,
             }
@@ -299,8 +297,7 @@ class OpenAIModel(dspy.OpenAI):
     def get_usage_and_reset(self):
         """Get the total tokens used and reset the token usage."""
         usage = {
-            self.kwargs.get("model")
-            or self.kwargs.get("engine"): {
+            self.kwargs.get("model") or self.kwargs.get("engine"): {
                 "prompt_tokens": self.prompt_tokens,
                 "completion_tokens": self.completion_tokens,
             }
@@ -376,13 +373,13 @@ class DeepSeekModel(dspy.OpenAI):
         print(f"Initializing DeepSeekModel with model={model}")
         self._deepseek_model = model
         gpt_model = "gpt-3.5-turbo"  # Use a valid OpenAI model for initialization
-        
+
         # Initialize the parent class
         super().__init__(model=gpt_model, api_key=api_key, api_base=api_base, **kwargs)
-        
+
         # Override the model in kwargs to ensure correct reporting
         self.kwargs["model"] = self._deepseek_model
-        
+
         self._token_usage_lock = threading.Lock()
         self.prompt_tokens = 0
         self.completion_tokens = 0
@@ -396,7 +393,9 @@ class DeepSeekModel(dspy.OpenAI):
 
     def request(self, prompt, **kwargs):
         """Override the request method to use DeepSeek API directly."""
-        print(f"DeepSeek request with model={self._deepseek_model}, prompt={prompt[:50]}...")
+        print(
+            f"DeepSeek request with model={self._deepseek_model}, prompt={prompt[:50]}..."
+        )
         try:
             return self._create_completion(prompt, **kwargs)
         except Exception as e:
@@ -912,8 +911,7 @@ class VLLMClient(dspy.dsp.LM):
     def get_usage_and_reset(self):
         """Get the total tokens used and reset the token usage."""
         usage = {
-            self.kwargs.get("model")
-            or self.kwargs.get("engine"): {
+            self.kwargs.get("model") or self.kwargs.get("engine"): {
                 "prompt_tokens": self.prompt_tokens,
                 "completion_tokens": self.completion_tokens,
             }

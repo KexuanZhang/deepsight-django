@@ -370,6 +370,16 @@ class ApiService {
     return response.blob();
   }
 
+  async deletePodcast(jobId) {
+    const response = await this.request(`${PODCAST_API_BASE_URL}/jobs/${jobId}/`, {
+      method: 'DELETE',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+    return response;
+  }
+
   // ─── HEALTH CHECK ────────────────────────────────────────────────────────
 
   async healthCheck() {

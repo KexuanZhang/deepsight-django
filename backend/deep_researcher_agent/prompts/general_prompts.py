@@ -44,7 +44,7 @@ Give your answer in the following format: 1. short summary of editor 1: descript
 2. short summary of editor 2: description
 ...
 If a topic is provided, ensure that the editors have expertise or perspectives specifically related to that topic in the context of the transcript and/or paper(s).
-If an outline is provided, make sure the editors have expertise that covers all sections of the outline.""" 
+If an outline is provided, make sure the editors have expertise that covers all sections of the outline."""
 
 WritePageOutline_docstring = """Generate an in-depth technical report outline. If a meeting transcript and/or paper(s) are provided, use them along with the specified topic to create the outline. If no transcript or paper is provided (indicated by 'N/A' for their respective formatted content), use the topic and any available information to guide the outline generation. The outline must be strictly topic orientated.
 

@@ -12,13 +12,15 @@ import dspy
 
 from .storm_dataclass import StormInformationTable
 
+
 def get_device():
-    """Detect the best available device: 'cuda', 'mps', or 'cpu'. """
+    """Detect the best available device: 'cuda', 'mps', or 'cpu'."""
     if torch.cuda.is_available():
         return "cuda"
     # if torch.backends.mps.is_available() and torch.backends.mps.is_built():
     #     return "mps"
     return "cpu"
+
 
 class EnhancedStormInformationTable(StormInformationTable):
     """
@@ -58,7 +60,7 @@ class EnhancedStormInformationTable(StormInformationTable):
             self.RERANKER_MODEL_NAME,
             device=self._device,
             activation_fn=torch.nn.Sigmoid(),
-            trust_remote_code=True
+            trust_remote_code=True,
         )
 
         # Debug info
@@ -73,7 +75,7 @@ class EnhancedStormInformationTable(StormInformationTable):
 
         # Reset BM25 collections
         self.bm25_tokenized_original = []
-        
+
         # Ensure we have original snippets
         if not self.collected_snippets:
             logging.warning("No original snippets available for BM25 indexing")
@@ -85,12 +87,18 @@ class EnhancedStormInformationTable(StormInformationTable):
             self.bm25_tokenized_original.append(tokens_original)
 
         # Build BM25 index if we have valid snippets
-        if self.bm25_tokenized_original and any(tokens for tokens in self.bm25_tokenized_original):
+        if self.bm25_tokenized_original and any(
+            tokens for tokens in self.bm25_tokenized_original
+        ):
             try:
                 self.bm25_index_original = BM25Okapi(self.bm25_tokenized_original)
-                logging.info(f"Original content BM25 index built successfully with {len(self.bm25_tokenized_original)} documents")
+                logging.info(
+                    f"Original content BM25 index built successfully with {len(self.bm25_tokenized_original)} documents"
+                )
             except Exception as e:
-                logging.warning(f"Error creating original BM25 index: {e}. BM25 search will be disabled.")
+                logging.warning(
+                    f"Error creating original BM25 index: {e}. BM25 search will be disabled."
+                )
                 self.bm25_index_original = None
 
     def retrieve_information(
@@ -100,7 +108,7 @@ class EnhancedStormInformationTable(StormInformationTable):
         final_context_k: int = 20,  # Default to returning top 20 chunks after reranking
         bm25_weight: float = 0.5,
         vector_weight: float = 0.5,
-        query_logger = None
+        query_logger=None,
     ) -> List[Information]:
         """
         Retrieve information using the enhanced retrieval pipeline:
@@ -126,13 +134,12 @@ class EnhancedStormInformationTable(StormInformationTable):
         # Process each query separately
         for query in queries:
             # --- Logging Setup ---
-            current_query_log_data = {
-                "queries": [query],
-                "retrieval_steps": {}
-            }
+            current_query_log_data = {"queries": [query], "retrieval_steps": {}}
 
             # Step 1: Initial retrieval using both vector and BM25
-            vector_hits, vector_scores = self._vector_search(query, k=initial_retrieval_k)
+            vector_hits, vector_scores = self._vector_search(
+                query, k=initial_retrieval_k
+            )
             bm25_hits, bm25_scores = self._bm25_search(query, k=initial_retrieval_k)
 
             # Log initial retrieval results
@@ -155,18 +162,16 @@ class EnhancedStormInformationTable(StormInformationTable):
                 bm25_scores=bm25_scores,
                 vector_weight=vector_weight,
                 bm25_weight=bm25_weight,
-                k=initial_retrieval_k
+                k=initial_retrieval_k,
             )
 
             # Log fusion results
             try:
                 fusion_log_data = []
                 for info, score in fused_results:
-                    fusion_log_data.append({
-                        "title": info.title,
-                        "url": info.url,
-                        "score": float(score)
-                    })
+                    fusion_log_data.append(
+                        {"title": info.title, "url": info.url, "score": float(score)}
+                    )
                 current_query_log_data["retrieval_steps"]["fusion"] = fusion_log_data
             except Exception as e:
                 logging.warning(f"Failed to format fusion log data: {e}")
@@ -180,12 +185,16 @@ class EnhancedStormInformationTable(StormInformationTable):
                 try:
                     rerank_log_data = []
                     for info, score in reranked_results[:final_context_k]:
-                         rerank_log_data.append({
-                            "title": info.title,
-                            "url": info.url,
-                            "score": float(score)
-                         })
-                    current_query_log_data["retrieval_steps"]["rerank"] = rerank_log_data
+                        rerank_log_data.append(
+                            {
+                                "title": info.title,
+                                "url": info.url,
+                                "score": float(score),
+                            }
+                        )
+                    current_query_log_data["retrieval_steps"]["rerank"] = (
+                        rerank_log_data
+                    )
                 except Exception as e:
                     logging.warning(f"Failed to format rerank log data: {e}")
 
@@ -220,7 +229,9 @@ class EnhancedStormInformationTable(StormInformationTable):
         self.url_to_info = standard_table.url_to_info.copy()
         return self
 
-    def search(self, query, k=3, return_scores=False, vector_weight=0.5, bm25_weight=0.5):
+    def search(
+        self, query, k=3, return_scores=False, vector_weight=0.5, bm25_weight=0.5
+    ):
         """
         Search for the most relevant snippets for a query.
 
@@ -251,7 +262,7 @@ class EnhancedStormInformationTable(StormInformationTable):
             bm25_scores=bm25_scores,
             vector_weight=vector_weight,
             bm25_weight=bm25_weight,
-            k=k
+            k=k,
         )
 
         if return_scores:
@@ -267,15 +278,14 @@ class EnhancedStormInformationTable(StormInformationTable):
             return [], []
 
         self._initialize_encoder()
-        
+
         # Encode query
         encoded_query = self.encoder.encode(query, convert_to_tensor=True)
         encoded_query = encoded_query.to(self.encoded_snippets.device)
 
         # Calculate similarities
         vector_similarities = F.cosine_similarity(
-            encoded_query.unsqueeze(0),
-            self.encoded_snippets
+            encoded_query.unsqueeze(0), self.encoded_snippets
         )
 
         # Get top-k results
@@ -300,7 +310,7 @@ class EnhancedStormInformationTable(StormInformationTable):
                     description=original_info.description,
                     snippets=[original_snippet],
                     title=original_info.title,
-                    meta=original_info.meta.copy() if original_info.meta else {}
+                    meta=original_info.meta.copy() if original_info.meta else {},
                 )
                 hits.append(info)
 
@@ -323,7 +333,9 @@ class EnhancedStormInformationTable(StormInformationTable):
             return [], []
 
         if self.bm25_index_original is None:
-            logging.warning("BM25 index not prepared. Call prepare_table_for_retrieval first.")
+            logging.warning(
+                "BM25 index not prepared. Call prepare_table_for_retrieval first."
+            )
             return [], []
 
         # Tokenize the query for BM25
@@ -333,12 +345,18 @@ class EnhancedStormInformationTable(StormInformationTable):
         original_scores = self.bm25_index_original.get_scores(tokenized_query)
 
         # Normalize scores to [0, 1] range
-        max_original = max(original_scores) if len(original_scores) > 0 and max(original_scores) > 0 else 1.0
-        original_scores_norm = [float(score / max_original) for score in original_scores]
+        max_original = (
+            max(original_scores)
+            if len(original_scores) > 0 and max(original_scores) > 0
+            else 1.0
+        )
+        original_scores_norm = [
+            float(score / max_original) for score in original_scores
+        ]
 
         # Get top-k indices based on original scores
         top_indices = np.argsort(original_scores_norm)[-k:][::-1]
-        
+
         # Convert to Information objects
         hits = []
         scores = []
@@ -351,15 +369,24 @@ class EnhancedStormInformationTable(StormInformationTable):
                     description=original_info.description,
                     snippets=[self.collected_snippets[idx]],
                     title=original_info.title,
-                    meta=original_info.meta.copy() if original_info.meta else {}
+                    meta=original_info.meta.copy() if original_info.meta else {},
                 )
                 hits.append(info)
                 scores.append(float(original_scores_norm[idx]))
 
         return hits, scores
 
-    def _rank_fusion(self, query, vector_hits, vector_scores, bm25_hits, bm25_scores,
-                    vector_weight=0.5, bm25_weight=0.5, k=10):
+    def _rank_fusion(
+        self,
+        query,
+        vector_hits,
+        vector_scores,
+        bm25_hits,
+        bm25_scores,
+        vector_weight=0.5,
+        bm25_weight=0.5,
+        k=10,
+    ):
         """
         Combine results from different retrieval methods using weighted score fusion.
 
@@ -377,19 +404,27 @@ class EnhancedStormInformationTable(StormInformationTable):
             List of (Information, score) tuples sorted by score
         """
         # Create URL-to-score mappings
-        vector_url_to_score = {hit.url: score for hit, score in zip(vector_hits, vector_scores)}
-        bm25_url_to_score = {hit.url: score for hit, score in zip(bm25_hits, bm25_scores)}
+        vector_url_to_score = {
+            hit.url: score for hit, score in zip(vector_hits, vector_scores)
+        }
+        bm25_url_to_score = {
+            hit.url: score for hit, score in zip(bm25_hits, bm25_scores)
+        }
 
         # Create URL-to-hit mappings
         url_to_hit = {}
         for hit in vector_hits:
             url_to_hit[hit.url] = hit
         for hit in bm25_hits:
-            if hit.url not in url_to_hit: # Prioritize hit from vector search if overlap
-                 url_to_hit[hit.url] = hit
+            if (
+                hit.url not in url_to_hit
+            ):  # Prioritize hit from vector search if overlap
+                url_to_hit[hit.url] = hit
 
         # Combine all unique URLs
-        all_urls = set(list(vector_url_to_score.keys()) + list(bm25_url_to_score.keys()))
+        all_urls = set(
+            list(vector_url_to_score.keys()) + list(bm25_url_to_score.keys())
+        )
 
         # Calculate combined scores
         combined_scores = []
@@ -399,7 +434,7 @@ class EnhancedStormInformationTable(StormInformationTable):
 
             # Weighted fusion score
             fusion_score = (vector_weight * vector_score) + (bm25_weight * bm25_score)
-            if url in url_to_hit: # Ensure we have a hit object for the URL
+            if url in url_to_hit:  # Ensure we have a hit object for the URL
                 combined_scores.append((url_to_hit[url], fusion_score))
 
         # Sort by score and return top-k
@@ -423,30 +458,44 @@ class EnhancedStormInformationTable(StormInformationTable):
 
         # Prepare input pairs for the reranker
         rerank_pairs = []
-        valid_candidates_info = [] # Store the Information objects corresponding to rerank_pairs
+        valid_candidates_info = []  # Store the Information objects corresponding to rerank_pairs
         for info, _ in candidates:
             # Use the first snippet (or an empty string if no snippets)
-            snippet = info.snippets[0] if info.snippets and isinstance(info.snippets, list) else ""
-            if snippet: # Only process if snippet is not empty
+            snippet = (
+                info.snippets[0]
+                if info.snippets and isinstance(info.snippets, list)
+                else ""
+            )
+            if snippet:  # Only process if snippet is not empty
                 rerank_pairs.append((query, snippet))
-                valid_candidates_info.append(info) # Keep track of the info object
+                valid_candidates_info.append(info)  # Keep track of the info object
 
         if not rerank_pairs:
-             logging.warning("No valid candidates with non-empty snippets for reranking.")
-             # Return original candidates sorted by fusion score
-             candidates.sort(key=lambda x: x[1], reverse=True)
-             return candidates[:k] if k is not None else candidates
-
+            logging.warning(
+                "No valid candidates with non-empty snippets for reranking."
+            )
+            # Return original candidates sorted by fusion score
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            return candidates[:k] if k is not None else candidates
 
         # Get reranker scores
         with self._predict_lock:
-            rerank_scores = self.reranker.predict(rerank_pairs, show_progress_bar=False) # Disable progress bar
+            rerank_scores = self.reranker.predict(
+                rerank_pairs, show_progress_bar=False
+            )  # Disable progress bar
 
         # Combine with original information objects that were valid
-        reranked_results = [(info, float(score)) for info, score in zip(valid_candidates_info, rerank_scores)]
+        reranked_results = [
+            (info, float(score))
+            for info, score in zip(valid_candidates_info, rerank_scores)
+        ]
 
         # Filter out results with scores lower than reranker_threshold
-        reranked_results = [(info, score) for info, score in reranked_results if score >= self.reranker_threshold]
+        reranked_results = [
+            (info, score)
+            for info, score in reranked_results
+            if score >= self.reranker_threshold
+        ]
 
         # Sort by reranker score
         reranked_results.sort(key=lambda x: x[1], reverse=True)
