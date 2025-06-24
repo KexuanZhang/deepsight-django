@@ -120,13 +120,15 @@ class FileStorageService:
         Generate organized file paths for knowledge base storage.
         New structure: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/title.pdf
         Content: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/content/extracted_content.md
+        Images: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/images/
         
         Returns:
             {
                 'base_dir': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/',
                 'original_file_path': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/title.pdf',
                 'content_dir': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/content/',
-                'content_file_path': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/content/extracted_content.md'
+                'content_file_path': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/content/extracted_content.md',
+                'images_dir': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/images/',
             }
         """
         # Clean the filename
@@ -139,12 +141,14 @@ class FileStorageService:
         # Build paths according to new structure with prefixed IDs
         base_dir = f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{kb_item_id}"
         content_dir = f"{base_dir}/content"
+        images_dir = f"{base_dir}/images"
         
         return {
             'base_dir': base_dir,
             'original_file_path': f"{base_dir}/{cleaned_filename}",
             'content_dir': content_dir,
             'content_file_path': f"{content_dir}/extracted_content.md",
+            'images_dir': images_dir,
             'cleaned_filename': cleaned_filename,
             'year_month': year_month
         }
@@ -227,8 +231,28 @@ class FileStorageService:
             if original_file_path and os.path.exists(original_file_path):
                 self._save_organized_original_file(kb_item, original_file_path, paths)
             
-            # Store extracted content in organized structure
-            self._save_organized_content_file(kb_item, content, paths)
+            # Save extracted images if they exist in the processing result
+            final_content = content
+            if 'images' in processing_result and processing_result['images']:
+                # Create images directory
+                images_dir = self.base_data_root / paths['images_dir']
+                images_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Save images and get mapping of saved paths
+                saved_images = self._save_organized_images(kb_item, processing_result['images'], paths)
+                
+                # Update image links in markdown content if images were saved
+                if saved_images:
+                    # We need to import the upload processor's method
+                    # For now, we'll do a simple regex replacement here
+                    final_content = self._update_image_links_in_content(content, saved_images)
+            
+            # Store extracted content in organized structure (with updated image links)
+            # Skip creating extracted_content.md if processing_result indicates marker processing
+            if not processing_result.get('skip_content_file', False):
+                self._save_organized_content_file(kb_item, final_content, paths)
+            else:
+                self.log_operation("skip_content_file", f"Skipped creating extracted_content.md for marker-processed file: {kb_item.id}")
             
             # Link to current notebook
             notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
@@ -276,6 +300,98 @@ class FileStorageService:
             
         except Exception as e:
             self.log_operation("save_organized_content_file_error", f"kb_item_id={kb_item.id}, error={str(e)}", "error")
+    
+    def _save_organized_images(self, kb_item: 'KnowledgeBaseItem', images: Dict[str, bytes], paths: Dict[str, str]) -> Dict[str, str]:
+        """
+        Save extracted images in organized structure.
+        
+        Args:
+            kb_item: Knowledge base item instance
+            images: Dictionary of {image_name: image_bytes}
+            paths: Path structure dict containing 'images_dir'
+            
+        Returns:
+            Dictionary mapping original image names to saved image paths
+        """
+        saved_images = {}
+        
+        if not images:
+            return saved_images
+            
+        try:
+            images_dir = paths['images_dir']
+            
+            for image_name, image_data in images.items():
+                try:
+                    # Clean image filename
+                    clean_image_name = self._clean_filename(image_name)
+                    image_path = f"{images_dir}/{clean_image_name}"
+                    
+                    # Save image data
+                    image_file = ContentFile(image_data)
+                    
+                    # We'll use Django's default file storage to save the image
+                    # Since we don't have a specific image field, we'll save it using the default storage
+                    from django.core.files.storage import default_storage
+                    saved_path = default_storage.save(image_path, image_file)
+                    
+                    saved_images[image_name] = saved_path
+                    
+                    self.log_operation("save_organized_image", f"Saved image: {saved_path}")
+                    
+                except Exception as e:
+                    self.log_operation("save_organized_image_error", f"Failed to save image {image_name}: {str(e)}", "error")
+                    continue
+            
+            if saved_images:
+                self.log_operation("save_organized_images", f"Saved {len(saved_images)} images to {images_dir}")
+                
+        except Exception as e:
+            self.log_operation("save_organized_images_error", f"kb_item_id={kb_item.id}, error={str(e)}", "error")
+            
+        return saved_images
+    
+    def _update_image_links_in_content(self, content: str, image_mapping: Dict[str, str]) -> str:
+        """
+        Update image links in markdown content to point to relative paths.
+        
+        Args:
+            content: Original markdown content
+            image_mapping: Dictionary mapping original image names to saved paths
+            
+        Returns:
+            Updated content with corrected image links
+        """
+        if not image_mapping:
+            return content
+        
+        updated_content = content
+        
+        # Pattern to match markdown image syntax: ![alt text](image_path)
+        image_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+        
+        def replace_image_link(match):
+            alt_text = match.group(1)
+            original_path = match.group(2)
+            
+            # Extract filename from the original path
+            original_filename = os.path.basename(original_path)
+            
+            # Check if we have a saved version of this image
+            if original_filename in image_mapping:
+                # Use relative path for markdown (just the filename since images are in images/ subdirectory)
+                new_path = f"../images/{os.path.basename(image_mapping[original_filename])}"
+                return f"![{alt_text}]({new_path})"
+            
+            # If no mapping found, return original
+            return match.group(0)
+        
+        updated_content = re.sub(image_pattern, replace_image_link, updated_content)
+        
+        if image_mapping:
+            self.log_operation("update_image_links", f"Updated {len(image_mapping)} image links in content")
+        
+        return updated_content
     
     def _delete_organized_structure(self, kb_item: 'KnowledgeBaseItem', user_id: int):
         """Delete the entire organized directory structure for a knowledge base item."""

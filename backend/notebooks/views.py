@@ -3,6 +3,8 @@ import json
 import time
 import mimetypes
 from uuid import uuid4
+import asyncio
+from asgiref.sync import sync_to_async
 
 from .utils.rag_engine import RAGChatbot
 
@@ -19,9 +21,15 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, JSONParser
 
 from .models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook
-from .serializers import NotebookSerializer, FileUploadSerializer
+from .serializers import (
+    NotebookSerializer, 
+    FileUploadSerializer, 
+    URLParseSerializer, 
+    URLParseWithMediaSerializer
+)
 from .utils.upload_processor import UploadProcessor
 from .utils.file_storage import FileStorageService
+from .utils.url_extractor import URLExtractor
 from .utils.view_mixins import (
     StandardAPIView,
     NotebookPermissionMixin,
@@ -34,6 +42,7 @@ from .utils.view_mixins import (
 
 upload_processor = UploadProcessor()
 file_storage = FileStorageService()
+url_extractor = URLExtractor()
 
 class FileUploadView(StandardAPIView, NotebookPermissionMixin):
     """Handle file uploads to notebooks."""
@@ -103,6 +112,183 @@ class FileUploadView(StandardAPIView, NotebookPermissionMixin):
         except Exception as e:
             return self.error_response(
                 "File upload failed",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)}
+            )
+
+
+class URLParseView(StandardAPIView, NotebookPermissionMixin):
+    """Handle URL parsing without media extraction."""
+    
+    parser_classes = [JSONParser]
+
+    @transaction.atomic
+    def post(self, request, notebook_id):
+        """Parse URL content using crawl4ai only."""
+        try:
+            # Validate request data
+            serializer = URLParseSerializer(data=request.data)
+            if not serializer.is_valid():
+                return self.error_response(
+                    "Invalid request data", 
+                    details=serializer.errors
+                )
+            
+            # Verify notebook access
+            notebook = self.get_user_notebook(notebook_id, request.user)
+            
+            # Extract URL and upload ID
+            url = serializer.validated_data["url"]
+            upload_url_id = serializer.validated_data.get("upload_url_id") or uuid4().hex
+
+            # Process the URL using async function
+            async def process_url_async():
+                return await url_extractor.process_url(
+                    url=url,
+                    upload_url_id=upload_url_id,
+                    user_id=request.user.pk,
+                    notebook_id=notebook.id
+                )
+
+            # Run async processing
+            result = asyncio.run(process_url_async())
+
+            # Create source record
+            source = Source.objects.create(
+                notebook=notebook,
+                source_type="url",
+                title=url,
+                needs_processing=False,
+                processing_status="done",
+            )
+
+            # Create URL processing result
+            URLProcessingResult.objects.create(
+                source=source,
+                content_md=result.get("content_preview", ""),
+            )
+
+            # Link to knowledge base
+            kb_item_id = result['file_id']
+            kb_item = get_object_or_404(KnowledgeBaseItem, id=kb_item_id, user=request.user)
+            
+            ki, created = KnowledgeItem.objects.get_or_create(
+                notebook=notebook,
+                knowledge_base_item=kb_item,
+                defaults={
+                    'source': source,
+                    'notes': f"Processed from URL: {url}"
+                }
+            )
+            
+            # Update source if needed
+            if not created and not ki.source:
+                ki.source = source
+                ki.save(update_fields=['source'])
+
+            return Response({
+                "success": True,
+                "file_id": kb_item_id,
+                "knowledge_item_id": ki.id,
+                "url": url,
+                "title": result.get("title", ""),
+                "extraction_method": result.get("extraction_method", "crawl4ai"),
+                "message": "URL parsing completed successfully"
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return self.error_response(
+                "URL parsing failed",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)}
+            )
+
+
+class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
+    """Handle URL parsing with media extraction."""
+    
+    parser_classes = [JSONParser]
+
+    @transaction.atomic
+    def post(self, request, notebook_id):
+        """Parse URL content with media support."""
+        try:
+            # Validate request data
+            serializer = URLParseWithMediaSerializer(data=request.data)
+            if not serializer.is_valid():
+                return self.error_response(
+                    "Invalid request data", 
+                    details=serializer.errors
+                )
+            
+            # Verify notebook access
+            notebook = self.get_user_notebook(notebook_id, request.user)
+            
+            # Extract URL, strategy, and upload ID
+            url = serializer.validated_data["url"]
+            extraction_strategy = serializer.validated_data.get("extraction_strategy", "cosine")
+            upload_url_id = serializer.validated_data.get("upload_url_id") or uuid4().hex
+
+            # Process the URL with media using async function
+            async def process_url_with_media_async():
+                return await url_extractor.process_url_with_media(
+                    url=url,
+                    extraction_options={"strategy": extraction_strategy},
+                    upload_url_id=upload_url_id,
+                    user_id=request.user.pk,
+                    notebook_id=notebook.id
+                )
+
+            # Run async processing
+            result = asyncio.run(process_url_with_media_async())
+
+            # Create source record
+            source = Source.objects.create(
+                notebook=notebook,
+                source_type="url",
+                title=url,
+                needs_processing=False,
+                processing_status="done",
+            )
+
+            # Create URL processing result
+            URLProcessingResult.objects.create(
+                source=source,
+                content_md=result.get("content_preview", ""),
+            )
+
+            # Link to knowledge base
+            kb_item_id = result['file_id']
+            kb_item = get_object_or_404(KnowledgeBaseItem, id=kb_item_id, user=request.user)
+            
+            ki, created = KnowledgeItem.objects.get_or_create(
+                notebook=notebook,
+                knowledge_base_item=kb_item,
+                defaults={
+                    'source': source,
+                    'notes': f"Processed from URL with media: {url}"
+                }
+            )
+            
+            # Update source if needed
+            if not created and not ki.source:
+                ki.source = source
+                ki.save(update_fields=['source'])
+
+            return Response({
+                "success": True,
+                "file_id": kb_item_id,
+                "knowledge_item_id": ki.id,
+                "url": url,
+                "title": result.get("title", ""),
+                "has_media": result.get("has_media", False),
+                "processing_type": result.get("processing_type", "url_content"),
+                "message": "URL processing with media completed successfully"
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return self.error_response(
+                "URL processing with media failed",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details={"error": str(e)}
             )
