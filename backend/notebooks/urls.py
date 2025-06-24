@@ -13,6 +13,8 @@ from .views import (
     FileContentView,
     FileRawView,
     FileRawSimpleView,
+    MarkdownBatchContentView,
+    RAGChatFromKBView,
 )
 
 urlpatterns = [
@@ -31,6 +33,14 @@ urlpatterns = [
         FileListView.as_view(),
         name='file-list'
     ),
+
+    path(
+        'notebooks/<int:notebook_id>/files/md-batch-contents/',
+        MarkdownBatchContentView.as_view(),
+        name='file-md-batch-contents'
+    ),
+
+    path('notebooks/chat/', RAGChatFromKBView.as_view(), name='chat-rag'),
 
     # 2) upload & parse a new file
     path(

@@ -631,6 +631,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       const newSelectedSources = sourcesListRef.current.getSelectedSources() || [];
       setSelectedFiles(newSelectedFiles);
       setSelectedSources(newSelectedSources);
+      // console.log("studio files", selectedFiles)
     }
   }, [sourcesListRef]);
   

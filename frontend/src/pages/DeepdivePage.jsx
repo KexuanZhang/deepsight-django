@@ -232,7 +232,11 @@ export default function DeepdivePage() {
               isSourcesCollapsed ? "flex-1" : "col-span-1 md:col-span-5"
             }`}
           >
-            <ChatPanel notebookId={notebookId} />
+            <ChatPanel 
+              notebookId={notebookId} 
+              sourcesListRef={sourcesListRef}
+              onSelectionChange={registerSelectionCallback}
+            />
           </motion.div>
 
           {/* Studio Panel */}
