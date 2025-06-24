@@ -483,41 +483,33 @@ def store_generated_files(report: Report, result, output_dir: Path) -> List[str]
                 try:
                     source_path = Path(file_path)
                     if source_path.exists() and source_path.is_file():
-                        # Read the file content
-                        with open(source_path, 'rb') as f:
-                            file_content = f.read()
+                        filename = source_path.name
                         
                         # Note: Image path fixing is now done directly in storm_gen_article.md and storm_gen_article_polished.md
                         # during generation, so we no longer need to apply it during file storage
                         if source_path.name.endswith('.md') and ("polished" in source_path.name.lower() or "report" in source_path.name.lower()):
                             logger.info(f"File {source_path.name} already has image paths fixed during generation")
                         
-                        # Create a ContentFile
-                        django_file = ContentFile(file_content)
-                        
-                        # Use original filename directly - no subfolders
-                        filename = source_path.name
-                        
-                        # Save using the report's file field (if this is the main report)
-                        if "polished" in filename.lower() or "report" in filename.lower():
-                            # Clear existing file to prevent Django from adding random suffixes
-                            if report.main_report_file:
-                                try:
-                                    # Delete the existing file if it exists
-                                    report.main_report_file.delete(save=False)
-                                except Exception as e:
-                                    logger.warning(f"Could not delete existing main report file: {e}")
-                            
-                            # Save the new file with original filename
-                            report.main_report_file.save(filename, django_file, save=True)
-                            stored_files.append(report.main_report_file.name)
+                        # Check if this is a final Report file that's already in the output directory
+                        if filename.startswith("Report_r_") and filename.endswith(".md"):
+                            # The deep_report_generator already created this file in the output directory
+                            # Don't duplicate it in Django storage, just record the path
+                            relative_path = f"Users/u_{report.user.pk}/report/{datetime.now().strftime('%Y-%m')}/r_{report.id}/{filename}"
+                            stored_files.append(relative_path)
+                            logger.info(f"Report file already exists in output directory: {filename}")
                         else:
-                            # For other files, they are already stored directly in the output directory
+                            # For non-Report files (storm_gen_*.md, etc.), store them normally
+                            # Read the file content
+                            with open(source_path, 'rb') as f:
+                                file_content = f.read()
+                            
+                            # Create a ContentFile
+                            django_file = ContentFile(file_content)
+                            
                             # Record the path relative to the report folder (directly in r_{report_id})
                             relative_path = f"Users/u_{report.user.pk}/report/{datetime.now().strftime('%Y-%m')}/r_{report.id}/{filename}"
                             stored_files.append(relative_path)
-                        
-                        logger.info(f"Stored file directly in report folder: {filename}")
+                            logger.info(f"Stored file directly in report folder: {filename}")
                         
                 except Exception as e:
                     logger.warning(f"Failed to store file {file_path}: {e}")

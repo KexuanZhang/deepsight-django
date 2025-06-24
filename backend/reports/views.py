@@ -127,7 +127,7 @@ class ReportViewSet(viewsets.ModelViewSet):
             
             # Set simple article_title using report ID only
             # This prevents duplicate filenames and follows the user's requirement
-            report.article_title = f"Report_r{report.id}"
+            report.article_title = f"Report_r_{report.id}"
             report.save(update_fields=['article_title'])
             
             # Add job to queue
