@@ -1358,8 +1358,13 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       
       setSelectedKnowledgeItems(new Set());
       
-      // No need to refresh the entire sources list for knowledge base deletions
-      // The knowledge base items are separate from the current notebook sources
+      // Remove deleted knowledge base items from the main sources list as well
+      // since they might be linked to the current notebook
+      setSources(prev => prev.filter(source => {
+        // Remove sources that match any of the successfully deleted knowledge base items
+        const knowledgeItemId = source.metadata?.knowledge_item_id || source.file_id;
+        return !successfulDeletes.includes(knowledgeItemId);
+      }));
 
       const failedDeletes = results.filter(result => result.success === false);
       if (failedDeletes.length > 0) {

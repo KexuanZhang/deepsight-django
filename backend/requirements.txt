@@ -47,4 +47,5 @@ whisper
 yt_dlp
 celery
 langchain_community
+langchain-openai
 faiss-cpu
