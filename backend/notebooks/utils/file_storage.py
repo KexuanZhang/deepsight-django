@@ -291,7 +291,14 @@ class FileStorageService:
             # Store extracted content in organized structure (with updated image links)
             # Skip creating extracted_content.md if processing_result indicates marker processing
             if not processing_result.get('skip_content_file', False):
-                self._save_organized_content_file(kb_item, final_content, paths)
+                # Check if there's a specific content filename in the processing result or metadata
+                content_filename = None
+                if 'content_filename' in processing_result:
+                    content_filename = processing_result['content_filename']
+                elif 'processed_filename' in metadata:
+                    content_filename = metadata['processed_filename']
+                
+                self._save_organized_content_file(kb_item, final_content, paths, content_filename)
             else:
                 self.log_operation("skip_content_file", f"Skipped creating extracted_content.md for marker-processed file: {kb_item.id}")
             
@@ -348,17 +355,28 @@ class FileStorageService:
             )
 
     def _save_organized_content_file(
-        self, kb_item: "KnowledgeBaseItem", content: str, paths: Dict[str, str]
+        self, kb_item: "KnowledgeBaseItem", content: str, paths: Dict[str, str], content_filename: str = None
     ):
         """Save the extracted content in organized structure."""
         try:
+            # Determine the content filename - use provided filename or fall back to default
+            if content_filename:
+                # Clean the provided filename
+                cleaned_filename = self._clean_filename(content_filename)
+                if not cleaned_filename.endswith('.md'):
+                    cleaned_filename += '.md'
+                content_file_path = f"{paths['content_dir']}/{cleaned_filename}"
+            else:
+                # Use the default path from paths dict
+                content_file_path = paths["content_file_path"]
+            
             # Save content in the content subdirectory
             content_file = ContentFile(content.encode("utf-8"))
-            kb_item.file.save(paths["content_file_path"], content_file, save=True)
+            kb_item.file.save(content_file_path, content_file, save=True)
 
             self.log_operation(
                 "save_organized_content_file",
-                f"Saved content file: {paths['content_file_path']}",
+                f"Saved content file: {content_file_path}",
             )
 
         except Exception as e:
@@ -563,19 +581,63 @@ class FileStorageService:
             if kb_item.content:
                 return kb_item.content
 
-            # Otherwise read from file
+            # Try to read from file field if it exists
+            content_from_file = None
             if kb_item.file:
                 try:
                     # Use Django's file field to read content
                     with kb_item.file.open("r") as f:
-                        return f.read()
+                        content_from_file = f.read()
+                        return content_from_file
                 except (FileNotFoundError, OSError) as e:
                     self.log_operation(
                         "get_content_file_error",
                         f"kb_item_id={file_id}, error={str(e)}",
                         "error",
                     )
-                    return None
+                    # File field exists but file not found - continue to fallback
+
+            # If no file field or file reading failed, try to find any .md file in the content directory
+            self.log_operation(
+                "get_content_file_fallback",
+                f"Attempting to find alternative content file for kb_item_id={file_id}",
+                "info",
+            )
+            
+            try:
+                # Generate the expected paths
+                original_filename = kb_item.metadata.get('original_filename', 'unknown_file') if kb_item.metadata else 'unknown_file'
+                paths = self._generate_knowledge_base_paths(user_id or kb_item.user_id, original_filename, str(kb_item.id))
+                
+                # Look for any markdown files in the content directory
+                from pathlib import Path
+                content_dir = self.base_data_root / paths['content_dir']
+                
+                if content_dir.exists():
+                    md_files = list(content_dir.glob('*.md'))
+                    if md_files:
+                        # Use the first markdown file found
+                        with open(md_files[0], 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        
+                        # Update the database record to point to the correct file
+                        relative_path = str(Path(paths['content_dir']) / md_files[0].name)
+                        kb_item.file.name = relative_path
+                        kb_item.save()
+                        
+                        self.log_operation(
+                            "get_content_file_fallback_success",
+                            f"Found and updated file path to: {relative_path}",
+                            "info",
+                        )
+                        
+                        return content
+            except Exception as fallback_error:
+                self.log_operation(
+                    "get_content_file_fallback_error",
+                    f"kb_item_id={file_id}, fallback_error={str(fallback_error)}",
+                    "error",
+                )
 
             return None
         except Exception as e:
