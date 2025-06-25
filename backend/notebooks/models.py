@@ -334,4 +334,75 @@ class KnowledgeItem(models.Model):
                 )
 
     def __str__(self):
-        return f"{self.notebook.name} -> {self.knowledge_base_item.title}"
+        return f"{self.notebook.name} → {self.knowledge_base_item.title}"
+
+
+class BatchJob(models.Model):
+    """
+    Tracks batch processing operations for multiple URLs/files.
+    """
+    
+    BATCH_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('partially_completed', 'Partially Completed'),
+    ]
+    
+    JOB_TYPE_CHOICES = [
+        ('url_parse', 'URL Parse'),
+        ('url_parse_media', 'URL Parse with Media'),
+        ('file_upload', 'File Upload'),
+    ]
+    
+    notebook = models.ForeignKey(
+        Notebook,
+        on_delete=models.CASCADE,
+        related_name='batch_jobs'
+    )
+    job_type = models.CharField(max_length=20, choices=JOB_TYPE_CHOICES)
+    status = models.CharField(max_length=20, choices=BATCH_STATUS_CHOICES, default='pending')
+    total_items = models.IntegerField(default=0)
+    completed_items = models.IntegerField(default=0)
+    failed_items = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Batch {self.job_type} - {self.status} ({self.completed_items}/{self.total_items})"
+
+
+class BatchJobItem(models.Model):
+    """
+    Individual items within a batch job.
+    """
+    
+    ITEM_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+    
+    batch_job = models.ForeignKey(
+        BatchJob,
+        on_delete=models.CASCADE,
+        related_name='items'
+    )
+    item_data = models.JSONField(help_text="URL, filename, or other item-specific data")
+    upload_id = models.CharField(max_length=64, blank=True, help_text="Upload/processing ID for status tracking")
+    status = models.CharField(max_length=20, choices=ITEM_STATUS_CHOICES, default='pending')
+    result_data = models.JSONField(null=True, blank=True, help_text="Processing results")
+    error_message = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['created_at']
+    
+    def __str__(self):
+        return f"Item {self.id} - {self.status}"

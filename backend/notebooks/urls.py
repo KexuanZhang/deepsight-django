@@ -15,8 +15,11 @@ from .views import (
     FileContentView,
     FileRawView,
     FileRawSimpleView,
+    FileImageView,
     MarkdownBatchContentView,
     RAGChatFromKBView,
+    VideoImageExtractionView,
+    BatchJobStatusView,
 )
 
 urlpatterns = [
@@ -99,5 +102,26 @@ urlpatterns = [
     # 10) simplified raw file serving (without notebook context)
     path(
         "files/<str:file_id>/raw/", FileRawSimpleView.as_view(), name="file-raw-simple"
+    ),
+
+    # 11) image serving for knowledge base items
+    path(
+        "<int:notebook_id>/files/<str:file_id>/images/<str:image_name>",
+        FileImageView.as_view(),
+        name="file-image",
+    ),
+
+    # 12) video image extraction endpoint
+    path(
+        "<int:notebook_id>/extraction/video_image_extraction/",
+        VideoImageExtractionView.as_view(),
+        name="video-image-extraction",
+    ),
+
+    # 12) batch job status endpoint
+    path(
+        "<int:notebook_id>/batch-jobs/<int:batch_job_id>/status/",
+        BatchJobStatusView.as_view(),
+        name="batch-job-status",
     ),
 ]

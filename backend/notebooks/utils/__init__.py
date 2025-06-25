@@ -35,6 +35,11 @@ try:
 except ImportError:
     RAGChatbot = None
 
+try:
+    from .media_extractor import MediaFeatureExtractor
+except ImportError:
+    MediaFeatureExtractor = None
+
 __all__ = [
     'config',
     'FileValidator', 
@@ -42,5 +47,6 @@ __all__ = [
     'FileStorageService',
     'ContentIndexingService',
     'URLExtractor',
-    'RAGChatbot'
+    'RAGChatbot',
+    'MediaFeatureExtractor'
 ]

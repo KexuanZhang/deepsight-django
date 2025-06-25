@@ -75,17 +75,32 @@ class ApiService {
   }
 
   async parseFile(file, uploadFileId, notebookId) {
+    // Support both single file and multiple files
+    const files = Array.isArray(file) ? file : [file];
+    const isBatch = Array.isArray(file);
+    
     const form = new FormData();
-    form.append('file', file);
+    
+    if (isBatch) {
+      files.forEach(f => form.append('files', f));
+    } else {
+      form.append('file', file);
+    }
+    
     form.append('notebook', notebookId);
-    console.log(form)
     if (uploadFileId) form.append('upload_file_id', uploadFileId);
 
-
-    return this.request(
+    const response = await this.request(
       `/${notebookId}/files/upload/`,
       { method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}, body: form, credentials: 'include' }
     );
+    
+    // Return response with batch indicator
+    return {
+      ...response,
+      is_batch: isBatch,
+      total_items: isBatch ? files.length : 1
+    };
   }
 
   // createParsingStatusStream(uploadFileId, notebookId, onMessage, onError, onClose) {
@@ -217,13 +232,23 @@ class ApiService {
   // ─── URL PARSING ─────────────────────────────────────────────────────────
 
   async parseUrl(url, notebookId, searchMethod = 'cosine', uploadFileId = null) {
+    // Support both single URL (string) and multiple URLs (array)
+    const urls = Array.isArray(url) ? url : [url];
+    const isBatch = Array.isArray(url);
+    
     const body = {
-      url: url,
       search_method: searchMethod
     };
-    if (uploadFileId) body.upload_file_id = uploadFileId;
+    
+    if (isBatch) {
+      body.urls = urls;
+    } else {
+      body.url = url;
+    }
+    
+    if (uploadFileId) body.upload_url_id = uploadFileId;
 
-    return this.request(`/${notebookId}/files/parse_url/`, {
+    const response = await this.request(`/${notebookId}/files/parse_url/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -231,17 +256,34 @@ class ApiService {
       },
       body: JSON.stringify(body),
     });
+    
+    // Return response with batch indicator
+    return {
+      ...response,
+      is_batch: isBatch,
+      total_items: isBatch ? urls.length : 1
+    };
   }
 
   async parseUrlWithMedia(url, notebookId, searchMethod = 'cosine', uploadFileId = null) {
+    // Support both single URL (string) and multiple URLs (array)
+    const urls = Array.isArray(url) ? url : [url];
+    const isBatch = Array.isArray(url);
+    
     const body = {
-      url: url,
       search_method: searchMethod,
       media_processing: true
     };
-    if (uploadFileId) body.upload_file_id = uploadFileId;
+    
+    if (isBatch) {
+      body.urls = urls;
+    } else {
+      body.url = url;
+    }
+    
+    if (uploadFileId) body.upload_url_id = uploadFileId;
 
-    return this.request(`/${notebookId}/files/parse_url_media/`, {
+    const response = await this.request(`/${notebookId}/files/parse_url_media/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -249,6 +291,13 @@ class ApiService {
       },
       body: JSON.stringify(body),
     });
+    
+    // Return response with batch indicator
+    return {
+      ...response,
+      is_batch: isBatch,
+      total_items: isBatch ? urls.length : 1
+    };
   }
 
   // ─── REPORTS & AI GENERATION ─────────────────────────────────────────────
@@ -427,6 +476,11 @@ class ApiService {
       console.warn('Health check failed:', error);
       return false;
     }
+  }
+
+  // New method for getting batch job status
+  async getBatchJobStatus(notebookId, batchJobId) {
+    return this.request(`/${notebookId}/batch-jobs/${batchJobId}/status/`);
   }
 }
 

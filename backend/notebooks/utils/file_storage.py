@@ -361,10 +361,15 @@ class FileStorageService:
         try:
             # Determine the content filename - use provided filename or fall back to default
             if content_filename:
-                # Clean the provided filename
-                cleaned_filename = self._clean_filename(content_filename)
-                if not cleaned_filename.endswith('.md'):
-                    cleaned_filename += '.md'
+                # For transcript files, be more careful to preserve the _transcript suffix
+                if '_transcript' in content_filename and content_filename.endswith('.md'):
+                    # Clean the filename with a higher max_length to preserve transcript suffix
+                    cleaned_filename = self._clean_filename(content_filename, max_length=150)
+                else:
+                    # Clean the provided filename normally
+                    cleaned_filename = self._clean_filename(content_filename)
+                    if not cleaned_filename.endswith('.md'):
+                        cleaned_filename += '.md'
                 content_file_path = f"{paths['content_dir']}/{cleaned_filename}"
             else:
                 # Use the default path from paths dict
@@ -372,7 +377,43 @@ class FileStorageService:
             
             # Save content in the content subdirectory
             content_file = ContentFile(content.encode("utf-8"))
+            
+            # For transcript files, ensure filename fits Django's constraints
+            if content_filename and '_transcript' in content_filename:
+                self.log_operation("transcript_debug", 
+                    f"Before Django save - content_file_path: '{content_file_path}', filename: '{os.path.basename(content_file_path)}'")
+                
+                # Extract just the filename from the path for transcript files
+                transcript_filename = os.path.basename(content_file_path)
+                
+                # Django typically has issues with long filenames in deep paths
+                # Shorten the base name to ensure transcript suffix is preserved
+                # Target: filename should be max 35 chars to account for path depth
+                max_filename_length = 35
+                if len(transcript_filename) > max_filename_length:
+                    # Extract the base name without _transcript.md (14 chars)
+                    base_name = transcript_filename[:-14]  # Remove '_transcript.md'
+                    # Shorten to fit in target length minus suffix
+                    max_base_length = max_filename_length - 14
+                    shortened_base = base_name[:max_base_length].rstrip('_')
+                    transcript_filename = f"{shortened_base}_transcript.md"
+                    # Update the path with the shortened filename
+                    content_file_path = f"{paths['content_dir']}/{transcript_filename}"
+                    self.log_operation("transcript_debug", 
+                        f"Shortened for Django - content_file_path: '{content_file_path}', filename: '{transcript_filename}'")
+            
+            # Save the file and capture what Django actually saves it as
             kb_item.file.save(content_file_path, content_file, save=True)
+            actual_saved_path = kb_item.file.name
+            
+            # Debug logging to see what Django actually saved
+            if content_filename and '_transcript' in content_filename:
+                actual_filename = os.path.basename(actual_saved_path)
+                self.log_operation("transcript_debug", 
+                    f"Django saved as - path: '{actual_saved_path}', filename: '{actual_filename}'")
+                if '_transcript' not in actual_filename:
+                    self.log_operation("transcript_debug_issue", 
+                        f"ISSUE: Django truncated transcript filename from '{os.path.basename(content_file_path)}' to '{actual_filename}'", "warning")
 
             self.log_operation(
                 "save_organized_content_file",
@@ -765,44 +806,20 @@ class FileStorageService:
         try:
             from ..models import KnowledgeItem, Notebook
 
-            self.log_operation(
-                "unlink_knowledge_item",
-                f"Starting unlink: kb_item_id={kb_item_id}, notebook_id={notebook_id}, user_id={user_id}",
-            )
-
             # Verify ownership
             notebook = Notebook.objects.filter(id=notebook_id, user_id=user_id).first()
             if not notebook:
-                self.log_operation(
-                    "unlink_knowledge_item_error",
-                    f"Notebook not found: notebook_id={notebook_id}, user_id={user_id}",
-                    "error",
-                )
                 return False
 
-            # Try to convert kb_item_id to int if it's a valid number
-            try:
-                kb_item_id_int = int(kb_item_id)
-                self.log_operation(
-                    "unlink_knowledge_item",
-                    f"Converted kb_item_id to int: {kb_item_id_int}",
-                )
-            except (ValueError, TypeError):
-                self.log_operation(
-                    "unlink_knowledge_item_error",
-                    f"Invalid kb_item_id format: {kb_item_id} (expected integer)",
-                    "error",
-                )
-                return False
-
-            # Delete the link using the integer ID
+            # Find and delete the link
             deleted_count, _ = KnowledgeItem.objects.filter(
-                notebook=notebook, knowledge_base_item_id=kb_item_id_int
+                notebook=notebook,
+                knowledge_base_item_id=kb_item_id
             ).delete()
 
             self.log_operation(
                 "unlink_knowledge_item",
-                f"kb_item_id={kb_item_id}, notebook_id={notebook_id}, deleted={deleted_count > 0}, deleted_count={deleted_count}",
+                f"kb_item_id={kb_item_id}, notebook_id={notebook_id}, deleted_count={deleted_count}"
             )
             return deleted_count > 0
 
@@ -810,9 +827,80 @@ class FileStorageService:
             self.log_operation(
                 "unlink_knowledge_item_error",
                 f"kb_item_id={kb_item_id}, notebook_id={notebook_id}, error={str(e)}",
-                "error",
+                "error"
             )
             return False
+
+    def get_original_file_path(self, file_id: str, user_id: int = None) -> Optional[str]:
+        """Get the path to the original file (video, audio, PDF, etc.) from the knowledge base item ID."""
+        try:
+            # Import here to avoid circular imports
+            from ..models import KnowledgeBaseItem
+
+            # Query the database for the knowledge base item
+            kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
+            if user_id:
+                kb_query = kb_query.filter(user_id=user_id)
+
+            kb_item = kb_query.first()
+            if not kb_item:
+                self.log_operation(
+                    "get_original_file_path_not_found",
+                    f"Knowledge base item not found: file_id={file_id}, user_id={user_id}",
+                    "warning"
+                )
+                return None
+
+            # Check if original_file field exists and has a path
+            if kb_item.original_file and hasattr(kb_item.original_file, 'path'):
+                file_path = kb_item.original_file.path
+                if os.path.exists(file_path):
+                    self.log_operation(
+                        "get_original_file_path_success",
+                        f"Found original file: {file_path}",
+                        "info"
+                    )
+                    return file_path
+                else:
+                    self.log_operation(
+                        "get_original_file_path_missing",
+                        f"Original file path exists in DB but file not found: {file_path}",
+                        "warning"
+                    )
+            
+            # If no original_file, check metadata for alternative paths
+            if kb_item.metadata:
+                original_filename = kb_item.metadata.get('original_filename')
+                if original_filename:
+                    # Try to construct the expected path
+                    paths = self._generate_knowledge_base_paths(
+                        user_id or kb_item.user_id, 
+                        original_filename, 
+                        str(kb_item.id)
+                    )
+                    potential_path = os.path.join(self.base_data_root, paths['original_file_path'])
+                    if os.path.exists(potential_path):
+                        self.log_operation(
+                            "get_original_file_path_found_via_metadata",
+                            f"Found original file via metadata: {potential_path}",
+                            "info"
+                        )
+                        return potential_path
+
+            self.log_operation(
+                "get_original_file_path_not_found",
+                f"Original file not found for file_id={file_id}",
+                "warning"
+            )
+            return None
+
+        except Exception as e:
+            self.log_operation(
+                "get_original_file_path_error",
+                f"file_id={file_id}, user_id={user_id}, error={str(e)}",
+                "error"
+            )
+            return None
 
 
 # Global singleton instance to prevent repeated initialization

@@ -14,6 +14,128 @@ import { config } from '../config.js';
 
 const API_BASE_URL = config.API_BASE_URL;
 
+// Authenticated Image component for handling images with credentials
+const AuthenticatedImage = ({ src, alt, title }) => {
+  const [imgSrc, setImgSrc] = useState(src);
+  const [imgError, setImgError] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // If the src is a blob URL or already a data URL, use it directly
+    if (src.startsWith('blob:') || src.startsWith('data:')) {
+      setImgSrc(src);
+      setIsLoading(false);
+      return;
+    }
+
+    // If it's an API URL, fetch it with credentials and create a blob URL
+    if (src.includes('/api/v1/notebooks/') && src.includes('/images/')) {
+      const fetchImageWithCredentials = async () => {
+        try {
+          console.log('Fetching image with credentials:', src);
+          const response = await fetch(src, {
+            credentials: 'include',
+            headers: {
+              'Accept': 'image/*,*/*'
+            }
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          const blob = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          setImgSrc(blobUrl);
+          setIsLoading(false);
+          console.log('Image blob URL created:', blobUrl);
+
+          // Cleanup blob URL when component unmounts
+          return () => {
+            URL.revokeObjectURL(blobUrl);
+          };
+        } catch (error) {
+          console.error('Failed to fetch image with credentials:', error);
+          setImgError(true);
+          setIsLoading(false);
+        }
+      };
+
+      fetchImageWithCredentials();
+    } else {
+      // For external URLs, use directly
+      setImgSrc(src);
+      setIsLoading(false);
+    }
+  }, [src]);
+
+  return (
+    <div className="my-4">
+      {isLoading && (
+        <div className="bg-gray-100 border border-gray-200 rounded-lg p-4 text-center text-gray-500">
+          <div className="flex items-center justify-center space-x-2">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span className="text-sm">Loading image...</span>
+          </div>
+        </div>
+      )}
+      
+      {!isLoading && !imgError && (
+        <img 
+          src={imgSrc} 
+          alt={alt || 'Image'} 
+          title={title}
+          className="max-w-full h-auto rounded-lg border border-gray-200 shadow-sm"
+          style={{ maxHeight: '500px' }}
+          onError={(e) => {
+            console.error('Image failed to load:', { src: imgSrc, alt, title });
+            setImgError(true);
+          }}
+          onLoad={(e) => {
+            console.log('Image loaded successfully:', { src: imgSrc, alt });
+          }}
+        />
+      )}
+
+      {!isLoading && imgError && (
+        <div className="bg-gray-100 border border-gray-200 rounded-lg p-4 text-center text-gray-500">
+          <div className="flex items-center justify-center space-x-2">
+            <File className="h-5 w-5" />
+            <span className="text-sm">Image could not be loaded</span>
+          </div>
+          {alt && <p className="text-xs mt-1 text-gray-400">{alt}</p>}
+          <p className="text-xs mt-1 text-gray-400 break-all">URL: {src}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Function to process markdown content and resolve image URLs
+const processMarkdownContent = (content, fileId, notebookId) => {
+  if (!content) return content;
+  
+  console.log('processMarkdownContent called with:', { fileId, notebookId, contentLength: content.length });
+  
+  // Pattern to match markdown image syntax: ![alt text](image_path)
+  const imagePattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
+  
+  return content.replace(imagePattern, (match, altText, imagePath) => {
+    console.log('Processing image:', { altText, imagePath });
+    
+    // Handle relative paths that start with ../images/
+    if (imagePath.startsWith('../images/') || imagePath.includes('/images/')) {
+      const imageName = imagePath.split('/').pop();
+      const imageUrl = `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/images/${imageName}`;
+      console.log('Generated image URL:', imageUrl);
+      return `![${altText}](${imageUrl})`;
+    }
+    
+    // Return original if not a relative image path
+    return match;
+  });
+};
+
 // Memoized markdown content component (same as StudioPanel)
 const MarkdownContent = React.memo(({ content }) => (
   <div className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900">
@@ -31,34 +153,7 @@ const MarkdownContent = React.memo(({ content }) => (
         blockquote: ({children}) => <blockquote className="border-l-4 border-blue-200 pl-4 italic text-gray-600 my-4">{children}</blockquote>,
         code: ({children}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800">{children}</code>,
         pre: ({children}) => <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4">{children}</pre>,
-        img: ({src, alt, title}) => (
-          <div className="my-4">
-            <img 
-              src={src} 
-              alt={alt || 'Image'} 
-              title={title}
-              className="max-w-full h-auto rounded-lg border border-gray-200 shadow-sm"
-              style={{ maxHeight: '500px' }}
-              onError={(e) => {
-                e.target.style.display = 'none';
-                e.target.nextSibling.style.display = 'block';
-              }}
-              onLoad={(e) => {
-                e.target.nextSibling.style.display = 'none';
-              }}
-            />
-            <div 
-              className="hidden bg-gray-100 border border-gray-200 rounded-lg p-4 text-center text-gray-500"
-              style={{ display: 'none' }}
-            >
-              <div className="flex items-center justify-center space-x-2">
-                <File className="h-5 w-5" />
-                <span className="text-sm">Image could not be loaded</span>
-              </div>
-              {alt && <p className="text-xs mt-1 text-gray-400">{alt}</p>}
-            </div>
-          </div>
-        ),
+        img: AuthenticatedImage,
         a: ({href, children}) => (
           <a 
             href={href} 
@@ -75,6 +170,8 @@ const MarkdownContent = React.memo(({ content }) => (
     </ReactMarkdown>
   </div>
 ));
+
+MarkdownContent.displayName = 'MarkdownContent';
 
 const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
   // Consolidate all state into a single object to avoid hook order issues
@@ -209,40 +306,46 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
     }
   };
 
-  const renderTextPreview = () => (
-    <div className="space-y-4">
-      <div className="flex items-center space-x-2 mb-4">
-        <FileText className="h-5 w-5 text-blue-500" />
-        <h3 className="font-medium text-gray-900">{state.preview.title}</h3>
-      </div>
-      
-      <div className="flex flex-wrap gap-2 mb-4">
-        <Badge variant="secondary">
-          <HardDrive className="h-3 w-3 mr-1" />
-          {state.preview.wordCount} words
-        </Badge>
-        <Badge variant="secondary">
-          <FileText className="h-3 w-3 mr-1" />
-          {state.preview.lines} lines
-        </Badge>
-        {state.preview.fileSize && (
+  const renderTextPreview = () => {
+    // Debug: show processed content and image URLs
+    const processedContent = processMarkdownContent(state.preview.content, source.file_id, notebookId);
+    
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center space-x-2 mb-4">
+          <FileText className="h-5 w-5 text-blue-500" />
+          <h3 className="font-medium text-gray-900">{state.preview.title}</h3>
+        </div>
+        
+        
+        <div className="flex flex-wrap gap-2 mb-4">
           <Badge variant="secondary">
             <HardDrive className="h-3 w-3 mr-1" />
-            {state.preview.fileSize}
+            {state.preview.wordCount} words
           </Badge>
-        )}
-        {state.preview.format && (
           <Badge variant="secondary">
-            {state.preview.format}
+            <FileText className="h-3 w-3 mr-1" />
+            {state.preview.lines} lines
           </Badge>
-        )}
-      </div>
+          {state.preview.fileSize && (
+            <Badge variant="secondary">
+              <HardDrive className="h-3 w-3 mr-1" />
+              {state.preview.fileSize}
+            </Badge>
+          )}
+          {state.preview.format && (
+            <Badge variant="secondary">
+              {state.preview.format}
+            </Badge>
+          )}
+        </div>
 
-      <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-        <MarkdownContent content={state.preview.content} />
+        <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+          <MarkdownContent content={processedContent} />
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderUrlPreview = () => (
     <div className="space-y-4">
@@ -525,8 +628,6 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
     </div>
   );
 
-
-
   const renderPdfContentPreview = () => (
     <div className="space-y-6">
       {/* PDF Header with Action Buttons */}
@@ -568,7 +669,7 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
       {/* Parsed Content Display */}
       <div className="bg-white rounded-lg border border-gray-200">
         <div className="p-6 max-h-[600px] overflow-y-auto">
-          <MarkdownContent content={state.preview.content} />
+          <MarkdownContent content={processMarkdownContent(state.preview.content, source.file_id, notebookId)} />
         </div>
       </div>
     </div>

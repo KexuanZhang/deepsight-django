@@ -281,7 +281,7 @@ class UploadProcessor:
         import datetime as dt
         return str(dt.timedelta(seconds=int(s)))
 
-    def transcribe_audio_video(self, file_path: str, filename: str) -> tuple[str, str]:
+    async def transcribe_audio_video(self, file_path: str, filename: str) -> tuple[str, str]:
         """Transcribe audio/video file using faster-whisper. Returns (transcript_content, suggested_filename)."""
         try:
             self.log_operation("transcription_start", f"Starting transcription of {file_path}")
@@ -291,8 +291,15 @@ class UploadProcessor:
             if not batched_model:
                 raise Exception("Speech-to-text not available. Please install faster-whisper and torch.")
             
-            # Transcribe the file
-            segments, _ = batched_model.transcribe(file_path, vad_filter=True, batch_size=16)
+            # Run transcription in executor to avoid blocking the event loop
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            def _transcribe_sync():
+                return batched_model.transcribe(file_path, vad_filter=True, batch_size=16)
+            
+            # Execute the CPU-intensive transcription in a thread pool
+            segments, _ = await loop.run_in_executor(None, _transcribe_sync)
             
             # Clean the title for filename
             base_title = Path(filename).stem  # Remove file extension
@@ -377,7 +384,7 @@ class UploadProcessor:
             )
             self._upload_statuses[upload_file_id] = current_status
 
-    def process_upload(
+    async def process_upload(
         self,
         file: UploadFile,
         upload_file_id: Optional[str] = None,
@@ -447,7 +454,7 @@ class UploadProcessor:
             }
 
             # Process based on file type
-            processing_result = self._process_file_by_type(temp_path, file_metadata)
+            processing_result = await self._process_file_by_type(temp_path, file_metadata)
 
             # Update file metadata with parsing status
             file_metadata["parsing_status"] = "completed"
@@ -463,7 +470,10 @@ class UploadProcessor:
             if processing_result.get('transcript_filename'):
                 processing_result_for_storage['content_filename'] = processing_result['transcript_filename']
 
-            file_id = self.file_storage.store_processed_file(
+            # Run synchronous file storage in executor
+            from asgiref.sync import sync_to_async
+            store_file_sync = sync_to_async(self.file_storage.store_processed_file)
+            file_id = await store_file_sync(
                 content=processing_result["content"],
                 metadata=file_metadata,
                 processing_result=processing_result_for_storage,
@@ -472,8 +482,9 @@ class UploadProcessor:
                 original_file_path=temp_path,
             )
 
-            # Index content for search
-            self.content_indexing.index_content(
+            # Run synchronous content indexing in executor
+            index_content_sync = sync_to_async(self.content_indexing.index_content)
+            await index_content_sync(
                 file_id=file_id,
                 content=processing_result["content"],
                 metadata=file_metadata,
@@ -482,7 +493,8 @@ class UploadProcessor:
             
             # Handle marker extraction post-processing if needed
             if 'marker_extraction_result' in processing_result:
-                self._post_process_marker_extraction(file_id, processing_result['marker_extraction_result'])
+                post_process_sync = sync_to_async(self._post_process_marker_extraction)
+                await post_process_sync(file_id, processing_result['marker_extraction_result'])
             
             # Update final status
             if upload_file_id:
@@ -561,7 +573,7 @@ class UploadProcessor:
             )
             raise
 
-    def _process_file_by_type(
+    async def _process_file_by_type(
         self, file_path: str, file_metadata: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Process file based on its type."""
@@ -570,9 +582,9 @@ class UploadProcessor:
         if file_extension == '.pdf':
             return self._process_pdf_marker(file_path, file_metadata)
         elif file_extension in ['.mp3', '.wav', '.m4a']:
-            return self._process_audio_immediate(file_path, file_metadata)
+            return await self._process_audio_immediate(file_path, file_metadata)
         elif file_extension in [".mp4", ".avi", ".mov"]:
-            return self._process_video_immediate(file_path, file_metadata)
+            return await self._process_video_immediate(file_path, file_metadata)
         elif file_extension in [".txt", ".md"]:
             return self._process_text_immediate(file_path, file_metadata)
         elif file_extension in [".ppt", ".pptx"]:
@@ -754,7 +766,7 @@ class UploadProcessor:
         except Exception as e:
             raise Exception(f"PDF processing failed: {str(e)}")
 
-    def _process_audio_immediate(
+    async def _process_audio_immediate(
         self, file_path: str, file_metadata: Dict
     ) -> Dict[str, Any]:
         """Quick audio transcription using faster-whisper."""
@@ -770,8 +782,8 @@ class UploadProcessor:
                     "processing_time": "immediate",
                 }
 
-            # Transcribe audio using the new workflow
-            transcript_content, transcript_filename = self.transcribe_audio_video(
+            # Transcribe audio using the new async workflow
+            transcript_content, transcript_filename = await self.transcribe_audio_video(
                 file_path, file_metadata['filename']
             )
 
@@ -797,7 +809,7 @@ class UploadProcessor:
         except Exception as e:
             raise Exception(f"Audio processing failed: {str(e)}")
 
-    def _process_video_immediate(
+    async def _process_video_immediate(
         self, file_path: str, file_metadata: Dict
     ) -> Dict[str, Any]:
         """Enhanced video processing with optional image extraction, deduplication, and captioning."""
@@ -826,7 +838,7 @@ class UploadProcessor:
 
             if result.returncode == 0 and self.whisper_model and os.path.exists(audio_path):
                 try:
-                    transcript_content, _ = self.transcribe_audio_video(
+                    transcript_content, _ = await self.transcribe_audio_video(
                         audio_path, file_metadata['filename']
                     )
                     content_parts.append(f"# Transcription\n\n{transcript_content}")

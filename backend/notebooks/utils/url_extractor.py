@@ -73,7 +73,7 @@ class URLExtractor:
             from crawl4ai import AsyncWebCrawler
             self._crawl4ai = AsyncWebCrawler
             self._crawl4ai_loaded = True
-            self.log_operation("crawl4ai_loaded", "Successfully loaded crawl4ai")
+            # crawl4ai loaded successfully
         except ImportError as e:
             self.log_operation("crawl4ai_import_error", f"crawl4ai not available: {e}", "warning")
             self._crawl4ai_loaded = False
@@ -151,7 +151,7 @@ class URLExtractor:
         await self._load_crawl4ai()
         
         if not self._crawl4ai_loaded:
-            raise Exception("crawl4ai not available")
+            raise Exception("crawl4ai not available - please ensure crawl4ai is properly installed")
         
         try:
             async with self._crawl4ai(verbose=False) as crawler:
@@ -169,11 +169,15 @@ class URLExtractor:
                 )
                 
                 if not result.success:
-                    raise Exception(f"Crawl4ai failed: {result.status_code}")
+                    error_msg = f"Crawl4ai failed with status: {getattr(result, 'status_code', 'unknown')}"
+                    if hasattr(result, 'error_message') and result.error_message:
+                        error_msg += f" - Error: {result.error_message}"
+                    self.log_operation("crawl4ai_failed", error_msg, "error")
+                    raise Exception(error_msg)
                 
                 features = {
-                    "title": result.metadata.get("title", ""),
-                    "description": result.metadata.get("description", ""),
+                    "title": result.metadata.get("title", "") if result.metadata else "",
+                    "description": result.metadata.get("description", "") if result.metadata else "",
                     "content": result.markdown or result.cleaned_html or "",
                     "links": result.links.get("internal", []) if result.links else [],
                     "images": result.media.get("images", []) if result.media else [],
@@ -185,7 +189,7 @@ class URLExtractor:
                 return features
                 
         except Exception as e:
-            self.log_operation("crawl4ai_extract_error", f"Error extracting with crawl4ai: {e}", "error")
+            self.log_operation("crawl4ai_extract_error", f"Error extracting with crawl4ai from {url}: {e}", "error")
             raise
     
     async def _download_and_transcribe_media(self, url: str, media_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -198,6 +202,12 @@ class URLExtractor:
             
             base_title = media_info.get('title', 'media_download')
             base_filename = self.upload_processor._clean_title(base_title)
+            
+            # Ensure the base filename leaves room for "_transcript.md" suffix (14 characters)
+            # Limit to reasonable length for transcript filename
+            max_base_length = 86  # 100 - 14 = 86 characters for base name
+            if len(base_filename) > max_base_length:
+                base_filename = base_filename[:max_base_length].rstrip('_')
             
             # Create temporary directory for downloads
             temp_dir = tempfile.mkdtemp(prefix="deepsight_media_")
@@ -224,7 +234,7 @@ class URLExtractor:
                         'file_size': os.path.getsize(video_path)
                     }
 
-                    processing_result = self.upload_processor._process_video_immediate(video_path, file_metadata)
+                    processing_result = await self.upload_processor._process_video_immediate(video_path, file_metadata)
 
                     if processing_result.get('content'):
                         content_parts.append(processing_result['content'])
@@ -246,7 +256,7 @@ class URLExtractor:
                         'file_size': os.path.getsize(audio_path)
                     }
                     
-                    processing_result = self.upload_processor._process_audio_immediate(audio_path, file_metadata)
+                    processing_result = await self.upload_processor._process_audio_immediate(audio_path, file_metadata)
                     
                     if processing_result.get('content'):
                         content_parts.append(processing_result['content'])
@@ -291,7 +301,7 @@ class URLExtractor:
                 'quiet': True,
                 'no_warnings': True,
                 'outtmpl': output_path,
-                'format': 'best[height<=720]/best',  # Limit to 720p for processing
+                'format': 'bestvideo+bestaudio/best',
                 'nocheckcertificate': True,
                 'cookiesfrombrowser': ('chrome', None, None, None),  # Use Chrome cookies by default
             }
@@ -380,6 +390,27 @@ class URLExtractor:
         # Limit length
         return cleaned[:100]
     
+    def _clean_markdown_content(self, content: str, features: Dict[str, Any]) -> str:
+        """Clean markdown content by removing invalid image references that cause 404 errors."""
+        if not content:
+            return content
+            
+        import re
+        
+        # Remove image references that look like "_page_X_Figure_Y.jpeg" pattern
+        # These are typically generated by crawl4ai but don't have actual files
+        content = re.sub(r'!\[.*?\]\([^)]*_page_\d+_Figure_\d+\.[^)]+\)', '', content)
+        
+        # Remove broken image references to non-existent local files
+        content = re.sub(r'!\[.*?\]\([^)]*\.(jpg|jpeg|png|gif|svg|webp)(?:\?[^)]*)?\)', 
+                        lambda m: '' if not m.group(0).startswith('![](http') else m.group(0), 
+                        content, flags=re.IGNORECASE)
+        
+        # Clean up multiple consecutive newlines left by removed images
+        content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)
+        
+        return content.strip()
+    
     async def process_url(self, url: str, extraction_options: Optional[Dict[str, Any]] = None, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
         """Process URL content using crawl4ai only."""
         try:
@@ -400,10 +431,13 @@ class URLExtractor:
             # Extract content using crawl4ai
             features = await self._extract_with_crawl4ai(url, options)
             
+            # Clean markdown content
+            cleaned_content = self._clean_markdown_content(features.get("content", ""), features)
+            
             # Store processed content
             file_id = await self._store_processed_content(
                 url=url,
-                content=features.get("content", ""),
+                content=cleaned_content,
                 features=features,
                 upload_url_id=upload_url_id,
                 processing_type="url_content",
@@ -415,7 +449,7 @@ class URLExtractor:
                 "file_id": file_id,
                 "url": url,
                 "status": "completed",
-                "content_preview": features.get("content", "")[:500],
+                "content_preview": cleaned_content[:500],
                 "title": features.get("title", ""),
                 "extraction_method": "crawl4ai"
             }
@@ -458,10 +492,13 @@ class URLExtractor:
                 features = await self._extract_with_crawl4ai(url, options)
                 content = features.get("content", "")
             
+            # Clean markdown content
+            cleaned_content = self._clean_markdown_content(content, features)
+            
             # Store processed content
             file_id = await self._store_processed_content(
                 url=url,
-                content=content,
+                content=cleaned_content,
                 features={"title": media_info.get("title", url), "url": url},
                 upload_url_id=upload_url_id,
                 processing_type=processing_type,
@@ -474,7 +511,7 @@ class URLExtractor:
                 "file_id": file_id,
                 "url": url,
                 "status": "completed",
-                "content_preview": content[:500] if content else "",
+                "content_preview": cleaned_content[:500] if cleaned_content else "",
                 "title": media_info.get("title", url),
                 "has_media": media_info.get("has_media", False),
                 "processing_type": processing_type
@@ -514,10 +551,13 @@ class URLExtractor:
                 raise Exception("No content could be extracted from the media")
             
             try:
+                # Clean markdown content
+                cleaned_content = self._clean_markdown_content(content, media_info)
+                
                 # Store processed content with original file
                 file_id = await self._store_processed_content(
                     url=url,
-                    content=content,
+                    content=cleaned_content,
                     features={"title": media_info.get("title", url), "url": url},
                     upload_url_id=upload_url_id,
                     processing_type="media",
@@ -542,7 +582,7 @@ class URLExtractor:
                 "file_id": file_id,
                 "url": url,
                 "status": "completed",
-                "content_preview": content[:500] if content else "",
+                "content_preview": cleaned_content[:500] if cleaned_content else "",
                 "title": media_info.get("title", url),
                 "has_media": True,
                 "processing_type": "media",
