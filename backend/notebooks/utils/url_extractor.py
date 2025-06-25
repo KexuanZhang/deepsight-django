@@ -454,8 +454,12 @@ class URLExtractor:
                 "transcript_filename": transcript_filename
             }
             
+            # Use sync_to_async to call the synchronous storage method
+            from asgiref.sync import sync_to_async
+            store_file_sync = sync_to_async(self.file_storage.store_processed_file)
+            
             # Store the processed content
-            file_id = self.file_storage.store_processed_file(
+            file_id = await store_file_sync(
                 content=content,
                 metadata=url_metadata,
                 processing_result={

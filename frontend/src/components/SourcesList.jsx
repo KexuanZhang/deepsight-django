@@ -833,30 +833,28 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       setUploadProgress(prev => ({ ...prev, [uploadFileId]: 20 }));
       
       const response = urlProcessingType === 'media' 
-        ? await apiService.parseUrlWithMedia(linkUrl, 'cosine', uploadFileId)
-        : await apiService.parseUrl(linkUrl, 'cosine', uploadFileId);
+        ? await apiService.parseUrlWithMedia(linkUrl, notebookId, 'cosine', uploadFileId)
+        : await apiService.parseUrl(linkUrl, notebookId, 'cosine', uploadFileId);
       
       if (response.success) {
-        const { data } = response;
-        
         // Update source with response data while preserving original display information
         setSources((prev) => prev.map(source => 
           source.id === newSource.id ? {
             ...source,
-            file_id: data.file_id,
+            file_id: response.file_id,
             type: "parsing",
-            parsing_status: data.status || 'completed',
+            parsing_status: response.status || 'completed',
             // Preserve original display information, don't change authors/title
             metadata: {
               ...source.metadata,
-              ...data,
+              ...response,
               processing_completed: true
             }
           } : source
         ));
         
         // Start status monitoring if needed for URLs
-        if (data.status && ['pending', 'parsing'].includes(data.status)) {
+        if (response.status && ['pending', 'parsing'].includes(response.status)) {
           // For URLs, we might not have SSE streaming, so let's try periodic polling
           startUrlStatusPolling(uploadFileId, newSource.id);
         } else {
@@ -955,19 +953,17 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
-        const { data } = response;
-        
         setSources((prev) => prev.map(source => 
           source.id === newSource.id ? {
             ...source,
-            file_id: data.file_id,
+            file_id: response.file_id,
             type: "parsing",
-            parsing_status: data.status,
+            parsing_status: response.status || 'completed',
             // Preserve original display information, don't change authors/title
             metadata: {
               ...source.metadata,
-              file_size: data.file_size,
-              file_extension: data.file_extension,
+              file_size: response.file_size,
+              file_extension: response.file_extension,
               processing_completed: true
             }
           } : source

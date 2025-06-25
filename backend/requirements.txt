@@ -57,3 +57,4 @@ celery
 langchain_community
 langchain-openai
 faiss-cpu
+crawl4ai

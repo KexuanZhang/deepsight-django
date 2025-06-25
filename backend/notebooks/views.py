@@ -4,7 +4,7 @@ import time
 import mimetypes
 from uuid import uuid4
 import asyncio
-from asgiref.sync import sync_to_async
+from asgiref.sync import sync_to_async, async_to_sync
 
 from .utils.rag_engine import RAGChatbot
 
@@ -154,8 +154,8 @@ class URLParseView(StandardAPIView, NotebookPermissionMixin):
                     notebook_id=notebook.id
                 )
 
-            # Run async processing
-            result = asyncio.run(process_url_async())
+            # Run async processing using async_to_sync
+            result = async_to_sync(process_url_async)()
 
             # Create source record
             source = Source.objects.create(
@@ -243,8 +243,8 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
                     notebook_id=notebook.id
                 )
 
-            # Run async processing
-            result = asyncio.run(process_url_with_media_async())
+            # Run async processing using async_to_sync
+            result = async_to_sync(process_url_with_media_async)()
 
             # Create source record
             source = Source.objects.create(
