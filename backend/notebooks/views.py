@@ -1147,3 +1147,67 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                 options[param] = validated_data[param]
         
         return options
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class FileImageView(StandardAPIView, FileAccessValidatorMixin):
+    """Serve image files from knowledge base items."""
+
+    def get(self, request, notebook_id, file_id, image_name):
+        """Serve image file through notebook context."""
+        try:
+            # Validate access through notebook
+            notebook, kb_item, knowledge_item = self.validate_notebook_file_access(
+                notebook_id, file_id, request.user
+            )
+
+            # Get the base directory for this knowledge base item
+            paths = file_storage._generate_knowledge_base_paths(
+                user_id=request.user.pk,
+                original_filename=kb_item.title + '.pdf',  # Reconstruct filename
+                kb_item_id=str(kb_item.id)
+            )
+            
+            # Build the full path to the image
+            base_dir_path = Path(file_storage.base_data_root) / paths['base_dir']
+            image_path = base_dir_path / 'images' / image_name
+            
+            # Check if image exists
+            if not image_path.exists():
+                raise Http404(f"Image not found: {image_name}")
+            
+            # Serve the image file
+            return self._serve_image(image_path, image_name)
+
+        except PermissionDenied as e:
+            return self.error_response(str(e), status_code=status.HTTP_403_FORBIDDEN)
+        except Http404 as e:
+            return self.error_response(str(e), status_code=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return self.error_response(
+                "Image access failed",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)},
+            )
+
+    def _serve_image(self, image_path: Path, image_name: str):
+        """Serve an image file through Django's FileResponse."""
+        try:
+            response = FileResponse(
+                open(image_path, 'rb'),
+                as_attachment=False,
+            )
+            
+            # Set content type based on file extension
+            content_type, _ = mimetypes.guess_type(str(image_path))
+            if not content_type:
+                content_type = "application/octet-stream"
+            
+            response["Content-Type"] = content_type
+            response["Content-Disposition"] = f'inline; filename="{image_name}"'
+            response["Cache-Control"] = "public, max-age=3600"  # Cache for 1 hour
+            response["X-Content-Type-Options"] = "nosniff"
+            
+            return response
+        except Exception as e:
+            raise Http404(f"Image not accessible: {str(e)}")
