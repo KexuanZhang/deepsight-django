@@ -209,13 +209,18 @@ class URLParseView(StandardAPIView, NotebookPermissionMixin):
 
 
 class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
-    """Handle URL parsing with media extraction."""
+    """Handle URL parsing for media content only using faster-whisper transcription.
+    
+    This endpoint specifically processes URLs with downloadable media (audio/video)
+    and does NOT fallback to web scraping if media processing fails.
+    Uses faster-whisper model for transcription, same as DeepSight project.
+    """
     
     parser_classes = [JSONParser]
 
     @transaction.atomic
     def post(self, request, notebook_id):
-        """Parse URL content with media support."""
+        """Parse URL media content using faster-whisper transcription only."""
         try:
             # Validate request data
             serializer = URLParseWithMediaSerializer(data=request.data)
@@ -233,18 +238,17 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
             extraction_strategy = serializer.validated_data.get("extraction_strategy", "cosine")
             upload_url_id = serializer.validated_data.get("upload_url_id") or uuid4().hex
 
-            # Process the URL with media using async function
-            async def process_url_with_media_async():
-                return await url_extractor.process_url_with_media(
+            # Process the URL with media only using async function (no crawl4ai fallback)
+            async def process_url_media_only_async():
+                return await url_extractor.process_url_media_only(
                     url=url,
-                    extraction_options={"strategy": extraction_strategy},
                     upload_url_id=upload_url_id,
                     user_id=request.user.pk,
                     notebook_id=notebook.id
                 )
 
             # Run async processing using async_to_sync
-            result = async_to_sync(process_url_with_media_async)()
+            result = async_to_sync(process_url_media_only_async)()
 
             # Create source record
             source = Source.objects.create(
@@ -270,7 +274,7 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
                 knowledge_base_item=kb_item,
                 defaults={
                     'source': source,
-                    'notes': f"Processed from URL with media: {url}"
+                    'notes': f"Media transcription from URL using faster-whisper: {url}"
                 }
             )
             
@@ -285,16 +289,17 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
                 "knowledge_item_id": ki.id,
                 "url": url,
                 "title": result.get("title", ""),
-                "has_media": result.get("has_media", False),
-                "processing_type": result.get("processing_type", "url_content"),
-                "message": "URL processing with media completed successfully"
+                "has_media": result.get("has_media", True),
+                "processing_type": result.get("processing_type", "media"),
+                "transcript_filename": result.get("transcript_filename"),
+                "message": "URL media processing completed successfully using faster-whisper"
             }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
             return self.error_response(
-                "URL processing with media failed",
+                "URL media processing failed",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                details={"error": str(e)}
+                details={"error": str(e), "note": "This endpoint only processes media URLs (audio/video) and does not fallback to web scraping"}
             )
     
 class FileListView(StandardAPIView, NotebookPermissionMixin, FileListResponseMixin):

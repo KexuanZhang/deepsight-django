@@ -88,6 +88,7 @@ class URLExtractor:
                 'quiet': True,
                 'no_warnings': True,
                 'nocheckcertificate': True,
+                'cookiesfrombrowser': ('chrome', None, None, None),  # Use Chrome cookies by default
             }
             
             # Extract information to see what's available
@@ -95,14 +96,25 @@ class URLExtractor:
                 try:
                     info = ydl.extract_info(url, download=False)
                 except Exception as e:
-                    # If extraction fails due to authentication, return appropriate error
-                    if "Sign in to confirm" in str(e) or "bot" in str(e).lower():
-                        self.log_operation("youtube_auth_required", f"YouTube requires authentication for URL: {url}", "warning")
-                        return {
-                            "has_media": False, 
-                            "error": "YouTube authentication required",
-                            "auth_required": True
-                        }
+                    # If extraction fails due to authentication, try without cookies first
+                    if "Sign in to confirm" in str(e) or "bot" in str(e).lower() or "authentication" in str(e).lower():
+                        self.log_operation("youtube_auth_with_cookies_failed", f"YouTube auth failed with Chrome cookies for URL: {url}", "warning")
+                        
+                        # Try without cookies as fallback
+                        fallback_opts = probe_opts.copy()
+                        fallback_opts.pop('cookiesfrombrowser', None)
+                        
+                        try:
+                            with yt_dlp.YoutubeDL(fallback_opts) as fallback_ydl:
+                                info = fallback_ydl.extract_info(url, download=False)
+                                self.log_operation("youtube_fallback_success", f"Successfully accessed without cookies: {url}")
+                        except Exception as fallback_e:
+                            self.log_operation("youtube_auth_required", f"YouTube requires authentication for URL: {url}", "warning")
+                            return {
+                                "has_media": False, 
+                                "error": "YouTube authentication required. Please ensure you're logged into Chrome or the content is publicly accessible.",
+                                "auth_required": True
+                            }
                     else:
                         raise e
             
@@ -179,11 +191,13 @@ class URLExtractor:
     async def _download_and_transcribe_media(self, url: str, media_info: Dict[str, Any]) -> Dict[str, Any]:
         """Download media from URL and transcribe it using upload processor pipeline"""
         temp_files = []
+        temp_dir = None
+        original_file_path = None
         try:
             import yt_dlp
             
             base_title = media_info.get('title', 'media_download')
-            base_filename = self._clean_title(base_title)
+            base_filename = self.upload_processor._clean_title(base_title)
             
             # Create temporary directory for downloads
             temp_dir = tempfile.mkdtemp(prefix="deepsight_media_")
@@ -196,6 +210,7 @@ class URLExtractor:
                 video_path = await self._download_video(url, temp_dir, base_filename)
                 if video_path:
                     temp_files.append(video_path)
+                    original_file_path = video_path  # Store for later copying
 
                     # Detect actual video format from downloaded file
                     video_filename = os.path.basename(video_path)
@@ -205,6 +220,7 @@ class URLExtractor:
                     file_metadata = {
                         'filename': f"{base_filename}_video{video_ext}",
                         'file_extension': video_ext,
+                        'content_type': self._get_mime_type_from_extension(video_ext),
                         'file_size': os.path.getsize(video_path)
                     }
 
@@ -218,6 +234,7 @@ class URLExtractor:
                 audio_path = await self._download_audio(url, temp_dir, base_filename)
                 if audio_path:
                     temp_files.append(audio_path)
+                    original_file_path = audio_path  # Store for later copying
                     
                     audio_filename = os.path.basename(audio_path)
                     audio_ext = os.path.splitext(audio_filename)[1].lower()
@@ -225,6 +242,7 @@ class URLExtractor:
                     file_metadata = {
                         'filename': f"{base_filename}_audio{audio_ext}",
                         'file_extension': audio_ext,
+                        'content_type': self._get_mime_type_from_extension(audio_ext),
                         'file_size': os.path.getsize(audio_path)
                     }
                     
@@ -236,23 +254,31 @@ class URLExtractor:
             # Combine all content parts
             combined_content = "\n\n".join(content_parts) if content_parts else ""
             
+            if not combined_content:
+                raise Exception("No content could be extracted from the media")
+            
             return {
                 "content": combined_content,
                 "transcript_filename": transcript_filename,
                 "media_info": media_info,
-                "processing_type": "media"
+                "processing_type": "media",
+                "original_file_path": original_file_path,
+                "success": True
             }
             
         except Exception as e:
             self.log_operation("media_download_error", f"Error downloading/transcribing media: {e}", "error")
             raise
         finally:
-            # Clean up temporary files
-            for temp_file in temp_files:
-                try:
-                    os.unlink(temp_file)
-                except:
-                    pass
+            # Do NOT clean up temporary files here - they will be cleaned up after storage
+            # The original_file_path needs to persist until after _store_processed_content
+            pass
+    
+    def _get_mime_type_from_extension(self, extension: str) -> str:
+        """Get MIME type from file extension."""
+        import mimetypes
+        mime_type, _ = mimetypes.guess_type(f"file{extension}")
+        return mime_type or "application/octet-stream"
     
     async def _download_video(self, url: str, temp_dir: str, base_filename: str) -> Optional[str]:
         """Download video from URL using yt-dlp."""
@@ -267,10 +293,23 @@ class URLExtractor:
                 'outtmpl': output_path,
                 'format': 'best[height<=720]/best',  # Limit to 720p for processing
                 'nocheckcertificate': True,
+                'cookiesfrombrowser': ('chrome', None, None, None),  # Use Chrome cookies by default
             }
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+            except Exception as e:
+                # If download fails with cookies, try without cookies
+                if "Sign in" in str(e) or "authentication" in str(e).lower() or "bot" in str(e).lower():
+                    self.log_operation("video_download_cookies_failed", f"Video download with Chrome cookies failed, trying without cookies: {url}", "warning")
+                    fallback_opts = ydl_opts.copy()
+                    fallback_opts.pop('cookiesfrombrowser', None)
+                    
+                    with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+                        ydl.download([url])
+                else:
+                    raise e
                 
             # Find the downloaded file
             for file_path in Path(temp_dir).iterdir():
@@ -297,6 +336,7 @@ class URLExtractor:
                 'outtmpl': output_path,
                 'format': 'bestaudio/best',
                 'nocheckcertificate': True,
+                'cookiesfrombrowser': ('chrome', None, None, None),  # Use Chrome cookies by default
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -304,8 +344,20 @@ class URLExtractor:
                 }],
             }
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+            except Exception as e:
+                # If download fails with cookies, try without cookies
+                if "Sign in" in str(e) or "authentication" in str(e).lower() or "bot" in str(e).lower():
+                    self.log_operation("audio_download_cookies_failed", f"Audio download with Chrome cookies failed, trying without cookies: {url}", "warning")
+                    fallback_opts = ydl_opts.copy()
+                    fallback_opts.pop('cookiesfrombrowser', None)
+                    
+                    with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+                        ydl.download([url])
+                else:
+                    raise e
                 
             # Find the downloaded file
             for file_path in Path(temp_dir).iterdir():
@@ -432,43 +484,143 @@ class URLExtractor:
             self.log_operation("process_url_with_media_error", f"Error processing URL with media {url}: {e}", "error")
             raise
     
-    async def _store_processed_content(self, url: str, content: str, features: Dict[str, Any], upload_url_id: Optional[str], processing_type: str, transcript_filename: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> str:
-        """Store processed URL content."""
+    async def process_url_media_only(self, url: str, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
+        """Process URL content for media only - NO crawl4ai fallback."""
         try:
-            # Create URL metadata
-            url_metadata = {
-                "source_url": url,
-                "original_filename": f"{features.get('title', 'webpage')}.md",
-                "file_extension": ".md",
-                "content_type": "text/markdown",
-                "upload_timestamp": datetime.now().isoformat(),
-                "parsing_status": "completed",
-                "processing_metadata": {
-                    "extraction_type": "url_extractor",
-                    "extraction_success": True,
-                    "extraction_method": features.get("extraction_method", "crawl4ai"),
-                    "content_length": len(content),
-                    "processing_type": processing_type
-                },
-                "upload_url_id": upload_url_id,
+            if not self._validate_url(url):
+                raise ValueError(f"Invalid URL: {url}")
+            
+            # Check for media availability
+            media_info = await self._check_media_availability(url)
+            
+            # Only proceed if media is available
+            if not media_info.get("has_media"):
+                if media_info.get("auth_required"):
+                    raise Exception(f"YouTube authentication required for URL: {url}")
+                else:
+                    raise Exception(f"No downloadable media found at URL: {url}")
+            
+            # Download and transcribe media
+            media_result = await self._download_and_transcribe_media(url, media_info)
+            
+            if not media_result.get("success"):
+                raise Exception(f"Media processing failed: {media_result.get('error', 'Unknown error')}")
+            
+            content = media_result.get("content", "")
+            transcript_filename = media_result.get("transcript_filename")
+            original_file_path = media_result.get("original_file_path")
+            
+            if not content:
+                raise Exception("No content could be extracted from the media")
+            
+            try:
+                # Store processed content with original file
+                file_id = await self._store_processed_content(
+                    url=url,
+                    content=content,
+                    features={"title": media_info.get("title", url), "url": url},
+                    upload_url_id=upload_url_id,
+                    processing_type="media",
+                    transcript_filename=transcript_filename,
+                    original_file_path=original_file_path,
+                    user_id=user_id,
+                    notebook_id=notebook_id
+                )
+            finally:
+                # Clean up temporary files after storage
+                if original_file_path and os.path.exists(original_file_path):
+                    try:
+                        temp_dir = os.path.dirname(original_file_path)
+                        if temp_dir and "deepsight_media_" in temp_dir:
+                            import shutil
+                            shutil.rmtree(temp_dir)
+                            self.log_operation("temp_cleanup", f"Cleaned up temporary directory: {temp_dir}")
+                    except Exception as cleanup_err:
+                        self.log_operation("cleanup_error", f"Failed to cleanup temp files: {cleanup_err}", "warning")
+            
+            return {
+                "file_id": file_id,
+                "url": url,
+                "status": "completed",
+                "content_preview": content[:500] if content else "",
+                "title": media_info.get("title", url),
+                "has_media": True,
+                "processing_type": "media",
                 "transcript_filename": transcript_filename
             }
+            
+        except Exception as e:
+            self.log_operation("process_url_media_only_error", f"Error processing URL media only {url}: {e}", "error")
+            raise
+    
+    async def _store_processed_content(self, url: str, content: str, features: Dict[str, Any], upload_url_id: Optional[str], processing_type: str, transcript_filename: Optional[str] = None, original_file_path: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> str:
+        """Store processed URL content."""
+        try:
+            # Determine appropriate filename based on content type
+            if original_file_path and processing_type == "media":
+                # For media files, use the original video filename
+                original_basename = os.path.basename(original_file_path)
+                url_metadata = {
+                    "source_url": url,
+                    "original_filename": original_basename,
+                    "file_extension": os.path.splitext(original_basename)[1],
+                    "content_type": self._get_mime_type_from_extension(os.path.splitext(original_basename)[1]),
+                    "file_size": os.path.getsize(original_file_path) if os.path.exists(original_file_path) else len(content.encode('utf-8')),
+                    "upload_timestamp": datetime.now().isoformat(),
+                    "parsing_status": "completed",
+                    "processing_metadata": {
+                        "extraction_type": "url_extractor",
+                        "extraction_success": True,
+                        "extraction_method": "yt-dlp",
+                        "content_length": len(content),
+                        "processing_type": processing_type
+                    },
+                    "upload_url_id": upload_url_id,
+                    "transcript_filename": transcript_filename
+                }
+            else:
+                # For non-media content, use markdown filename
+                url_metadata = {
+                    "source_url": url,
+                    "original_filename": f"{features.get('title', 'webpage')}.md",
+                    "file_extension": ".md",
+                    "content_type": "text/markdown",
+                    "file_size": len(content.encode('utf-8')),
+                    "upload_timestamp": datetime.now().isoformat(),
+                    "parsing_status": "completed",
+                    "processing_metadata": {
+                        "extraction_type": "url_extractor",
+                        "extraction_success": True,
+                        "extraction_method": features.get("extraction_method", "crawl4ai"),
+                        "content_length": len(content),
+                        "processing_type": processing_type
+                    },
+                    "upload_url_id": upload_url_id,
+                    "transcript_filename": transcript_filename
+                }
             
             # Use sync_to_async to call the synchronous storage method
             from asgiref.sync import sync_to_async
             store_file_sync = sync_to_async(self.file_storage.store_processed_file)
             
-            # Store the processed content
+            # Store the processed content with original file if available
+            processing_result_data = {
+                'processing_type': processing_type,
+                'features_available': ['media_transcription' if processing_type == 'media' else 'url_content'],
+                'processing_time': 'immediate'
+            }
+            
+            # For media processing, use transcript filename instead of default extracted_content.md
+            if processing_type == "media" and transcript_filename:
+                processing_result_data['content_filename'] = transcript_filename
+            
             file_id = await store_file_sync(
                 content=content,
                 metadata=url_metadata,
-                processing_result={
-                    'processing_type': processing_type,
-                    'features_available': ['url_content'],
-                    'processing_time': 'immediate'
-                },
+                processing_result=processing_result_data,
                 user_id=user_id,
-                notebook_id=notebook_id
+                notebook_id=notebook_id,
+                original_file_path=original_file_path  # Pass the original file to be stored
             )
             
             # Store mapping if upload_url_id is provided
