@@ -104,6 +104,22 @@ def user_processing_results_path(instance, filename):
     return f"processing_results/user_{user_id}/{filename}"
 
 
+class NotebookChatMessage(models.Model):
+    notebook = models.ForeignKey(
+        "Notebook",
+        on_delete=models.CASCADE,
+        related_name="chat_messages"
+    )
+    sender = models.CharField(
+        max_length=10,
+        choices=[("user", "User"), ("assistant", "Assistant")]
+    )
+    message = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["timestamp"]
+
 
 class URLProcessingResult(models.Model):
     """

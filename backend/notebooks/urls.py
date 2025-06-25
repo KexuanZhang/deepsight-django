@@ -13,8 +13,9 @@ from .views import (
     FileContentView,
     FileRawView,
     FileRawSimpleView,
-    MarkdownBatchContentView,
     RAGChatFromKBView,
+    ChatHistoryView,
+    ClearChatHistoryView
 )
 
 urlpatterns = [
@@ -35,9 +36,7 @@ urlpatterns = [
     ),
 
     path(
-        '<int:notebook_id>/files/md-batch-contents/',
-        MarkdownBatchContentView.as_view(),
-        name='file-md-batch-contents'
+        '<int:notebook_id>/chat-history/', ChatHistoryView.as_view(), name="chat-history"
     ),
 
     path('chat/', RAGChatFromKBView.as_view(), name='chat-rag'),
@@ -83,6 +82,13 @@ urlpatterns = [
         FileContentView.as_view(),
         name='file-content'
     ),
+
+    path(
+        "<int:notebook_id>/chat/clear/", 
+         ClearChatHistoryView.as_view(), 
+         name="clear-chat-history"
+    ),
+
 
     # 7) raw file serving (PDFs, videos, audio, etc.)
     path(
