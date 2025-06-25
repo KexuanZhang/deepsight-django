@@ -1060,27 +1060,26 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                 request.user.pk, original_filename, actual_file_id
             )
             
-            # Create images directory directly in the file's base directory (not in extractions subdirectory)
+            # Set base directory for extraction - the media extractor will create the images subfolder
             base_file_dir = os.path.join(file_storage.base_data_root, paths['base_dir'])
-            images_output_dir = os.path.join(base_file_dir, 'images')
-            os.makedirs(images_output_dir, exist_ok=True)
+            os.makedirs(base_file_dir, exist_ok=True)
 
             # Process the video for image extraction
             async def process_video_async():
                 return await media_extractor.process_video_for_images(
                     file_path=video_file_path,
-                    output_dir=images_output_dir,
+                    output_dir=base_file_dir,  # Pass base directory, not images directory
                     video_title=video_title,
                     extraction_options=extraction_options,
-                    final_images_dir_name="images"  # Use "images" instead of "{title}_Dedup_Images"
+                    final_images_dir_name="images"  # This will create images/ folder in base_file_dir
                 )
 
             # Run async processing
             result = async_to_sync(process_video_async)()
 
             # Calculate final output paths
-            final_images_dir = images_output_dir  # This will be f_{file_id}/images/
-            caption_file = os.path.join(images_output_dir, f"{video_title}_caption.json")  # Inside images folder
+            final_images_dir = os.path.join(base_file_dir, 'images')  # This will be f_{file_id}/images/
+            caption_file = os.path.join(final_images_dir, f"{video_title}_caption.json")  # Inside images folder
 
             # Update knowledge base item metadata with extraction info
             if kb_item.metadata is None:
@@ -1094,7 +1093,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                     'output_paths': {
                         'dedup_images_directory': final_images_dir,
                         'caption_file': caption_file,
-                        'extractions_directory': images_output_dir
+                        'extractions_directory': final_images_dir
                     },
                     'statistics': result.get('statistics', {})
                 }
@@ -1110,7 +1109,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                 "output_paths": {
                     "dedup_images_directory": final_images_dir,
                     "caption_file": caption_file,
-                    "extractions_directory": images_output_dir,
+                    "extractions_directory": final_images_dir,
                     "knowledge_base_path": f"{paths['base_dir']}/images/"
                 }
             }, status=status.HTTP_200_OK)
