@@ -189,20 +189,29 @@ class PodcastGenerationService:
         return audio_processor.generate_podcast_audio(conversation_text, output_path)
 
     def create_podcast_job(
-        self, source_file_ids: List[str], job_metadata: Dict, user=None
+        self, source_file_ids: List[str], job_metadata: Dict, user=None, notebook=None
     ) -> PodcastJob:
         """Create a new podcast generation job"""
         try:
             # Create job instance
-            job = PodcastJob.objects.create(
-                user=user,
-                title=job_metadata.get("title", "Generated Podcast"),
-                description=job_metadata.get("description", ""),
-                source_file_ids=source_file_ids,
-                source_metadata=job_metadata.get("source_metadata", {}),
-                status="pending",
-                progress="Job queued for processing",
-            )
+            job_data = {
+                "user": user,
+                "title": job_metadata.get("title", "Generated Podcast"),
+                "description": job_metadata.get("description", ""),
+            }
+            
+            # Add notebook association if provided
+            if notebook:
+                job_data["notebooks"] = notebook
+                
+            job_data.update({
+                "source_file_ids": source_file_ids,
+                "source_metadata": job_metadata.get("source_metadata", {}),
+                "status": "pending",
+                "progress": "Job queued for processing",
+            })
+            
+            job = PodcastJob.objects.create(**job_data)
 
             logger.info(
                 f"Created podcast job {job.job_id} with {len(source_file_ids)} source files"
