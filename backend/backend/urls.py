@@ -38,7 +38,8 @@ urlpatterns = [
     path("api/v1/users/", include("users.urls")),
     path("api/v1/reports/", include("reports.urls")),
     path("api/v1/notebooks/", include("notebooks.urls")),
-    path("api/v1/podcasts/", include("podcast.urls")),
+    # Notebook-specific podcast endpoints are now handled through notebooks.urls
+    path("api/v1/", include("podcast.urls")),  # This handles notebooks/{id}/podcasts/ pattern
     path(
         "swagger/",
         schema_view.with_ui("swagger", cache_timeout=0),

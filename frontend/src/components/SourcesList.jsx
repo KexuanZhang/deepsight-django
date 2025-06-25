@@ -144,6 +144,16 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     }
   };
 
+  // Simple helper to get original filename
+  const getOriginalFilename = (metadata) => {
+    return metadata.original_filename || 
+           metadata.metadata?.original_filename || 
+           metadata.metadata?.filename || 
+           metadata.filename || 
+           metadata.title || 
+           'Unknown File';
+  };
+
   // New function to generate description for principle files
   const generatePrincipleFileDescription = (metadata) => {
     // Enhanced URL detection with multiple fallbacks
@@ -238,7 +248,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
 
   // Generate appropriate title based on source type
   const generatePrincipleTitle = (metadata) => {
-    // Enhanced URL detection with multiple fallbacks
+    // Check if it's a URL source
     const isUrl = metadata.source_url || 
                   metadata.extraction_type === 'url_extractor' ||
                   metadata.processing_method === 'media' ||
@@ -258,25 +268,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           return domainMatch[1];
         }
       }
-      // Fallback to domain extraction from filename if it looks like a URL
       return sourceUrl || 'Website Content';
     }
     
-    // For regular files, show the original filename
-    // Priority order: original_filename -> metadata.filename -> metadata.original_filename -> title fallback
-    let originalFilename = metadata.original_filename || 
-                          metadata.metadata?.filename || 
-                          metadata.metadata?.original_filename || 
-                          metadata.filename || 
-                          metadata.title || 
-                          'Unknown File';
-    
-    // If the title looks like it was processed (no extension), try to get original from metadata
-    if (!originalFilename.includes('.') && metadata.metadata?.filename && metadata.metadata.filename.includes('.')) {
-      originalFilename = metadata.metadata.filename;
-    }
-    
-    return originalFilename;
+    // For regular files, just return the original filename
+    return getOriginalFilename(metadata);
   };
 
   // Get principle file information based on source type
@@ -310,12 +306,8 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         processingType: metadata.processing_method || metadata.processing_type || 'website'
       };
     } else {
-      // For regular files - try multiple sources for original file information
-      const originalFilename = metadata.original_filename || 
-                              metadata.metadata?.filename || 
-                              metadata.metadata?.original_filename || 
-                              metadata.filename || 
-                              metadata.title;
+      // For regular files - use the helper function
+      const originalFilename = getOriginalFilename(metadata);
       
       const fileExtension = metadata.file_extension || 
                            metadata.metadata?.file_extension;

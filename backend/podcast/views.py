@@ -4,8 +4,6 @@ from rest_framework import status, permissions, authentication
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.viewsets import ModelViewSet
-from rest_framework.decorators import action
 import logging
 import json
 import time
@@ -16,36 +14,50 @@ from django.conf import settings
 from .models import PodcastJob
 from .serializers import (
     PodcastJobSerializer,
-    PodcastJobCreateSerializer,
     PodcastJobListSerializer,
+    NotebookPodcastJobCreateSerializer,
 )
 from .services import podcast_generation_service
+from notebooks.models import Notebook
 
 logger = logging.getLogger(__name__)
 
 
-class PodcastJobViewSet(ModelViewSet):
-    """ViewSet for managing podcast generation jobs"""
-
-    serializer_class = PodcastJobSerializer
+# Notebook-specific views
+class NotebookPodcastJobListCreateView(APIView):
+    """List and create podcast jobs for a specific notebook"""
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        """Filter jobs by current user"""
-        return PodcastJob.objects.filter(user=self.request.user)
+    def get_notebook(self, notebook_id):
+        """Get the notebook and verify user access"""
+        return get_object_or_404(
+            Notebook.objects.filter(user=self.request.user),
+            pk=notebook_id
+        )
 
-    def get_serializer_class(self):
-        """Return appropriate serializer based on action"""
-        if self.action == "create":
-            return PodcastJobCreateSerializer
-        elif self.action == "list":
-            return PodcastJobListSerializer
-        return PodcastJobSerializer
-
-    def create(self, request):
-        """Create a new podcast generation job"""
+    def get(self, request, notebook_id):
+        """List podcast jobs for a specific notebook"""
         try:
-            serializer = self.get_serializer(data=request.data)
+            notebook = self.get_notebook(notebook_id)
+            jobs = PodcastJob.objects.filter(
+                user=request.user,
+                notebooks=notebook
+            ).order_by('-created_at')
+            
+            serializer = PodcastJobListSerializer(jobs, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Error listing podcast jobs for notebook {notebook_id}: {e}")
+            return Response(
+                {"error": f"Failed to list jobs: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    def post(self, request, notebook_id):
+        """Create a new podcast job for a specific notebook"""
+        try:
+            notebook = self.get_notebook(notebook_id)
+            serializer = NotebookPodcastJobCreateSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
 
             # Extract data
@@ -60,11 +72,12 @@ class PodcastJobViewSet(ModelViewSet):
                 "source_metadata": {},  # Will be populated by worker
             }
 
-            # Create podcast job
+            # Create podcast job with notebook association
             job = podcast_generation_service.create_podcast_job(
                 source_file_ids=source_file_ids,
                 job_metadata=job_metadata,
                 user=request.user,
+                notebook=notebook,
             )
 
             # Queue the job for background processing
@@ -81,50 +94,80 @@ class PodcastJobViewSet(ModelViewSet):
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
-            logger.error(f"Error creating podcast job: {e}")
+            logger.error(f"Error creating podcast job for notebook {notebook_id}: {e}")
             return Response(
                 {"error": f"Failed to create podcast job: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-    def retrieve(self, request, pk=None):
+
+class NotebookPodcastJobDetailView(APIView):
+    """Retrieve, update, or delete a specific podcast job within a notebook"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_job(self, notebook_id, job_id):
+        """Get the job and verify user and notebook access"""
+        notebook = get_object_or_404(
+            Notebook.objects.filter(user=self.request.user),
+            pk=notebook_id
+        )
+        return get_object_or_404(
+            PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
+            job_id=job_id
+        )
+
+    def get(self, request, notebook_id, job_id):
         """Get detailed status of a specific podcast job"""
         try:
-            job = get_object_or_404(self.get_queryset(), job_id=pk)
-            serializer = self.get_serializer(job)
+            job = self.get_job(notebook_id, job_id)
+            serializer = PodcastJobSerializer(job)
             return Response(serializer.data)
         except Exception as e:
-            logger.error(f"Error retrieving podcast job {pk}: {e}")
+            logger.error(f"Error retrieving podcast job {job_id} for notebook {notebook_id}: {e}")
             return Response(
                 {"error": f"Failed to retrieve job: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-    def destroy(self, request, pk=None):
+    def delete(self, request, notebook_id, job_id):
         """Delete a podcast job"""
         try:
-            job = get_object_or_404(self.get_queryset(), job_id=pk)
+            job = self.get_job(notebook_id, job_id)
 
             # Delete associated audio file if it exists
             if job.audio_file:
                 job.audio_file.delete(save=False)
 
             job.delete()
-
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         except Exception as e:
-            logger.error(f"Error deleting podcast job {pk}: {e}")
+            logger.error(f"Error deleting podcast job {job_id} for notebook {notebook_id}: {e}")
             return Response(
                 {"error": f"Failed to delete job: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-    @action(detail=True, methods=["post"])
-    def cancel(self, request, pk=None):
+
+class NotebookPodcastJobCancelView(APIView):
+    """Cancel a podcast job within a notebook"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_job(self, notebook_id, job_id):
+        """Get the job and verify user and notebook access"""
+        notebook = get_object_or_404(
+            Notebook.objects.filter(user=self.request.user),
+            pk=notebook_id
+        )
+        return get_object_or_404(
+            PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
+            job_id=job_id
+        )
+
+    def post(self, request, notebook_id, job_id):
         """Cancel a podcast generation job"""
         try:
-            job = get_object_or_404(self.get_queryset(), job_id=pk)
+            job = self.get_job(notebook_id, job_id)
 
             if job.status in ["pending", "generating"]:
                 # Import here to avoid circular imports
@@ -133,7 +176,6 @@ class PodcastJobViewSet(ModelViewSet):
                 # Cancel the background task if it's running
                 try:
                     if job.celery_task_id:
-                        # Revoke the task using the proper Celery task ID - using terminate=True to forcefully kill it
                         celery_app.control.revoke(
                             job.celery_task_id, terminate=True, signal="SIGTERM"
                         )
@@ -153,7 +195,7 @@ class PodcastJobViewSet(ModelViewSet):
                 job.progress = "Job cancelled"
                 job.save()
 
-                serializer = self.get_serializer(job)
+                serializer = PodcastJobSerializer(job)
                 return Response(serializer.data)
             else:
                 return Response(
@@ -162,17 +204,32 @@ class PodcastJobViewSet(ModelViewSet):
                 )
 
         except Exception as e:
-            logger.error(f"Error cancelling podcast job {pk}: {e}")
+            logger.error(f"Error cancelling podcast job {job_id} for notebook {notebook_id}: {e}")
             return Response(
                 {"error": f"Failed to cancel job: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-    @action(detail=True, methods=["get"])
-    def audio(self, request, pk=None):
+
+class NotebookPodcastJobAudioView(APIView):
+    """Serve audio files for podcast jobs within a notebook"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_job(self, notebook_id, job_id):
+        """Get the job and verify user and notebook access"""
+        notebook = get_object_or_404(
+            Notebook.objects.filter(user=self.request.user),
+            pk=notebook_id
+        )
+        return get_object_or_404(
+            PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
+            job_id=job_id
+        )
+
+    def get(self, request, notebook_id, job_id):
         """Download the generated audio file"""
         try:
-            job = get_object_or_404(self.get_queryset(), job_id=pk)
+            job = self.get_job(notebook_id, job_id)
 
             if not job.audio_file:
                 return Response(
@@ -187,66 +244,15 @@ class PodcastJobViewSet(ModelViewSet):
             return response
 
         except Exception as e:
-            logger.error(f"Error serving audio for job {pk}: {e}")
+            logger.error(f"Error serving audio for job {job_id} in notebook {notebook_id}: {e}")
             return Response(
                 {"error": f"Failed to serve audio: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
 
-@api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
-def podcast_audio_serve(request, filename):
-    """Serve podcast audio files directly"""
-    try:
-        # Extract job_id from filename (assuming format: job_id.mp3)
-        job_id = filename.replace(".mp3", "")
-
-        # Get the job and verify ownership
-        job = get_object_or_404(
-            PodcastJob.objects.filter(user=request.user), job_id=job_id
-        )
-
-        if not job.audio_file:
-            raise Http404("Audio file not found")
-
-        # Return file response
-        response = FileResponse(job.audio_file.open(), content_type="audio/mpeg")
-        return response
-
-    except Exception as e:
-        logger.error(f"Error serving audio file {filename}: {e}")
-        raise Http404("Audio file not found")
-
-
-@api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
-def podcast_jobs_summary(request):
-    """Get summary statistics of podcast jobs for the current user"""
-    try:
-        jobs = PodcastJob.objects.filter(user=request.user)
-
-        stats = {
-            "total_jobs": jobs.count(),
-            "pending_jobs": jobs.filter(status="pending").count(),
-            "generating_jobs": jobs.filter(status="generating").count(),
-            "completed_jobs": jobs.filter(status="completed").count(),
-            "error_jobs": jobs.filter(status="error").count(),
-            "cancelled_jobs": jobs.filter(status="cancelled").count(),
-        }
-
-        return Response(stats)
-
-    except Exception as e:
-        logger.error(f"Error getting podcast jobs summary: {e}")
-        return Response(
-            {"error": f"Failed to get summary: {str(e)}"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-
-def job_status_stream(request, job_id):
-    """Server-Sent Events endpoint for real-time job status updates"""
+def notebook_job_status_stream(request, notebook_id, job_id):
+    """Server-Sent Events endpoint for real-time job status updates within a notebook"""
     # Handle CORS preflight requests
     if request.method == "OPTIONS":
         response = HttpResponse(status=200)
@@ -268,8 +274,16 @@ def job_status_stream(request, job_id):
         return response
 
     try:
-        # Verify user has access to this job
-        if not PodcastJob.objects.filter(job_id=job_id, user=request.user).exists():
+        # Verify user has access to this job and notebook
+        notebook = get_object_or_404(
+            Notebook.objects.filter(user=request.user),
+            pk=notebook_id
+        )
+        if not PodcastJob.objects.filter(
+            job_id=job_id, 
+            user=request.user, 
+            notebooks=notebook
+        ).exists():
             response = StreamingHttpResponse(
                 f"data: {json.dumps({'type': 'error', 'message': 'Job not found'})}\n\n",
                 content_type="text/event-stream",
@@ -291,7 +305,7 @@ def job_status_stream(request, job_id):
                 try:
                     # Check if job still exists and get current status
                     current_job = PodcastJob.objects.filter(
-                        job_id=job_id, user=request.user
+                        job_id=job_id, user=request.user, notebooks=notebook
                     ).first()
                     if not current_job:
                         yield f"data: {json.dumps({'type': 'error', 'message': 'Job not found'})}\n\n"
@@ -328,7 +342,7 @@ def job_status_stream(request, job_id):
                     time.sleep(poll_interval)
 
                 except Exception as e:
-                    logger.error(f"Error in SSE stream for job {job_id}: {e}")
+                    logger.error(f"Error in SSE stream for job {job_id} in notebook {notebook_id}: {e}")
                     yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
                     break
 
@@ -339,8 +353,6 @@ def job_status_stream(request, job_id):
             event_stream(), content_type="text/event-stream"
         )
         response["Cache-Control"] = "no-cache"
-        # Remove Connection header - Django's development server doesn't handle this properly
-        # response['Connection'] = 'keep-alive'  # Commented out to fix WSGI error
         response["Access-Control-Allow-Origin"] = "*"
         response["Access-Control-Allow-Headers"] = "Cache-Control"
         response["Access-Control-Allow-Credentials"] = "true"
@@ -348,7 +360,7 @@ def job_status_stream(request, job_id):
         return response
 
     except Exception as e:
-        logger.error(f"Error setting up SSE stream for job {job_id}: {e}")
+        logger.error(f"Error setting up SSE stream for job {job_id} in notebook {notebook_id}: {e}")
         response = StreamingHttpResponse(
             f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n",
             content_type="text/event-stream",

@@ -22,6 +22,13 @@ export default function DeepdivePage() {
 
   const [isSourcesCollapsed, setIsSourcesCollapsed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  
+  // Fixed layout ratios
+  const layoutRatios = {
+    sources: 3,    // 3fr for sources panel
+    chat: 6.5,     // 6.5fr for chat panel  
+    studio: 4.5    // 4.5fr for studio panel
+  };
 
   // Refs and handlers for component communication
   const sourcesListRef = useRef(null);
@@ -183,14 +190,19 @@ export default function DeepdivePage() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-h-0">
-        <div className={`flex gap-4 p-4 flex-1 min-h-0 ${!isSourcesCollapsed ? 'md:grid md:grid-cols-12' : ''}`}>
+        <div 
+          className={`gap-4 p-4 flex-1 min-h-0 ${!isSourcesCollapsed ? 'grid' : 'flex'}`}
+          style={!isSourcesCollapsed ? {
+            gridTemplateColumns: `${layoutRatios.sources}fr ${layoutRatios.chat}fr ${layoutRatios.studio}fr`
+          } : {}}
+        >
           {/* Sources Panel */}
           {!isSourcesCollapsed && (
             <motion.div
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
-              className="col-span-1 md:col-span-2 border border-gray-200 rounded-lg overflow-auto relative min-h-0"
+              className="border border-gray-200 rounded-lg overflow-auto relative min-h-0"
             >
               <SourcesList 
                 ref={sourcesListRef}
@@ -230,7 +242,7 @@ export default function DeepdivePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.1 }}
             className={`border border-gray-200 rounded-lg overflow-auto min-h-0 ${
-              isSourcesCollapsed ? "flex-[0.618]" : "col-span-1 md:col-span-6"
+              isSourcesCollapsed ? "flex-[0.618]" : ""
             }`}
           >
             <ChatPanel 
@@ -246,7 +258,7 @@ export default function DeepdivePage() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3, delay: 0.2 }}
             className={`border border-gray-200 rounded-lg overflow-auto min-h-0 ${
-              isSourcesCollapsed ? "flex-[0.382]" : "col-span-1 md:col-span-4"
+              isSourcesCollapsed ? "flex-[0.382]" : ""
             }`}
           >
             <StudioPanel 
