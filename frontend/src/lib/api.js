@@ -1,7 +1,6 @@
 import { config } from '../config.js';
 
 const API_BASE_URL = `${config.API_BASE_URL}/notebooks`;
-const PODCAST_API_BASE_URL = `${config.API_BASE_URL}/podcasts`;
 
 // Helper to get CSRF token from cookie
 function getCookie(name) {
@@ -308,8 +307,13 @@ class ApiService {
 
   // ─── PODCASTS ────────────────────────────────────────────────────────────
 
-  async generatePodcast(formData) {
-    const response = await this.request(`${PODCAST_API_BASE_URL}/jobs/`, {
+  async generatePodcast(formData, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for podcast generation');
+    }
+    
+    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/`;
+    const response = await this.request(url, {
       method: 'POST',
       headers: {
         'X-CSRFToken': getCookie('csrftoken'),
@@ -320,16 +324,26 @@ class ApiService {
     return response;
   }
 
-  async listPodcastJobs() {
-    const response = await this.request(`${PODCAST_API_BASE_URL}/jobs/`);
+  async listPodcastJobs(notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for listing podcast jobs');
+    }
+    
+    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/`;
+    const response = await this.request(url);
     // Transform the response to match expected format
     return { 
       jobs: response.results || response || []
     };
   }
 
-  async cancelPodcastJob(jobId) {
-    const response = await this.request(`${PODCAST_API_BASE_URL}/jobs/${jobId}/cancel/`, {
+  async cancelPodcastJob(jobId, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for cancelling podcast jobs');
+    }
+    
+    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/${jobId}/cancel/`;
+    const response = await this.request(url, {
       method: 'POST',
       headers: {
         'X-CSRFToken': getCookie('csrftoken'),
@@ -338,14 +352,22 @@ class ApiService {
     return response;
   }
 
-  async getPodcastJobStatus(jobId) {
-    const response = await this.request(`${PODCAST_API_BASE_URL}/jobs/${jobId}/`);
+  async getPodcastJobStatus(jobId, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for getting podcast job status');
+    }
+    
+    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/${jobId}/`;
+    const response = await this.request(url);
     return response;
   }
 
-  async downloadPodcastAudio(jobId) {
-    // Use the ViewSet audio endpoint which properly handles authentication
-    const url = `${PODCAST_API_BASE_URL}/jobs/${jobId}/audio/`;
+  async downloadPodcastAudio(jobId, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for downloading podcast audio');
+    }
+    
+    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/${jobId}/audio/`;
     
     const response = await fetch(url, {
       method: 'GET',
@@ -370,14 +392,28 @@ class ApiService {
     return response.blob();
   }
 
-  async deletePodcast(jobId) {
-    const response = await this.request(`${PODCAST_API_BASE_URL}/jobs/${jobId}/`, {
+  async deletePodcast(jobId, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for deleting podcast');
+    }
+    
+    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/${jobId}/`;
+    const response = await this.request(url, {
       method: 'DELETE',
       headers: {
         'X-CSRFToken': getCookie('csrftoken'),
       },
     });
     return response;
+  }
+
+  // Get the correct SSE endpoint for podcast job status
+  getPodcastJobStatusStreamUrl(jobId, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for podcast job status stream');
+    }
+    
+    return `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/${jobId}/stream/`;
   }
 
   // ─── HEALTH CHECK ────────────────────────────────────────────────────────

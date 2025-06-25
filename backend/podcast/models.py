@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 import uuid
 import json
 from datetime import datetime
+from notebooks.utils.config import storage_config
 
 User = get_user_model()
 
@@ -11,7 +12,7 @@ def user_podcast_audio_path(instance, filename):
     user_id = instance.user.pk
     current_date = datetime.now()
     year_month = current_date.strftime('%Y-%m')
-    podcast_id = instance.pk or 'temp'
+    podcast_id = str(instance.pk or 'temp')
     
     # Get notebook_id from the instance
     notebook_id = None
@@ -20,11 +21,19 @@ def user_podcast_audio_path(instance, filename):
     elif hasattr(instance, 'notebook') and instance.notebook:
         notebook_id = instance.notebook.pk
     
+    # Use the storage_config to get the proper path
     if notebook_id:
-        return f"Users/u_{user_id}/n_{notebook_id}/podcast/{year_month}/p_{podcast_id}/{filename}"
+        storage_config.ensure_notebook_podcast_directory(user_id, notebook_id)
+        base_path = storage_config.get_podcast_path(user_id, year_month, podcast_id, notebook_id)
     else:
         # Fallback to old structure if no notebook is associated
-        return f"Users/u_{user_id}/podcast/{year_month}/p_{podcast_id}/{filename}"
+        storage_config.ensure_user_directories(user_id)
+        base_path = storage_config.get_podcast_path(user_id, year_month, podcast_id)
+    
+    # Convert to relative path from MEDIA_ROOT
+    from django.conf import settings
+    relative_path = base_path.relative_to(settings.MEDIA_ROOT) / filename
+    return str(relative_path)
 
 class PodcastJob(models.Model):
     STATUS_CHOICES = [
@@ -38,13 +47,14 @@ class PodcastJob(models.Model):
     job_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     
-    # Optional linking to a notebook
+    # Required linking to a notebook - breaking change for dev phase
     notebooks = models.ForeignKey(
         'notebooks.Notebook',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='podcasts'
+        on_delete=models.CASCADE,
+        null=False,
+        blank=False,
+        related_name='podcasts',
+        help_text="Associated notebook (required)"
     )
     
     # Celery task tracking
@@ -79,10 +89,11 @@ class PodcastJob(models.Model):
         indexes = [
             models.Index(fields=["status"]),
             models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["notebooks", "created_at"]),
         ]
 
     def __str__(self):
-        return f"Podcast Job {self.job_id} - {self.title}"
+        return f"Podcast Job {self.job_id} - {self.title} (Notebook: {self.notebooks.title})"
 
     @property
     def audio_url(self):
@@ -102,4 +113,5 @@ class PodcastJob(models.Model):
             "conversation_text": self.conversation_text,
             "duration_seconds": self.duration_seconds,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "notebook_id": self.notebooks.pk,
         }

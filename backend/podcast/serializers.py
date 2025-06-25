@@ -5,6 +5,7 @@ from .models import PodcastJob
 class PodcastJobSerializer(serializers.ModelSerializer):
     job_id = serializers.UUIDField(read_only=True)
     audio_url = serializers.SerializerMethodField()
+    notebook_id = serializers.SerializerMethodField()
 
     class Meta:
         model = PodcastJob
@@ -22,6 +23,7 @@ class PodcastJobSerializer(serializers.ModelSerializer):
             "source_file_ids",
             "source_metadata",
             "duration_seconds",
+            "notebook_id",
         ]
         read_only_fields = [
             "job_id",
@@ -33,16 +35,21 @@ class PodcastJobSerializer(serializers.ModelSerializer):
             "conversation_text",
             "error_message",
             "duration_seconds",
+            "notebook_id",
         ]
 
     def get_audio_url(self, obj):
         return obj.audio_url
+    
+    def get_notebook_id(self, obj):
+        return obj.notebooks.pk if obj.notebooks else None
 
 
-class PodcastJobCreateSerializer(serializers.Serializer):
+class NotebookPodcastJobCreateSerializer(serializers.Serializer):
+    """Serializer for creating podcast jobs within a specific notebook context."""
     source_file_ids = serializers.ListField(
         child=serializers.CharField(),
-        help_text="List of source file IDs to generate podcast from",
+        help_text="List of source file IDs from the notebook to generate podcast from",
     )
     title = serializers.CharField(
         max_length=200,
@@ -64,6 +71,7 @@ class PodcastJobCreateSerializer(serializers.Serializer):
 class PodcastJobListSerializer(serializers.ModelSerializer):
     job_id = serializers.UUIDField(read_only=True)
     audio_url = serializers.SerializerMethodField()
+    notebook_id = serializers.SerializerMethodField()
 
     class Meta:
         model = PodcastJob
@@ -78,7 +86,11 @@ class PodcastJobListSerializer(serializers.ModelSerializer):
             "audio_url",
             "error_message",
             "duration_seconds",
+            "notebook_id",
         ]
 
     def get_audio_url(self, obj):
         return obj.audio_url
+    
+    def get_notebook_id(self, obj):
+        return obj.notebooks.pk if obj.notebooks else None
