@@ -31,6 +31,44 @@ const MarkdownContent = React.memo(({ content }) => (
         blockquote: ({children}) => <blockquote className="border-l-4 border-blue-200 pl-4 italic text-gray-600 my-4">{children}</blockquote>,
         code: ({children}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800">{children}</code>,
         pre: ({children}) => <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4">{children}</pre>,
+        img: ({src, alt, title}) => (
+          <div className="my-4">
+            <img 
+              src={src} 
+              alt={alt || 'Image'} 
+              title={title}
+              className="max-w-full h-auto rounded-lg border border-gray-200 shadow-sm"
+              style={{ maxHeight: '500px' }}
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.nextSibling.style.display = 'block';
+              }}
+              onLoad={(e) => {
+                e.target.nextSibling.style.display = 'none';
+              }}
+            />
+            <div 
+              className="hidden bg-gray-100 border border-gray-200 rounded-lg p-4 text-center text-gray-500"
+              style={{ display: 'none' }}
+            >
+              <div className="flex items-center justify-center space-x-2">
+                <File className="h-5 w-5" />
+                <span className="text-sm">Image could not be loaded</span>
+              </div>
+              {alt && <p className="text-xs mt-1 text-gray-400">{alt}</p>}
+            </div>
+          </div>
+        ),
+        a: ({href, children}) => (
+          <a 
+            href={href} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 underline"
+          >
+            {children}
+          </a>
+        ),
       }}
     >
       {content}

@@ -25,6 +25,21 @@ class FileUploadSerializer(serializers.Serializer):
     upload_file_id = serializers.CharField(required=False)
 
 
+class URLParseSerializer(serializers.Serializer):
+    """Serializer for URL parsing requests."""
+    
+    url = serializers.URLField()
+    upload_url_id = serializers.CharField(required=False)
+
+
+class URLParseWithMediaSerializer(serializers.Serializer):
+    """Serializer for URL parsing with media extraction requests."""
+    
+    url = serializers.URLField()
+    extraction_strategy = serializers.CharField(default="cosine", required=False)
+    upload_url_id = serializers.CharField(required=False)
+
+
 class URLProcessingResultSerializer(serializers.ModelSerializer):
     """Serializer for URL processing results."""
 

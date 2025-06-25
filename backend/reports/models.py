@@ -12,7 +12,19 @@ def user_report_path(instance, filename):
     current_date = datetime.now()
     year_month = current_date.strftime("%Y-%m")
     report_id = instance.pk
-    return f"Users/u_{user_id}/report/{year_month}/r_{report_id}/{filename}"
+    
+    # Get notebook_id from the instance
+    notebook_id = None
+    if hasattr(instance, 'notebooks') and instance.notebooks:
+        notebook_id = instance.notebooks.pk
+    elif hasattr(instance, 'notebook') and instance.notebook:
+        notebook_id = instance.notebook.pk
+    
+    if notebook_id:
+        return f"Users/u_{user_id}/n_{notebook_id}/report/{year_month}/r_{report_id}/{filename}"
+    else:
+        # Fallback to old structure if no notebook is associated
+        return f"Users/u_{user_id}/report/{year_month}/r_{report_id}/{filename}"
 
 
 class Report(models.Model):
