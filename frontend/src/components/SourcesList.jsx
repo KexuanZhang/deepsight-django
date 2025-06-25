@@ -1313,24 +1313,19 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       );
 
       const results = await Promise.all(deletePromises);
-      const successfulDeletes = Array.from(selectedKnowledgeItems).filter((_, index) => 
+      const successfulDeletes = Array.from(selectedKnowledgeItems).filter((_, index) =>
         results[index].success !== false
       );
 
       // Remove successfully deleted items from the knowledge base list
-      setKnowledgeBaseItems(prev => 
+      setKnowledgeBaseItems(prev =>
         prev.filter(item => !successfulDeletes.includes(item.id))
       );
-      
+
       setSelectedKnowledgeItems(new Set());
-      
-      // Remove deleted knowledge base items from the main sources list as well
-      // since they might be linked to the current notebook
-      setSources(prev => prev.filter(source => {
-        // Remove sources that match any of the successfully deleted knowledge base items
-        const knowledgeItemId = source.metadata?.knowledge_item_id || source.file_id;
-        return !successfulDeletes.includes(knowledgeItemId);
-      }));
+
+      // Refresh the sources list to ensure UI reflects deletion accurately
+      await loadParsedFiles();
 
       const failedDeletes = results.filter(result => result.success === false);
       if (failedDeletes.length > 0) {
