@@ -317,14 +317,6 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
           <h3 className="font-medium text-gray-900">{state.preview.title}</h3>
         </div>
         
-        {/* Debug Info */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs">
-          <div className="font-medium text-yellow-800 mb-2">Debug Info:</div>
-          <div>File ID: {source.file_id}</div>
-          <div>Notebook ID: {notebookId}</div>
-          <div>Content Length: {state.preview.content?.length || 0}</div>
-          <div>Processed Content Length: {processedContent?.length || 0}</div>
-        </div>
         
         <div className="flex flex-wrap gap-2 mb-4">
           <Badge variant="secondary">

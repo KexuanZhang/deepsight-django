@@ -420,8 +420,10 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           return newProgress;
         });
         
-        // Don't reload the entire file list - we already have the information we need
-        // This preserves the original file display information
+        // Refresh the file list to get complete metadata for preview
+        if (status === 'completed') {
+          loadParsedFiles();
+        }
       }
     };
 
@@ -500,6 +502,12 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
               delete newProgress[uploadUrlId];
               return newProgress;
             });
+            
+            // Refresh the file list to get complete metadata for preview
+            if (status === 'completed') {
+              loadParsedFiles();
+            }
+            
             return; // Stop polling
           }
         }
@@ -856,6 +864,9 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
             delete newProgress[uploadFileId];
             return newProgress;
           });
+          
+          // Refresh the file list to get complete metadata for preview
+          await loadParsedFiles();
         }
         
         // Clear URL input

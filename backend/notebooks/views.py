@@ -298,6 +298,10 @@ class URLParseView(StandardAPIView, NotebookPermissionMixin):
                 "success": True,
                 "file_id": kb_item_id,
                 "knowledge_item_id": ki.id,
+                "url": result.get("url", url),
+                "title": result.get("title", ""),
+                "extraction_method": result.get("extraction_method", "crawl4ai"),
+                "content_preview": result.get("content_preview", ""),
             },
             status=status.HTTP_201_CREATED,
         )
@@ -445,6 +449,11 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
                 "success": True,
                 "file_id": kb_item_id,
                 "knowledge_item_id": ki.id,
+                "url": result.get("url", url),
+                "title": result.get("title", ""),
+                "has_media": result.get("has_media", True),
+                "processing_type": result.get("processing_type", "media"),
+                "content_preview": result.get("content_preview", ""),
             },
             status=status.HTTP_201_CREATED,
         )
