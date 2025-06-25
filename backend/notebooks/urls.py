@@ -19,6 +19,7 @@ from .views import (
     MarkdownBatchContentView,
     RAGChatFromKBView,
     VideoImageExtractionView,
+    BatchJobStatusView,
 )
 
 urlpatterns = [
@@ -115,5 +116,12 @@ urlpatterns = [
         "<int:notebook_id>/extraction/video_image_extraction/",
         VideoImageExtractionView.as_view(),
         name="video-image-extraction",
+    ),
+
+    # 12) batch job status endpoint
+    path(
+        "<int:notebook_id>/batch-jobs/<int:batch_job_id>/status/",
+        BatchJobStatusView.as_view(),
+        name="batch-job-status",
     ),
 ]

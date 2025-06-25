@@ -6,6 +6,8 @@ from .models import (
     ProcessingJob,
     KnowledgeItem,
     KnowledgeBaseItem,
+    BatchJob,
+    BatchJobItem,
 )
 
 
@@ -183,3 +185,104 @@ class SourceSerializer(serializers.ModelSerializer):
             "jobs",
             "knowledge_items",
         ]
+
+# Batch processing serializers
+
+
+class BatchURLParseSerializer(serializers.Serializer):
+    """Serializer for batch URL parsing requests."""
+    
+    # Accept either a single URL or a list of URLs
+    url = serializers.CharField(required=False)
+    urls = serializers.ListField(
+        child=serializers.URLField(),
+        required=False,
+        allow_empty=False
+    )
+    upload_url_id = serializers.CharField(required=False)
+    
+    def validate(self, data):
+        """Ensure either url or urls is provided, but not both."""
+        url = data.get('url')
+        urls = data.get('urls')
+        
+        if not url and not urls:
+            raise serializers.ValidationError("Either 'url' or 'urls' must be provided.")
+        if url and urls:
+            raise serializers.ValidationError("Provide either 'url' or 'urls', not both.")
+        
+        return data
+
+
+class BatchURLParseWithMediaSerializer(serializers.Serializer):
+    """Serializer for batch URL parsing with media extraction requests."""
+    
+    # Accept either a single URL or a list of URLs
+    url = serializers.CharField(required=False)
+    urls = serializers.ListField(
+        child=serializers.URLField(),
+        required=False,
+        allow_empty=False
+    )
+    upload_url_id = serializers.CharField(required=False)
+    
+    def validate(self, data):
+        """Ensure either url or urls is provided, but not both."""
+        url = data.get('url')
+        urls = data.get('urls')
+        
+        if not url and not urls:
+            raise serializers.ValidationError("Either 'url' or 'urls' must be provided.")
+        if url and urls:
+            raise serializers.ValidationError("Provide either 'url' or 'urls', not both.")
+        
+        return data
+
+
+class BatchFileUploadSerializer(serializers.Serializer):
+    """Serializer for batch file upload requests."""
+    
+    # Accept either a single file or multiple files
+    file = serializers.FileField(required=False)
+    files = serializers.ListField(
+        child=serializers.FileField(),
+        required=False,
+        allow_empty=False
+    )
+    upload_file_id = serializers.CharField(required=False)
+    
+    def validate(self, data):
+        """Ensure either file or files is provided, but not both."""
+        file = data.get('file')
+        files = data.get('files')
+        
+        if not file and not files:
+            raise serializers.ValidationError("Either 'file' or 'files' must be provided.")
+        if file and files:
+            raise serializers.ValidationError("Provide either 'file' or 'files', not both.")
+        
+        return data
+
+
+class BatchJobSerializer(serializers.ModelSerializer):
+    """Serializer for batch job tracking."""
+    
+    class Meta:
+        model = BatchJob
+        fields = [
+            'id', 'job_type', 'status', 'total_items', 
+            'completed_items', 'failed_items', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class BatchJobItemSerializer(serializers.ModelSerializer):
+    """Serializer for individual batch job items."""
+    
+    class Meta:
+        model = BatchJobItem
+        fields = [
+            'id', 'item_data', 'upload_id', 'status', 
+            'result_data', 'error_message', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']

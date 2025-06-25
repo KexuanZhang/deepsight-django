@@ -24,6 +24,9 @@ app.conf.update(
     task_routes={
         "podcast.tasks.process_podcast_generation": {"queue": "podcast"},
         "podcast.tasks.cleanup_old_podcast_jobs": {"queue": "maintenance"},
+        "notebooks.tasks.process_url_task": {"queue": "notebook_processing"},
+        "notebooks.tasks.process_url_media_task": {"queue": "notebook_processing"},
+        "notebooks.tasks.process_file_upload_task": {"queue": "notebook_processing"},
     },
     # Task settings
     task_serializer="json",
