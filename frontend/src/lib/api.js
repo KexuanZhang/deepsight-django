@@ -216,14 +216,14 @@ class ApiService {
 
   // ─── URL PARSING ─────────────────────────────────────────────────────────
 
-  async parseUrl(url, searchMethod = 'cosine', uploadFileId = null) {
+  async parseUrl(url, notebookId, searchMethod = 'cosine', uploadFileId = null) {
     const body = {
       url: url,
       search_method: searchMethod
     };
     if (uploadFileId) body.upload_file_id = uploadFileId;
 
-    return this.request('/parse-url/', {
+    return this.request(`/${notebookId}/files/parse_url/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -233,7 +233,7 @@ class ApiService {
     });
   }
 
-  async parseUrlWithMedia(url, searchMethod = 'cosine', uploadFileId = null) {
+  async parseUrlWithMedia(url, notebookId, searchMethod = 'cosine', uploadFileId = null) {
     const body = {
       url: url,
       search_method: searchMethod,
@@ -241,7 +241,7 @@ class ApiService {
     };
     if (uploadFileId) body.upload_file_id = uploadFileId;
 
-    return this.request('/parse-url/', {
+    return this.request(`/${notebookId}/files/parse_url_media/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

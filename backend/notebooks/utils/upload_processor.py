@@ -233,19 +233,90 @@ class UploadProcessor:
     
     @property
     def whisper_model(self):
-        """Lazy load whisper model."""
+        """Lazy load faster-whisper model."""
         if self._whisper_model is None:
             try:
-                import whisper
-
-                self._whisper_model = whisper.load_model("base")
-                self.log_operation("whisper_model_loaded", "Whisper model loaded")
-            except ImportError:
-                self.log_operation(
-                    "whisper_import_error", "Whisper not available", "warning"
-                )
+                # Suppress known semaphore tracker warnings on macOS
+                import sys
+                import warnings
+                if sys.platform == "darwin":  # macOS
+                    warnings.filterwarnings("ignore", message=".*semaphore_tracker.*", category=UserWarning)
+                
+                import torch
+                from faster_whisper import WhisperModel, BatchedInferencePipeline
+                
+                device = self._get_device()
+                compute_type = "float16" if device == "cuda" else "int8"  # Use int8 for CPU to save memory
+                
+                self.log_operation("faster_whisper_device_selected", f"Selected device: {device} (faster-whisper only supports CUDA and CPU)")
+                
+                self._whisper_model = WhisperModel("large-v3-turbo", device=device, compute_type=compute_type)
+                # Create batched model for better performance
+                self._batched_model = BatchedInferencePipeline(model=self._whisper_model)
+                
+                self.log_operation("faster_whisper_model_loaded", f"Loaded faster-whisper model on {device} with {compute_type} precision")
+                
+            except ImportError as e:
+                self.log_operation("faster_whisper_import_error", f"faster-whisper not available: {e}", "warning")
                 self._whisper_model = None
-        return self._whisper_model
+                self._batched_model = None
+        return getattr(self, '_batched_model', None)
+    
+    def _get_device(self) -> str:
+        """Detect and return the appropriate device for model inference.
+        Note: faster-whisper only supports CUDA and CPU, not MPS."""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return "cuda"
+            # Skip MPS for faster-whisper as it's not supported
+            # elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            #     return "mps"  # Not supported by faster-whisper
+        except:
+            pass
+        return "cpu"
+
+    def _hh_mm_ss(self, s: float) -> str:
+        """Convert seconds to HH:MM:SS format."""
+        import datetime as dt
+        return str(dt.timedelta(seconds=int(s)))
+
+    def transcribe_audio_video(self, file_path: str, filename: str) -> tuple[str, str]:
+        """Transcribe audio/video file using faster-whisper. Returns (transcript_content, suggested_filename)."""
+        try:
+            self.log_operation("transcription_start", f"Starting transcription of {file_path}")
+            start_time = time.time()
+
+            batched_model = self.whisper_model
+            if not batched_model:
+                raise Exception("Speech-to-text not available. Please install faster-whisper and torch.")
+            
+            # Transcribe the file
+            segments, _ = batched_model.transcribe(file_path, vad_filter=True, batch_size=16)
+            
+            # Clean the title for filename
+            base_title = Path(filename).stem  # Remove file extension
+            cleaned_title = self._clean_title(base_title)
+            suggested_filename = f"{cleaned_title}_transcript.md"
+            
+            # Build the transcript
+            transcript_lines = []
+   
+            for segment in segments:
+                timestamp = self._hh_mm_ss(segment.start)
+                transcript_lines.append(f"**{timestamp}** {segment.text}\n")
+            
+            transcript_content = "\n".join(transcript_lines)
+            
+            end_time = time.time()
+            duration = end_time - start_time
+            self.log_operation("transcription_completed", f"Transcription completed in {duration:.2f} seconds ({duration/60:.2f} minutes)")
+            
+            return transcript_content, suggested_filename
+            
+        except Exception as e:
+            self.log_operation("transcription_error", f"Transcription failed: {e}", "error")
+            raise Exception(f"Transcription failed: {str(e)}")
 
     def get_upload_status(
         self, upload_file_id: str, user_pk: int = None
@@ -387,10 +458,15 @@ class UploadProcessor:
             if notebook_id is None:
                 raise ValueError("notebook_id is required for file storage")
 
+            # For media files, use transcript filename instead of default extracted_content.md
+            processing_result_for_storage = processing_result.copy()
+            if processing_result.get('transcript_filename'):
+                processing_result_for_storage['content_filename'] = processing_result['transcript_filename']
+
             file_id = self.file_storage.store_processed_file(
                 content=processing_result["content"],
                 metadata=file_metadata,
-                processing_result=processing_result,
+                processing_result=processing_result_for_storage,
                 user_id=user_pk,
                 notebook_id=notebook_id,
                 original_file_path=temp_path,
@@ -681,11 +757,11 @@ class UploadProcessor:
     def _process_audio_immediate(
         self, file_path: str, file_metadata: Dict
     ) -> Dict[str, Any]:
-        """Quick audio transcription using Whisper."""
+        """Quick audio transcription using faster-whisper."""
         try:
             if not self.whisper_model:
                 return {
-                    "content": f"Audio file '{file_metadata['filename']}' uploaded successfully. Transcription requires Whisper installation.",
+                    "content": f"Audio file '{file_metadata['filename']}' uploaded successfully. Transcription requires faster-whisper installation.",
                     "metadata": self._get_audio_metadata(file_path),
                     "features_available": [
                         "audio_transcription",
@@ -694,20 +770,20 @@ class UploadProcessor:
                     "processing_time": "immediate",
                 }
 
-            # Transcribe audio
-            result = self.whisper_model.transcribe(file_path, language="auto")
+            # Transcribe audio using the new workflow
+            transcript_content, transcript_filename = self.transcribe_audio_video(
+                file_path, file_metadata['filename']
+            )
 
             # Get basic audio info
             audio_metadata = self._get_audio_metadata(file_path)
-            audio_metadata.update(
-                {
-                    "language": result.get("language", "unknown"),
-                    "segments_count": len(result.get("segments", [])),
-                }
-            )
+            audio_metadata.update({
+                'transcript_filename': transcript_filename,
+                'has_transcript': True,
+            })
 
             return {
-                "content": result["text"],
+                "content": transcript_content,
                 "metadata": audio_metadata,
                 "features_available": [
                     "speaker_diarization",
@@ -715,6 +791,7 @@ class UploadProcessor:
                     "advanced_audio_analysis",
                 ],
                 "processing_time": "immediate",
+                "transcript_filename": transcript_filename
             }
 
         except Exception as e:
@@ -723,78 +800,68 @@ class UploadProcessor:
     def _process_video_immediate(
         self, file_path: str, file_metadata: Dict
     ) -> Dict[str, Any]:
-        """Quick video processing - extract audio and transcribe."""
+        """Enhanced video processing with optional image extraction, deduplication, and captioning."""
         try:
-            # Extract audio from video
-            audio_path = tempfile.mktemp(suffix=".wav")
+            # Extract audio from video for transcription
+            audio_path = tempfile.mktemp(suffix='.wav')
 
             cmd = [
-                "ffmpeg",
-                "-i",
-                file_path,
-                "-vn",
-                "-acodec",
-                "pcm_s16le",
-                "-ar",
-                "16000",
-                "-ac",
-                "1",
-                "-y",
-                audio_path,
+                'ffmpeg', '-i', file_path, '-vn', '-acodec', 'pcm_s16le',
+                '-ar', '16000', '-ac', '1', '-y', audio_path
             ]
 
             result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                # If audio extraction fails, just return metadata
-                video_metadata = self._get_video_metadata(file_path)
-                return {
-                    "content": f"Video file '{file_metadata['filename']}' uploaded successfully. No audio track found or audio extraction failed.",
-                    "metadata": video_metadata,
-                    "features_available": [
-                        "frame_extraction",
-                        "scene_analysis",
-                        "video_transcription",
-                    ],
-                    "processing_time": "immediate",
-                }
 
-            try:
-                # Transcribe extracted audio if whisper is available
-                if self.whisper_model and os.path.exists(audio_path):
-                    transcription_result = self.whisper_model.transcribe(
-                        audio_path, language="auto"
+            # Initialize content parts
+            content_parts = []
+
+            # Process audio transcription if available
+            transcript_filename = None
+            has_transcript = False
+
+            # Always generate a transcript filename based on the video name
+            base_title = Path(file_metadata['filename']).stem
+            cleaned_title = self._clean_title(base_title)
+            transcript_filename = f"{cleaned_title}_transcript.md"
+
+            if result.returncode == 0 and self.whisper_model and os.path.exists(audio_path):
+                try:
+                    transcript_content, _ = self.transcribe_audio_video(
+                        audio_path, file_metadata['filename']
                     )
-                    transcript = transcription_result["text"]
-                    language = transcription_result.get("language", "unknown")
+                    content_parts.append(f"# Transcription\n\n{transcript_content}")
+                    has_transcript = True
+                except Exception as e:
+                    self.log_operation("video_transcription_error", f"Transcription failed: {e}", "warning")
+                finally:
+                    # Clean up extracted audio
+                    if os.path.exists(audio_path):
+                        os.unlink(audio_path)
+            else:
+                # If no audio or transcription failed
+                if result.returncode != 0:
+                    content_parts.append(f"# Video: {file_metadata['filename']}\n\nNo audio track found or audio extraction failed.")
                 else:
-                    transcript = f"Video file '{file_metadata['filename']}' uploaded successfully. Audio transcription requires Whisper installation."
-                    language = "unknown"
+                    content_parts.append(f"# Video: {file_metadata['filename']}\n\nAudio transcription requires faster-whisper installation.")
 
-                # Get video metadata
-                video_metadata = self._get_video_metadata(file_path)
-                video_metadata.update(
-                    {
-                        "language": language,
-                        "has_audio": True,
-                    }
-                )
+            # Get video metadata and add transcript info
+            video_metadata = self._get_video_metadata(file_path)
+            video_metadata.update({
+                'transcript_filename': transcript_filename,
+                'has_transcript': has_transcript,
+                'has_audio': result.returncode == 0,
+            })
 
-                return {
-                    "content": transcript,
-                    "metadata": video_metadata,
-                    "features_available": [
-                        "frame_extraction",
-                        "scene_analysis",
-                        "speaker_diarization",
-                        "video_analysis",
-                    ],
-                    "processing_time": "immediate",
-                }
+            # Combine content
+            final_content = "\n\n".join(content_parts)
 
-            finally:
-                # Clean up extracted audio
-                if os.path.exists(audio_path):
-                    os.unlink(audio_path)
+            return {
+                'content': final_content,
+                'metadata': video_metadata,
+                'features_available': ['frame_extraction', 'scene_analysis', 'speaker_diarization', 'video_analysis'],
+                'processing_time': 'immediate',
+                'transcript_filename': transcript_filename if has_transcript else None
+            }
 
         except Exception as e:
             raise Exception(f"Video processing failed: {str(e)}")

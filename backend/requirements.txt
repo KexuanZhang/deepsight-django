@@ -51,9 +51,11 @@ transformers
 ujson
 uvicorn
 whisper
+faster-whisper
 wikipedia==1.4.0
 yt_dlp
 celery
 langchain_community
 langchain-openai
 faiss-cpu
+crawl4ai
