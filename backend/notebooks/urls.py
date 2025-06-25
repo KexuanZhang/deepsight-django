@@ -17,6 +17,7 @@ from .views import (
     FileRawSimpleView,
     MarkdownBatchContentView,
     RAGChatFromKBView,
+    VideoImageExtractionView,
 )
 
 urlpatterns = [
@@ -99,5 +100,12 @@ urlpatterns = [
     # 10) simplified raw file serving (without notebook context)
     path(
         "files/<str:file_id>/raw/", FileRawSimpleView.as_view(), name="file-raw-simple"
+    ),
+
+    # 11) video image extraction endpoint
+    path(
+        "<int:notebook_id>/extraction/video_image_extraction/",
+        VideoImageExtractionView.as_view(),
+        name="video-image-extraction",
     ),
 ]

@@ -34,10 +34,53 @@ class URLParseSerializer(serializers.Serializer):
 
 class URLParseWithMediaSerializer(serializers.Serializer):
     """Serializer for URL parsing with media extraction requests."""
-    
-    url = serializers.URLField()
-    extraction_strategy = serializers.CharField(default="cosine", required=False)
-    upload_url_id = serializers.CharField(required=False)
+    url = serializers.URLField(
+        help_text="URL to parse and extract media from"
+    )
+    upload_url_id = serializers.CharField(
+        max_length=64,
+        required=False,
+        help_text="Custom upload ID for tracking"
+    )
+
+
+class VideoImageExtractionSerializer(serializers.Serializer):
+    """Serializer for video image extraction requests."""
+    video_file_id = serializers.CharField(
+        max_length=64,
+        help_text="Video file ID in format f_{file_id}"
+    )
+    # Image processing parameters with defaults matching DeepSight
+    extract_interval = serializers.IntegerField(
+        default=8,
+        min_value=1,
+        max_value=300,
+        help_text="Frame extraction interval in seconds (default: 8)"
+    )
+    pixel_threshold = serializers.IntegerField(
+        default=3,
+        min_value=0,
+        max_value=64,
+        help_text="Max Hamming distance for pixel deduplication (default: 3)"
+    )
+    sequential_deep_threshold = serializers.FloatField(
+        default=0.8,
+        min_value=0.0,
+        max_value=1.0,
+        help_text="Cosine similarity threshold for sequential deep deduplication (default: 0.8)"
+    )
+    global_deep_threshold = serializers.FloatField(
+        default=0.85,
+        min_value=0.0,
+        max_value=1.0,
+        help_text="Cosine similarity threshold for global deep deduplication (default: 0.85)"
+    )
+    min_words = serializers.IntegerField(
+        default=5,
+        min_value=0,
+        max_value=100,
+        help_text="Minimum words/numbers required to keep an image via OCR filter (default: 5)"
+    )
 
 
 class URLProcessingResultSerializer(serializers.ModelSerializer):

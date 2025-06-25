@@ -199,6 +199,12 @@ class URLExtractor:
             base_title = media_info.get('title', 'media_download')
             base_filename = self.upload_processor._clean_title(base_title)
             
+            # Ensure the base filename leaves room for "_transcript.md" suffix (14 characters)
+            # Limit to reasonable length for transcript filename
+            max_base_length = 86  # 100 - 14 = 86 characters for base name
+            if len(base_filename) > max_base_length:
+                base_filename = base_filename[:max_base_length].rstrip('_')
+            
             # Create temporary directory for downloads
             temp_dir = tempfile.mkdtemp(prefix="deepsight_media_")
             
@@ -224,7 +230,7 @@ class URLExtractor:
                         'file_size': os.path.getsize(video_path)
                     }
 
-                    processing_result = self.upload_processor._process_video_immediate(video_path, file_metadata)
+                    processing_result = await self.upload_processor._process_video_immediate(video_path, file_metadata)
 
                     if processing_result.get('content'):
                         content_parts.append(processing_result['content'])
@@ -246,7 +252,7 @@ class URLExtractor:
                         'file_size': os.path.getsize(audio_path)
                     }
                     
-                    processing_result = self.upload_processor._process_audio_immediate(audio_path, file_metadata)
+                    processing_result = await self.upload_processor._process_audio_immediate(audio_path, file_metadata)
                     
                     if processing_result.get('content'):
                         content_parts.append(processing_result['content'])
@@ -291,7 +297,7 @@ class URLExtractor:
                 'quiet': True,
                 'no_warnings': True,
                 'outtmpl': output_path,
-                'format': 'best[height<=720]/best',  # Limit to 720p for processing
+                'format': 'bestvideo+bestaudio/best',
                 'nocheckcertificate': True,
                 'cookiesfrombrowser': ('chrome', None, None, None),  # Use Chrome cookies by default
             }

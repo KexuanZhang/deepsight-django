@@ -5,6 +5,9 @@ import mimetypes
 from uuid import uuid4
 import asyncio
 from asgiref.sync import sync_to_async, async_to_sync
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any
 
 from .utils.rag_engine import RAGChatbot
 
@@ -19,17 +22,23 @@ from rest_framework import status, permissions, authentication, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, JSONParser
+from rest_framework.decorators import action
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 from .models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook
 from .serializers import (
     NotebookSerializer, 
     FileUploadSerializer, 
     URLParseSerializer, 
-    URLParseWithMediaSerializer
+    URLParseWithMediaSerializer,
+    VideoImageExtractionSerializer
 )
 from .utils.upload_processor import UploadProcessor
 from .utils.file_storage import FileStorageService
 from .utils.url_extractor import URLExtractor
+from .utils.media_extractor import MediaFeatureExtractor
+from .utils.image_processing import clean_title
 from .utils.view_mixins import (
     StandardAPIView,
     NotebookPermissionMixin,
@@ -43,6 +52,7 @@ from .utils.view_mixins import (
 upload_processor = UploadProcessor()
 file_storage = FileStorageService()
 url_extractor = URLExtractor()
+media_extractor = MediaFeatureExtractor()
 
 class FileUploadView(StandardAPIView, NotebookPermissionMixin):
     """Handle file uploads to notebooks."""
@@ -67,13 +77,17 @@ class FileUploadView(StandardAPIView, NotebookPermissionMixin):
             inbound_file = serializer.validated_data["file"]
             upload_id = serializer.validated_data.get("upload_file_id") or uuid4().hex
 
-            # Process the upload
-            result = upload_processor.process_upload(
-                inbound_file,
-                upload_id,
-                user_pk=request.user.pk,
-                notebook_id=notebook.id,
-            )
+            # Process the upload using async function
+            async def process_upload_async():
+                return await upload_processor.process_upload(
+                    inbound_file,
+                    upload_id,
+                    user_pk=request.user.pk,
+                    notebook_id=notebook.id,
+                )
+
+            # Run async processing using async_to_sync
+            result = async_to_sync(process_upload_async)()
 
             # Create source record
             source = Source.objects.create(
@@ -883,18 +897,19 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
             )
 
     def _serve_file(self, file_field, title):
-        """Helper to serve a file with proper headers."""
-        content_type, _ = mimetypes.guess_type(file_field.name)
-        if not content_type:
-            content_type = "application/octet-stream"
-
-        response = FileResponse(
-            file_field.open("rb"), content_type=content_type, as_attachment=False
-        )
-        response["Content-Disposition"] = f'inline; filename="{title}"'
-        response["X-Content-Type-Options"] = "nosniff"
-        response["X-Frame-Options"] = "DENY"
-        return response
+        """Serve a file through Django's FileResponse."""
+        try:
+            response = FileResponse(
+                file_field.open("rb"),
+                as_attachment=True,
+                filename=title,
+            )
+            response["Content-Type"] = (
+                mimetypes.guess_type(file_field.name)[0] or "application/octet-stream"
+            )
+            return response
+        except Exception as e:
+            raise Http404(f"File not accessible: {str(e)}")
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -939,3 +954,197 @@ class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
         response["X-Content-Type-Options"] = "nosniff"
         response["X-Frame-Options"] = "DENY"
         return response
+
+
+class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
+    """Handle video image extraction with deduplication and captioning for notebook files."""
+
+    parser_classes = [JSONParser]
+    serializer_class = VideoImageExtractionSerializer
+
+    @swagger_auto_schema(
+        operation_description="Extract and process images from a video file with deduplication and captioning",
+        request_body=VideoImageExtractionSerializer,
+        responses={
+            200: openapi.Response(
+                description="Video image extraction completed successfully",
+                examples={
+                    "application/json": {
+                        "success": True,
+                        "message": "Video image extraction completed successfully",
+                        "file_id": "f_12345",
+                        "notebook_id": 1,
+                        "result": {
+                            "success": True,
+                            "extraction_type": "image_dedup_captions",
+                            "statistics": {
+                                "initial_frames": 100,
+                                "final_frames": 25,
+                                "removed_pixel_global": 20,
+                                "removed_deep_sequential": 15,
+                                "removed_deep_global": 10,
+                                "removed_text_ocr": 30,
+                                "total_removed": 75,
+                                "captions_generated": 25
+                            }
+                        }
+                    }
+                }
+            ),
+            400: openapi.Response(description="Invalid request data"),
+            404: openapi.Response(description="Video file or notebook not found"),
+            500: openapi.Response(description="Video image extraction failed")
+        },
+        manual_parameters=[
+            openapi.Parameter(
+                'notebook_id',
+                openapi.IN_PATH,
+                description="ID of the notebook containing the video file",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+        ]
+    )
+    @transaction.atomic
+    def post(self, request, notebook_id):
+        """Extract and process images from a video file with deduplication and captioning."""
+        try:
+            # Validate request data
+            serializer = VideoImageExtractionSerializer(data=request.data)
+            if not serializer.is_valid():
+                return self.error_response(
+                    "Invalid request data", details=serializer.errors
+                )
+
+            # Verify notebook access
+            notebook = self.get_user_notebook(notebook_id, request.user)
+
+            # Extract video file ID and processing parameters
+            video_file_id = serializer.validated_data["video_file_id"]
+            
+            # Remove 'f_' prefix if present
+            if video_file_id.startswith('f_'):
+                actual_file_id = video_file_id[2:]
+            else:
+                actual_file_id = video_file_id
+
+            # Get the original video file path from the knowledge base
+            video_file_path = file_storage.get_original_file_path(actual_file_id, request.user.pk)
+            if not video_file_path:
+                return self.error_response(
+                    f"Video file not found for ID: {video_file_id}",
+                    status_code=status.HTTP_404_NOT_FOUND
+                )
+
+            # Validate that the file is a video
+            if not self._is_video_file(video_file_path):
+                return self.error_response(
+                    f"File is not a video: {video_file_path}",
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Build extraction options
+            extraction_options = self._build_extraction_options(serializer.validated_data)
+
+            # Get the knowledge base item for metadata
+            kb_item = get_object_or_404(
+                KnowledgeBaseItem, id=actual_file_id, user=request.user
+            )
+
+            # Generate clean title from filename
+            original_filename = kb_item.metadata.get('original_filename') if kb_item.metadata else 'video'
+            video_title = clean_title(Path(original_filename).stem)
+
+            # Set up output directory within the knowledge base item structure
+            paths = file_storage._generate_knowledge_base_paths(
+                request.user.pk, original_filename, actual_file_id
+            )
+            
+            # Create images directory directly in the file's base directory (not in extractions subdirectory)
+            base_file_dir = os.path.join(file_storage.base_data_root, paths['base_dir'])
+            images_output_dir = os.path.join(base_file_dir, 'images')
+            os.makedirs(images_output_dir, exist_ok=True)
+
+            # Process the video for image extraction
+            async def process_video_async():
+                return await media_extractor.process_video_for_images(
+                    file_path=video_file_path,
+                    output_dir=images_output_dir,
+                    video_title=video_title,
+                    extraction_options=extraction_options,
+                    final_images_dir_name="images"  # Use "images" instead of "{title}_Dedup_Images"
+                )
+
+            # Run async processing
+            result = async_to_sync(process_video_async)()
+
+            # Calculate final output paths
+            final_images_dir = images_output_dir  # This will be f_{file_id}/images/
+            caption_file = os.path.join(images_output_dir, f"{video_title}_caption.json")  # Inside images folder
+
+            # Update knowledge base item metadata with extraction info
+            if kb_item.metadata is None:
+                kb_item.metadata = {}
+            
+            kb_item.metadata.update({
+                'video_image_extraction': {
+                    'completed': result.get('success', False),
+                    'timestamp': datetime.now().isoformat(),
+                    'extraction_options': extraction_options,
+                    'output_paths': {
+                        'dedup_images_directory': final_images_dir,
+                        'caption_file': caption_file,
+                        'extractions_directory': images_output_dir
+                    },
+                    'statistics': result.get('statistics', {})
+                }
+            })
+            kb_item.save(update_fields=['metadata'])
+
+            return Response({
+                "success": True,
+                "message": "Video image extraction completed successfully",
+                "file_id": f"f_{actual_file_id}",
+                "notebook_id": notebook_id,
+                "result": result,
+                "output_paths": {
+                    "dedup_images_directory": final_images_dir,
+                    "caption_file": caption_file,
+                    "extractions_directory": images_output_dir,
+                    "knowledge_base_path": f"{paths['base_dir']}/images/"
+                }
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return self.error_response(
+                "Video image extraction failed",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)},
+            )
+
+    def _is_video_file(self, file_path: str) -> bool:
+        """Check if the file is a video based on its extension and MIME type."""
+        video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.m4v', '.wmv', '.3gp'}
+        file_ext = Path(file_path).suffix.lower()
+        
+        if file_ext in video_extensions:
+            return True
+            
+        # Also check MIME type
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if mime_type and mime_type.startswith('video/'):
+            return True
+            
+        return False
+
+    def _build_extraction_options(self, validated_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Build extraction options dictionary from validated form data."""
+        options = {}
+        
+        # Extract processing parameters
+        for param in ['extract_interval', 'pixel_threshold', 'sequential_deep_threshold', 
+                      'global_deep_threshold', 'min_words']:
+            if param in validated_data:
+                options[param] = validated_data[param]
+        
+        return options
