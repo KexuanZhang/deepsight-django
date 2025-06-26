@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 
-const API_BASE_URL = `${config.API_BASE_URL}/notebooks`;
+const API_BASE_URL = config.API_BASE_URL;
 
 // Helper to get CSRF token from cookie
 function getCookie(name) {
@@ -59,18 +59,18 @@ class ApiService {
   // ─── FILES ────────────────────────────────────────────────────────────────
 
   async listParsedFiles(notebookId, { limit = 50, offset = 0 } = {}) {
-    return this.request(`/${notebookId}/files/?limit=${limit}&offset=${offset}`);
+    return this.request(`/notebooks/${notebookId}/files/?limit=${limit}&offset=${offset}`);
   }
 
   async getParsedFile(fileId) {
     // Get file content from knowledge base item
     // Use the correct notebooks endpoint structure
-    return this.request(`${config.API_BASE_URL}/notebooks/files/${fileId}/content/`);
+    return this.request(`${API_BASE_URL}/notebooks/files/${fileId}/content/`);
   }
 
   async getFileRaw(fileId, notebookId) {
     // Serve raw file content (for PDFs, videos, audio, etc.)
-    const url = `${this.baseUrl}/${notebookId}/files/${fileId}/raw/`;
+    const url = `${this.baseUrl}/notebooks/${notebookId}/files/${fileId}/raw/`;
     return url; // Return URL for direct browser access
   }
 
@@ -91,7 +91,7 @@ class ApiService {
     if (uploadFileId) form.append('upload_file_id', uploadFileId);
 
     const response = await this.request(
-      `/${notebookId}/files/upload/`,
+      `/notebooks/${notebookId}/files/upload/`,
       { method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}, body: form, credentials: 'include' }
     );
     
@@ -109,28 +109,28 @@ class ApiService {
   //   // …
   // }
   createParsingStatusStream(notebookId, uploadFileId, onMessage, onError, onClose) {
-  const url = `${config.API_BASE_URL}/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
-  const eventSource = new EventSource(url);
+    const url = `${API_BASE_URL}/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
+    const eventSource = new EventSource(url);
 
-  eventSource.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    onMessage(data);
-  };
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      onMessage(data);
+    };
 
-  eventSource.onerror = (err) => {
-    onError(err);
-    eventSource.close(); // optional but safe
-  };
+    eventSource.onerror = (err) => {
+      onError(err);
+      eventSource.close(); // optional but safe
+    };
 
-  eventSource.onclose = () => {
-    onClose();
-  };
+    eventSource.onclose = () => {
+      onClose();
+    };
 
-  return eventSource;
-}
+    return eventSource;
+  }
 
   async deleteFile(fileId, notebookId) {
-    return this.request(`/${notebookId}/files/${fileId}/`, {
+    return this.request(`/notebooks/${notebookId}/files/${fileId}/`, {
       method: 'DELETE',
       headers: {
         'X-CSRFToken': getCookie('csrftoken'),
@@ -143,7 +143,7 @@ class ApiService {
   }
 
   async deleteFileByUploadId(uploadFileId, notebookId) {
-    return this.request(`/${notebookId}/files/${uploadFileId}/`, {
+    return this.request(`/notebooks/${notebookId}/files/${uploadFileId}/`, {
       method: 'DELETE',
       headers: {
         'X-CSRFToken': getCookie('csrftoken'),
@@ -152,7 +152,7 @@ class ApiService {
   }
 
   async deleteParsedFile(fileId, notebookId) {
-    return this.request(`/${notebookId}/files/${fileId}/`, {
+    return this.request(`/notebooks/${notebookId}/files/${fileId}/`, {
       method: 'DELETE',
       headers: {
         'X-CSRFToken': getCookie('csrftoken'),
@@ -168,7 +168,7 @@ class ApiService {
   // ─── KNOWLEDGE BASE ───────────────────────────────────────────────────────
 
   async getKnowledgeBase(notebookId, { limit = 50, offset = 0, content_type = null } = {}) {
-    let url = `/${notebookId}/knowledge-base/?limit=${limit}&offset=${offset}`;
+    let url = `/notebooks/${notebookId}/knowledge-base/?limit=${limit}&offset=${offset}`;
     if (content_type) {
       url += `&content_type=${content_type}`;
     }
@@ -176,7 +176,7 @@ class ApiService {
   }
 
   async linkKnowledgeBaseItem(notebookId, knowledgeBaseItemId, notes = '') {
-    return this.request(`/${notebookId}/knowledge-base/`, {
+    return this.request(`/notebooks/${notebookId}/knowledge-base/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -190,7 +190,7 @@ class ApiService {
   }
 
   async deleteKnowledgeBaseItem(notebookId, knowledgeBaseItemId) {
-    return this.request(`/${notebookId}/knowledge-base/`, {
+    return this.request(`/notebooks/${notebookId}/knowledge-base/`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -205,11 +205,11 @@ class ApiService {
   // ─── STATUS ───────────────────────────────────────────────────────────────
 
   async getStatus(uploadFileId, notebookId) {
-    return this.request(`/${notebookId}/files/${uploadFileId}/status/`);
+    return this.request(`/notebooks/${notebookId}/files/${uploadFileId}/status/`);
   }
 
   createStatusStream(uploadFileId, notebookId, onMessage, onError, onClose) {
-    const url = `${this.baseUrl}/${notebookId}/files/${uploadFileId}/status/stream`;
+    const url = `${this.baseUrl}/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
     const es = new EventSource(url, { withCredentials: true }); // include session
 
     es.onmessage = e => {
@@ -361,7 +361,7 @@ class ApiService {
       throw new Error('notebookId is required for podcast generation');
     }
     
-    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/`;
+    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/`;
     const response = await this.request(url, {
       method: 'POST',
       headers: {
@@ -378,7 +378,7 @@ class ApiService {
       throw new Error('notebookId is required for listing podcast jobs');
     }
     
-    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/`;
+    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/`;
     const response = await this.request(url);
     // Transform the response to match expected format
     return { 
@@ -391,7 +391,7 @@ class ApiService {
       throw new Error('notebookId is required for cancelling podcast jobs');
     }
     
-    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/${jobId}/cancel/`;
+    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/${jobId}/cancel/`;
     const response = await this.request(url, {
       method: 'POST',
       headers: {
@@ -406,7 +406,7 @@ class ApiService {
       throw new Error('notebookId is required for getting podcast job status');
     }
     
-    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/${jobId}/`;
+    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/${jobId}/`;
     const response = await this.request(url);
     return response;
   }
@@ -416,7 +416,7 @@ class ApiService {
       throw new Error('notebookId is required for downloading podcast audio');
     }
     
-    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/${jobId}/audio/`;
+    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/${jobId}/audio/`;
     
     const response = await fetch(url, {
       method: 'GET',
@@ -446,7 +446,7 @@ class ApiService {
       throw new Error('notebookId is required for deleting podcast');
     }
     
-    const url = `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/${jobId}/`;
+    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/${jobId}/`;
     const response = await this.request(url, {
       method: 'DELETE',
       headers: {
@@ -462,7 +462,7 @@ class ApiService {
       throw new Error('notebookId is required for podcast job status stream');
     }
     
-    return `${config.API_BASE_URL}/notebooks/${notebookId}/jobs/${jobId}/stream/`;
+    return `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/${jobId}/stream/`;
   }
 
   // ─── HEALTH CHECK ────────────────────────────────────────────────────────
@@ -470,7 +470,7 @@ class ApiService {
   async healthCheck() {
     try {
       // Simple health check - try to make a basic request
-      const response = await fetch(`${config.API_BASE_URL}/health/`, { credentials: 'include' });
+      const response = await fetch(`${API_BASE_URL}/health/`, { credentials: 'include' });
       return response.ok;
     } catch (error) {
       console.warn('Health check failed:', error);

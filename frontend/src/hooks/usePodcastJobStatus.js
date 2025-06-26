@@ -253,7 +253,7 @@ export const usePodcastJobStatus = (jobId, onComplete, onError, notebookId) => {
           // Check if job completed while we weren't looking
           if (currentJobIdRef.current && currentNotebookIdRef.current) {
             // Do a single status check to see if job completed
-            fetch(`${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/jobs/${currentJobIdRef.current}/`, {
+            fetch(`${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/podcast-jobs/${currentJobIdRef.current}/`, {
               credentials: 'include'
             })
             .then(response => response.ok ? response.json() : null)
@@ -346,7 +346,7 @@ export const usePodcastJobStatus = (jobId, onComplete, onError, notebookId) => {
         return match ? decodeURIComponent(match[2]) : null;
       };
 
-      const response = await fetch(`${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/jobs/${currentJobIdRef.current}/cancel/`, {
+      const response = await fetch(`${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/podcast-jobs/${currentJobIdRef.current}/cancel/`, {
         method: 'POST',
         credentials: 'include',
         headers: {

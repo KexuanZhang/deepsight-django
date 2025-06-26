@@ -5,10 +5,11 @@ This module handles expert role definitions and content-specific
 prompt templates for different content types.
 """
 
-from typing import Dict
+from typing import Dict, List
+from ..interfaces.role_config_interface import RoleConfigInterface
 
 
-class RoleConfigManager:
+class RoleConfigManager(RoleConfigInterface):
     """Manages expert roles and prompt templates for different content types"""
 
     def __init__(self):
@@ -245,7 +246,7 @@ class RoleConfigManager:
         self.role_configs[content_type] = roles
         self.prompt_templates[content_type] = prompt_template
 
-    def get_supported_content_types(self) -> list:
+    def get_supported_content_types(self) -> List[str]:
         """Get list of supported content types"""
         return list(self.role_configs.keys())
 

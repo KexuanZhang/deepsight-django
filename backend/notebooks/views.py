@@ -1086,14 +1086,16 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
     def _serve_file(self, file_field, title):
         """Serve a file through Django's FileResponse."""
         try:
+            content_type, _ = mimetypes.guess_type(file_field.name)
+            if not content_type:
+                content_type = "application/octet-stream"
+
             response = FileResponse(
-                file_field.open("rb"),
-                as_attachment=True,
-                filename=title,
+                file_field.open("rb"), content_type=content_type, as_attachment=False
             )
-            response["Content-Type"] = (
-                mimetypes.guess_type(file_field.name)[0] or "application/octet-stream"
-            )
+            response["Content-Disposition"] = f'inline; filename="{title}"'
+            response["X-Content-Type-Options"] = "nosniff"
+            response["X-Frame-Options"] = "DENY"
             return response
         except Exception as e:
             raise Http404(f"File not accessible: {str(e)}")

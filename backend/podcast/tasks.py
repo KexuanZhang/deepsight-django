@@ -7,9 +7,12 @@ import asyncio
 from typing import List, Dict
 from pathlib import Path
 from celery import shared_task
+import tempfile
+from django.core.files import File
+import os
 
 from .models import PodcastJob
-from .services import podcast_generation_service
+from .orchestrator import podcast_orchestrator
 from notebooks.utils.file_storage import FileStorageService
 from notebooks.models import KnowledgeBaseItem
 
@@ -29,12 +32,12 @@ def process_podcast_generation(self, job_id: str):
             return {"status": "cancelled", "message": "Job was cancelled"}
 
         # Update job status to processing
-        podcast_generation_service.update_job_progress(
+        podcast_orchestrator.update_job_progress(
             job_id, "Starting podcast generation", "generating"
         )
 
         # Get content from source files
-        podcast_generation_service.update_job_progress(
+        podcast_orchestrator.update_job_progress(
             job_id, "Gathering content from source files", "generating"
         )
 
@@ -89,7 +92,7 @@ def process_podcast_generation(self, job_id: str):
             logger.info(f"Job {job_id} was cancelled before conversation generation")
             return {"status": "cancelled", "message": "Job was cancelled"}
 
-        podcast_generation_service.update_job_progress(
+        podcast_orchestrator.update_job_progress(
             job_id, "Generating podcast conversation", "generating"
         )
 
@@ -99,7 +102,7 @@ def process_podcast_generation(self, job_id: str):
 
         try:
             conversation_text = loop.run_until_complete(
-                podcast_generation_service.generate_podcast_conversation(
+                podcast_orchestrator.generate_podcast_conversation(
                     combined_content, {"sources": source_metadata}
                 )
             )
@@ -110,32 +113,41 @@ def process_podcast_generation(self, job_id: str):
                 logger.info(f"Job {job_id} was cancelled before audio generation")
                 return {"status": "cancelled", "message": "Job was cancelled"}
 
-            podcast_generation_service.update_job_progress(
+            podcast_orchestrator.update_job_progress(
                 job_id, "Generating podcast audio", "generating"
             )
 
-            # Generate audio file
+            # Generate audio file using centralized storage config
+            from notebooks.utils.config import storage_config
+            
+            # Generate audio filename
             audio_filename = f"{job_id}.mp3"
-            audio_path = podcast_generation_service.audio_dir / audio_filename
-
-            # Generate podcast audio (now synchronous)
-            podcast_generation_service.generate_podcast_audio(
-                conversation_text, str(audio_path)
+            
+            # Use the centralized function to create the path
+            final_audio_path, relative_path = storage_config.create_podcast_file_path(job, audio_filename)
+            
+            # Generate audio directly to the final location
+            podcast_orchestrator.generate_podcast_audio(
+                conversation_text, str(final_audio_path)
             )
+            
+            # Save the relative path to database
+            job.audio_file.name = relative_path
+            job.save()
 
             # Prepare result
             result = {
                 "job_id": job_id,
                 "title": job.title,
                 "description": job.description,
-                "audio_path": str(audio_path),
+                "audio_path": str(job.audio_file.url),
                 "source_metadata": source_metadata,
                 "conversation_text": conversation_text,
                 "duration_seconds": None,  # Could add audio duration analysis
             }
 
             # Update job with success
-            podcast_generation_service.update_job_result(job_id, result, "completed")
+            podcast_orchestrator.update_job_result(job_id, result, "completed")
 
             logger.info(f"Successfully completed podcast generation for job {job_id}")
             return result
@@ -161,7 +173,7 @@ def process_podcast_generation(self, job_id: str):
         return {"status": "cancelled", "message": "Job was cancelled"}
     except Exception as e:
         logger.error(f"Error processing podcast generation job {job_id}: {e}")
-        podcast_generation_service.update_job_error(job_id, str(e))
+        podcast_orchestrator.update_job_error(job_id, str(e))
         raise
 
 

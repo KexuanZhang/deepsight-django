@@ -2,38 +2,9 @@ from django.db import models
 from django.contrib.auth import get_user_model
 import uuid
 import json
-from datetime import datetime
-from notebooks.utils.config import storage_config
 
 User = get_user_model()
 
-def user_podcast_audio_path(instance, filename):
-    """Generate path for podcast audio files following the new storage structure."""
-    user_id = instance.user.pk
-    current_date = datetime.now()
-    year_month = current_date.strftime('%Y-%m')
-    podcast_id = str(instance.pk or 'temp')
-    
-    # Get notebook_id from the instance
-    notebook_id = None
-    if hasattr(instance, 'notebooks') and instance.notebooks:
-        notebook_id = instance.notebooks.pk
-    elif hasattr(instance, 'notebook') and instance.notebook:
-        notebook_id = instance.notebook.pk
-    
-    # Use the storage_config to get the proper path
-    if notebook_id:
-        storage_config.ensure_notebook_podcast_directory(user_id, notebook_id)
-        base_path = storage_config.get_podcast_path(user_id, year_month, podcast_id, notebook_id)
-    else:
-        # Fallback to old structure if no notebook is associated
-        storage_config.ensure_user_directories(user_id)
-        base_path = storage_config.get_podcast_path(user_id, year_month, podcast_id)
-    
-    # Convert to relative path from MEDIA_ROOT
-    from django.conf import settings
-    relative_path = base_path.relative_to(settings.MEDIA_ROOT) / filename
-    return str(relative_path)
 
 class PodcastJob(models.Model):
     STATUS_CHOICES = [
@@ -73,7 +44,7 @@ class PodcastJob(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     # Results
-    audio_file = models.FileField(upload_to=user_podcast_audio_path, null=True, blank=True)
+    audio_file = models.FileField(null=True, blank=True)
     conversation_text = models.TextField(blank=True, default="")
     error_message = models.TextField(blank=True, default="")
 
