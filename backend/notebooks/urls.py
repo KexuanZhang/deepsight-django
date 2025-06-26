@@ -20,7 +20,8 @@ from .views import (
     VideoImageExtractionView,
     BatchJobStatusView,
     ChatHistoryView,
-    ClearChatHistoryView
+    ClearChatHistoryView,
+    SuggestedQuestionsView
 )
 
 urlpatterns = [
@@ -98,6 +99,12 @@ urlpatterns = [
         FileContentView.as_view(),
         name='file-content'
     ),
+
+    path('<int:notebook_id>/suggested-questions/', 
+         SuggestedQuestionsView.as_view(),
+        name='question-suggestion'         
+    ),
+
 
     path(
         "<int:notebook_id>/chat/clear/", 
