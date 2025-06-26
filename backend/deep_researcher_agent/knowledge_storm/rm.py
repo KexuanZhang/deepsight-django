@@ -5,11 +5,9 @@ from typing import Callable, Union, List
 import backoff
 import dspy
 import requests
-# Import backoff handlers from our own lm module instead of the old dsp module
-from .lm import backoff_hdlr, giveup_hdlr
+from dsp import backoff_hdlr, giveup_hdlr
 
 from .utils import WebPageHelper
-# Add import for the combined_set from retriever module
 from .storm_wiki.modules.retriever import GENERALLY_UNRELIABLE, DEPRECATED, BLACKLISTED
 
 
@@ -572,12 +570,12 @@ class SerperRM(dspy.Retrieve):
 
 class BraveRM(dspy.Retrieve):
     def __init__(
-        self, 
-        brave_search_api_key=None, 
-        k=3, 
+        self,
+        brave_search_api_key=None,
+        k=3,
         is_valid_source: Callable = None,
         time_range: str = None,  # "day", "week", "month", "year"
-        include_domains: List[str] = None  # List of domains to include in search
+        include_domains: List[str] = None,  # List of domains to include in search
     ):
         super().__init__(k=k)
         if not brave_search_api_key and not os.environ.get("BRAVE_API_KEY"):
@@ -623,16 +621,11 @@ class BraveRM(dspy.Retrieve):
         )
         self.usage += len(queries)
         collected_results = []
-        
+
         # Map time_range to Brave's freshness parameter
-        freshness_map = {
-            "day": "pd",
-            "week": "pw",
-            "month": "pm",
-            "year": "py"
-        }
+        freshness_map = {"day": "pd", "week": "pw", "month": "pm", "year": "py"}
         freshness = freshness_map.get(self.time_range) if self.time_range else None
-        
+
         for query in queries:
             try:
                 headers = {
@@ -640,24 +633,29 @@ class BraveRM(dspy.Retrieve):
                     "Accept-Encoding": "gzip",
                     "X-Subscription-Token": self.brave_search_api_key,
                 }
-                
+
                 # Modify query if include_domains is specified
                 modified_query = query
                 if self.include_domains and len(self.include_domains) > 0:
                     # Add site:domain prefix to the query
-                    domain_prefix = " ".join([f"site:{domain}" for domain in self.include_domains])
+                    domain_prefix = " ".join(
+                        [f"site:{domain}" for domain in self.include_domains]
+                    )
                     modified_query = f"{domain_prefix} {query}"
-                
+
                 # Build the request URL with parameters
                 request_url = f"https://api.search.brave.com/res/v1/web/search?result_filter=web&q={modified_query}"
                 if freshness:
                     request_url += f"&freshness={freshness}"
-                
+
                 response = requests.get(request_url, headers=headers).json()
                 results = response.get("web", {}).get("results", [])
 
                 for result in results:
-                    if self.is_valid_source(result.get("url")) and result.get("url") not in exclude_urls:
+                    if (
+                        self.is_valid_source(result.get("url"))
+                        and result.get("url") not in exclude_urls
+                    ):
                         collected_results.append(
                             {
                                 "snippets": result.get("extra_snippets", []),
@@ -679,6 +677,10 @@ class SearXNG(dspy.Retrieve):
         searxng_api_key=None,
         k=3,
         is_valid_source: Callable = None,
+        time_range: str = None,  # "day", "month", "year"
+        engines: List[
+            str
+        ] = None,  # Specific engines to use that support time filtering
     ):
         """Initialize the SearXNG search retriever.
         Please set up SearXNG according to https://docs.searxng.org/index.html.
@@ -689,12 +691,16 @@ class SearXNG(dspy.Retrieve):
             k (int, optional): The number of top passages to retrieve. Defaults to 3.
             is_valid_source (Callable, optional): A function that takes a URL and returns a boolean indicating if the
             source is valid. Defaults to None.
+            time_range (str, optional): Time range of search for engines which support it. Options: "day", "month", "year". Defaults to None.
+            engines (List[str], optional): List of specific search engines to use (e.g., ["google", "bing"]). Some engines support time filtering better than others.
         """
         super().__init__(k=k)
         if not searxng_api_url:
             raise RuntimeError("You must supply searxng_api_url")
         self.searxng_api_url = searxng_api_url
         self.searxng_api_key = searxng_api_key
+        self.time_range = time_range
+        self.engines = engines
         self.usage = 0
 
         if is_valid_source:
@@ -734,22 +740,49 @@ class SearXNG(dspy.Retrieve):
 
         for query in queries:
             try:
+                # Build search parameters
                 params = {"q": query, "format": "json"}
-                response = requests.get(
-                    self.searxng_api_url, headers=headers, params=params
-                )
-                results = response.json()
 
-                for r in results["results"]:
-                    if self.is_valid_source(r["url"]) and r["url"] not in exclude_urls:
-                        collected_results.append(
-                            {
-                                "description": r.get("content", ""),
-                                "snippets": [r.get("content", "")],
-                                "title": r.get("title", ""),
-                                "url": r["url"],
-                            }
-                        )
+                # Add specific engines if specified
+                if self.engines:
+                    params["engines"] = ",".join(self.engines)
+
+                # Add time filtering if specified
+                if self.time_range:
+                    params["time_range"] = self.time_range
+
+                response = requests.get(
+                    self.searxng_api_url,
+                    headers=headers,
+                    params=params,
+                    timeout=30,
+                    proxies={"http": None, "https": None},
+                )
+
+                if response.status_code == 200:
+                    results = response.json()
+
+                    if "results" in results and results["results"]:
+                        for r in results["results"]:
+                            if (
+                                self.is_valid_source(r["url"])
+                                and r["url"] not in exclude_urls
+                            ):
+                                collected_results.append(
+                                    {
+                                        "description": r.get("content", ""),
+                                        "snippets": [r.get("content", "")],
+                                        "title": r.get("title", ""),
+                                        "url": r["url"],
+                                    }
+                                )
+                    else:
+                        logging.error(f"No results found for query: {query}")
+                else:
+                    logging.error(
+                        f"Search failed for query: {query}. HTTP {response.status_code}: {response.text[:200]}"
+                    )
+
             except Exception as e:
                 logging.error(f"Error occurs when searching query {query}: {e}")
 
@@ -895,11 +928,12 @@ class TavilySearchRM(dspy.Retrieve):
         min_char_count: int = 150,
         snippet_chunk_size: int = 1000,
         webpage_helper_max_threads: int = 10,
-        include_raw_content: bool = True,
+        include_raw_content: bool = False,
         include_answer: bool = False,
         include_domains: List[str] = None,
         time_range: str = None,  # e.g., "day", "week", "month"
         search_depth: str = None,  # "basic" or "advanced"
+        chunks_per_source: int = 3,  # Number of content chunks to retrieve from each source
     ):
         super().__init__(k=k)
         try:
@@ -908,8 +942,12 @@ class TavilySearchRM(dspy.Retrieve):
             raise ImportError("Tavily requires `pip install tavily-python`.")
 
         if not tavily_search_api_key and not os.environ.get("TAVILY_API_KEY"):
-            raise RuntimeError("You must supply tavily_search_api_key or set TAVILY_API_KEY env variable")
-        self.tavily_search_api_key = tavily_search_api_key or os.environ["TAVILY_API_KEY"]
+            raise RuntimeError(
+                "You must supply tavily_search_api_key or set TAVILY_API_KEY env variable"
+            )
+        self.tavily_search_api_key = (
+            tavily_search_api_key or os.environ["TAVILY_API_KEY"]
+        )
 
         self.k = k
         self.webpage_helper = WebPageHelper(
@@ -920,19 +958,22 @@ class TavilySearchRM(dspy.Retrieve):
         self.usage = 0
         self.time_range = time_range  # Store time_range for use in forward
         self.search_depth = search_depth  # Store search_depth for use in forward
+        self.chunks_per_source = (
+            chunks_per_source  # Store chunks_per_source for use in forward
+        )
         self.tavily_client = TavilyClient(api_key=self.tavily_search_api_key)
         self.include_raw_content = include_raw_content
         self.include_answer = include_answer
         self.include_domains = include_domains
-        
+
         # Create a list of domains to exclude from the combined set
         self.excluded_domains = []
         combined_set = GENERALLY_UNRELIABLE | DEPRECATED | BLACKLISTED
         for pattern in combined_set:
-            if pattern.startswith('*.'):
+            if pattern.startswith("*."):
                 # Remove the wildcard and keep the domain
                 self.excluded_domains.append(pattern[2:])
-        
+
         self.is_valid_source = is_valid_source or (lambda x: True)
 
     def get_usage_and_reset(self):
@@ -943,7 +984,11 @@ class TavilySearchRM(dspy.Retrieve):
     def forward(
         self, query_or_queries: Union[str, List[str]], exclude_urls: List[str] = []
     ):
-        queries = [query_or_queries] if isinstance(query_or_queries, str) else query_or_queries
+        queries = (
+            [query_or_queries]
+            if isinstance(query_or_queries, str)
+            else query_or_queries
+        )
         self.usage += len(queries)
         collected_results = []
 
@@ -956,12 +1001,15 @@ class TavilySearchRM(dspy.Retrieve):
             }
             if self.include_domains:
                 args["include_domains"] = self.include_domains
-                
+
             if self.time_range:
                 args["time_range"] = self.time_range
-                
+
             if self.search_depth:
                 args["search_depth"] = self.search_depth
+
+            if self.chunks_per_source:
+                args["chunks_per_source"] = self.chunks_per_source
 
             try:
                 response_data = self.tavily_client.search(query, **args)
@@ -979,16 +1027,19 @@ class TavilySearchRM(dspy.Retrieve):
                         logging.error(f"Missing key(s) in result: {d}")
                         continue
                     if self.is_valid_source(url) and url not in exclude_urls:
-                        collected_results.append({
-                            "url": url,
-                            "title": title,
-                            "description": description,
-                            "snippets": snippets,
-                        })
+                        collected_results.append(
+                            {
+                                "url": url,
+                                "title": title,
+                                "description": description,
+                                "snippets": snippets,
+                            }
+                        )
             except Exception as e:
                 logging.error(f"Error searching query {query}: {e}")
 
         return collected_results
+
 
 class GoogleSearch(dspy.Retrieve):
     def __init__(
@@ -1184,7 +1235,6 @@ class AzureAISearch(dspy.Retrieve):
 
         self.usage = 0
 
-        # If not None, is_valid_source shall be a function that takes a URL and returns a boolean.
         if is_valid_source:
             self.is_valid_source = is_valid_source
         else:

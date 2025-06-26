@@ -14,6 +14,7 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+
 from django.contrib import admin
 from django.urls import path, include, re_path
 from rest_framework import permissions
@@ -24,7 +25,7 @@ from drf_yasg import openapi
 schema_view = get_schema_view(
     openapi.Info(
         title="DeepSight API",
-        default_version='v1',
+        default_version="v1",
         description="Interactive documentation for DeepSight backend",
         contact=openapi.Contact(email="you@yourdomain.com"),
     ),
@@ -33,13 +34,17 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/v1/users/', include('users.urls')),
-    path('api/v1/reports/', include('reports.urls')),
-    path('api/v1/notebooks/', include('notebooks.urls')),
-    path('api/v1/podcasts/', include('podcast.urls')),
-
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path("admin/", admin.site.urls),
+    path("api/v1/users/", include("users.urls")),
+    path("api/v1/reports/", include("reports.urls")),
+    path("api/v1/notebooks/", include("notebooks.urls")),
+    # Notebook-specific podcast endpoints are now handled through notebooks.urls
+    path("api/v1/", include("podcast.urls")),  # This handles notebooks/{id}/podcasts/ pattern
+    path(
+        "swagger/",
+        schema_view.with_ui("swagger", cache_timeout=0),
+        name="schema-swagger-ui",
+    ),
     # ReDoc UI (alternative):
-    path('redoc/',  schema_view.with_ui('redoc',    cache_timeout=0), name='schema-redoc'),
+    path("redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
 ]

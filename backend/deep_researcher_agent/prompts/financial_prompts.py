@@ -11,9 +11,9 @@ AskQuestion_docstring = """You are an experienced analysis report writer. You ar
 When you have no more question to ask, say "Thank you so much for your help!" to end the conversation.
 Please only ask a question at a time and don't ask what you have asked before. Your questions should be related to the transcript, financial report, and the topic. You must use the topic to guide your questions.
 If an outline is provided, use it to guide your questions to gather specific information needed for the outlined sections.
-""" 
+"""
 
-AskQuestionWithPersona_docstring = """You are an experienced analysis report writer with a specific persona. You are chatting with an expert to get information for the financial analysis report you want to contribute on the target company. You have a topic that guides your focus. Ask good questions to get more useful information relevant to the transcript, financial report and the topic. The questions should uncovers details about revenue composition and growth drivers, segment and consolidated margins, cash-flow generation versus earnings, balance-sheet leverage and liquidity, capital-expenditure priorities, supply-chain or geopolitical risks, competitive moat and market share, forward guidance and key performance indicators, and management’s strategic initiatives
+AskQuestionWithPersona_docstring = """You are an experienced analysis report writer with a specific persona. You are chatting with an expert to get information for the financial analysis report you want to contribute on the target company. You have a topic that guides your focus. Ask good questions to get more useful information relevant to the transcript, financial report and the topic. The questions should uncovers details about revenue composition and growth drivers, segment and consolidated margins, cash-flow generation versus earnings, balance-sheet leverage and liquidity, capital-expenditure priorities, supply-chain or geopolitical risks, competitive moat and market share, forward guidance and key performance indicators, and management's strategic initiatives
 When you have no more question to ask, say "Thank you so much for your help!" to end the conversation.
 Please only ask a question at a time and don't ask what you have asked before. Your questions should be related to the transcript, financial report and the topic.
 You must use the topic to guide your questions.
@@ -44,7 +44,7 @@ Give your answer in the following format: 1. short summary of editor 1: descript
 2. short summary of editor 2: description
 ...
 If a topic is provided, ensure that the editors have expertise or perspectives specifically related to that topic in the context of the transcript and/or financial report.
-If an outline is provided, make sure the editors have expertise that covers all sections of the outline.""" 
+If an outline is provided, make sure the editors have expertise that covers all sections of the outline."""
 
 WritePageOutline_docstring = """Generate a detailed financial analysis report outline focused on analyzing the financial report of the specified company. If a meeting transcript and/or financial report are provided, use them to create the outline. If no transcript is provided (indicated by 'N/A' for their respective formatted content), use any available information about the company's financials to guide the outline generation. The outline must be strictly focused on the financial analysis of the company.
 
@@ -124,7 +124,7 @@ Instructions:
 1.	Detect every explicit entity in the input—company names, key people, product or division names, version numbers, or unique identifiers such as financial instrument tickers. 
 2. For **each distinct entity**, output **exactly one standalone query** containing only the canonical entity name.  
    - Strip any generic descriptors—words like Series, Model, Version, Edition, Corp., Inc., Ltd., Group, Company, Project, etc.—unless they are officially part of the entity's name.  
-   - Examples: “Apple”, “Tesla”, “AAPL”, “S&P 500”.
+   - Examples: "Apple", "Tesla", "AAPL", "S&P 500".
    - Place all standalone-entity queries first in the output list.  
 3. After listing standalone-entity queries, expand and clarify the remaining queries so they stay faithful to the original meaning yet become more specific, unambiguous, and retrieval-friendly; integrate hierarchical context with its facet where relevant (e.g., original: revenue analysis, rewritten: Tesla revenue analysis), disambiguate acronyms once by adding the long form in parentheses, and quote multi-word entities for improved retrieval precision.
 4. Keep each rewritten query brief (no more than 10 words) and clear. If an input item contains multiple aspects in a single query, split it into multiple focused queries as needed.  
@@ -141,10 +141,10 @@ Tesla financial position
 """
 
 WriteSection_docstring = """Write an in-depth financial analysis report in English, based on the information collected, the outline, and the meeting transcript and/or financial report (if provided).
-Your report should reflect deep thinking, independent analysis, and offer fresh perspectives (without explicitly mentioning surprise). Before writing, reflect thoroughly: Why is this report being written? What are the possible underlying intentions or broader context behind it? Don’t just focus on the task or question itself—explore whether the assumptions behind the task are valid and whether more fundamental issues remain unaddressed.
+Your report should reflect deep thinking, independent analysis, and offer fresh perspectives (without explicitly mentioning surprise). Before writing, reflect thoroughly: Why is this report being written? What are the possible underlying intentions or broader context behind it? Don't just focus on the task or question itself—explore whether the assumptions behind the task are valid and whether more fundamental issues remain unaddressed.
 Your goal is not simply to follow instructions, but to engage in a thoughtful process that refines the problem, uncovers more meaningful directions, and inspires better analytical approaches.
 Before writing, establish what makes a successful report:
-A strong financial report demonstrates depth, critical thinking, and insight into the company’s core financial position and strategic outlook. Avoid simply restating objective figures or summarizing the meeting transcript. Use the outline or transcript/paper headings as a springboard to explore the financial implications and present thought-provoking insights about the company’s financial performance, risks, and growth opportunities.
+A strong financial report demonstrates depth, critical thinking, and insight into the company's core financial position and strategic outlook. Avoid simply restating objective figures or summarizing the meeting transcript. Use the outline or transcript/paper headings as a springboard to explore the financial implications and present thought-provoking insights about the company's financial performance, risks, and growth opportunities.
 
 AVAILABLE FIGURES:
 If 'Available figures' is provided (i.e., not 'N/A'), it will be a list of dictionaries, each containing 'image_path', 'figure_name', and 'caption'. 
@@ -154,8 +154,7 @@ Figure Selection Rules:
 	   - Highly relevant to the ideas discussed in the current section, and
 	   - Rich in content, meaning the caption describes data, a chart/graph, or financial performance information.
 	3.	Exclude any figure whose caption is merely a short or generic title without substantive details.
-	4. If no figure meets the criteria (contains data, chart, or financial information AND is closely related to the section), do not reference any figure.
-	5. Must refer to at most one figure in the section.
+	4. Must refer to at most one figure in the section.
 Referencing the Chosen Figure:
 	1. Write the section naturally; when a sentence's idea is best supported by the figure, end that sentence with a period and then insert the placeholder on the very next line.
 	2. The placeholder must be a stand-alone line in the form of <Figure X>, where Figure X is the exact figure_name.
@@ -227,9 +226,9 @@ WriteLeadSection_docstring = """根据草稿、录音转录和/或财报（若�
 ## 输出要求
 1. 语言：简体中文。  
 2. 排版：  
-   - 使用无序列表 (连字符 “-”) 作为一级项目符号；注意每个一级项目符号必须包含数值或趋势细节；
+   - 使用无序列表 (连字符 "-") 作为一级项目符号；注意每个一级项目符号必须包含数值或趋势细节；
    - **一级项目符号的文字需要加粗**，且不可重复或过于相似。  
-   - 二级信息放在下一行，缩进 1 个 Tab 或 4 个空格，再加连字符 “-”；  
+   - 二级信息放在下一行，缩进 1 个 Tab 或 4 个空格，再加连字符 "-";  
    - 二级项目符号中用**加粗文本**高亮最重要的数据。
 3.	数值换算及单位要求，确保英文数字单位换算正确：
    - billion 为 十亿（即 1 billion = 10 亿）
@@ -243,7 +242,7 @@ WriteLeadSection_docstring = """根据草稿、录音转录和/或财报（若�
      - 如有管理层问答、客户案例或行业动态，可列为文字型二级 bullet，但要与主题紧密相关；  
    - 若报告中提到过去 12 个月或 YTD 的收入结构，请单独列一个一级 bullet，并给出两级占比数字。  
 5. 风格：  
-   - 先数字后解释，数字与文字之间用中文顿号 “，” 或冒号 “：”；  
+   - 先数字后解释，数字与文字之间用中文顿号 "，" 或冒号 ":"；  
 6. 禁止输出：任何与解析过程、推导公式、脚注全文、作者观点无关的信息。
 ## 注意事项
 - 不要输出文档中未提供的数字，不能自行生成数字。
@@ -254,7 +253,12 @@ b. 计算同比/环比倍数或百分比，必须保留原始货币单位，禁�
 c. 草拟一级 bullet，确保主题粒度相近，且包含数值或趋势细节；为每个主题生成 2–5 条二级 bullet，优先列数字，其次列文字要点。同时，保证每个一级 bullet 内容不重复或相似。
 """
 
-PolishPage_docstring = """您是一位忠实的文本编辑者，擅长在文章中找到重复信息并删除它们，以确保没有重复，但必须确保文章结构完整（由 '#'、'##' 等表示）。您不会删除文章中任何未重复的部分。必须严格保留文中原始HTML tag，如 <img src="..." alt="..." style="...">，禁止删除或进行任何修改。
+PolishPage_docstring = """您是一位忠实的文本编辑者，擅长在文章中找到重复信息并删除它们，以确保没有重复，但必须确保文章结构完整（由 '#'、'##' 等表示）。您不会删除文章中任何未重复的部分。
+
+CRITICAL: 必须100%保留所有HTML <img>标签！这是最重要的要求！
+- 严格保留文中所有原始HTML标签，特别是 <img src="..." alt="..." style="..."> 标签，绝对禁止删除或进行任何修改
+- 如果您删除任何<img>标签，系统将报错！请确保输出中包含所有输入中的<img>标签
+
 - 您会保持对应的原始引用编号顺序（包括数字引用如 [1][2] 和文字引用如 [transcript 1][transcript 2][paper 1][paper 2]），严禁篡改引文编号顺序和格式。
 - 严禁输出参考文献或url链接列表。
 - 如果文章中任何地方出现参考文献列表，请删除参考文献列表，并确保文中只有内联引文，没有参考文献列表。

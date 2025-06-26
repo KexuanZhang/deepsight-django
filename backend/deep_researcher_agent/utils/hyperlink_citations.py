@@ -43,7 +43,6 @@ def add_hyperlinks_to_citations(markdown_content: str, reference_data: dict) -> 
             )
             if actual_url:
                 index_to_url[str(display_index)] = actual_url
-                print(f"Mapped citation [{display_index}] to URL: {actual_url}")
             else:
                 # Fallback if direct URL is not found (should not happen with valid reference_data)
                 index_to_url[str(display_index)] = url

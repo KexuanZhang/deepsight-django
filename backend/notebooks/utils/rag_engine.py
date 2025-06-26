@@ -17,10 +17,12 @@ class RAGChatbot:
         # Convert KB files into LangChain Documents
         docs = []
         for item in kb_items:
-            docs.append(Document(
-                page_content=item["content"],
-                metadata={"title": item.get("title", "Document")}
-            ))
+            docs.append(
+                Document(
+                    page_content=item["content"],
+                    metadata={"title": item.get("title", "Document")},
+                )
+            )
 
         # Text splitting
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
@@ -33,9 +35,10 @@ class RAGChatbot:
         # Set up RetrievalQA chain
         self.qa = RetrievalQA.from_chain_type(
             llm=self.llm,
+            llm=self.llm,
             chain_type="stuff",
             retriever=self.retriever,
-            return_source_documents=False
+            return_source_documents=False,
         )
 
     def ask(self, query: str) -> str:

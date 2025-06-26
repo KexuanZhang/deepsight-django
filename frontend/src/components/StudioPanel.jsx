@@ -30,7 +30,6 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 import apiService from "@/lib/api";
-import { useWebSocket } from "@/hooks/useWebSocket";
 import { usePodcastJobStatus } from "@/hooks/usePodcastJobStatus";
 import { Badge } from "@/components/ui/badge";
 import { config } from "@/config";
@@ -40,117 +39,99 @@ const formatModelName = (value) => {
   return value.charAt(0).toUpperCase() + value.slice(1);
 };
 
-// Status Icon Component
-const StatusIcon = ({ isGenerating, error }) => {
-  if (isGenerating) {
-    return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
-  }
-  if (error) {
-    if (error === 'Cancelled' || error === 'Cancelled by user') {
-      return <X className="h-4 w-4 text-yellow-500" />;
-    }
-    return <AlertCircle className="h-4 w-4 text-red-500" />;
-  }
-  return <CheckCircle className="h-4 w-4 text-green-500" />;
-};
-
-// Connection Status Component
-const ConnectionStatus = ({ isConnected, connectionError }) => {
-  if (isConnected) {
-    return (
-      <div className="flex items-center space-x-1 text-xs">
-        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-        <span className="text-green-600">Connected</span>
-      </div>
-    );
-  }
-  
-  if (connectionError) {
-    return (
-      <div className="flex items-center space-x-1 text-xs">
-        <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-        <span className="text-yellow-600">Reconnecting...</span>
-      </div>
-    );
-  }
-  
-  return (
-    <div className="flex items-center space-x-1 text-xs">
-      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-      <span className="text-red-600">Disconnected</span>
-    </div>
-  );
-};
-
-// Progress Card Component
-const ProgressCard = ({ 
+// Simplified Status Card Component - focused on user-friendly information
+const StatusCard = ({ 
   title, 
   isGenerating, 
   progress, 
   error, 
   onCancel, 
-  jobId, 
-  showCancel = false,
-  isConnected,
-  connectionError 
+  showCancel = false
 }) => {
-  const getStatusText = () => {
-    if (isGenerating) return `${title}...`;
-    if (error) {
-      if (error === 'Cancelled' || error === 'Cancelled by user') {
-        return 'Generation Cancelled';
-      }
-      return 'Generation Failed';
-    }
-    return 'Ready';
+  // Keep progress messages simple and direct
+  const getSimpleProgress = (progress) => {
+    if (!progress) return '';
+    
+    // Just truncate if too long, otherwise show as-is
+    return progress.length > 60 ? progress.substring(0, 57) + '...' : progress;
   };
 
+  const getStatusInfo = () => {
+    // Check error state first - this takes priority over progress
+    if (error) {
+      if (error === 'Cancelled' || error === 'Cancelled by user') {
+        return {
+          icon: <X className="h-5 w-5 text-amber-600" />,
+          text: 'Cancelled',
+          color: 'text-amber-600',
+          bgColor: 'bg-amber-50',
+          borderColor: 'border-amber-200'
+        };
+      }
+      return {
+        icon: <AlertCircle className="h-5 w-5 text-red-600" />,
+        text: 'Failed',
+        color: 'text-red-600',
+        bgColor: 'bg-red-50',
+        borderColor: 'border-red-200'
+      };
+    }
+    
+    if (isGenerating) {
+      return {
+        icon: <Loader2 className="h-5 w-5 animate-spin text-blue-600" />,
+        text: title,
+        color: 'text-blue-600',
+        bgColor: 'bg-blue-50',
+        borderColor: 'border-blue-200'
+      };
+    }
+    
+    return {
+      icon: <CheckCircle className="h-5 w-5 text-green-600" />,
+      text: 'Ready',
+      color: 'text-green-600',
+      bgColor: 'bg-green-50',
+      borderColor: 'border-green-200'
+    };
+  };
+
+  const status = getStatusInfo();
+  const simpleProgress = getSimpleProgress(progress);
+
   return (
-    <div className="border rounded-lg p-4 bg-gray-50 border-gray-200">
-      <div className="flex items-center justify-between mb-3">
+    <div className={`rounded-xl p-4 border ${status.borderColor} ${status.bgColor}`}>
+      <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <StatusIcon isGenerating={isGenerating} error={error} />
+          {status.icon}
           <div>
-            <h4 className="font-medium text-gray-900">{getStatusText()}</h4>
-            {jobId && <ConnectionStatus isConnected={isConnected} connectionError={connectionError} />}
+            <p className={`font-medium ${status.color}`}>{status.text}</p>
+            {simpleProgress && (
+              <p className="text-sm text-gray-600 mt-1">{simpleProgress}</p>
+            )}
           </div>
         </div>
         
-        {showCancel && isGenerating && jobId && (
+        {showCancel && isGenerating && (
           <Button
             variant="outline"
             size="sm"
             onClick={onCancel}
-            className="text-red-600 border-red-300 hover:bg-red-50"
+            className="text-red-600 border-red-300 hover:bg-red-50 hover:border-red-400"
           >
-            <X className="mr-1 h-3 w-3" />
+            <X className="mr-1 h-4 w-4" />
             Cancel
           </Button>
         )}
       </div>
       
-      {progress && (
-        <div className="space-y-2">
-          <p className="text-sm text-gray-700">{progress}</p>
-          {isGenerating && (
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
-            </div>
-          )}
+      {isGenerating && (
+        <div className="mt-3">
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="bg-blue-600 h-2 rounded-full animate-pulse transition-all duration-500" 
+                 style={{ width: '65%' }}></div>
+          </div>
         </div>
-      )}
-      
-      {connectionError && (
-        <p className="text-xs text-yellow-600 mt-2 flex items-center">
-          <Info className="h-3 w-3 mr-1" />
-          {connectionError}
-        </p>
-      )}
-      
-      {jobId && (
-        <p className="text-xs text-gray-500 mt-2 font-mono">
-          Job ID: {jobId}
-        </p>
       )}
     </div>
   );
@@ -171,15 +152,6 @@ const PodcastGenerationSection = ({
   connectionError
 }) => {
   const hasSelectedFiles = selectedFiles.length > 0;
-  
-  // Additional debugging - check what filters are failing
-  const debugSelectedSources = selectedSources.map(source => ({
-    title: source.title,
-    selected: source.selected,
-    has_file_id: !!(source.file_id || source.file),
-    parsing_status: source.parsing_status,
-    passes_filter: source.selected && (source.file_id || source.file) && source.parsing_status === 'completed'
-  }));
 
   return (
     <div className="border rounded-lg overflow-hidden">
@@ -199,16 +171,13 @@ const PodcastGenerationSection = ({
       {!isCollapsed && (
         <div className="p-4 space-y-4">
           {(podcastGenerationState.isGenerating || podcastGenerationState.progress) && (
-            <ProgressCard
+            <StatusCard
               title="Generating Panel Discussion"
               isGenerating={podcastGenerationState.isGenerating}
               progress={podcastGenerationState.progress}
               error={podcastGenerationState.error}
-              jobId={podcastGenerationState.jobId}
               showCancel={true}
               onCancel={onCancel}
-              isConnected={isConnected}
-              connectionError={connectionError}
             />
           )}
 
@@ -260,13 +229,7 @@ const PodcastGenerationSection = ({
               </p>
               {selectedSources.length > 0 && (
                 <div className="mt-2 ml-6">
-                  <p className="text-xs text-yellow-700 font-medium">Selected files status:</p>
-                  {debugSelectedSources.map((source, index) => (
-                    <p key={index} className="text-xs text-yellow-600">
-                      • {source.title}: {source.parsing_status || 'unknown status'}
-                      {!source.passes_filter && source.parsing_status !== 'completed' && ' (needs to complete parsing)'}
-                    </p>
-                  ))}
+                  <p className="text-xs text-yellow-700 font-medium">Selected files need to finish processing before generation.</p>
                 </div>
               )}
             </div>
@@ -678,8 +641,8 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   
   // Collapsible sections state
   const [collapsedSections, setCollapsedSections] = useState({
-    podcast: false,
-    report: false,
+    podcast: true,
+    report: true,
   });
 
   // Report generation state
@@ -786,7 +749,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     }
   }, [podcastFiles, audioBlobs]);
 
-  // Real-time job status monitoring using WebSocket for reports
+  // Real-time job status monitoring using SSE for reports (unified with podcast approach)
   const { 
     status: jobStatus, 
     progress: jobProgress, 
@@ -794,8 +757,8 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     error: jobError, 
     isConnected,
     connectionError,
-    cancelJob: webSocketCancelJob
-  } = useWebSocket(
+    cancelJob: reportCancelJob
+  } = usePodcastJobStatus(
     reportGenerationState.currentJobId,
     // onComplete callback
     async (result) => {
@@ -862,7 +825,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     error: podcastJobError, 
     isConnected: podcastIsConnected,
     connectionError: podcastConnectionError,
-    cancelJob: podcastWebSocketCancelJob
+    cancelJob: podcastCancelJob
   } = usePodcastJobStatus(
     podcastGenerationState.jobId,
     // onComplete callback
@@ -899,7 +862,9 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         description: error || "Panel discussion generation failed. Please try again.",
         variant: "destructive",
       });
-    }
+    },
+    // Pass notebookId for new endpoint structure
+    notebookId
   );
 
   // Update local state when job status changes
@@ -927,7 +892,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
             return {
               ...prev,
               isGenerating: false,
-              progress: 'Report generation was cancelled',
+              progress: '',
               error: 'Cancelled',
             };
           });
@@ -973,12 +938,12 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           const isCancelled = podcastJobStatus === 'cancelled';
           const isCompleted = podcastJobStatus === 'completed';
           
-          return {
-            ...prev,
-            isGenerating: isGenerating && !isCompleted && !isCancelled,
-            progress: isCancelled ? 'Panel discussion generation was cancelled' : prev.progress,
-            error: isCancelled ? 'Cancelled' : prev.error,
-          };
+                      return {
+              ...prev,
+              isGenerating: isGenerating && !isCompleted && !isCancelled,
+              progress: isCancelled ? '' : prev.progress,
+              error: isCancelled ? 'Cancelled' : prev.error,
+            };
         });
       }
       
@@ -1048,7 +1013,24 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       
       if (response && response.jobs) {
         const completedJobs = response.jobs.filter(job => job.status === 'completed');
+        const runningJobs = response.jobs.filter(job => job.status === 'running' || job.status === 'pending');
+        
         console.log('Found completed jobs:', completedJobs);
+        console.log('Found running report jobs:', runningJobs);
+        
+        // Restore state for any running jobs
+        if (runningJobs.length > 0) {
+          const runningJob = runningJobs[0]; // Take the most recent running job
+          console.log('Restoring report generation state for job:', runningJob.job_id);
+          
+          setReportGenerationState(prev => ({
+            ...prev,
+            isGenerating: true,
+            currentJobId: runningJob.job_id,
+            progress: 'Reconnecting to ongoing report generation...',
+            error: null,
+          }));
+        }
         
         // Convert completed jobs to files format
         const reportFiles = await Promise.all(
@@ -1179,11 +1161,30 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   const loadExistingPodcasts = async () => {
     try {
       console.log('Loading existing podcasts...');
-      const response = await apiService.listPodcastJobs();
+      const response = await apiService.listPodcastJobs(notebookId);
       
       if (response && response.jobs) {
         const completedJobs = response.jobs.filter(job => job.status === 'completed');
+        const runningJobs = response.jobs.filter(job => job.status === 'generating' || job.status === 'pending');
+        
         console.log('Found completed podcast jobs:', completedJobs);
+        console.log('Found running podcast jobs:', runningJobs);
+        
+        // Restore state for any running jobs
+        if (runningJobs.length > 0) {
+          const runningJob = runningJobs[0]; // Take the most recent running job
+          console.log('Restoring podcast generation state for job:', runningJob.job_id);
+          
+          setPodcastGenerationState(prev => ({
+            ...prev,
+            isGenerating: true,
+            jobId: runningJob.job_id,
+            progress: 'Reconnecting to ongoing panel discussion generation...',
+            error: null,
+            title: runningJob.title || prev.title || '',
+            description: runningJob.description || prev.description || '',
+          }));
+        }
         
         // Convert completed jobs to podcast format
         const podcastList = completedJobs.map((job) => {
@@ -1376,15 +1377,15 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     if (!reportGenerationState.currentJobId) return;
 
     try {
-      // Use WebSocket to cancel the job
-      const success = webSocketCancelJob();
+      // Use SSE-based cancellation
+      const success = reportCancelJob();
       
       if (success) {
         setReportGenerationState(prev => ({
           ...prev,
           isGenerating: false,
-          progress: 'Sending cancellation request...',
-          error: null,
+          progress: '',
+          error: 'Cancelled',
         }));
 
         toast({
@@ -1392,15 +1393,15 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           description: "Cancellation request sent. The job will stop shortly.",
         });
       } else {
-        // Fallback to HTTP API if WebSocket is not available
-        console.warn('WebSocket cancellation failed, falling back to HTTP API');
+        // Fallback to HTTP API if SSE cancellation is not available
+        console.warn('SSE cancellation failed, falling back to HTTP API');
         await apiService.cancelJob(reportGenerationState.currentJobId);
         
         setReportGenerationState(prev => ({
           ...prev,
           isGenerating: false,
-          progress: 'Report generation cancelled',
-          error: 'Cancelled by user',
+          progress: '',
+          error: 'Cancelled',
         }));
 
         toast({
@@ -1445,7 +1446,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       formData.append('title', podcastGenerationState.title || 'Generated Podcast');
       formData.append('description', podcastGenerationState.description || '');
 
-      const response = await apiService.generatePodcast(formData);
+      const response = await apiService.generatePodcast(formData, notebookId);
       
       setPodcastGenerationState(prev => ({
         ...prev,
@@ -1476,15 +1477,15 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     if (!podcastGenerationState.jobId) return;
 
     try {
-      // Use WebSocket to cancel the job (same as reports)
-      const success = podcastWebSocketCancelJob();
+      // Use SSE-based cancellation (same as reports)
+      const success = podcastCancelJob();
       
       if (success) {
         setPodcastGenerationState(prev => ({
           ...prev,
           isGenerating: false,
-          progress: 'Sending cancellation request...',
-          error: null,
+          progress: '',
+          error: 'Cancelled',
         }));
 
         toast({
@@ -1492,14 +1493,14 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           description: "Cancellation request sent. The job will stop shortly.",
         });
       } else {
-        // Fallback to HTTP API if WebSocket is not available
-        console.warn('WebSocket cancellation failed, falling back to HTTP API');
-        await apiService.cancelPodcastJob(podcastGenerationState.jobId);
+        // Fallback to HTTP API if SSE cancellation is not available
+        console.warn('SSE cancellation failed, falling back to HTTP API');
+        await apiService.cancelPodcastJob(podcastGenerationState.jobId, notebookId);
         
         setPodcastGenerationState(prev => ({
           ...prev,
           isGenerating: false,
-          progress: 'Panel discussion generation cancelled',
+          progress: '',
           error: 'Cancelled',
         }));
 
@@ -1602,7 +1603,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       setLoadingAudio(prev => new Set(prev).add(podcast.id));
 
       // Download the audio file
-      const blob = await apiService.downloadPodcastAudio(podcast.jobId);
+      const blob = await apiService.downloadPodcastAudio(podcast.jobId, notebookId);
       
       // Create blob URL
       const blobUrl = window.URL.createObjectURL(blob);
@@ -1639,7 +1640,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 
     try {
       // Use the authenticated API service to download the audio file
-      const blob = await apiService.downloadPodcastAudio(podcast.jobId);
+      const blob = await apiService.downloadPodcastAudio(podcast.jobId, notebookId);
       
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1664,20 +1665,45 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     }
   };
 
-
-
-  const getStatusIcon = () => {
-    if (reportGenerationState.isGenerating) {
-      return <RefreshCw className="h-4 w-4 animate-spin" />;
-    }
-    if (reportGenerationState.error) {
-      if (reportGenerationState.error === 'Cancelled' || reportGenerationState.error === 'Cancelled by user') {
-        return <X className="h-4 w-4 text-yellow-500" />;
+  const handleDeletePodcast = async (podcastId) => {
+    try {
+      // Extract job ID from podcast ID (format: "podcast-{jobId}")
+      const jobId = podcastId.replace('podcast-', '');
+      
+      // Call the backend API to delete the podcast
+      await apiService.deletePodcast(jobId, notebookId);
+      
+      // Clean up blob URL if exists
+      const blobUrl = audioBlobs.get(podcastId);
+      if (blobUrl) {
+        window.URL.revokeObjectURL(blobUrl);
+        setAudioBlobs(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(podcastId);
+          return newMap;
+        });
       }
-      return <AlertCircle className="h-4 w-4 text-red-500" />;
+      
+      // Remove from local state
+      setPodcastFiles((prev) => prev.filter((p) => p.id !== podcastId));
+      setActiveMenuFileId(null);
+      
+      toast({
+        title: "Podcast Deleted",
+        description: "The podcast has been deleted successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Delete Failed",
+        description: error.message || "Failed to delete podcast. Please try again.",
+        variant: "destructive",
+      });
     }
-    return <CheckCircle className="h-4 w-4 text-green-500" />;
   };
+
+
+
+
 
   const handleEdit = useCallback(() => {
     setIsEditing(true);
@@ -1739,7 +1765,10 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
               Refresh
             </Button>
             {(reportGenerationState.isGenerating || podcastGenerationState.isGenerating) && (
-              <span className="text-xs text-gray-500">generating...</span>
+              <div className="flex items-center space-x-1">
+                <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
+                <span className="text-xs text-gray-500">Working...</span>
+              </div>
             )}
           </div>
         </div>
@@ -1750,16 +1779,13 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         {/* Report Generation Status */}
         {(reportGenerationState.isGenerating || reportGenerationState.error || reportGenerationState.progress) && (
           <div className="p-6 border-b border-gray-200">
-            <ProgressCard
-              title="Generating Report"
+            <StatusCard
+              title="Generating Research Report"
               isGenerating={reportGenerationState.isGenerating}
               progress={reportGenerationState.progress}
               error={reportGenerationState.error}
               onCancel={handleCancelGeneration}
-              jobId={reportGenerationState.currentJobId}
               showCancel={true}
-              isConnected={isConnected}
-              connectionError={connectionError}
             />
           </div>
         )}
@@ -1822,20 +1848,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
                     isMenuOpen={activeMenuFileId === podcast.id}
                     audioBlob={audioBlobs.get(podcast.id)}
                     isLoading={loadingAudio.has(podcast.id)}
-                    onDelete={(podcastId) => {
-                      // Clean up blob URL if exists
-                      const blobUrl = audioBlobs.get(podcastId);
-                      if (blobUrl) {
-                        window.URL.revokeObjectURL(blobUrl);
-                        setAudioBlobs(prev => {
-                          const newMap = new Map(prev);
-                          newMap.delete(podcastId);
-                          return newMap;
-                        });
-                      }
-                      setPodcastFiles((prev) => prev.filter((p) => p.id !== podcastId));
-                      setActiveMenuFileId(null);
-                    }}
+                    onDelete={handleDeletePodcast}
                   />
                 ))}
               </div>

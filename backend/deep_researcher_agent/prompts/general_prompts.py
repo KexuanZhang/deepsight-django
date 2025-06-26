@@ -44,7 +44,7 @@ Give your answer in the following format: 1. short summary of editor 1: descript
 2. short summary of editor 2: description
 ...
 If a topic is provided, ensure that the editors have expertise or perspectives specifically related to that topic in the context of the transcript and/or paper(s).
-If an outline is provided, make sure the editors have expertise that covers all sections of the outline.""" 
+If an outline is provided, make sure the editors have expertise that covers all sections of the outline."""
 
 WritePageOutline_docstring = """Generate an in-depth technical report outline. If a meeting transcript and/or paper(s) are provided, use them along with the specified topic to create the outline. If no transcript or paper is provided (indicated by 'N/A' for their respective formatted content), use the topic and any available information to guide the outline generation. The outline must be strictly topic orientated.
 
@@ -94,7 +94,7 @@ Before drafting the final outline, carry out the following analysis steps (but d
 5. Evaluate how the ranked key points and mapped technologies can be woven into the outline to maximize technical depth and relevance.  
 6. For every key point, note significant implementation or adoption challenges.  
 7. Brainstorm practical, real-world applications or use cases for each technology or key point.  
-8. Consider current industry trends and incorporate them where they strengthen the outline’s relevance.  
+8. Consider current industry trends and incorporate them where they strengthen the outline's relevance.  
 9. Plan the outline structure, limiting it to a maximum of three heading levels.  
 10. Ensure the outline aligns strictly with the topic, excluding any introduction and conclusion.
 
@@ -150,8 +150,7 @@ Figure Selection Rules:
 	   - Highly relevant to the ideas discussed in the current section, and
 	   - Rich in content, meaning the caption describes data, a chart/graph, or product-specific information.
 	3.	Exclude any figure whose caption is merely a short or generic title without substantive details.
-	4. If no figure meets the criteria (contains data, chart, or product information AND is closely related to the section), do not reference any figure.
-	5. Must refer to at most one figure in the section.
+	4. Must refer to at most one figure in the section.
 Referencing the Chosen Figure:
 	1. Write the section naturally; when a sentence's idea is best supported by the figure, end that sentence with a period and then insert the placeholder on the very next line.
 	2. The placeholder must be a stand-alone line in the form of <Figure X>, where Figure X is the exact figure_name.
@@ -193,7 +192,7 @@ When making your own comparisons tables, follow these formatting rules (all are 
 4. **Column consistency**  
    - Every row, including the header and separator, must contain the identical number of `|` characters.  
 5. **Escaping special characters**  
-   - If any cell text contains `|`, escape it as `\|` so it doesn't split the column.  
+   - If any cell text contains `|`, escape it as `\\|` so it doesn't split the column.  
 6. **Source integrity**  
    - Do not include any number unless it is backed by a citation or was supplied in the prompt.  
 The finished table must render correctly in Markdown viewers and survive HTML export without losing its grid structure.
@@ -247,7 +246,12 @@ WriteLeadSection_docstring = """根据草稿、会议转录和/或论文（若�
 请按照上述格式与要求，输出最终摘要。
 """
 
-PolishPage_docstring = """您是一位忠实的文本编辑者，擅长在文章中找到重复信息并删除它们，以确保没有重复，但必须确保文章结构完整（由 '#'、'##' 等表示）。您不会删除文章中任何未重复的部分。必须严格保留文中原始HTML tag，如 <img src="..." alt="..." style="...">，禁止删除或进行任何修改。
+PolishPage_docstring = """您是一位忠实的文本编辑者，擅长在文章中找到重复信息并删除它们，以确保没有重复，但必须确保文章结构完整（由 '#'、'##' 等表示）。您不会删除文章中任何未重复的部分。
+
+CRITICAL: 必须100%保留所有HTML <img>标签！这是最重要的要求！
+- 严格保留文中所有原始HTML标签，特别是 <img src="..." alt="..." style="..."> 标签，绝对禁止删除或进行任何修改
+- 如果您删除任何<img>标签，系统将报错！请确保输出中包含所有输入中的<img>标签
+
 - 您会保持对应的原始引用编号顺序（包括数字引用如 [1][2] 和文字引用如 [transcript 1][transcript 2][paper 1][paper 2]），严禁篡改引文编号顺序和格式。
 - 严禁输出参考文献或url链接列表。
 - 如果文章中任何地方出现参考文献列表，请删除参考文献列表，并确保文中只有内联引文，没有参考文献列表。
@@ -260,9 +264,9 @@ PolishPage_docstring = """您是一位忠实的文本编辑者，擅长在文章
 	-	首尾管道：表头行、分隔行和所有数据行均需以 | 开头并以 | 结尾。
 	-	表头分隔行：表头下方使用仅由 ASCII - 组成的 |---|---|...|；禁止使用全角或长破折号（–、—、－）。
 	-	列数一致：所有行（含表头、分隔行、数据行）必须拥有相同数量的 |，保证列对齐。
-	-	转义管道：若单元格内容包含 |，请写成 \| 以避免拆分列。
+	-	转义管道：若单元格内容包含 |，请写成 \\| 以避免拆分列。
 
 在做完上述改动后，请在最终输出中文报告时务必翻译完整文章内容，确保生成中文时没有遗漏任何细节。
-非常重要：对于是英文的章节标题（'#'、'##'、'###'等标记的标题），必须直接替换成中文，但保留标题中的技术术语、产品名称、公司名称或人名等专有名词的英文形式。专有名词通常是首字母大写的单词、缩写或特定技术术语。
+非常重要：对于是英文的章节标题（'#'、'##'、'###'等标记的标题），必须直接替换成中文，但保留标题中的技术术语、产品名称、公司名称或人名等专有名词的英文形式。专有名词通常是首字母大写的单词、缩写或特定技术术语。）
 请对以下文章进行编辑和翻译，确保所有内容使用中文撰写，除了人名、公司名、技术术语或专有名词及HTML tag可以保留原始文字。
 """

@@ -25,10 +25,28 @@ try:
 except ImportError:
     ContentIndexingService = None
 
+try:
+    from .url_extractor import URLExtractor
+except ImportError:
+    URLExtractor = None
+
+try:
+    from .rag_engine import RAGChatbot
+except ImportError:
+    RAGChatbot = None
+
+try:
+    from .media_extractor import MediaFeatureExtractor
+except ImportError:
+    MediaFeatureExtractor = None
+
 __all__ = [
     'config',
     'FileValidator', 
     'UploadProcessor',
     'FileStorageService',
-    'ContentIndexingService'
+    'ContentIndexingService',
+    'URLExtractor',
+    'RAGChatbot',
+    'MediaFeatureExtractor'
 ]

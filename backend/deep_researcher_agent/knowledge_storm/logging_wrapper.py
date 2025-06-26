@@ -144,12 +144,12 @@ class LoggingWrapper:
         if not self.pipeline_stage_active:
             raise RuntimeError("No pipeline stage is currently active to end.")
 
-        self.logging_dict[self.current_pipeline_stage][
-            "lm_usage"
-        ] = self.lm_config.collect_and_reset_lm_usage()
-        self.logging_dict[self.current_pipeline_stage][
-            "lm_history"
-        ] = self.lm_config.collect_and_reset_lm_history()
+        self.logging_dict[self.current_pipeline_stage]["lm_usage"] = (
+            self.lm_config.collect_and_reset_lm_usage()
+        )
+        self.logging_dict[self.current_pipeline_stage]["lm_history"] = (
+            self.lm_config.collect_and_reset_lm_history()
+        )
         self.pipeline_stage_active = False
 
     def add_query_count(self, count):

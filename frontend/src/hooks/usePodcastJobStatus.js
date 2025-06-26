@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { config } from '../config';
+import apiService from '../lib/api';
 
-export const usePodcastJobStatus = (jobId, onComplete, onError) => {
+export const usePodcastJobStatus = (jobId, onComplete, onError, notebookId) => {
+  // Validate required parameters
+  if (jobId && !notebookId) {
+    throw new Error('notebookId is required when jobId is provided');
+  }
+  
   const [status, setStatus] = useState(null);
   const [progress, setProgress] = useState('');
   const [result, setResult] = useState(null);
@@ -21,6 +27,7 @@ export const usePodcastJobStatus = (jobId, onComplete, onError) => {
   const onCompleteRef = useRef(onComplete);
   const onErrorRef = useRef(onError);
   const currentJobIdRef = useRef(jobId);
+  const currentNotebookIdRef = useRef(notebookId);
 
   // Update refs when props change
   useEffect(() => {
@@ -33,11 +40,12 @@ export const usePodcastJobStatus = (jobId, onComplete, onError) => {
 
   useEffect(() => {
     currentJobIdRef.current = jobId;
+    currentNotebookIdRef.current = notebookId;
     // Reset completion flag when job ID changes
     if (jobId !== currentJobIdRef.current) {
       jobCompletedRef.current = false;
     }
-  }, [jobId]);
+  }, [jobId, notebookId]);
 
   // Fallback polling mechanism
   const startPolling = useCallback(() => {
@@ -57,56 +65,50 @@ export const usePodcastJobStatus = (jobId, onComplete, onError) => {
       if (!currentJobIdRef.current || jobCompletedRef.current) return;
 
       try {
-        const response = await fetch(`${config.API_BASE_URL}/podcasts/jobs/${currentJobIdRef.current}/`, {
-          credentials: 'include'
-        });
-        if (response.ok) {
-          const data = await response.json();
+        // Use the new API service method with notebook support
+        const data = await apiService.getPodcastJobStatus(currentJobIdRef.current, currentNotebookIdRef.current);
+        
+        setStatus(data.status);
+        setProgress(data.progress || 'Processing...');
+        setConnectionError(null);
+        
+        if (data.status === 'completed' && (data.audio_file || data.audio_file_url)) {
+          jobCompletedRef.current = true; // Mark job as completed
+          const resultData = {
+            jobId: data.job_id,
+            status: data.status,
+            audioUrl: data.audio_file || data.audio_file_url,
+            title: data.title,
+            progress: data.progress
+          };
+          setResult(resultData);
           
-          setStatus(data.status);
-          setProgress(data.progress || 'Processing...');
-          setConnectionError(null);
-          
-          if (data.status === 'completed' && (data.audio_file || data.audio_file_url)) {
-            jobCompletedRef.current = true; // Mark job as completed
-            const resultData = {
-              jobId: data.job_id,
-              status: data.status,
-              audioUrl: data.audio_file || data.audio_file_url,
-              title: data.title,
-              progress: data.progress
-            };
-            setResult(resultData);
-            
-            if (onCompleteRef.current) {
-              onCompleteRef.current(resultData);
-            }
-            
-            // Stop polling on completion
-            clearInterval(pollIntervalRef.current);
-            pollIntervalRef.current = null;
-          } else if (data.status === 'error') {
-            jobCompletedRef.current = true; // Mark job as completed (with error)
-            const errorMsg = data.error_message || 'Job failed';
-            setError(errorMsg);
-            
-            if (onErrorRef.current) {
-              onErrorRef.current(errorMsg);
-            }
-            
-            // Stop polling on error
-            clearInterval(pollIntervalRef.current);
-            pollIntervalRef.current = null;
-          } else if (data.status === 'cancelled') {
-            jobCompletedRef.current = true; // Mark job as completed (cancelled)
-            setError('Cancelled');
-            
-            // Stop polling on cancellation
-            clearInterval(pollIntervalRef.current);
-            pollIntervalRef.current = null;
+          if (onCompleteRef.current) {
+            onCompleteRef.current(resultData);
           }
-        } else {
-          console.error('Failed to fetch job status:', response.status);
+          
+          // Stop polling on completion
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        } else if (data.status === 'error') {
+          jobCompletedRef.current = true; // Mark job as completed (with error)
+          const errorMsg = data.error_message || 'Job failed';
+          setError(errorMsg);
+          
+          if (onErrorRef.current) {
+            onErrorRef.current(errorMsg);
+          }
+          
+          // Stop polling on error
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        } else if (data.status === 'cancelled') {
+          jobCompletedRef.current = true; // Mark job as completed (cancelled)
+          setError('Cancelled');
+          
+          // Stop polling on cancellation
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
         }
       } catch (error) {
         console.error('Error polling job status:', error);
@@ -143,7 +145,8 @@ export const usePodcastJobStatus = (jobId, onComplete, onError) => {
     try {
       console.log('Starting new SSE connection for job:', currentJobIdRef.current);
       
-      const sseUrl = `${config.API_BASE_URL}/podcasts/stream/job-status/${currentJobIdRef.current}`;
+      // Use the new API service method to get the correct SSE URL
+      const sseUrl = apiService.getPodcastJobStatusStreamUrl(currentJobIdRef.current, currentNotebookIdRef.current);
       
       console.log('Connecting to SSE:', sseUrl);
       
@@ -248,9 +251,9 @@ export const usePodcastJobStatus = (jobId, onComplete, onError) => {
         if (eventSource.readyState === EventSource.CLOSED) {
           console.log('SSE connection was closed normally');
           // Check if job completed while we weren't looking
-          if (currentJobIdRef.current) {
+          if (currentJobIdRef.current && currentNotebookIdRef.current) {
             // Do a single status check to see if job completed
-            fetch(`${config.API_BASE_URL}/podcasts/jobs/${currentJobIdRef.current}/`, {
+            fetch(`${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/podcast-jobs/${currentJobIdRef.current}/`, {
               credentials: 'include'
             })
             .then(response => response.ok ? response.json() : null)
@@ -331,7 +334,8 @@ export const usePodcastJobStatus = (jobId, onComplete, onError) => {
 
   // Function to cancel job
   const cancelJob = useCallback(async () => {
-    if (!currentJobIdRef.current) {
+    if (!currentJobIdRef.current || !currentNotebookIdRef.current) {
+      console.error('Cannot cancel job: missing jobId or notebookId');
       return false;
     }
 
@@ -342,7 +346,7 @@ export const usePodcastJobStatus = (jobId, onComplete, onError) => {
         return match ? decodeURIComponent(match[2]) : null;
       };
 
-      const response = await fetch(`${config.API_BASE_URL}/podcasts/jobs/${currentJobIdRef.current}/cancel/`, {
+      const response = await fetch(`${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/podcast-jobs/${currentJobIdRef.current}/cancel/`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -355,7 +359,8 @@ export const usePodcastJobStatus = (jobId, onComplete, onError) => {
         console.log('Job cancellation request sent successfully');
         return true;
       } else {
-        console.error('Failed to cancel job:', response.status);
+        const errorText = await response.text();
+        console.error('Failed to cancel job:', response.status, errorText);
         return false;
       }
     } catch (error) {

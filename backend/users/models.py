@@ -1,7 +1,10 @@
 from django.db import models
 from django.contrib.auth.models import (
-    AbstractBaseUser, BaseUserManager, PermissionsMixin
+    AbstractBaseUser,
+    BaseUserManager,
+    PermissionsMixin,
 )
+
 
 class UserManager(BaseUserManager):
     def create_user(self, username, email=None, password=None, **extra_fields):
@@ -17,6 +20,7 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         return self.create_user(username, email, password, **extra_fields)
+
 
 class User(AbstractBaseUser, PermissionsMixin):
     user_id = models.AutoField(primary_key=True)
@@ -42,12 +46,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.username
 
+
 class SearchHistory(models.Model):
     search_id = models.AutoField(primary_key=True)
     user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="search_history"
+        User, on_delete=models.CASCADE, related_name="search_history"
     )
     search_content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)

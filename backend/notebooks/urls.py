@@ -6,6 +6,8 @@ from .views import (
     NotebookRetrieveUpdateDestroyAPIView,
     FileListView,
     FileUploadView,
+    URLParseView,
+    URLParseWithMediaView,
     FileStatusView,
     FileStatusStreamView,
     FileDeleteView,
@@ -13,22 +15,25 @@ from .views import (
     FileContentView,
     FileRawView,
     FileRawSimpleView,
+    FileImageView,
     RAGChatFromKBView,
+    VideoImageExtractionView,
+    BatchJobStatusView,
     ChatHistoryView,
     ClearChatHistoryView
 )
 
 urlpatterns = [
     # Notebooks
-    path('', 
-         NotebookListCreateAPIView.as_view(), 
-         name='notebook-list-create'),
-    path('<int:pk>/', 
-         NotebookRetrieveUpdateDestroyAPIView.as_view(), 
-         name='notebook-detail'),
-
+    path("", NotebookListCreateAPIView.as_view(), name="notebook-list-create"),
+    path(
+        "<int:pk>/",
+        NotebookRetrieveUpdateDestroyAPIView.as_view(),
+        name="notebook-detail",
+    ),
     # File endpoints for a given notebook
     # 1) list all processed files
+    path("<int:notebook_id>/files/", FileListView.as_view(), name="file-list"),
     path(
         '<int:notebook_id>/files/',
         FileListView.as_view(),
@@ -38,42 +43,53 @@ urlpatterns = [
     path(
         '<int:notebook_id>/chat-history/', ChatHistoryView.as_view(), name="chat-history"
     ),
-
-    path('chat/', RAGChatFromKBView.as_view(), name='chat-rag'),
-
+    path("chat/", RAGChatFromKBView.as_view(), name="chat-rag"),
     # 2) upload & parse a new file
     path(
-        '<int:notebook_id>/files/upload/',
-        FileUploadView.as_view(),
-        name='file-upload'
+        "<int:notebook_id>/files/upload/", FileUploadView.as_view(), name="file-upload"
     ),
 
-    # 3) get one‐time status snapshot for an in‐flight upload
+    # NEW: URL parsing endpoints
+    # 3) parse URL content without media
     path(
-        '<int:notebook_id>/files/<str:upload_file_id>/status/',
+        '<int:notebook_id>/files/parse_url/',
+        URLParseView.as_view(),
+        name='url-parse'
+    ),
+
+    # 4) parse URL content with media extraction
+    path(
+        '<int:notebook_id>/files/parse_url_media/',
+        URLParseWithMediaView.as_view(),
+        name='url-parse-media'
+    ),
+
+    # 5) get one‐time status snapshot for an in‐flight upload
+    path(
+        "<int:notebook_id>/files/<str:upload_file_id>/status/",
         FileStatusView.as_view(),
-        name='file-status'
+        name="file-status",
     ),
 
-    # 3.1) SSE streaming status updates for an in‐flight upload
+    # 5.1) SSE streaming status updates for an in‐flight upload
     path(
-        '<int:notebook_id>/files/<str:upload_file_id>/status/stream',
+        "<int:notebook_id>/files/<str:upload_file_id>/status/stream",
         FileStatusStreamView.as_view(),
-        name='file-status-stream'
+        name="file-status-stream",
     ),
 
-    # 4) delete either an in‐flight upload or a completed file
+    # 6) delete either an in‐flight upload or a completed file
     path(
-        '<int:notebook_id>/files/<str:file_or_upload_id>/',
+        "<int:notebook_id>/files/<str:file_or_upload_id>/",
         FileDeleteView.as_view(),
-        name='file-delete'
+        name="file-delete",
     ),
 
-    # 5) knowledge base management
+    # 7) knowledge base management
     path(
-        '<int:notebook_id>/knowledge-base/',
+        "<int:notebook_id>/knowledge-base/",
         KnowledgeBaseView.as_view(),
-        name='knowledge-base'
+        name="knowledge-base",
     ),
 
     # 6) file content serving (parsed content)
@@ -90,17 +106,36 @@ urlpatterns = [
     ),
 
 
-    # 7) raw file serving (PDFs, videos, audio, etc.)
+    # 9) raw file serving (PDFs, videos, audio, etc.)
     path(
-        '<int:notebook_id>/files/<str:file_id>/raw/',
+        "<int:notebook_id>/files/<str:file_id>/raw/",
         FileRawView.as_view(),
-        name='file-raw'
+        name="file-raw",
     ),
 
-    # 8) simplified raw file serving (without notebook context)
+    # 10) simplified raw file serving (without notebook context)
     path(
-        'files/<str:file_id>/raw/',
-        FileRawSimpleView.as_view(),
-        name='file-raw-simple'
+        "files/<str:file_id>/raw/", FileRawSimpleView.as_view(), name="file-raw-simple"
+    ),
+
+    # 11) image serving for knowledge base items
+    path(
+        "<int:notebook_id>/files/<str:file_id>/images/<str:image_name>",
+        FileImageView.as_view(),
+        name="file-image",
+    ),
+
+    # 12) video image extraction endpoint
+    path(
+        "<int:notebook_id>/extraction/video_image_extraction/",
+        VideoImageExtractionView.as_view(),
+        name="video-image-extraction",
+    ),
+
+    # 12) batch job status endpoint
+    path(
+        "<int:notebook_id>/batch-jobs/<int:batch_job_id>/status/",
+        BatchJobStatusView.as_view(),
+        name="batch-job-status",
     ),
 ]

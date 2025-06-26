@@ -7,11 +7,42 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/components/ui/use-toast";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import "highlight.js/styles/github.css";
 
 function getCookie(name) {
   const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
   return match ? decodeURIComponent(match[2]) : null;
 }
+
+// Memoized markdown content component for chat messages
+const ChatMarkdownContent = React.memo(({ content }) => (
+  <div className="prose prose-sm max-w-none prose-headings:text-current prose-p:text-current prose-strong:text-current prose-code:text-current">
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeHighlight]}
+      components={{
+        h1: ({children}) => <h1 className="text-lg font-bold mb-2 mt-1">{children}</h1>,
+        h2: ({children}) => <h2 className="text-base font-semibold mb-2 mt-1">{children}</h2>,
+        h3: ({children}) => <h3 className="text-sm font-medium mb-1 mt-1">{children}</h3>,
+        p: ({children}) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+        ul: ({children}) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+        ol: ({children}) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+        li: ({children}) => <li className="text-inherit">{children}</li>,
+        blockquote: ({children}) => <blockquote className="border-l-2 border-gray-300 pl-3 italic my-2">{children}</blockquote>,
+        code: ({children}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+        pre: ({children}) => <pre className="bg-gray-800 text-gray-100 p-3 rounded-md overflow-x-auto my-2 text-xs">{children}</pre>,
+        a: ({children, href}) => <a href={href} className="text-blue-600 underline hover:text-blue-800" target="_blank" rel="noopener noreferrer">{children}</a>,
+        strong: ({children}) => <strong className="font-semibold">{children}</strong>,
+        em: ({children}) => <em className="italic">{children}</em>,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  </div>
+));
 
 const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   const [messages, setMessages] = useState([]);
@@ -324,7 +355,11 @@ useEffect(() => {
                 <div className={`px-3 py-2 rounded-lg text-sm ${
                   message.type === 'user' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'
                 }`}>
-                  {message.content}
+                  {message.type === 'assistant' ? (
+                    <ChatMarkdownContent content={message.content} />
+                  ) : (
+                    message.content
+                  )}
                 </div>
               </div>
             </motion.div>

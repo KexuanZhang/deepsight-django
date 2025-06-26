@@ -1,5 +1,5 @@
 import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback, useMemo } from "react";
-import { ArrowUpDown, Trash2, Plus, ChevronLeft, RefreshCw, CheckCircle, AlertCircle, Clock, X, Upload, Link2, FileText, Globe, Youtube, Group, File, Music, Video, Presentation, Loader2, Eye, Database } from "lucide-react";
+import { Trash2, Plus, ChevronLeft, RefreshCw, CheckCircle, AlertCircle, Clock, X, Upload, Link2, FileText, Globe, Youtube, Group, File, Music, Video, Presentation, Loader2, Eye, Database } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -77,8 +77,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
   const [isLoadingKnowledgeBase, setIsLoadingKnowledgeBase] = useState(false);
   const [selectedKnowledgeItems, setSelectedKnowledgeItems] = useState(new Set());
 
-  // Sort and group state
-  const [sortOrder, setSortOrder] = useState('newest'); // 'newest' or 'oldest'
+  // Group state
   const [isGrouped, setIsGrouped] = useState(false);
 
   // Preview state
@@ -143,6 +142,16 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Simple helper to get original filename
+  const getOriginalFilename = (metadata) => {
+    return metadata.original_filename || 
+           metadata.metadata?.original_filename || 
+           metadata.metadata?.filename || 
+           metadata.filename || 
+           metadata.title || 
+           'Unknown File';
   };
 
   // New function to generate description for principle files
@@ -239,7 +248,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
 
   // Generate appropriate title based on source type
   const generatePrincipleTitle = (metadata) => {
-    // Enhanced URL detection with multiple fallbacks
+    // Check if it's a URL source
     const isUrl = metadata.source_url || 
                   metadata.extraction_type === 'url_extractor' ||
                   metadata.processing_method === 'media' ||
@@ -259,25 +268,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           return domainMatch[1];
         }
       }
-      // Fallback to domain extraction from filename if it looks like a URL
       return sourceUrl || 'Website Content';
     }
     
-    // For regular files, show the original filename
-    // Priority order: original_filename -> metadata.filename -> metadata.original_filename -> title fallback
-    let originalFilename = metadata.original_filename || 
-                          metadata.metadata?.filename || 
-                          metadata.metadata?.original_filename || 
-                          metadata.filename || 
-                          metadata.title || 
-                          'Unknown File';
-    
-    // If the title looks like it was processed (no extension), try to get original from metadata
-    if (!originalFilename.includes('.') && metadata.metadata?.filename && metadata.metadata.filename.includes('.')) {
-      originalFilename = metadata.metadata.filename;
-    }
-    
-    return originalFilename;
+    // For regular files, just return the original filename
+    return getOriginalFilename(metadata);
   };
 
   // Get principle file information based on source type
@@ -311,12 +306,8 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         processingType: metadata.processing_method || metadata.processing_type || 'website'
       };
     } else {
-      // For regular files - try multiple sources for original file information
-      const originalFilename = metadata.original_filename || 
-                              metadata.metadata?.filename || 
-                              metadata.metadata?.original_filename || 
-                              metadata.filename || 
-                              metadata.title;
+      // For regular files - use the helper function
+      const originalFilename = getOriginalFilename(metadata);
       
       const fileExtension = metadata.file_extension || 
                            metadata.metadata?.file_extension;
@@ -342,21 +333,6 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
   // Calculate selected count
   const selectedCount = sources.filter(source => source.selected).length;
 
-  // Sort sources by time added
-  const sortSources = useCallback((sourcesToSort, order) => {
-    return [...sourcesToSort].sort((a, b) => {
-      // Use file_id or id as a proxy for time added (larger = newer)
-      const aTime = a.file_id || a.id || 0;
-      const bTime = b.file_id || b.id || 0;
-      
-      if (order === 'newest') {
-        return bTime > aTime ? 1 : -1; // Newer first
-      } else {
-        return aTime > bTime ? 1 : -1; // Older first
-      }
-    });
-  }, []);
-
   // Group sources by file type
   const groupSources = useCallback((sourcesToGroup) => {
     const grouped = sourcesToGroup.reduce((acc, source) => {
@@ -368,27 +344,21 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       return acc;
     }, {});
 
-    // Sort groups by type name and sort sources within each group
+    // Sort groups by type name
     const sortedGroups = Object.keys(grouped)
       .sort()
       .reduce((acc, type) => {
-        acc[type] = sortSources(grouped[type], sortOrder);
+        acc[type] = grouped[type];
         return acc;
       }, {});
 
     return sortedGroups;
-  }, [sortOrder, sortSources]);
+  }, []);
 
-  // Get processed sources (sorted and/or grouped)
+  // Get processed sources (grouped or not)
   const processedSources = useMemo(() => {
-    const sorted = sortSources(sources, sortOrder);
-    return isGrouped ? groupSources(sorted) : sorted;
-  }, [sources, sortOrder, isGrouped, sortSources, groupSources]);
-
-  // Handle sort toggle
-  const handleSortToggle = () => {
-    setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest');
-  };
+    return isGrouped ? groupSources(sources) : sources;
+  }, [sources, isGrouped, groupSources]);
 
   // Handle group toggle
   const handleGroupToggle = () => {
@@ -450,8 +420,10 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           return newProgress;
         });
         
-        // Don't reload the entire file list - we already have the information we need
-        // This preserves the original file display information
+        // Refresh the file list to get complete metadata for preview
+        if (status === 'completed') {
+          loadParsedFiles();
+        }
       }
     };
 
@@ -530,6 +502,12 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
               delete newProgress[uploadUrlId];
               return newProgress;
             });
+            
+            // Refresh the file list to get complete metadata for preview
+            if (status === 'completed') {
+              loadParsedFiles();
+            }
+            
             return; // Stop polling
           }
         }
@@ -591,16 +569,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
 
   // Reusable SourceItem component for consistent rendering - Memoized to prevent unnecessary re-renders
   const SourceItem = React.memo(({ source, index, onToggle, onPreview, getSourceTooltip, getPrincipleFileIcon, renderFileStatus, isInitialLoad = false }) => {
-    const handleCheckboxChange = useCallback((e) => {
+    const handleItemClick = useCallback((e) => {
       e.preventDefault();
       e.stopPropagation();
       onToggle();
     }, [onToggle]);
-
-    const handleItemClick = useCallback((e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    }, []);
 
     const handlePreviewClick = useCallback((e) => {
       e.preventDefault();
@@ -610,40 +583,34 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
 
     return (
       <div
-        className="px-6 py-4 border-b border-gray-100 hover:bg-gray-50/50 transition-colors group"
+        className={`px-4 py-3 border-b border-gray-100 cursor-pointer ${
+          source.selected ? 'bg-blue-50 border-blue-200' : ''
+        }`}
         onClick={handleItemClick}
       >
-        <div className="flex items-center space-x-4">
-          <input
-            type="checkbox"
-            checked={source.selected}
-            onChange={handleCheckboxChange}
-            onClick={(e) => e.stopPropagation()}
-            className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 focus:ring-offset-0 shadow-sm"
-          />
-          
+        <div className="flex items-center space-x-3">
           <div className="flex-shrink-0">
-            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-hover:bg-gray-200 transition-colors">
+            <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
               {React.createElement(getPrincipleFileIcon(source), {
-                className: "h-5 w-5 text-gray-600"
+                className: "h-4 w-4 text-gray-600"
               })}
             </div>
           </div>
           
           <div className="min-w-0 flex-1">
             <div className="flex items-center space-x-2 mb-1">
-              <h4 className="font-medium text-gray-900 truncate">{source.title}</h4>
+              <h4 className="text-sm font-medium text-gray-900 truncate">{source.title}</h4>
               {renderFileStatus(source)}
             </div>
-            <p className="text-sm text-gray-500 truncate">{source.authors}</p>
+            <p className="text-xs text-gray-500 truncate">{source.authors}</p>
           </div>
           
-          <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center space-x-2">
             {supportsPreview(source.metadata?.file_extension || source.ext || '', source.metadata) && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600"
+                className="h-8 w-8 p-0 text-gray-400"
                 onClick={handlePreviewClick}
                 title={getSourceTooltip(source)}
               >
@@ -866,30 +833,28 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       setUploadProgress(prev => ({ ...prev, [uploadFileId]: 20 }));
       
       const response = urlProcessingType === 'media' 
-        ? await apiService.parseUrlWithMedia(linkUrl, 'cosine', uploadFileId)
-        : await apiService.parseUrl(linkUrl, 'cosine', uploadFileId);
+        ? await apiService.parseUrlWithMedia(linkUrl, notebookId, 'cosine', uploadFileId)
+        : await apiService.parseUrl(linkUrl, notebookId, 'cosine', uploadFileId);
       
       if (response.success) {
-        const { data } = response;
-        
         // Update source with response data while preserving original display information
         setSources((prev) => prev.map(source => 
           source.id === newSource.id ? {
             ...source,
-            file_id: data.file_id,
+            file_id: response.file_id,
             type: "parsing",
-            parsing_status: data.status || 'completed',
+            parsing_status: response.status || 'completed',
             // Preserve original display information, don't change authors/title
             metadata: {
               ...source.metadata,
-              ...data,
+              ...response,
               processing_completed: true
             }
           } : source
         ));
         
         // Start status monitoring if needed for URLs
-        if (data.status && ['pending', 'parsing'].includes(data.status)) {
+        if (response.status && ['pending', 'parsing'].includes(response.status)) {
           // For URLs, we might not have SSE streaming, so let's try periodic polling
           startUrlStatusPolling(uploadFileId, newSource.id);
         } else {
@@ -899,6 +864,9 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
             delete newProgress[uploadFileId];
             return newProgress;
           });
+          
+          // Refresh the file list to get complete metadata for preview
+          await loadParsedFiles();
         }
         
         // Clear URL input
@@ -988,19 +956,17 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
-        const { data } = response;
-        
         setSources((prev) => prev.map(source => 
           source.id === newSource.id ? {
             ...source,
-            file_id: data.file_id,
+            file_id: response.file_id,
             type: "parsing",
-            parsing_status: data.status,
+            parsing_status: response.status || 'completed',
             // Preserve original display information, don't change authors/title
             metadata: {
               ...source.metadata,
-              file_size: data.file_size,
-              file_extension: data.file_extension,
+              file_size: response.file_size,
+              file_extension: response.file_extension,
               processing_completed: true
             }
           } : source
@@ -1347,19 +1313,19 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       );
 
       const results = await Promise.all(deletePromises);
-      const successfulDeletes = Array.from(selectedKnowledgeItems).filter((_, index) => 
+      const successfulDeletes = Array.from(selectedKnowledgeItems).filter((_, index) =>
         results[index].success !== false
       );
 
       // Remove successfully deleted items from the knowledge base list
-      setKnowledgeBaseItems(prev => 
+      setKnowledgeBaseItems(prev =>
         prev.filter(item => !successfulDeletes.includes(item.id))
       );
-      
+
       setSelectedKnowledgeItems(new Set());
-      
-      // No need to refresh the entire sources list for knowledge base deletions
-      // The knowledge base items are separate from the current notebook sources
+
+      // Refresh the sources list to ensure UI reflects deletion accurately
+      await loadParsedFiles();
 
       const failedDeletes = results.filter(result => result.success === false);
       if (failedDeletes.length > 0) {
@@ -1385,19 +1351,6 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
             <h3 className="text-sm font-medium text-gray-900">Sources</h3>
           </div>
           <div className="flex items-center space-x-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleSortToggle();
-              }}
-            >
-              <ArrowUpDown className="h-3 w-3 mr-1" />
-              Sort
-            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -1461,29 +1414,29 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
 
       {/* Simple Selection Bar */}
       {sources.length > 0 && (
-        <div className="flex-shrink-0 px-6 py-3 bg-gray-50 border-b border-gray-200">
+        <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <input
-                type="checkbox"
-                id="selectAll"
-                className="h-4 w-4 rounded border-gray-300 text-gray-600 focus:ring-gray-500"
-                checked={sources.length > 0 && selectedCount === sources.length}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  setSources((prev) => prev.map((s) => ({ ...s, selected: checked })));
-                  // onSelectionChange will be triggered by the useEffect watching selectedIds
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-gray-500 hover:text-gray-700"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const allSelected = sources.length > 0 && selectedCount === sources.length;
+                  setSources((prev) => prev.map((s) => ({ ...s, selected: !allSelected })));
                 }}
-              />
-              <label htmlFor="selectAll" className="text-sm text-gray-600">
-                Select All ({selectedCount}/{sources.length})
-              </label>
+                disabled={sources.length === 0}
+              >
+                {sources.length > 0 && selectedCount === sources.length ? 'Deselect All' : 'Select All'}
+              </Button>
             </div>
             
             <Button
               variant="ghost"
               size="sm"
-              className={`h-8 px-2 transition-colors ${
+              className={`h-6 px-2 text-xs transition-colors ${
                 selectedCount > 0 
                   ? 'text-gray-500 hover:text-red-600' 
                   : 'text-gray-300 cursor-not-allowed'
@@ -1525,9 +1478,9 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.3, ease: "easeOut" }}
                 >
-                  <div className="px-6 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 sticky top-0">
+                  <div className="px-4 py-2 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 sticky top-0">
                     <div className="flex items-center space-x-2">
-                      <div className="w-6 h-6 bg-gray-200 rounded-md flex items-center justify-center">
+                      <div className="w-5 h-5 bg-gray-200 rounded-md flex items-center justify-center">
                         {React.createElement(fileIcons[type] || File, {
                           className: "h-3 w-3 text-gray-600"
                         })}
