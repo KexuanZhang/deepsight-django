@@ -16,10 +16,12 @@ from .views import (
     FileRawView,
     FileRawSimpleView,
     FileImageView,
-    MarkdownBatchContentView,
     RAGChatFromKBView,
     VideoImageExtractionView,
     BatchJobStatusView,
+    ChatHistoryView,
+    ClearChatHistoryView,
+    SuggestedQuestionsView
 )
 
 urlpatterns = [
@@ -34,9 +36,13 @@ urlpatterns = [
     # 1) list all processed files
     path("<int:notebook_id>/files/", FileListView.as_view(), name="file-list"),
     path(
-        "<int:notebook_id>/files/md-batch-contents/",
-        MarkdownBatchContentView.as_view(),
-        name="file-md-batch-contents",
+        '<int:notebook_id>/files/',
+        FileListView.as_view(),
+        name='file-list'
+    ),
+
+    path(
+        '<int:notebook_id>/chat-history/', ChatHistoryView.as_view(), name="chat-history"
     ),
     path("chat/", RAGChatFromKBView.as_view(), name="chat-rag"),
     # 2) upload & parse a new file
@@ -87,10 +93,25 @@ urlpatterns = [
         name="knowledge-base",
     ),
 
-    # 8) file content serving (parsed content)
+    # 6) file content serving (parsed content)
     path(
-        "files/<str:file_id>/content/", FileContentView.as_view(), name="file-content"
+        'files/<str:file_id>/content/',
+        FileContentView.as_view(),
+        name='file-content'
     ),
+
+    path('<int:notebook_id>/suggested-questions/', 
+         SuggestedQuestionsView.as_view(),
+        name='question-suggestion'         
+    ),
+
+
+    path(
+        "<int:notebook_id>/chat/clear/", 
+         ClearChatHistoryView.as_view(), 
+         name="clear-chat-history"
+    ),
+
 
     # 9) raw file serving (PDFs, videos, audio, etc.)
     path(
