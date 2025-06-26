@@ -4,7 +4,7 @@ import time
 import mimetypes
 from uuid import uuid4
 
-from .utils.rag_engine import RAGChatbot
+from .utils.rag_engine import RAGChatbot, SuggestionRAGAgent
 
 from django.db import transaction
 from django.http import StreamingHttpResponse, Http404, FileResponse
@@ -575,6 +575,22 @@ class FileDeleteView(APIView):
             return Response(status=status.HTTP_204_NO_CONTENT)
         else:
             return Response({"detail": "File not found."}, status=status.HTTP_404_NOT_FOUND)
+
+
+class SuggestedQuestionsView(StandardAPIView, NotebookPermissionMixin):
+
+    def get(self, request, notebook_id):
+        try:
+            notebook = Notebook.objects.get(id=notebook_id, user=request.user)
+            history = NotebookChatMessage.objects.filter(notebook=notebook).order_by("timestamp")
+            history_text = "\n".join([f"{msg.sender}: {msg.message}" for msg in history])
+
+            agent = SuggestionRAGAgent()  # see below
+            suggestions = agent.generate_suggestions(history_text)
+
+            return Response({"suggestions": suggestions})
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
 
 
 class ClearChatHistoryView(APIView, NotebookPermissionMixin):

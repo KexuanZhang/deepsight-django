@@ -24,6 +24,7 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   const { toast } = useToast();
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [selectedSources, setSelectedSources] = useState([]);
+  const [suggestedQuestions, setSuggestedQuestions] = useState([]);
 
   const updateSelectedFiles = useCallback(() => {
     if (sourcesListRef?.current) {
@@ -36,6 +37,31 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       // console.log("after", selectedFiles)
     }
   }, [sourcesListRef]);
+
+  // useEffect(() => {
+  //   const fetchSuggestions = async () => {
+  //     try {
+  //       const response = await fetch(`/api/v1/notebooks/${notebookId}/suggested-questions/`);
+  //       if (!response.ok) throw new Error("Failed to fetch suggestions");
+  //       const data = await response.json();
+  //       setSuggestedQuestions(data.suggestions || []);
+  //     } catch (err) {
+  //       console.error("Failed to load suggestions:", err);
+  //     }
+  //   };
+
+  //   if (notebookId) fetchSuggestions();
+  // }, [notebookId]);
+    const fetchSuggestions = async () => {
+    try {
+      const response = await fetch(`/api/v1/notebooks/${notebookId}/suggested-questions/`);
+      if (!response.ok) throw new Error("Failed to fetch suggestions");
+      const data = await response.json();
+      setSuggestedQuestions(data.suggestions || []);
+    } catch (err) {
+      console.error("Failed to load suggestions:", err);
+    }
+  };
 
   useEffect(() => {
     console.log("Updated state - selectedFiles:", selectedFiles);
@@ -112,13 +138,14 @@ useEffect(() => {
 }, [notebookId]);
 
 
-  const handleSendMessage = async () => {
-    if (!inputMessage.trim() || isLoading) return;
+  const handleSendMessage = async (overrideMessage = null) => {
+    const messageToSend = overrideMessage || inputMessage.trim();
+    if (!messageToSend || isLoading) return;
 
     const userMessage = {
       id: Date.now().toString(),
       type: 'user',
-      content: inputMessage.trim(),
+      content: messageToSend.trim(),
       timestamp: new Date().toISOString()
     };
 
@@ -127,6 +154,7 @@ useEffect(() => {
     setIsLoading(true);
     setIsTyping(true);
     setError(null);
+    setSuggestedQuestions([]);
 
     // Get the LATEST selected files directly from SourcesList ref to ensure we have current data
     const currentSelectedFiles = sourcesListRef?.current?.getSelectedFiles() || [];
@@ -187,6 +215,10 @@ useEffect(() => {
       };
 
       setMessages(prev => [...prev, assistantMessage]);
+      
+      const followupResp = await fetch(`/api/v1/notebooks/${notebookId}/suggested-questions/`);
+      const followupData = await followupResp.json();
+      setSuggestedQuestions(followupData.suggestions || []);
     } catch (err) {
       console.error("Chat error:", err);
       setError("Failed to get a response from the AI. Please try again.");
@@ -352,7 +384,7 @@ useEffect(() => {
         <div ref={messagesEndRef} />
       </div>
 
-      {messages.length <= 1 && !isLoading && (
+      {/* {messages.length <= 1 && !isLoading && (
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center max-w-md">
             <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl mx-auto mb-4 flex items-center justify-center">
@@ -375,7 +407,49 @@ useEffect(() => {
             </div>
           </div>
         </div>
+      )} */}
+      {messages.length <= 1 && !isLoading ? (
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl mx-auto mb-4 flex items-center justify-center">
+              <MessageCircle className="h-8 w-8 text-blue-500" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Start a conversation</h3>
+            <p className="text-sm text-gray-500 mb-6">Ask me anything about your uploaded documents and knowledge base</p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {["Summarize my documents", "What are the key findings?", "Find connections between sources", "Explain this topic"].map((suggestion, index) => (
+                <Button
+                  key={index}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs bg-white hover:bg-blue-50 border-gray-300 hover:border-blue-300 text-gray-700 hover:text-blue-700"
+                  onClick={() => handleSendMessage(suggestion)}
+                >
+                  {suggestion}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : suggestedQuestions.length > 0 && (
+        <div className="px-4 py-2 border-t border-gray-200 bg-gray-50">
+          <div className="text-xs font-medium text-gray-500 mb-2">Suggested Questions</div>
+          <div className="flex flex-wrap gap-2">
+            {suggestedQuestions.map((question, index) => (
+              <Button
+                key={index}
+                variant="outline"
+                size="sm"
+                className="text-xs bg-white hover:bg-blue-50 border-gray-300 text-gray-700"
+                onClick={() => handleSendMessage(question)}
+              >
+                {question}
+              </Button>
+            ))}
+          </div>
+        </div>
       )}
+
 
       <div className="flex-shrink-0 p-4 border-t border-gray-200">
         <div className="flex space-x-2">
