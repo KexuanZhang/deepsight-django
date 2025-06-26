@@ -6,12 +6,13 @@ podcast generation strategies.
 """
 
 import logging
-from typing import Dict
+from typing import Dict, List
+from ..interfaces.content_detector_interface import ContentDetectorInterface
 
 logger = logging.getLogger(__name__)
 
 
-class ContentTypeDetector:
+class ContentTypeDetector(ContentDetectorInterface):
     """Detects content type to optimize podcast generation strategy"""
 
     def __init__(self):
@@ -159,12 +160,12 @@ class ContentTypeDetector:
         logger.info(f"Detected content type: {detected_type} (scores: {type_scores})")
         return detected_type
 
-    def add_content_type(self, content_type: str, keywords: list):
+    def add_content_type(self, content_type: str, keywords: List[str]):
         """Add a new content type with its detection keywords"""
         self.detection_patterns[content_type] = keywords
         logger.info(f"Added new content type: {content_type}")
 
-    def get_supported_types(self) -> list:
+    def get_supported_types(self) -> List[str]:
         """Get list of supported content types"""
         return list(self.detection_patterns.keys())
 

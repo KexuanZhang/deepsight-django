@@ -17,7 +17,7 @@ from .serializers import (
     PodcastJobListSerializer,
     NotebookPodcastJobCreateSerializer,
 )
-from .services import podcast_generation_service
+from .orchestrator import podcast_orchestrator
 from notebooks.models import Notebook
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ class NotebookPodcastJobListCreateView(APIView):
             }
 
             # Create podcast-job with notebook association
-            job = podcast_generation_service.create_podcast_job(
+            job = podcast_orchestrator.create_podcast_job(
                 source_file_ids=source_file_ids,
                 job_metadata=job_metadata,
                 user=request.user,
