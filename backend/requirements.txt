@@ -10,7 +10,6 @@ dspy_ai==2.4.9
 duckduckgo_search
 easyocr
 fastapi
-ffmpeg
 ffmpeg-python
 PyMuPDF
 google-generativeai

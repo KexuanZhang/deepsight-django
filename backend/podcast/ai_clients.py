@@ -93,7 +93,7 @@ class AIClientManager:
         if self.ai_provider == "deepseek":
             return getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
         else:
-            return getattr(settings, "OPENAI_MODEL", "gpt-4.1")
+            return getattr(settings, "OPENAI_MODEL", "gpt-4.1-mini")
 
     def create_chat_completion(self, messages, **kwargs):
         """Create a chat completion using the configured AI provider"""

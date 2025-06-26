@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Notebook-specific views
 class NotebookPodcastJobListCreateView(APIView):
-    """List and create podcast jobs for a specific notebook"""
+    """List and create podcast-jobs for a specific notebook"""
     permission_classes = [permissions.IsAuthenticated]
 
     def get_notebook(self, notebook_id):
@@ -36,7 +36,7 @@ class NotebookPodcastJobListCreateView(APIView):
         )
 
     def get(self, request, notebook_id):
-        """List podcast jobs for a specific notebook"""
+        """List podcast-jobs for a specific notebook"""
         try:
             notebook = self.get_notebook(notebook_id)
             jobs = PodcastJob.objects.filter(
@@ -47,14 +47,14 @@ class NotebookPodcastJobListCreateView(APIView):
             serializer = PodcastJobListSerializer(jobs, many=True)
             return Response(serializer.data)
         except Exception as e:
-            logger.error(f"Error listing podcast jobs for notebook {notebook_id}: {e}")
+            logger.error(f"Error listing podcast-jobs for notebook {notebook_id}: {e}")
             return Response(
                 {"error": f"Failed to list jobs: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
     def post(self, request, notebook_id):
-        """Create a new podcast job for a specific notebook"""
+        """Create a new podcast-job for a specific notebook"""
         try:
             notebook = self.get_notebook(notebook_id)
             serializer = NotebookPodcastJobCreateSerializer(data=request.data)
@@ -72,7 +72,7 @@ class NotebookPodcastJobListCreateView(APIView):
                 "source_metadata": {},  # Will be populated by worker
             }
 
-            # Create podcast job with notebook association
+            # Create podcast-job with notebook association
             job = podcast_generation_service.create_podcast_job(
                 source_file_ids=source_file_ids,
                 job_metadata=job_metadata,
@@ -94,15 +94,15 @@ class NotebookPodcastJobListCreateView(APIView):
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
-            logger.error(f"Error creating podcast job for notebook {notebook_id}: {e}")
+            logger.error(f"Error creating podcast-job for notebook {notebook_id}: {e}")
             return Response(
-                {"error": f"Failed to create podcast job: {str(e)}"},
+                {"error": f"Failed to create podcast-job: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
 
 class NotebookPodcastJobDetailView(APIView):
-    """Retrieve, update, or delete a specific podcast job within a notebook"""
+    """Retrieve, update, or delete a specific podcast-job within a notebook"""
     permission_classes = [permissions.IsAuthenticated]
 
     def get_job(self, notebook_id, job_id):
@@ -117,32 +117,56 @@ class NotebookPodcastJobDetailView(APIView):
         )
 
     def get(self, request, notebook_id, job_id):
-        """Get detailed status of a specific podcast job"""
+        """Get detailed status of a specific podcast-job"""
         try:
             job = self.get_job(notebook_id, job_id)
             serializer = PodcastJobSerializer(job)
             return Response(serializer.data)
         except Exception as e:
-            logger.error(f"Error retrieving podcast job {job_id} for notebook {notebook_id}: {e}")
+            logger.error(f"Error retrieving podcast-job {job_id} for notebook {notebook_id}: {e}")
             return Response(
                 {"error": f"Failed to retrieve job: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
     def delete(self, request, notebook_id, job_id):
-        """Delete a podcast job"""
+        """Delete a podcast-job and its associated files/directory"""
         try:
             job = self.get_job(notebook_id, job_id)
 
-            # Delete associated audio file if it exists
+            # Delete the podcast directory using centralized storage config
             if job.audio_file:
-                job.audio_file.delete(save=False)
-
+                from notebooks.utils.config import storage_config
+                
+                try:
+                    # Use the centralized deletion function
+                    deletion_success = storage_config.delete_podcast_directory(job)
+                    if deletion_success:
+                        logger.info(f"Successfully deleted podcast directory for job {job_id}")
+                    else:
+                        logger.warning(f"Podcast directory not found or already deleted for job {job_id}")
+                        
+                except Exception as e:
+                    logger.error(f"Error deleting podcast directory for job {job_id}: {e}")
+                    # Fallback: try to delete the file directly if it exists
+                    try:
+                        from pathlib import Path
+                        from django.conf import settings
+                        
+                        if job.audio_file.name:
+                            audio_file_path = Path(settings.MEDIA_ROOT) / job.audio_file.name
+                            if audio_file_path.exists():
+                                audio_file_path.unlink()
+                                logger.info(f"Deleted audio file: {audio_file_path}")
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback deletion also failed: {fallback_error}")
+            
+            # Delete the job record from database
             job.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         except Exception as e:
-            logger.error(f"Error deleting podcast job {job_id} for notebook {notebook_id}: {e}")
+            logger.error(f"Error deleting podcast-job {job_id} for notebook {notebook_id}: {e}")
             return Response(
                 {"error": f"Failed to delete job: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -150,7 +174,7 @@ class NotebookPodcastJobDetailView(APIView):
 
 
 class NotebookPodcastJobCancelView(APIView):
-    """Cancel a podcast job within a notebook"""
+    """Cancel a podcast-job within a notebook"""
     permission_classes = [permissions.IsAuthenticated]
 
     def get_job(self, notebook_id, job_id):
@@ -165,7 +189,7 @@ class NotebookPodcastJobCancelView(APIView):
         )
 
     def post(self, request, notebook_id, job_id):
-        """Cancel a podcast generation job"""
+        """Cancel a podcast generation podcast-job"""
         try:
             job = self.get_job(notebook_id, job_id)
 
@@ -204,7 +228,7 @@ class NotebookPodcastJobCancelView(APIView):
                 )
 
         except Exception as e:
-            logger.error(f"Error cancelling podcast job {job_id} for notebook {notebook_id}: {e}")
+            logger.error(f"Error cancelling podcast-job {job_id} for notebook {notebook_id}: {e}")
             return Response(
                 {"error": f"Failed to cancel job: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -212,7 +236,7 @@ class NotebookPodcastJobCancelView(APIView):
 
 
 class NotebookPodcastJobAudioView(APIView):
-    """Serve audio files for podcast jobs within a notebook"""
+    """Serve audio files for podcast-jobs within a notebook"""
     permission_classes = [permissions.IsAuthenticated]
 
     def get_job(self, notebook_id, job_id):
@@ -231,15 +255,37 @@ class NotebookPodcastJobAudioView(APIView):
         try:
             job = self.get_job(notebook_id, job_id)
 
+            # Debug logging
+            logger.info(f"Audio request for job {job_id}: status={job.status}, audio_file={job.audio_file}")
+            
             if not job.audio_file:
+                logger.warning(f"No audio file for job {job_id} - status: {job.status}")
                 return Response(
                     {"error": "Audio file not available"},
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+            # Check if file exists on disk
+            try:
+                if not job.audio_file.storage.exists(job.audio_file.name):
+                    logger.error(f"Audio file not found on disk for job {job_id}: {job.audio_file.name}")
+                    return Response(
+                        {"error": "Audio file not found on disk"},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+            except Exception as storage_error:
+                logger.error(f"Error checking file existence for job {job_id}: {storage_error}")
+                return Response(
+                    {"error": "Audio file not accessible"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
             # Return file response
             response = FileResponse(
-                job.audio_file.open(), as_attachment=True, filename=f"{job.title}.mp3"
+                job.audio_file.open(), 
+                as_attachment=True, 
+                filename=f"{job.title}.mp3",
+                content_type="audio/mpeg"
             )
             return response
 

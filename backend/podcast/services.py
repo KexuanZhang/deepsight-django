@@ -29,15 +29,15 @@ logger = logging.getLogger(__name__)
 
 
 class PodcastGenerationService:
-    """Main orchestrator service for podcast generation"""
+    """Main orchestrator service for podcast generation.
+
+    Podcast audio files are always saved using the notebook-specific path via the model's upload_to,
+    not a static audio_dir.
+    """
 
     def __init__(self):
         # Redis client for caching status updates
         self._redis_client = None
-
-        # Audio output directory
-        self.audio_dir = Path(settings.MEDIA_ROOT) / "podcasts" / "audio"
-        self.audio_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def redis_client(self):
@@ -274,17 +274,7 @@ class PodcastGenerationService:
 
             if status == "completed":
                 job.progress = "Podcast generation completed successfully"
-                if "audio_path" in result:
-                    # Save the audio file to the model
-                    audio_path = Path(result["audio_path"])
-                    if audio_path.exists():
-                        with open(audio_path, "rb") as f:
-                            job.audio_file.save(
-                                f"{job_id}.mp3", ContentFile(f.read()), save=False
-                            )
-                        # Clean up the temporary file
-                        audio_path.unlink()
-
+                # Audio file is already saved in the task, do not save again
                 if "conversation_text" in result:
                     job.conversation_text = result["conversation_text"]
 

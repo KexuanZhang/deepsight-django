@@ -7,6 +7,9 @@ import asyncio
 from typing import List, Dict
 from pathlib import Path
 from celery import shared_task
+import tempfile
+from django.core.files import File
+import os
 
 from .models import PodcastJob
 from .services import podcast_generation_service
@@ -114,21 +117,30 @@ def process_podcast_generation(self, job_id: str):
                 job_id, "Generating podcast audio", "generating"
             )
 
-            # Generate audio file
+            # Generate audio file using centralized storage config
+            from notebooks.utils.config import storage_config
+            
+            # Generate audio filename
             audio_filename = f"{job_id}.mp3"
-            audio_path = podcast_generation_service.audio_dir / audio_filename
-
-            # Generate podcast audio (now synchronous)
+            
+            # Use the centralized function to create the path
+            final_audio_path, relative_path = storage_config.create_podcast_file_path(job, audio_filename)
+            
+            # Generate audio directly to the final location
             podcast_generation_service.generate_podcast_audio(
-                conversation_text, str(audio_path)
+                conversation_text, str(final_audio_path)
             )
+            
+            # Save the relative path to database
+            job.audio_file.name = relative_path
+            job.save()
 
             # Prepare result
             result = {
                 "job_id": job_id,
                 "title": job.title,
                 "description": job.description,
-                "audio_path": str(audio_path),
+                "audio_path": str(job.audio_file.url),
                 "source_metadata": source_metadata,
                 "conversation_text": conversation_text,
                 "duration_seconds": None,  # Could add audio duration analysis

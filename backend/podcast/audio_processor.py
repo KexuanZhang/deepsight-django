@@ -15,6 +15,7 @@ import re
 from typing import List
 from pathlib import Path
 from django.conf import settings
+import ffmpeg
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class AudioProcessor:
 
             payload = json.dumps(
                 {
-                    "model": "speech-02-hd",
+                    "model": "speech-02-turbo",
                     "text": text,
                     "stream": False,
                     "voice_setting": {
@@ -107,44 +108,25 @@ class AudioProcessor:
             raise
 
     def merge_audio_files(self, input_paths: List[str], output_path: str) -> str:
-        """Merge multiple audio files using ffmpeg"""
+        """Merge multiple audio files using ffmpeg-python"""
         try:
-            # Create temporary file list for ffmpeg
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".txt", delete=False
-            ) as f:
-                for path in input_paths:
-                    f.write(f"file '{path}'\n")
-                filelist_path = f.name
+            if not input_paths:
+                raise ValueError("No input audio files to merge.")
+            if len(input_paths) == 1:
+                # Only one file, just copy it to output
+                ffmpeg.input(input_paths[0]).output(output_path).run(overwrite_output=True)
+                return output_path
 
-            # Merge files
-            temp_merged = output_path.replace(".mp3", "_temp.mp3")
-            cmd = [
-                "ffmpeg",
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                filelist_path,
-                "-c",
-                "copy",
-                temp_merged,
-            ]
-            subprocess.run(cmd, check=True, capture_output=True)
-
-            # Apply speed adjustment
-            cmd = ["ffmpeg", "-i", temp_merged, "-filter:a", "atempo=1.2", output_path]
-            subprocess.run(cmd, check=True, capture_output=True)
-
-            # Clean up temporary files
-            os.unlink(filelist_path)
-            os.unlink(temp_merged)
-
+            # Concatenate all input files
+            inputs = [ffmpeg.input(p) for p in input_paths]
+            concat = ffmpeg.concat(*inputs, v=0, a=1).node
+            audio = concat[0].filter('atempo', 1.2)
+            out = ffmpeg.output(audio, output_path)
+            out = out.global_args('-y')  # Overwrite output
+            out.run(overwrite_output=True)
             return output_path
-
         except Exception as e:
-            logger.error(f"Error merging audio files: {e}")
+            logger.error(f"Error merging audio files with ffmpeg-python: {e}")
             raise
 
     def parse_conversation_segments(self, conversation_text: str):
