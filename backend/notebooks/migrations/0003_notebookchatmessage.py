@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('notebooks', '0001_initial'),
+        ('notebooks', '0002_batchjob_batchjobitem'),
     ]
 
     operations = [
