@@ -1,6 +1,7 @@
 # notebooks/urls.py
 
-from django.urls import path
+from django.urls import path, include
+from django.views.decorators.csrf import csrf_exempt
 from .views import (
     NotebookListCreateAPIView,
     NotebookRetrieveUpdateDestroyAPIView,
@@ -16,13 +17,15 @@ from .views import (
     FileRawView,
     FileRawSimpleView,
     FileImageView,
+    MarkdownBatchContentView,
     RAGChatFromKBView,
     VideoImageExtractionView,
     BatchJobStatusView,
-    ChatHistoryView,
-    ClearChatHistoryView,
-    SuggestedQuestionsView
 )
+
+# Import views from podcast and reports apps
+from podcast import views as podcast_views
+from reports import views as report_views
 
 urlpatterns = [
     # Notebooks
@@ -36,13 +39,9 @@ urlpatterns = [
     # 1) list all processed files
     path("<int:notebook_id>/files/", FileListView.as_view(), name="file-list"),
     path(
-        '<int:notebook_id>/files/',
-        FileListView.as_view(),
-        name='file-list'
-    ),
-
-    path(
-        '<int:notebook_id>/chat-history/', ChatHistoryView.as_view(), name="chat-history"
+        "<int:notebook_id>/files/md-batch-contents/",
+        MarkdownBatchContentView.as_view(),
+        name="file-md-batch-contents",
     ),
     path("chat/", RAGChatFromKBView.as_view(), name="chat-rag"),
     # 2) upload & parse a new file
@@ -93,25 +92,10 @@ urlpatterns = [
         name="knowledge-base",
     ),
 
-    # 6) file content serving (parsed content)
+    # 8) file content serving (parsed content)
     path(
-        'files/<str:file_id>/content/',
-        FileContentView.as_view(),
-        name='file-content'
+        "files/<str:file_id>/content/", FileContentView.as_view(), name="file-content"
     ),
-
-    path('<int:notebook_id>/suggested-questions/', 
-         SuggestedQuestionsView.as_view(),
-        name='question-suggestion'         
-    ),
-
-
-    path(
-        "<int:notebook_id>/chat/clear/", 
-         ClearChatHistoryView.as_view(), 
-         name="clear-chat-history"
-    ),
-
 
     # 9) raw file serving (PDFs, videos, audio, etc.)
     path(
@@ -145,4 +129,42 @@ urlpatterns = [
         BatchJobStatusView.as_view(),
         name="batch-job-status",
     ),
+
+    # ===============================
+    # PODCAST ENDPOINTS
+    # ===============================
+    path("<int:notebook_id>/podcast-jobs/", podcast_views.NotebookPodcastJobListCreateView.as_view(), name="notebook-podcast-jobs"),
+    path("<int:notebook_id>/podcast-jobs/<str:job_id>/", podcast_views.NotebookPodcastJobDetailView.as_view(), name="notebook-podcast-job-detail"),
+    path("<int:notebook_id>/podcast-jobs/<str:job_id>/cancel/", podcast_views.NotebookPodcastJobCancelView.as_view(), name="notebook-podcast-job-cancel"),
+    path("<int:notebook_id>/podcast-jobs/<str:job_id>/audio/", podcast_views.NotebookPodcastJobAudioView.as_view(), name="notebook-podcast-job-audio"),
+    
+    # Stream endpoint for podcast job status updates
+    path(
+        "<int:notebook_id>/podcast-jobs/<str:job_id>/stream/",
+        csrf_exempt(podcast_views.notebook_job_status_stream),
+        name="notebook-podcast-job-status-stream",
+    ),
+
+    # ===============================
+    # REPORTS ENDPOINTS
+    # ===============================
+    path("<int:notebook_id>/report-jobs/", report_views.NotebookReportListCreateView.as_view(), name="notebook-reports"),
+    path("<int:notebook_id>/report-jobs/<str:job_id>/", report_views.NotebookReportDetailView.as_view(), name="notebook-report-detail"),
+    path("<int:notebook_id>/report-jobs/<str:job_id>/cancel/", report_views.NotebookReportCancelView.as_view(), name="notebook-report-cancel"),
+    path("<int:notebook_id>/report-jobs/<str:job_id>/download/", report_views.NotebookReportDownloadView.as_view(), name="notebook-report-download"),
+    path("<int:notebook_id>/report-jobs/<str:job_id>/files/", report_views.NotebookReportFilesView.as_view(), name="notebook-report-files"),
+    path("<int:notebook_id>/report-jobs/<str:job_id>/content/", report_views.NotebookReportContentView.as_view(), name="notebook-report-content"),
+    
+    # Stream endpoint for report job status updates
+    path(
+        "<int:notebook_id>/report-jobs/<str:job_id>/stream/",
+        csrf_exempt(report_views.notebook_report_status_stream),
+        name="notebook-report-status-stream",
+    ),
+
+    # ===============================
+    # CONFIGURATION ENDPOINTS
+    # ===============================
+    # Report models/configuration (not notebook-specific)
+    path("reports/models/", report_views.ReportModelsView.as_view(), name="report-models"),
 ]

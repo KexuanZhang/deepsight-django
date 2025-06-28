@@ -123,11 +123,11 @@ class JobService:
             job = PodcastJob.objects.get(job_id=job_id)
             
             if job.status in ["pending", "generating"]:
-                job.status = "cancelled"
-                job.error_message = "Job cancelled by user"
-                job.progress = "Job cancelled"
-                job.save()
-                logger.info(f"Cancelled job {job_id}")
+                # Queue the cancellation task (same pattern as reports)
+                from ..tasks import cancel_podcast_generation
+                cancel_podcast_generation.delay(job_id)
+                
+                logger.info(f"Queued cancellation task for job {job_id}")
                 return True
             else:
                 logger.warning(f"Cannot cancel job {job_id}, status: {job.status}")

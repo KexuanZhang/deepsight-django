@@ -142,22 +142,6 @@ def user_podcast_path(instance, filename):
         # Fallback to old structure if no notebook is associated
         return f"Users/u_{user_id}/podcast/{year_month}/p_{podcast_id}/{filename}"
 
-class NotebookChatMessage(models.Model):
-    notebook = models.ForeignKey(
-        "Notebook",
-        on_delete=models.CASCADE,
-        related_name="chat_messages"
-    )
-    sender = models.CharField(
-        max_length=10,
-        choices=[("user", "User"), ("assistant", "Assistant")]
-    )
-    message = models.TextField()
-    timestamp = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["timestamp"]
-
 
 class URLProcessingResult(models.Model):
     """

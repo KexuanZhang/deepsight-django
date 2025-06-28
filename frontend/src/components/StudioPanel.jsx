@@ -30,7 +30,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 import apiService from "@/lib/api";
-import { usePodcastJobStatus } from "@/hooks/usePodcastJobStatus";
+import { useJobStatus } from "@/hooks/useJobStatus";
 import { Badge } from "@/components/ui/badge";
 import { config } from "@/config";
 
@@ -270,7 +270,7 @@ const PodcastGenerationSection = ({
   );
 };
 
-// Report Configuration Component
+// Report Configuration Section Component
 const ReportConfigSection = ({ 
   reportConfig, 
   setReportConfig, 
@@ -280,7 +280,12 @@ const ReportConfigSection = ({
   isGenerating, 
   selectedFiles, // Now passed as prop instead of using ref
   isCollapsed,
-  onToggleCollapse 
+  onToggleCollapse,
+  // Add these props for status display
+  reportGenerationState,
+  onCancel,
+  isConnected,
+  connectionError
 }) => {
   // Check for valid input
   const hasTopic = reportConfig.topic.trim();
@@ -318,6 +323,18 @@ const ReportConfigSection = ({
 
       {!isCollapsed && (
         <div className="p-4 space-y-4">
+          {/* Report Generation Status */}
+          {(reportGenerationState.isGenerating || reportGenerationState.progress || reportGenerationState.error) && (
+            <StatusCard
+              title="Generating Research Report"
+              isGenerating={reportGenerationState.isGenerating}
+              progress={reportGenerationState.progress}
+              error={reportGenerationState.error}
+              showCancel={true}
+              onCancel={onCancel}
+            />
+          )}
+
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">
               Research Topic <span className="text-red-500">*</span>
@@ -706,6 +723,19 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     loadExistingPodcasts();
   }, []);
 
+  // Clear stale report generation state on mount if no valid jobs are found
+  useEffect(() => {
+    // After loadExistingReports runs, clear state if we have stale data
+    const timeoutId = setTimeout(() => {
+      if ((reportGenerationState.currentJobId || reportGenerationState.error) && !reportGenerationState.isGenerating) {
+        console.log('Clearing stale report generation state on mount');
+        handleClearReportStatus();
+      }
+    }, 1500); // Give loadExistingReports time to restore valid state first
+
+    return () => clearTimeout(timeoutId);
+  }, []); // Empty dependency array for mount-only effect
+
   // Cleanup blob URLs when component unmounts
   useEffect(() => {
     return () => {
@@ -757,65 +787,99 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     error: jobError, 
     isConnected,
     connectionError,
-    cancelJob: reportCancelJob
-  } = usePodcastJobStatus(
+    cancel: reportCancelJob,
+    disconnect: reportDisconnect,
+  } = useJobStatus(
     reportGenerationState.currentJobId,
     // onComplete callback
     async (result) => {
-      setReportGenerationState(prev => ({
-        ...prev,
-        isGenerating: false,
-        progress: 'Report generated successfully!',
-      }));
-      
-      // Use jobResult from the hook state for more reliable data
-      const finalResult = result || jobResult;
-      if (finalResult && finalResult.generated_files) {
-        await loadGeneratedReport(finalResult);
-      }
-      
-      toast({
-        title: "Report Generated",
-        description: "Your research report has been generated successfully!",
-      });
+        if (result && result.generated_files) {
+            await loadGeneratedReport(result);
+        }
+        toast({
+            title: "Report Generated",
+            description: "Your research report has been generated successfully!",
+        });
+        setTimeout(() => handleClearReportStatus(), 3000);
     },
     // onError callback
     (error) => {
-      // Check if this is just a warning about input fields (which shouldn't cause failure)
-      const isInputFieldWarning = error && typeof error === 'string' && 
-        (error.includes('Not all input fields were provided') || 
-         error.includes('input field warnings') ||
-         error.includes('Missing:'));
-      
-      if (isInputFieldWarning) {
-        // Don't treat input field warnings as failures
-        console.warn('Input field warning (not treating as failure):', error);
-        setReportGenerationState(prev => ({
-          ...prev,
-          progress: prev.progress + ' (with input field warnings - this is normal)',
-        }));
-        
-        toast({
-          title: "Generation Note",
-          description: "Report generation is proceeding with some input field warnings. This is normal for topic-only generation.",
-          variant: "default", // Use default variant instead of destructive
+        const isCancellation = typeof error === 'string' && (error.includes('cancelled') || error.includes('Cancelled'));
+        if (!isCancellation) {
+            toast({
+                title: "Generation Failed",
+                description: error || "Report generation failed. Please try again.",
+                variant: "destructive",
+            });
+        }
+        setTimeout(() => handleClearReportStatus(), isCancellation ? 0 : 5000);
+    },
+    // Pass notebookId and specify this is for report jobs
+    notebookId,
+    'report'
+  );
+
+
+
+  const handleClearReportStatus = useCallback(() => {
+    setReportGenerationState({
+        isGenerating: false,
+        currentJobId: null,
+        progress: '',
+        error: null,
+    });
+  }, []);
+
+  // Effect to handle report job results and errors
+  useEffect(() => {
+    const currentJobId = reportGenerationState.currentJobId;
+    
+    if (currentJobId) {
+      if (jobStatus) {
+        setReportGenerationState(prev => {
+          if (prev.currentJobId !== currentJobId) return prev;
+          
+          const isGenerating = jobStatus === 'running' || jobStatus === 'pending';
+          const isCancelled = jobStatus === 'cancelled';
+          const isCompleted = jobStatus === 'completed';
+          
+          return {
+            ...prev,
+            isGenerating: isGenerating && !isCompleted && !isCancelled,
+            progress: isCancelled ? '' : prev.progress,
+            error: isCancelled ? 'Cancelled' : (jobError || prev.error),
+          };
         });
-        return; // Don't set error state or stop generation
       }
       
-      setReportGenerationState(prev => ({
-        ...prev,
-        isGenerating: false,
-        error: error || 'Report generation failed',
-      }));
+      if (jobProgress) {
+        setReportGenerationState(prev => 
+          prev.currentJobId === currentJobId ? { ...prev, progress: jobProgress } : prev
+        );
+      }
       
-      toast({
-        title: "Generation Failed",
-        description: error || "Report generation failed. Please try again.",
-        variant: "destructive",
-      });
+      if (jobError && jobError !== 'Cancelled') {
+        setReportGenerationState(prev => 
+          prev.currentJobId === currentJobId ? { ...prev, error: jobError } : prev
+        );
+      }
     }
-  );
+  }, [jobStatus, jobProgress, jobError, reportGenerationState.currentJobId]);
+
+  // Effect to handle connection errors and clear stale state
+  useEffect(() => {
+    if (connectionError && reportGenerationState.currentJobId) {
+      // If we have persistent connection errors, the job might be stale
+      const timeoutId = setTimeout(() => {
+        if (connectionError && !isConnected) {
+          console.log('Clearing report state due to persistent connection error:', connectionError);
+          handleClearReportStatus();
+        }
+      }, 5000); // Wait 5 seconds before clearing due to connection error
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [connectionError, isConnected, reportGenerationState.currentJobId, handleClearReportStatus]);
 
   // Real-time job status monitoring using SSE for podcasts
   const { 
@@ -825,8 +889,8 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     error: podcastJobError, 
     isConnected: podcastIsConnected,
     connectionError: podcastConnectionError,
-    cancelJob: podcastCancelJob
-  } = usePodcastJobStatus(
+    cancel: podcastCancelJob
+  } = useJobStatus(
     podcastGenerationState.jobId,
     // onComplete callback
     async (result) => {
@@ -863,67 +927,12 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         variant: "destructive",
       });
     },
-    // Pass notebookId for new endpoint structure
-    notebookId
+    // Pass notebookId and specify this is for podcast jobs
+    notebookId,
+    'podcast'
   );
 
-  // Update local state when job status changes
-  useEffect(() => {
-    const currentJobId = reportGenerationState.currentJobId;
-    
-    if (currentJobId) {
-      if (jobStatus) {
-        setReportGenerationState(prev => {
-          // Only update if the current job ID hasn't changed
-          if (prev.currentJobId !== currentJobId) return prev;
-          
-          return {
-            ...prev,
-            isGenerating: jobStatus === 'running' || jobStatus === 'pending',
-          };
-        });
-        
-        // Handle cancelled status
-        if (jobStatus === 'cancelled') {
-          setReportGenerationState(prev => {
-            // Only update if the current job ID hasn't changed
-            if (prev.currentJobId !== currentJobId) return prev;
-            
-            return {
-              ...prev,
-              isGenerating: false,
-              progress: '',
-              error: 'Cancelled',
-            };
-          });
-        }
-      }
-      
-      if (jobProgress) {
-        setReportGenerationState(prev => {
-          // Only update if the current job ID hasn't changed
-          if (prev.currentJobId !== currentJobId) return prev;
-          
-          return {
-            ...prev,
-            progress: jobProgress,
-          };
-        });
-      }
-      
-      if (jobError) {
-        setReportGenerationState(prev => {
-          // Only update if the current job ID hasn't changed
-          if (prev.currentJobId !== currentJobId) return prev;
-          
-          return {
-            ...prev,
-            error: jobError,
-          };
-        });
-      }
-    }
-  }, [jobStatus, jobProgress, jobError]); // Removed reportGenerationState.currentJobId from deps
+
 
   // Update local state when podcast job status changes
   useEffect(() => {
@@ -1009,87 +1018,83 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   const loadExistingReports = async () => {
     try {
       console.log('Loading existing reports...');
-      const response = await apiService.listJobs(50); // Load up to 50 recent jobs
+      const response = await apiService.listReportJobs(notebookId, 50);
       
       if (response && response.jobs) {
         const completedJobs = response.jobs.filter(job => job.status === 'completed');
-        const runningJobs = response.jobs.filter(job => job.status === 'running' || job.status === 'pending');
+        const runningJobs = response.jobs.filter(job => 
+            (job.status === 'running' || job.status === 'pending') &&
+            (new Date().getTime() - new Date(job.updated_at).getTime()) < 15 * 60 * 1000
+        );
         
         console.log('Found completed jobs:', completedJobs);
         console.log('Found running report jobs:', runningJobs);
         
-        // Restore state for any running jobs
+        // Restore state for any running jobs (only if they're recent, not stale)
         if (runningJobs.length > 0) {
-          const runningJob = runningJobs[0]; // Take the most recent running job
-          console.log('Restoring report generation state for job:', runningJob.job_id);
+          const runningJob = runningJobs[0];
+          const jobAge = new Date().getTime() - new Date(runningJob.updated_at).getTime();
+          const isStale = jobAge > 15 * 60 * 1000;
           
-          setReportGenerationState(prev => ({
-            ...prev,
-            isGenerating: true,
-            currentJobId: runningJob.job_id,
-            progress: 'Reconnecting to ongoing report generation...',
-            error: null,
-          }));
+          if (!isStale) {
+            setReportGenerationState(prev => ({
+              ...prev,
+              isGenerating: true,
+              currentJobId: runningJob.job_id,
+              progress: 'Reconnecting to ongoing report generation...',
+              error: null,
+            }));
+          }
         }
         
-        // Convert completed jobs to files format
-        const reportFiles = await Promise.all(
-          completedJobs.map(async (job) => {
-            try {
-              // Try to get the report content and generated files
-              let content = `# ${job.article_title || 'Research Report'}\n\nReport generated successfully!`;
-              let generatedFiles = [];
-              
-              try {
-                const contentResponse = await apiService.getReportContent(job.job_id);
-                if (contentResponse && contentResponse.content) {
-                  content = contentResponse.content;
-                  // Also get generated files from the content response
-                  if (contentResponse.generated_files) {
-                    generatedFiles = contentResponse.generated_files;
-                  }
-                }
-              } catch (contentError) {
-                console.warn(`Could not load content for job ${job.job_id}:`, contentError);
-              }
+        // Convert completed jobs to files format - simplified approach
+        const reportFiles = completedJobs.map((job) => ({
+          id: `report-${job.job_id}`,
+          name: `${job.article_title || 'Research Report'}.md`,
+          jobId: job.job_id,
+          createdAt: job.created_at || new Date().toISOString(),
+          // Content will be loaded on-demand when file is clicked
+          content: null,
+          generatedFiles: job.generated_files || [],
+        }));
 
-              // If we still don't have generated files, try the files endpoint
-              if (generatedFiles.length === 0) {
-                try {
-                  const filesResponse = await apiService.listJobFiles(job.job_id);
-                  if (filesResponse && filesResponse.files) {
-                    generatedFiles = filesResponse.files.map(f => f.filename);
-                  }
-                } catch (filesError) {
-                  console.warn(`Could not load files list for job ${job.job_id}:`, filesError);
-                }
-              }
-
-              return {
-                id: `report-${job.job_id}`,
-                name: `${job.article_title || 'Research Report'}.md`,
-                content: content,
-                jobId: job.job_id,
-                generatedFiles: generatedFiles,
-                createdAt: job.created_at || new Date().toISOString(),
-              };
-            } catch (error) {
-              console.error(`Error processing job ${job.job_id}:`, error);
-              return null;
-            }
-          })
-        );
-
-        // Filter out null results and update files state
-        const validReports = reportFiles.filter(report => report !== null);
-        if (validReports.length > 0) {
-          console.log('Loaded existing reports:', validReports);
-          setFiles(validReports);
+        if (reportFiles.length > 0) {
+          console.log('Loaded existing reports:', reportFiles);
+          setFiles(reportFiles);
         }
       }
     } catch (error) {
       console.error('Error loading existing reports:', error);
+      toast({
+        title: "Error Loading Reports",
+        description: "Failed to load existing reports. Please try refreshing the page.",
+        variant: "destructive",
+      });
     }
+  };
+
+  // Add new function to load report content on-demand
+  const loadReportContent = async (file) => {
+    if (!file.content) {
+      try {
+        const contentResponse = await apiService.getReportContent(file.jobId, notebookId);
+        if (contentResponse && contentResponse.content) {
+          // Update the file with content
+          setFiles(prevFiles => 
+            prevFiles.map(f => 
+              f.id === file.id 
+                ? { ...f, content: contentResponse.content }
+                : f
+            )
+          );
+          return contentResponse.content;
+        }
+      } catch (error) {
+        console.error(`Error loading content for report ${file.jobId}:`, error);
+        return `# ${file.name}\n\nError: Report content could not be loaded. Please try downloading the report file directly.`;
+      }
+    }
+    return file.content;
   };
 
   const loadGeneratedReport = async (result) => {
@@ -1100,7 +1105,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       if (reportGenerationState.currentJobId) {
         try {
           console.log('Attempting to fetch report content for job:', reportGenerationState.currentJobId);
-          const contentResponse = await apiService.getReportContent(reportGenerationState.currentJobId);
+          const contentResponse = await apiService.getReportContent(reportGenerationState.currentJobId, notebookId);
           console.log('Content response:', contentResponse);
           
           if (contentResponse && contentResponse.content) {
@@ -1118,11 +1123,11 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
             // First try the direct filename
             let blob;
             try {
-              blob = await apiService.downloadFile(reportGenerationState.currentJobId, 'storm_gen_article_polished.md');
+              blob = await apiService.downloadReportFile(reportGenerationState.currentJobId, notebookId, 'storm_gen_article_polished.md');
             } catch (directError) {
               console.log('Direct filename failed, trying with subdirectory path');
               // Try with the Research_Report subdirectory path
-              blob = await apiService.downloadFile(reportGenerationState.currentJobId, 'Research_Report/storm_gen_article_polished.md');
+              blob = await apiService.downloadReportFile(reportGenerationState.currentJobId, notebookId, 'Research_Report/storm_gen_article_polished.md');
             }
             reportContent = await blob.text();
             console.log('Successfully downloaded polished file');
@@ -1165,25 +1170,38 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       
       if (response && response.jobs) {
         const completedJobs = response.jobs.filter(job => job.status === 'completed');
-        const runningJobs = response.jobs.filter(job => job.status === 'generating' || job.status === 'pending');
+        const runningJobs = response.jobs.filter(job => 
+            (job.status === 'generating' || job.status === 'pending') &&
+            // Check if job was updated in the last 15 minutes to avoid stale jobs
+            (new Date().getTime() - new Date(job.updated_at).getTime()) < 15 * 60 * 1000
+        );
         
         console.log('Found completed podcast jobs:', completedJobs);
         console.log('Found running podcast jobs:', runningJobs);
         
-        // Restore state for any running jobs
+        // Restore state for any running jobs (only if they're recent, not stale)
         if (runningJobs.length > 0) {
           const runningJob = runningJobs[0]; // Take the most recent running job
-          console.log('Restoring podcast generation state for job:', runningJob.job_id);
           
-          setPodcastGenerationState(prev => ({
-            ...prev,
-            isGenerating: true,
-            jobId: runningJob.job_id,
-            progress: 'Reconnecting to ongoing panel discussion generation...',
-            error: null,
-            title: runningJob.title || prev.title || '',
-            description: runningJob.description || prev.description || '',
-          }));
+          // Double-check that this job is really recent (within last 15 minutes)
+          const jobAge = new Date().getTime() - new Date(runningJob.updated_at).getTime();
+          const isStale = jobAge > 15 * 60 * 1000; // 15 minutes
+          
+          if (!isStale) {
+            console.log('Restoring podcast generation state for job:', runningJob.job_id);
+            
+            setPodcastGenerationState(prev => ({
+              ...prev,
+              isGenerating: true,
+              jobId: runningJob.job_id,
+              progress: 'Reconnecting to ongoing panel discussion generation...',
+              error: null,
+              title: runningJob.title || prev.title || '',
+              description: runningJob.description || prev.description || '',
+            }));
+          } else {
+            console.log('Skipping stale podcast job:', runningJob.job_id, 'age:', Math.round(jobAge / 1000 / 60), 'minutes');
+          }
         }
         
         // Convert completed jobs to podcast format
@@ -1281,33 +1299,45 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 
       let response;
 
-      // Check if we have files and if they are parsed
-      const parsedFiles = hasFiles ? selectedFiles.filter(f => f.file_id) : [];
-      const hasParsedFiles = parsedFiles.length > 0;
-
-      if (hasParsedFiles) {
-        // Use file-based generation (with or without topic)
-        const fileIds = parsedFiles.map(f => f.file_id);
+      if (hasFiles) {
+        // Use file-based generation (same approach as podcast generation)
+        const sourceFileIds = selectedFiles.map(file => file.file_id);
         
         const requestData = {
-          topic: hasTopic ? reportConfig.topic : null,
-          article_title: reportConfig.article_title,
+          // Strictly keep topic empty if not provided by user
+          topic: hasTopic ? reportConfig.topic.trim() : "",
+          // When no topic is provided, use empty article_title to avoid confusion with topic
+          article_title: hasTopic ? 
+            (reportConfig.article_title && reportConfig.article_title !== 'Research Report' ? reportConfig.article_title : reportConfig.topic.trim()) : 
+            "",
           model_provider: reportConfig.model_provider,
           retriever: reportConfig.retriever,
-          selected_file_ids: fileIds
+          selected_files_paths: sourceFileIds,
+          // Include all config properties for file-based generation
+          temperature: reportConfig.temperature,
+          top_p: reportConfig.top_p,
+          max_conv_turn: reportConfig.max_conv_turn,
+          max_perspective: reportConfig.max_perspective,
+          search_top_k: reportConfig.search_top_k,
+          do_research: reportConfig.do_research,
+          do_generate_outline: reportConfig.do_generate_outline,
+          do_generate_article: reportConfig.do_generate_article,
+          do_polish_article: reportConfig.do_polish_article,
+          remove_duplicate: reportConfig.remove_duplicate,
+          post_processing: reportConfig.post_processing,
         };
 
-        console.log('Generating report with selected file IDs:', fileIds, 'and topic:', hasTopic ? reportConfig.topic : 'none');
-        response = await apiService.generateReportWithSourceIds(requestData);
+        console.log('Generating report with selected file IDs:', sourceFileIds, 'and topic:', hasTopic ? reportConfig.topic.trim() : '(empty)');
+        response = await apiService.generateReportWithSourceIds(requestData, notebookId);
       } else if (hasTopic) {
         // Use topic-based generation only
         console.log('Generating report with topic only:', reportConfig.topic);
-        response = await apiService.generateReport(reportConfig);
+        response = await apiService.generateReport(reportConfig, notebookId);
       } else {
         // This should not happen due to validation above, but handle gracefully
         toast({
           title: "No Valid Input",
-          description: hasFiles ? "Selected files are not parsed yet. Please wait for parsing to complete or enter a topic." : "Please enter a topic to generate a report.",
+          description: "Please enter a topic to generate a report.",
           variant: "destructive",
         });
         setReportGenerationState({
@@ -1392,10 +1422,13 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           title: "Cancellation Requested",
           description: "Cancellation request sent. The job will stop shortly.",
         });
+
+        // Immediately clear the status so the UI doesn't hang
+        handleClearReportStatus();
       } else {
         // Fallback to HTTP API if SSE cancellation is not available
         console.warn('SSE cancellation failed, falling back to HTTP API');
-        await apiService.cancelJob(reportGenerationState.currentJobId);
+        await apiService.cancelReportJob(reportGenerationState.currentJobId, notebookId);
         
         setReportGenerationState(prev => ({
           ...prev,
@@ -1408,6 +1441,9 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           title: "Generation Cancelled",
           description: "Report generation has been cancelled.",
         });
+        
+        // Immediately clear the status so the UI doesn't hang
+        handleClearReportStatus();
       }
     } catch (error) {
       console.error('Failed to cancel job:', error);
@@ -1547,7 +1583,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 
     try {
       // Always download without specifying filename - let backend choose the polished report
-      const blob = await apiService.downloadFile(file.jobId, null);
+      const blob = await apiService.downloadReportFile(file.jobId, notebookId, null);
       
       // Use the report name as the filename, ensuring it has .md extension
       let filename = file.name || 'report.md';
@@ -1734,11 +1770,17 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     setIsExpanded(false);
   }, []);
 
-  const handleFileClick = useCallback((file) => {
+  const handleFileClick = useCallback(async (file) => {
     setSelectedFile(file);
     setViewMode("preview");
     setIsEditing(false);
     setIsExpanded(false);
+    
+    // Load content if not already loaded
+    if (!file.content) {
+      const content = await loadReportContent(file);
+      setSelectedFile(prev => prev ? { ...prev, content } : prev);
+    }
   }, []);
 
   return (
@@ -1776,20 +1818,6 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto">
-        {/* Report Generation Status */}
-        {(reportGenerationState.isGenerating || reportGenerationState.error || reportGenerationState.progress) && (
-          <div className="p-6 border-b border-gray-200">
-            <StatusCard
-              title="Generating Research Report"
-              isGenerating={reportGenerationState.isGenerating}
-              progress={reportGenerationState.progress}
-              error={reportGenerationState.error}
-              onCancel={handleCancelGeneration}
-              showCancel={true}
-            />
-          </div>
-        )}
-
         {/* Main Generation Sections - Only show when no file is selected */}
         {!selectedFile && (
           <div className="p-6 space-y-6">
@@ -1819,6 +1847,10 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
               selectedFiles={selectedFiles}
               isCollapsed={collapsedSections.report}
               onToggleCollapse={() => toggleSection('report')}
+              reportGenerationState={reportGenerationState}
+              onCancel={handleCancelGeneration}
+              isConnected={isConnected}
+              connectionError={connectionError}
             />
           </div>
         )}

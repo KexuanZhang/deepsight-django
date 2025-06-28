@@ -65,7 +65,7 @@ class ApiService {
   async getParsedFile(fileId) {
     // Get file content from knowledge base item
     // Use the correct notebooks endpoint structure
-    return this.request(`${API_BASE_URL}/notebooks/files/${fileId}/content/`);
+    return this.request(`/notebooks/files/${fileId}/content/`);
   }
 
   async getFileRaw(fileId, notebookId) {
@@ -109,7 +109,7 @@ class ApiService {
   //   // …
   // }
   createParsingStatusStream(notebookId, uploadFileId, onMessage, onError, onClose) {
-    const url = `${API_BASE_URL}/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
+    const url = `${this.baseUrl}/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
     const eventSource = new EventSource(url);
 
     eventSource.onmessage = (event) => {
@@ -160,9 +160,9 @@ class ApiService {
     });
   }
 
-  async getUrlParsingStatus(uploadUrlId) {
-    // This is a placeholder - URL parsing might use a different endpoint
-    return { success: false, error: 'URL parsing status not implemented' };
+  async getUrlParsingStatus(uploadUrlId, notebookId) {
+    // Implement proper URL parsing status check
+    return this.request(`/notebooks/${notebookId}/files/${uploadUrlId}/status/`);
   }
 
   // ─── KNOWLEDGE BASE ───────────────────────────────────────────────────────
@@ -248,7 +248,7 @@ class ApiService {
     
     if (uploadFileId) body.upload_url_id = uploadFileId;
 
-    const response = await this.request(`/${notebookId}/files/parse_url/`, {
+    const response = await this.request(`/notebooks/${notebookId}/files/parse_url/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -283,7 +283,7 @@ class ApiService {
     
     if (uploadFileId) body.upload_url_id = uploadFileId;
 
-    const response = await this.request(`/${notebookId}/files/parse_url_media/`, {
+    const response = await this.request(`/notebooks/${notebookId}/files/parse_url_media/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -303,55 +303,149 @@ class ApiService {
   // ─── REPORTS & AI GENERATION ─────────────────────────────────────────────
 
   async getAvailableModels() {
-    // Return default models as fallback
-    return {
-      providers: ['openai', 'google'],
-      retrievers: ['tavily', 'brave', 'serper', 'you', 'bing', 'duckduckgo', 'searxng'],
-      time_ranges: ['day', 'week', 'month', 'year'],
+    try {
+      const response = await this.request('/notebooks/reports/models/');
+      return {
+        providers: response.model_providers || ['openai', 'google'],
+        retrievers: response.retrievers || ['tavily', 'brave', 'serper', 'you', 'bing', 'duckduckgo', 'searxng'],
+        time_ranges: response.time_ranges || ['day', 'week', 'month', 'year'],
+      };
+    } catch (error) {
+      console.warn('Failed to load available models, using defaults:', error);
+      // Return default models as fallback
+      return {
+        providers: ['openai', 'google'],
+        retrievers: ['tavily', 'brave', 'serper', 'you', 'bing', 'duckduckgo', 'searxng'],
+        time_ranges: ['day', 'week', 'month', 'year'],
+      };
+    }
+  }
+
+  async generateReport(config, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for report generation');
+    }
+    
+    const url = `/notebooks/${notebookId}/report-jobs/`;
+    const response = await this.request(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: JSON.stringify(config),
+    });
+    return response;
+  }
+
+  async generateReportWithSourceIds(requestData, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for report generation');
+    }
+    
+    const url = `/notebooks/${notebookId}/report-jobs/`;
+    const response = await this.request(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: JSON.stringify(requestData),
+    });
+    return response;
+  }
+
+  async listReportJobs(notebookId, limit = 50) {
+    const response = await this.request(`/notebooks/${notebookId}/report-jobs/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+    // Transform the response to match expected format (consistent with podcasts)
+    return { 
+      jobs: response.reports || response.jobs || response || []
     };
   }
 
-  async generateReport(config) {
-    // Placeholder for report generation
-    console.warn('generateReport not implemented yet');
-    return { job_id: 'mock_job_' + Date.now() };
+  async getReportContent(jobId, notebookId) {
+    const response = await this.request(`/notebooks/${notebookId}/report-jobs/${jobId}/content/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+    return response;
   }
 
-  async generateReportWithSourceIds(requestData) {
-    // Placeholder for report generation with source IDs
-    console.warn('generateReportWithSourceIds not implemented yet');
-    return { job_id: 'mock_job_' + Date.now() };
+  async getReportStatus(jobId, notebookId) {
+    const response = await this.request(`/notebooks/${notebookId}/report-jobs/${jobId}/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+    return response;
   }
 
-  async listJobs(limit = 50) {
-    // Placeholder for listing jobs
-    console.warn('listJobs not implemented yet');
-    return { jobs: [] };
+  async listReportFiles(jobId, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for listing report files');
+    }
+    
+    const url = `/notebooks/${notebookId}/report-jobs/${jobId}/files/`;
+    const response = await this.request(url);
+    return response;
   }
 
-  async getReportContent(jobId) {
-    // Placeholder for getting report content
-    console.warn('getReportContent not implemented yet');
-    return { content: `# Mock Report\n\nThis is a placeholder report for job ${jobId}.` };
+  async downloadReportFile(jobId, notebookId, filename = null) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for downloading report files');
+    }
+    
+    let url = `/notebooks/${notebookId}/report-jobs/${jobId}/download/`;
+    if (filename) {
+      url += `?filename=${encodeURIComponent(filename)}`;
+    }
+    
+    const response = await fetch(`${this.baseUrl}${url}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.detail || errorMessage;
+      } catch (e) {
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.blob();
   }
 
-  async listJobFiles(jobId) {
-    // Placeholder for listing job files
-    console.warn('listJobFiles not implemented yet');
-    return { files: [] };
-  }
-
-  async downloadFile(jobId, filename = null) {
-    // Placeholder for file download
-    console.warn('downloadFile not implemented yet');
-    const content = `Mock file content for job ${jobId}`;
-    return new Blob([content], { type: 'text/plain' });
-  }
-
-  async cancelJob(jobId) {
-    // Placeholder for canceling jobs
-    console.warn('cancelJob not implemented yet');
-    return { success: true };
+  async cancelReportJob(jobId, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for cancelling report jobs');
+    }
+    
+    const url = `/notebooks/${notebookId}/report-jobs/${jobId}/cancel/`;
+    const response = await this.request(url, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+    return response;
   }
 
   // ─── PODCASTS ────────────────────────────────────────────────────────────
@@ -361,7 +455,7 @@ class ApiService {
       throw new Error('notebookId is required for podcast generation');
     }
     
-    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/`;
+    const url = `/notebooks/${notebookId}/podcast-jobs/`;
     const response = await this.request(url, {
       method: 'POST',
       headers: {
@@ -378,7 +472,7 @@ class ApiService {
       throw new Error('notebookId is required for listing podcast jobs');
     }
     
-    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/`;
+    const url = `/notebooks/${notebookId}/podcast-jobs/`;
     const response = await this.request(url);
     // Transform the response to match expected format
     return { 
@@ -391,7 +485,7 @@ class ApiService {
       throw new Error('notebookId is required for cancelling podcast jobs');
     }
     
-    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/${jobId}/cancel/`;
+    const url = `/notebooks/${notebookId}/podcast-jobs/${jobId}/cancel/`;
     const response = await this.request(url, {
       method: 'POST',
       headers: {
@@ -406,7 +500,7 @@ class ApiService {
       throw new Error('notebookId is required for getting podcast job status');
     }
     
-    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/${jobId}/`;
+    const url = `/notebooks/${notebookId}/podcast-jobs/${jobId}/`;
     const response = await this.request(url);
     return response;
   }
@@ -416,9 +510,9 @@ class ApiService {
       throw new Error('notebookId is required for downloading podcast audio');
     }
     
-    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/${jobId}/audio/`;
+    const url = `/notebooks/${notebookId}/podcast-jobs/${jobId}/audio/`;
     
-    const response = await fetch(url, {
+    const response = await fetch(`${this.baseUrl}${url}`, {
       method: 'GET',
       credentials: 'include', // This includes session cookies for authentication
       headers: {
@@ -446,7 +540,7 @@ class ApiService {
       throw new Error('notebookId is required for deleting podcast');
     }
     
-    const url = `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/${jobId}/`;
+    const url = `/notebooks/${notebookId}/podcast-jobs/${jobId}/`;
     const response = await this.request(url, {
       method: 'DELETE',
       headers: {
@@ -462,7 +556,26 @@ class ApiService {
       throw new Error('notebookId is required for podcast job status stream');
     }
     
-    return `${API_BASE_URL}/notebooks/${notebookId}/podcast-jobs/${jobId}/stream/`;
+    return `${this.baseUrl}/notebooks/${notebookId}/podcast-jobs/${jobId}/stream/`;
+  }
+
+  async getReportJobStatus(jobId, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for getting report job status');
+    }
+    
+    const url = `/notebooks/${notebookId}/report-jobs/${jobId}/`;
+    const response = await this.request(url);
+    return response;
+  }
+
+  // Get the correct SSE endpoint for report job status
+  getReportJobStatusStreamUrl(jobId, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for report job status stream');
+    }
+    
+    return `${this.baseUrl}/notebooks/${notebookId}/report-jobs/${jobId}/stream/`;
   }
 
   // ─── HEALTH CHECK ────────────────────────────────────────────────────────
@@ -470,7 +583,7 @@ class ApiService {
   async healthCheck() {
     try {
       // Simple health check - try to make a basic request
-      const response = await fetch(`${API_BASE_URL}/health/`, { credentials: 'include' });
+      const response = await fetch(`${this.baseUrl}/health/`, { credentials: 'include' });
       return response.ok;
     } catch (error) {
       console.warn('Health check failed:', error);

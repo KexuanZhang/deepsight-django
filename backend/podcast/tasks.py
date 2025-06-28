@@ -209,3 +209,40 @@ def cleanup_old_podcast_jobs():
     except Exception as e:
         logger.error(f"Error during podcast job cleanup: {e}")
         raise
+
+
+@shared_task(bind=True)
+def cancel_podcast_generation(self, job_id: str):
+    """Cancel a podcast generation job"""
+    try:
+        logger.info(f"Cancelling podcast generation for job {job_id}")
+        
+        # Get the job
+        job = PodcastJob.objects.get(job_id=job_id)
+        
+        # Cancel the background task if it's running
+        if job.celery_task_id:
+            try:
+                from backend.celery import app as celery_app
+                celery_app.control.revoke(
+                    job.celery_task_id, terminate=True, signal="SIGTERM"
+                )
+                logger.info(f"Revoked Celery task {job.celery_task_id} for job {job_id}")
+            except Exception as e:
+                logger.warning(f"Failed to revoke Celery task for job {job_id}: {e}")
+        
+        # Update job status in database
+        job.status = "cancelled"
+        job.error_message = "Job cancelled by user"
+        job.progress = "Job cancelled"
+        job.save()
+        
+        logger.info(f"Successfully cancelled podcast generation for job {job_id}")
+        return {"status": "cancelled", "job_id": job_id}
+    
+    except PodcastJob.DoesNotExist:
+        logger.error(f"Job {job_id} not found")
+        return {"status": "failed", "job_id": job_id, "message": "Job not found"}
+    except Exception as e:
+        logger.error(f"Error cancelling podcast generation for job {job_id}: {e}")
+        raise
