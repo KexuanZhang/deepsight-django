@@ -22,6 +22,7 @@ import {
   Loader2,
   Info,
   ChevronLeft,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -170,7 +171,7 @@ const PodcastGenerationSection = ({
       
       {!isCollapsed && (
         <div className="p-4 space-y-4">
-          {(podcastGenerationState.isGenerating || podcastGenerationState.progress) && (
+          {(podcastGenerationState.isGenerating || podcastGenerationState.progress || podcastGenerationState.error) && (
             <StatusCard
               title="Generating Panel Discussion"
               isGenerating={podcastGenerationState.isGenerating}
@@ -708,6 +709,56 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 
   const { toast } = useToast();
 
+  // Persistent job tracking helpers
+  const saveJobToStorage = useCallback((jobId, jobType, jobData) => {
+    try {
+      const storageKey = `activeJob_${notebookId}_${jobType}`;
+      const jobInfo = {
+        jobId,
+        jobType,
+        notebookId,
+        startTime: Date.now(),
+        ...jobData
+      };
+      localStorage.setItem(storageKey, JSON.stringify(jobInfo));
+      console.log(`Saved ${jobType} job to storage:`, jobInfo);
+    } catch (error) {
+      console.error('Error saving job to storage:', error);
+    }
+  }, [notebookId]);
+
+  const getJobFromStorage = useCallback((jobType) => {
+    try {
+      const storageKey = `activeJob_${notebookId}_${jobType}`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const jobInfo = JSON.parse(stored);
+        // Check if job is not too old (2 hours max)
+        const maxAge = 2 * 60 * 60 * 1000;
+        if (Date.now() - jobInfo.startTime < maxAge) {
+          console.log(`Retrieved ${jobType} job from storage:`, jobInfo);
+          return jobInfo;
+        } else {
+          console.log(`Stored ${jobType} job is too old, removing`);
+          localStorage.removeItem(storageKey);
+        }
+      }
+    } catch (error) {
+      console.error('Error retrieving job from storage:', error);
+    }
+    return null;
+  }, [notebookId]);
+
+  const clearJobFromStorage = useCallback((jobType) => {
+    try {
+      const storageKey = `activeJob_${notebookId}_${jobType}`;
+      localStorage.removeItem(storageKey);
+      console.log(`Cleared ${jobType} job from storage`);
+    } catch (error) {
+      console.error('Error clearing job from storage:', error);
+    }
+  }, [notebookId]);
+
   // Memoized helper functions
   const toggleSection = useCallback((section) => {
     setCollapsedSections(prev => ({
@@ -723,18 +774,114 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     loadExistingPodcasts();
   }, []);
 
-  // Clear stale report generation state on mount if no valid jobs are found
+  // Enhanced job restoration on component mount
   useEffect(() => {
-    // After loadExistingReports runs, clear state if we have stale data
-    const timeoutId = setTimeout(() => {
-      if ((reportGenerationState.currentJobId || reportGenerationState.error) && !reportGenerationState.isGenerating) {
-        console.log('Clearing stale report generation state on mount');
-        handleClearReportStatus();
+    const restoreJobsFromStorage = async () => {
+      console.log('Attempting to restore jobs from storage...');
+      
+      // Try to restore report generation state
+      const savedReportJob = getJobFromStorage('report');
+      if (savedReportJob && savedReportJob.jobId) {
+        console.log('Found saved report job, attempting to restore:', savedReportJob);
+        
+        // Verify job status by checking with backend
+        try {
+          const response = await apiService.listReportJobs(notebookId, 50);
+          const activeJob = response?.jobs?.find(job => job.job_id === savedReportJob.jobId);
+          
+          if (activeJob) {
+            if (activeJob.status === 'cancelled') {
+              console.log('Found cancelled report job, restoring cancelled state:', activeJob);
+              setReportGenerationState({
+                isGenerating: false,
+                currentJobId: savedReportJob.jobId,
+                progress: '',
+                error: 'Cancelled',
+              });
+            } else if (activeJob.status === 'running' || activeJob.status === 'pending') {
+              console.log('Verified job is still running, restoring state:', activeJob);
+              setReportGenerationState({
+                isGenerating: true,
+                currentJobId: savedReportJob.jobId,
+                progress: 'Reconnected to ongoing report generation...',
+                error: null,
+              });
+            } else {
+              console.log('Job completed or failed, clearing from storage');
+              clearJobFromStorage('report');
+            }
+          } else {
+            console.log('Job not found, clearing from storage');
+            clearJobFromStorage('report');
+          }
+        } catch (error) {
+          console.error('Error verifying report job status:', error);
+          // Keep the stored job info but mark as potentially stale
+          setReportGenerationState({
+            isGenerating: true,
+            currentJobId: savedReportJob.jobId,
+            progress: 'Reconnecting to report generation...',
+            error: null,
+          });
+        }
       }
-    }, 1500); // Give loadExistingReports time to restore valid state first
+      
+      // Try to restore podcast generation state
+      const savedPodcastJob = getJobFromStorage('podcast');
+      if (savedPodcastJob && savedPodcastJob.jobId) {
+        console.log('Found saved podcast job, attempting to restore:', savedPodcastJob);
+        
+        try {
+          const response = await apiService.listPodcastJobs(notebookId);
+          const activeJob = response?.jobs?.find(job => job.job_id === savedPodcastJob.jobId);
+          
+          if (activeJob) {
+            if (activeJob.status === 'cancelled') {
+              console.log('Found cancelled podcast job, restoring cancelled state:', activeJob);
+              setPodcastGenerationState({
+                isGenerating: false,
+                jobId: savedPodcastJob.jobId,
+                progress: '',
+                error: 'Cancelled',
+                title: savedPodcastJob.title || '',
+                description: savedPodcastJob.description || '',
+              });
+            } else if (activeJob.status === 'generating' || activeJob.status === 'pending') {
+              console.log('Verified podcast job is still running, restoring state:', activeJob);
+              setPodcastGenerationState({
+                isGenerating: true,
+                jobId: savedPodcastJob.jobId,
+                progress: 'Reconnected to ongoing panel discussion generation...',
+                error: null,
+                title: savedPodcastJob.title || '',
+                description: savedPodcastJob.description || '',
+              });
+            } else {
+              console.log('Podcast job completed or failed, clearing from storage');
+              clearJobFromStorage('podcast');
+            }
+          } else {
+            console.log('Podcast job not found, clearing from storage');
+            clearJobFromStorage('podcast');
+          }
+        } catch (error) {
+          console.error('Error verifying podcast job status:', error);
+          setPodcastGenerationState({
+            isGenerating: true,
+            jobId: savedPodcastJob.jobId,
+            progress: 'Reconnecting to panel discussion generation...',
+            error: null,
+            title: savedPodcastJob.title || '',
+            description: savedPodcastJob.description || '',
+          });
+        }
+      }
+    };
 
+    // Run restoration after a short delay to allow other effects to complete
+    const timeoutId = setTimeout(restoreJobsFromStorage, 500);
     return () => clearTimeout(timeoutId);
-  }, []); // Empty dependency array for mount-only effect
+  }, [getJobFromStorage, clearJobFromStorage, notebookId]);
 
   // Cleanup blob URLs when component unmounts
   useEffect(() => {
@@ -828,7 +975,9 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         progress: '',
         error: null,
     });
-  }, []);
+    // Clear the job from persistent storage
+    clearJobFromStorage('report');
+  }, [clearJobFromStorage]);
 
   // Effect to handle report job results and errors
   useEffect(() => {
@@ -894,38 +1043,74 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     podcastGenerationState.jobId,
     // onComplete callback
     async (result) => {
-      setPodcastGenerationState(prev => ({
-        ...prev,
-        isGenerating: false,
-        progress: 'Panel discussion generated successfully!',
-      }));
+      console.log('Podcast generation completed, result:', result);
       
-      // Add the generated podcast to the podcast files list
-      if (result && (result.audioUrl || result.generated_files)) {
-        await loadGeneratedPodcast(result);
+      try {
+        setPodcastGenerationState(prev => ({
+          ...prev,
+          isGenerating: false,
+          progress: 'Panel discussion generated successfully!',
+        }));
+        
+        // Handle different result formats - check for audio_path, audioUrl, or generated_files
+        const hasAudio = result && (result.audio_path || result.audioUrl || result.generated_files);
+        console.log('Has audio result:', hasAudio, 'audio_path:', result?.audio_path, 'audioUrl:', result?.audioUrl);
+        
+        if (hasAudio) {
+          console.log('Loading generated podcast...');
+          await loadGeneratedPodcast(result);
+        } else {
+          console.warn('No audio found in result, reloading podcast list...');
+        }
+        
+        // Always reload the full list to ensure consistency
+        console.log('Reloading existing podcasts...');
+        await loadExistingPodcasts();
+        
+        toast({
+          title: "Panel Discussion Generated",
+          description: "Your panel discussion has been generated successfully!",
+        });
+        
+      } catch (error) {
+        console.error('Error in podcast completion callback:', error);
+        // Still show success toast since the podcast was generated
+        toast({
+          title: "Panel Discussion Generated",
+          description: "Your panel discussion has been generated successfully!",
+        });
+        
+        // Clear the job from persistent storage since it's completed
+        clearJobFromStorage('podcast');
+        
+        // Force reload to ensure UI is updated
+        await loadExistingPodcasts();
       }
-      
-      // Also reload the full list to ensure consistency
-      await loadExistingPodcasts();
-      
-      toast({
-        title: "Panel Discussion Generated",
-        description: "Your panel discussion has been generated successfully!",
-      });
     },
     // onError callback
     (error) => {
+      console.error('Podcast generation error:', error);
+      
+      // Check if this is a cancellation (don't show error toast for cancellations)
+      const isCancellation = typeof error === 'string' && (error.includes('cancelled') || error.includes('Cancelled'));
+      
       setPodcastGenerationState(prev => ({
         ...prev,
         isGenerating: false,
-        error: error || 'Panel discussion generation failed',
+        error: isCancellation ? 'Cancelled' : (error || 'Panel discussion generation failed'),
       }));
       
-      toast({
-        title: "Generation Failed",
-        description: error || "Panel discussion generation failed. Please try again.",
-        variant: "destructive",
-      });
+      // Only show error toast if it's not a cancellation
+      if (!isCancellation) {
+        toast({
+          title: "Generation Failed",
+          description: error || "Panel discussion generation failed. Please try again.",
+          variant: "destructive",
+        });
+      }
+      
+      // Clear the job from persistent storage since it failed or was cancelled
+      clearJobFromStorage('podcast');
     },
     // Pass notebookId and specify this is for podcast jobs
     notebookId,
@@ -1206,11 +1391,15 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         
         // Convert completed jobs to podcast format
         const podcastList = completedJobs.map((job) => {
-          // Extract filename from audio_url or use job_id
+          // Extract filename from audio_path, audio_url, or use job_id
           let filename = `${job.job_id}.mp3`;
-          if (job.audio_url) {
-            const urlParts = job.audio_url.split('/');
+          
+          // Check for audio_path first (matches the log format), then audio_url as fallback
+          const audioSource = job.audio_path || job.audio_url;
+          if (audioSource) {
+            const urlParts = audioSource.split('/');
             filename = urlParts[urlParts.length - 1];
+            console.log('Extracted filename for existing podcast:', filename, 'from:', audioSource);
           }
 
           return {
@@ -1225,9 +1414,12 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           };
         });
 
+        console.log('Setting podcast files:', podcastList);
+        setPodcastFiles(podcastList);
+        
+        // Force a re-render by updating a dummy state if needed
         if (podcastList.length > 0) {
           console.log('Loaded existing podcasts:', podcastList);
-          setPodcastFiles(podcastList);
         }
       }
     } catch (error) {
@@ -1239,11 +1431,15 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     try {
       console.log('Loading newly generated podcast:', result);
       
-      // Extract filename from audio_url or use job_id
+      // Extract filename from audio_path, audio_url, or use job_id
       let filename = `${podcastGenerationState.jobId}.mp3`;
-      if (result.audio_url) {
-        const urlParts = result.audio_url.split('/');
+      
+      // Check for audio_path first (from your log), then audio_url as fallback
+      const audioSource = result.audio_path || result.audioUrl || result.audio_url;
+      if (audioSource) {
+        const urlParts = audioSource.split('/');
         filename = urlParts[urlParts.length - 1];
+        console.log('Extracted filename from audio source:', filename, 'from:', audioSource);
       }
 
       const newPodcast = {
@@ -1259,18 +1455,30 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       
       console.log('Adding new podcast to files list:', newPodcast);
       
-      // Check if podcast already exists (avoid duplicates)
+      // Force state update to ensure UI refresh
       setPodcastFiles(prev => {
         const exists = prev.find(p => p.jobId === podcastGenerationState.jobId);
         if (exists) {
           console.log('Podcast already exists, updating:', exists);
-          return prev.map(p => p.jobId === podcastGenerationState.jobId ? newPodcast : p);
+          // Update existing podcast
+          const updated = prev.map(p => p.jobId === podcastGenerationState.jobId ? newPodcast : p);
+          console.log('Updated podcast list:', updated);
+          return updated;
         }
-        return [newPodcast, ...prev];
+        console.log('Adding new podcast to list');
+        const newList = [newPodcast, ...prev];
+        console.log('New podcast list:', newList);
+        return newList;
       });
+      
+      // Force a small delay to ensure state has updated
+      setTimeout(() => {
+        console.log('Current podcast files after update:', podcastFiles);
+      }, 100);
       
     } catch (error) {
       console.error('Error loading generated podcast:', error);
+      throw error; // Re-throw so the calling function can handle it
     }
   };
 
@@ -1354,6 +1562,14 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         currentJobId: response.job_id,
         progress: 'Report generation started...',
       }));
+
+      // Save job to persistent storage for tracking across navigation
+      saveJobToStorage(response.job_id, 'report', {
+        topic: reportConfig.topic,
+        article_title: reportConfig.article_title,
+        hasFiles,
+        hasTopic,
+      });
 
       console.log('Report generation job created:', response.job_id);
 
@@ -1490,6 +1706,13 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         progress: 'Panel discussion generation started...',
       }));
 
+      // Save job to persistent storage for tracking across navigation
+      saveJobToStorage(response.job_id, 'podcast', {
+        title: podcastGenerationState.title || 'Generated Podcast',
+        description: podcastGenerationState.description || '',
+        sourceFileIds,
+      });
+
       toast({
         title: "Panel Discussion Generation Started",
         description: "Your panel discussion is being generated. This may take several minutes.",
@@ -1528,6 +1751,18 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           title: "Cancellation Requested",
           description: "Cancellation request sent. The job will stop shortly.",
         });
+        
+        // Clear the job from persistent storage
+        clearJobFromStorage('podcast');
+        
+        // Auto-clear the cancelled status after a short delay
+        setTimeout(() => {
+          setPodcastGenerationState(prev => ({
+            ...prev,
+            error: null,
+            progress: '',
+          }));
+        }, 3000);
       } else {
         // Fallback to HTTP API if SSE cancellation is not available
         console.warn('SSE cancellation failed, falling back to HTTP API');
@@ -1544,6 +1779,9 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           title: "Generation Cancelled",
           description: "Panel discussion generation has been cancelled.",
         });
+        
+        // Clear the job from persistent storage
+        clearJobFromStorage('podcast');
         
         // Refresh podcast list in case there are any state inconsistencies
         setTimeout(() => loadExistingPodcasts(), 1000);
@@ -1795,6 +2033,20 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
             <h3 className="text-sm font-medium text-gray-900">Studio</h3>
           </div>
           <div className="flex items-center space-x-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+              onClick={() => {
+                console.log('Manual refresh triggered');
+                loadExistingPodcasts();
+                loadExistingReports();
+              }}
+              title="Refresh lists"
+            >
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Refresh
+            </Button>
             {(reportGenerationState.isGenerating || podcastGenerationState.isGenerating) && (
               <div className="flex items-center space-x-1">
                 <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
