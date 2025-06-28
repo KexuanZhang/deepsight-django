@@ -1030,6 +1030,19 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     }
   }, [connectionError, isConnected, reportGenerationState.currentJobId, handleClearReportStatus]);
 
+  const handleClearPodcastStatus = useCallback(() => {
+    setPodcastGenerationState({
+      isGenerating: false,
+      jobId: null,
+      progress: '',
+      error: null,
+      title: '',
+      description: '',
+    });
+    // Clear the job from persistent storage
+    clearJobFromStorage('podcast');
+  }, [clearJobFromStorage]);
+
   // Real-time job status monitoring using SSE for podcasts
   const { 
     status: podcastJobStatus, 
@@ -1132,12 +1145,12 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           const isCancelled = podcastJobStatus === 'cancelled';
           const isCompleted = podcastJobStatus === 'completed';
           
-                      return {
-              ...prev,
-              isGenerating: isGenerating && !isCompleted && !isCancelled,
-              progress: isCancelled ? '' : prev.progress,
-              error: isCancelled ? 'Cancelled' : prev.error,
-            };
+          return {
+            ...prev,
+            isGenerating: isGenerating && !isCompleted && !isCancelled,
+            progress: isCancelled ? '' : prev.progress,
+            error: isCancelled ? 'Cancelled' : prev.error,
+          };
         });
       }
       
@@ -1154,6 +1167,21 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       }
     }
   }, [podcastJobStatus, podcastJobProgress, podcastJobError]);
+
+  // Effect to handle podcast connection errors and clear stale state
+  useEffect(() => {
+    if (podcastConnectionError && podcastGenerationState.jobId) {
+      // If we have persistent connection errors, the job might be stale
+      const timeoutId = setTimeout(() => {
+        if (podcastConnectionError && !podcastIsConnected) {
+          console.log('Clearing podcast state due to persistent connection error:', podcastConnectionError);
+          handleClearPodcastStatus();
+        }
+      }, 5000); // Wait 5 seconds before clearing due to connection error
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [podcastConnectionError, podcastIsConnected, podcastGenerationState.jobId, handleClearPodcastStatus]);
 
   const checkBackendHealth = async () => {
     try {
@@ -1751,18 +1779,9 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           title: "Cancellation Requested",
           description: "Cancellation request sent. The job will stop shortly.",
         });
-        
-        // Clear the job from persistent storage
-        clearJobFromStorage('podcast');
-        
-        // Auto-clear the cancelled status after a short delay
-        setTimeout(() => {
-          setPodcastGenerationState(prev => ({
-            ...prev,
-            error: null,
-            progress: '',
-          }));
-        }, 3000);
+
+        // Immediately clear the status so the UI doesn't hang (same as reports)
+        handleClearPodcastStatus();
       } else {
         // Fallback to HTTP API if SSE cancellation is not available
         console.warn('SSE cancellation failed, falling back to HTTP API');
@@ -1780,11 +1799,8 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           description: "Panel discussion generation has been cancelled.",
         });
         
-        // Clear the job from persistent storage
-        clearJobFromStorage('podcast');
-        
-        // Refresh podcast list in case there are any state inconsistencies
-        setTimeout(() => loadExistingPodcasts(), 1000);
+        // Immediately clear the status so the UI doesn't hang (same as reports)
+        handleClearPodcastStatus();
       }
     } catch (error) {
       toast({
