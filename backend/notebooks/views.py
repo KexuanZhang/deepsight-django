@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
 
-from .utils.rag_engine import RAGChatbot
+from .utils.rag_engine import RAGChatbot, SuggestionRAGAgent
 
 from django.db import transaction
 from django.http import StreamingHttpResponse, Http404, FileResponse
@@ -26,7 +26,7 @@ from rest_framework.decorators import action
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
-from .models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook, BatchJob, BatchJobItem
+from .models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook, BatchJob, BatchJobItem, NotebookChatMessage
 from .serializers import (
     NotebookSerializer, 
     FileUploadSerializer, 
@@ -537,87 +537,103 @@ class RAGChatFromKBView(StandardAPIView, NotebookPermissionMixin):
     def post(self, request):
         file_ids = request.data.get("file_ids", [])
         question = request.data.get("question")
+        notebook_id = request.data.get("notebook_id")
 
-        if not question:
-            return Response({"error": "question is required"}, status=400)
+        if not file_ids or not question or not notebook_id:
+            return Response({"error": "file_ids, question, and notebook_id are required"}, status=400)
+        
+        try:
+            notebook = self.get_user_notebook(notebook_id, request.user)
+        except Exception as e:
+            return Response({"error": "Notebook not found"}, status=404)
 
-        # If no file_ids provided, return a helpful message about requiring files for RAG
-        if not file_ids:
-            return Response(
-                {
-                    "answer": "I need access to your documents to provide specific insights. Please select some files from the Sources panel and try again. I can help you analyze PDFs, papers, transcripts, and other documents once they're selected."
-                }
-            )
-
-        # Filter user's KB items
+        # Filter valid knowledge items
         kb_items = KnowledgeBaseItem.objects.filter(
             id__in=file_ids, user=request.user, file__isnull=False
-        )
+        ).exclude(file__exact='')
 
         if not kb_items.exists():
             return Response(
                 {
-                    "error": "No valid files found. Please make sure the selected files have completed parsing."
+                    "error": "No valid knowledge items found."
                 },
                 status=404,
             )
 
-        # Read file contents
+        # Load file content
         docs = []
         for item in kb_items:
-            try:
-                with item.file.open("r") as f:
-                    content = f.read()
-                    docs.append({"content": content, "title": item.title or "Document"})
-            except Exception as e:
-                # Skip files that can't be read but continue with others
-                continue
+            if item.file and item.file.name:
+                with item.file.open("rb") as f:
+                    content = f.read().decode("utf-8")
+                    docs.append({"content": content, "name": item.title})
 
-        if not docs:
-            return Response(
-                {
-                    "error": "Could not read any of the selected files. Please check if they have completed parsing."
-                },
-                status=400,
-            )
+        # Load previous chat history
+        history = list(
+            NotebookChatMessage.objects.filter(notebook=notebook)
+            .order_by("timestamp")
+            .values_list("sender", "message")
+        )
 
-        # Initialize and run RAG chatbot
-        bot = RAGChatbot(docs)
+        # Add new user message to DBAdd commentMore actions
+        NotebookChatMessage.objects.create(
+            notebook=notebook,
+            sender="user",
+            message=question
+        )
+
+        # Run RAG with chat history
+        bot = RAGChatbot(docs, history)
         answer = bot.ask(question)
 
-        return Response({"answer": answer})
+        # Add assistant message to DB
+        NotebookChatMessage.objects.create(
+            notebook=notebook,
+            sender="assistant",
+            message=answer
+        )
+        return Response({"answer": answer, "notebook_id": notebook_id, "history": history + [("user", question), ("assistant", answer)]})
 
 
-class MarkdownBatchContentView(StandardAPIView, NotebookPermissionMixin):
-    """Return the content of selected .md or .txt files."""
+class ChatHistoryView(StandardAPIView, NotebookPermissionMixin):
+    
+    def get(self, request, notebook_id):
+        try:
+            notebook = self.get_user_notebook(notebook_id, request.user)
+        except Exception as e:
+            return Response({"error": "Notebook not found"}, status=404)
+        
+        messages = NotebookChatMessage.objects.filter(notebook=notebook).order_by("timestamp")
+        history = []
+        for message in messages:
+            history.append({"id": message.id, "sender": message.sender, "message": message.message, "timestamp": message.timestamp})
+        return Response({"history": history})
+    
 
-    def post(self, request, notebook_id):
-        file_ids = request.data.get("file_ids", [])
-        if not isinstance(file_ids, list) or not file_ids:
-            return self.error_response("file_ids must be a non-empty list")
+class ClearChatHistoryView(StandardAPIView, NotebookPermissionMixin):
 
-        notebook = self.get_user_notebook(notebook_id, request.user)
+    def delete(self, request, notebook_id):
+        try:
+            notebook = self.get_user_notebook(notebook_id, request.user)
+        except Exception as e:
+            return Response({"error": "Notebook not found"}, status=404)
+        NotebookChatMessage.objects.filter(notebook=notebook).delete()
+        return Response({"success": True, "message": "Chat history cleared"})
+    
+class SuggestedQuestionsView(StandardAPIView, NotebookPermissionMixin):
 
-        knowledge_items = KnowledgeItem.objects.filter(
-            notebook=notebook, knowledge_base_item_id__in=file_ids
-        ).select_related("knowledge_base_item")
+    def get(self, request, notebook_id):
+        try:
+            notebook = Notebook.objects.get(id=notebook_id, user=request.user)
+            history = NotebookChatMessage.objects.filter(notebook=notebook).order_by("timestamp")
+            history_text = "\n".join([f"{msg.sender}: {msg.message}" for msg in history])
 
-        result = []
-        for ki in knowledge_items:
-            kb = ki.knowledge_base_item
-            if kb.file and kb.file.name.endswith((".md", ".txt")):
-                try:
-                    with kb.file.open("r", encoding="utf-8") as f:
-                        content = f.read()
-                    result.append(
-                        {"id": str(kb.id), "title": kb.title, "content": content}
-                    )
-                except Exception as e:
-                    result.append(
-                        {"id": str(kb.id), "title": kb.title, "error": str(e)}
-                    )
+            agent = SuggestionRAGAgent()  # see below
+            suggestions = agent.generate_suggestions(history_text)
 
-        return self.success_response({"items": result})
+            return Response({"suggestions": suggestions})
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
 
 
 class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixin):
