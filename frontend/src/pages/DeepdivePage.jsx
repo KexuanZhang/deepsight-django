@@ -132,7 +132,7 @@ export default function DeepdivePage() {
               <Link to="/"        className="block text-gray-700 hover:text-red-600">Home Page</Link>
               <Link to="/dashboard" className="block text-gray-700 hover:text-red-600">Dashboard</Link>
               <Link to="/dataset"   className="block text-gray-700 hover:text-red-600">Dataset</Link>
-              <Link to="/deepdive"  className="block text-red-600 font-semibold bg-gray-100 p-2 rounded">Notebooks</Link>
+              <Link to="/deepdive"  className="block text-red-600 font-semibold bg-gray-100 p-2 rounded">DeepDive</Link>
             </nav>
           </div>
           <div
@@ -149,7 +149,7 @@ export default function DeepdivePage() {
           <button
             onClick={() => navigate("/deepdive")}
             className="p-2 rounded-md hover:bg-gray-100"
-            title="Back to Notebooks"
+            title="Back to DeepDive"
           >
             <ArrowLeft className="h-6 w-6 text-gray-700" />
           </button>
@@ -162,11 +162,10 @@ export default function DeepdivePage() {
             <Menu className="h-6 w-6 text-gray-700" />
           </button>
 
-          {/* Logo & Title */}
-          <Logo />
-          <h2 className="text-xl font-semibold ml-4">
+          {/* Title */}
+          <h1 className="text-3xl font-bold text-gray-800">
             {notebookMeta.name}
-          </h2>
+          </h1>
         </div>
 
         {/* Logout */}
@@ -267,11 +266,6 @@ export default function DeepdivePage() {
               onSelectionChange={registerSelectionCallback}
             />
           </motion.div>
-        </div>
-        
-        {/* Copyright Footer */}
-        <div className="flex-shrink-0 p-4 text-center text-sm text-gray-500 border-t border-gray-100">
-          © 2025, Huawei. All Rights Reserved.
         </div>
       </main>
 

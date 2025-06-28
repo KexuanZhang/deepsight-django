@@ -17,10 +17,12 @@ from .views import (
     FileRawView,
     FileRawSimpleView,
     FileImageView,
-    MarkdownBatchContentView,
     RAGChatFromKBView,
     VideoImageExtractionView,
     BatchJobStatusView,
+    ChatHistoryView,
+    ClearChatHistoryView,
+    SuggestedQuestionsView,
 )
 
 # Import views from podcast and reports apps
@@ -39,9 +41,17 @@ urlpatterns = [
     # 1) list all processed files
     path("<int:notebook_id>/files/", FileListView.as_view(), name="file-list"),
     path(
-        "<int:notebook_id>/files/md-batch-contents/",
-        MarkdownBatchContentView.as_view(),
-        name="file-md-batch-contents",
+        "<int:notebook_id>/chat-history/", ChatHistoryView.as_view(), name="chat-history"
+    ),
+    path(
+        "<int:notebook_id>/chat-history/clear/",
+        ClearChatHistoryView.as_view(),
+        name="clear-chat-history",
+    ),
+    path(
+        "<int:notebook_id>/suggested-questions/",
+        SuggestedQuestionsView.as_view(),
+        name="question-suggestions",
     ),
     path("chat/", RAGChatFromKBView.as_view(), name="chat-rag"),
     # 2) upload & parse a new file

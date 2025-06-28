@@ -406,3 +406,20 @@ class BatchJobItem(models.Model):
     
     def __str__(self):
         return f"Item {self.id} - {self.status}"
+
+
+class NotebookChatMessage(models.Model):
+    notebook = models.ForeignKey(
+        "Notebook",
+        on_delete=models.CASCADE,
+        related_name="chat_messages"
+    )
+    sender = models.CharField(
+        max_length=10,
+        choices=[("user", "User"), ("assistant", "Assistant")]
+    )
+    message = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["timestamp"]

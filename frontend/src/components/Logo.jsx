@@ -1,4 +1,3 @@
-
 import React from "react";
 import { motion } from "framer-motion";
 
@@ -10,7 +9,7 @@ const Logo = () => {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
     >
-      Deepdive
+      DeepDive
     </motion.h1>
   );
 };

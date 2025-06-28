@@ -7,6 +7,7 @@ from .models import (
     ProcessingJob,
     KnowledgeBaseItem,
     KnowledgeItem,
+    NotebookChatMessage,
 )
 
 
@@ -207,3 +208,13 @@ class URLProcessingResultAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("source")
+
+@admin.register(NotebookChatMessage)
+class NotebookChatMessageAdmin(admin.ModelAdmin):
+    list_display = ("notebook", "sender", "short_message", "timestamp")
+    list_filter = ("notebook", "sender", "timestamp")
+    search_fields = ("message",)
+
+    def short_message(self, obj):
+        return (obj.message[:75] + "...") if len(obj.message) > 75 else obj.message
+    short_message.short_description = "Message"
