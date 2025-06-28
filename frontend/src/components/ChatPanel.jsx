@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Send, Volume2, Copy, ChevronUp, MessageCircle, Loader2, RefreshCw, Settings, User, Bot, Sparkles, FileText, AlertCircle, HelpCircle
+  Send, Volume2, Copy, ChevronUp, ChevronDown, MessageCircle, Loader2, RefreshCw, Settings, User, Bot, Sparkles, FileText, AlertCircle, HelpCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -62,12 +62,32 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [isPanelExpanded, setIsPanelExpanded] = useState(true);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const { toast } = useToast();
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [selectedSources, setSelectedSources] = useState([]);
   const [suggestedQuestions, setSuggestedQuestions] = useState([]);
+
+  // Helper functions for caching suggested questions
+  const getCachedSuggestions = useCallback(() => {
+    try {
+      const cached = localStorage.getItem(`suggestedQuestions_${notebookId}`);
+      return cached ? JSON.parse(cached) : [];
+    } catch (error) {
+      console.error('Error loading cached suggestions:', error);
+      return [];
+    }
+  }, [notebookId]);
+
+  const cacheSuggestions = useCallback((suggestions) => {
+    try {
+      localStorage.setItem(`suggestedQuestions_${notebookId}`, JSON.stringify(suggestions));
+    } catch (error) {
+      console.error('Error caching suggestions:', error);
+    }
+  }, [notebookId]);
 
   const updateSelectedFiles = useCallback(() => {
     if (sourcesListRef?.current) {
@@ -155,6 +175,15 @@ useEffect(() => {
       }));
 
       setMessages(formattedMessages);
+      
+      // Load cached suggestions after loading chat history
+      // Only load if there are messages (indicating a previous conversation)
+      if (formattedMessages.length > 0) {
+        const cachedSuggestions = getCachedSuggestions();
+        if (cachedSuggestions.length > 0) {
+          setSuggestedQuestions(cachedSuggestions);
+        }
+      }
     } catch (err) {
       console.error("Could not load chat history:", err);
       toast({
@@ -166,7 +195,7 @@ useEffect(() => {
   };
 
   if (notebookId) fetchChatHistory();
-}, [notebookId]);
+}, [notebookId, getCachedSuggestions]);
 
 
   const handleSendMessage = async (overrideMessage = null) => {
@@ -217,6 +246,19 @@ useEffect(() => {
     console.log("Final selectedFileIds (knowledge base item IDs):", selectedFileIds);
     console.log("=== END CHAT DEBUG ===");
 
+    // Check if at least one file is selected
+    if (selectedFileIds.length === 0) {
+      setIsLoading(false);
+      setIsTyping(false);
+      setError("Please select at least one document from your sources to start a conversation.");
+      toast({
+        title: "No Documents Selected",
+        description: "Please select at least one document from the sources panel to chat about your knowledge base.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       const response = await fetch("/api/v1/notebooks/chat/", {
         method: "POST",
@@ -249,7 +291,13 @@ useEffect(() => {
       
       const followupResp = await fetch(`/api/v1/notebooks/${notebookId}/suggested-questions/`);
       const followupData = await followupResp.json();
-      setSuggestedQuestions(followupData.suggestions || []);
+      const newSuggestions = followupData.suggestions || [];
+      setSuggestedQuestions(newSuggestions);
+      
+      // Cache the new suggestions
+      if (newSuggestions.length > 0) {
+        cacheSuggestions(newSuggestions);
+      }
     } catch (err) {
       console.error("Chat error:", err);
       setError("Failed to get a response from the AI. Please try again.");
@@ -308,6 +356,14 @@ useEffect(() => {
 
                   // Reset to empty messages
                   setMessages([]);
+                  
+                  // Clear cached suggestions when chat is cleared
+                  setSuggestedQuestions([]);
+                  try {
+                    localStorage.removeItem(`suggestedQuestions_${notebookId}`);
+                  } catch (error) {
+                    console.error('Error clearing cached suggestions:', error);
+                  }
 
                   toast({
                     title: "Chat Cleared",
@@ -455,6 +511,17 @@ useEffect(() => {
             >
               <h3 className="text-2xl font-semibold text-gray-900 mb-4">Start a conversation</h3>
               <p className="text-base text-gray-600 mb-10 leading-relaxed">Ask me anything about your uploaded documents and knowledge base. I can help you discover insights, find connections, and explore your content.</p>
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.4, delay: 0.25 }}
+                className="mb-8 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl shadow-sm"
+              >
+                <div>
+                  <h4 className="text-sm font-semibold text-blue-900 mb-1">Getting Started</h4>
+                  <p className="text-sm text-blue-700 leading-relaxed">Select at least one document from the <span className="font-medium">sources panel</span> on the left to start exploring your knowledge base with AI-powered conversations.</p>
+                </div>
+              </motion.div>
             </motion.div>
             
             <motion.div 
@@ -484,12 +551,21 @@ useEffect(() => {
                   <Button
                     variant="outline"
                     size="lg"
-                    className="w-full text-left justify-start bg-white hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 border-gray-200 hover:border-blue-300 text-gray-700 hover:text-blue-700 shadow-sm hover:shadow-md transition-all duration-300 h-auto py-4 px-5 group"
-                    onClick={() => handleSendMessage(suggestion.text)}
+                    className={`w-full text-left justify-start transition-all duration-300 h-auto py-4 px-5 group ${
+                      selectedFiles.length === 0 
+                        ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed' 
+                        : 'bg-white hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 border-gray-200 hover:border-blue-300 text-gray-700 hover:text-blue-700 shadow-sm hover:shadow-md'
+                    }`}
+                    disabled={selectedFiles.length === 0}
+                    onClick={() => selectedFiles.length > 0 && handleSendMessage(suggestion.text)}
                   >
                     <div className="flex items-start space-x-4 w-full">
-                      <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl flex items-center justify-center group-hover:from-blue-200 group-hover:to-indigo-200 transition-colors duration-200 flex-shrink-0">
-                        <suggestion.icon className="h-5 w-5 text-blue-600" />
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors duration-200 flex-shrink-0 ${
+                        selectedFiles.length === 0 
+                          ? 'bg-gray-100' 
+                          : 'bg-gradient-to-br from-blue-100 to-indigo-100 group-hover:from-blue-200 group-hover:to-indigo-200'
+                      }`}>
+                        <suggestion.icon className={`h-5 w-5 ${selectedFiles.length === 0 ? 'text-gray-400' : 'text-blue-600'}`} />
                       </div>
                       <div className="flex-1 min-h-[2.5rem] flex items-center">
                         <span className="text-sm leading-relaxed font-medium">{suggestion.text}</span>
@@ -502,76 +578,85 @@ useEffect(() => {
           </div>
         </motion.div>
       ) : suggestedQuestions.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
-          transition={{ duration: 0.3 }}
-          className="border-t border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50"
-        >
-          <div className="px-4 py-4">
-            <div className="flex items-center space-x-2 mb-3">
-              <div className="w-5 h-5 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
-                <Sparkles className="h-3 w-3 text-white" />
-              </div>
-              <span className="text-sm font-medium text-gray-700">Continue exploring</span>
-              <div className="flex-1 h-px bg-gradient-to-r from-gray-300 to-transparent"></div>
-            </div>
-            
-                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-               {suggestedQuestions.slice(0, 4).map((question, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ 
-                    duration: 0.2, 
-                    delay: index * 0.05,
-                    ease: "easeOut"
-                  }}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
+        <>
+          {isPanelExpanded ? (
+            <motion.div
+              initial={{ opacity: 0, height: "auto" }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              className="border-t border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50"
+            >
+              <div className="px-4 py-4">
+                <div className="flex items-center space-x-2 mb-3">
+                  <div className="w-5 h-5 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                    <Sparkles className="h-3 w-3 text-white" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700">Continue exploring</span>
+                  <div className="flex-1 h-px bg-gradient-to-r from-gray-300 to-transparent"></div>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="w-full text-left justify-start text-xs bg-white/80 backdrop-blur-sm hover:bg-blue-100 border-gray-200 hover:border-blue-300 text-gray-700 hover:text-blue-700 shadow-sm hover:shadow-md transition-all duration-200 h-auto py-2.5 px-3"
-                    onClick={() => handleSendMessage(question)}
+                    className="h-6 w-6 p-0 hover:bg-blue-100/50"
+                    onClick={() => setIsPanelExpanded(false)}
                   >
-                    <div className="flex items-start space-x-2 w-full">
-                      <div className="w-1.5 h-1.5 bg-blue-400 rounded-full mt-1.5 flex-shrink-0"></div>
-                      <span className="leading-relaxed line-clamp-2">{question}</span>
-                    </div>
+                    <ChevronDown className="h-4 w-4 text-gray-500" />
                   </Button>
-                </motion.div>
-              ))}
-            </div>
-            
-                         {suggestedQuestions.length > 4 && (
-               <motion.div
-                 initial={{ opacity: 0 }}
-                 animate={{ opacity: 1 }}
-                 transition={{ delay: 0.4 }}
-                 className="mt-3 text-center"
-               >
-                 <Button
-                   variant="ghost"
-                   size="sm"
-                   className="text-xs text-gray-500 hover:text-gray-700"
-                   onClick={() => {
-                     // Cycle through showing more questions
-                     const currentShown = 4;
-                     const totalQuestions = suggestedQuestions.length;
-                     // Could implement a show more functionality here
-                   }}
-                 >
-                   <ChevronUp className="h-3 w-3 mr-1" />
-                   {suggestedQuestions.length - 4} more suggestions
-                 </Button>
-               </motion.div>
-             )}
-          </div>
-        </motion.div>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {suggestedQuestions.slice(0, 4).map((question, index) => (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ 
+                        duration: 0.2, 
+                        delay: index * 0.05,
+                        ease: "easeOut"
+                      }}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-left justify-start text-xs bg-white/80 backdrop-blur-sm hover:bg-blue-100 border-gray-200 hover:border-blue-300 text-gray-700 hover:text-blue-700 shadow-sm hover:shadow-md transition-all duration-200 h-auto py-2.5 px-3"
+                        onClick={() => handleSendMessage(question)}
+                      >
+                        <div className="flex items-start space-x-2 w-full">
+                          <div className="w-1.5 h-1.5 bg-blue-400 rounded-full mt-1.5 flex-shrink-0"></div>
+                          <span className="leading-relaxed line-clamp-2">{question}</span>
+                        </div>
+                      </Button>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="border-t border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2 flex items-center justify-between"
+            >
+                             <div className="flex items-center space-x-2">
+                 <div className="w-4 h-4 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                   <Sparkles className="h-2 w-2 text-white" />
+                 </div>
+                 <span className="text-xs font-medium text-gray-700">Continue exploring</span>
+               </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 hover:bg-blue-100/50"
+                onClick={() => setIsPanelExpanded(true)}
+              >
+                <ChevronUp className="h-4 w-4 text-gray-500" />
+              </Button>
+            </motion.div>
+          )}
+        </>
       )}
 
 

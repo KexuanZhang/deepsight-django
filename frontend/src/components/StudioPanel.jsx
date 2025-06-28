@@ -13,7 +13,6 @@ import {
   HelpCircle,
   MoreVertical,
   Download,
-  RefreshCw,
   CheckCircle,
   AlertCircle,
   Clock,
@@ -22,6 +21,7 @@ import {
   ChevronUp,
   Loader2,
   Info,
+  ChevronLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -1795,17 +1795,6 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
             <h3 className="text-sm font-medium text-gray-900">Studio</h3>
           </div>
           <div className="flex items-center space-x-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
-              onClick={() => {
-                loadExistingReports();
-                loadExistingPodcasts();
-              }}
-            >
-              Refresh
-            </Button>
             {(reportGenerationState.isGenerating || podcastGenerationState.isGenerating) && (
               <div className="flex items-center space-x-1">
                 <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
@@ -1964,48 +1953,6 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         {/* Report Viewer */}
         {selectedFile && (
           <div className="p-6 space-y-6">
-            {/* File Navigation Bar */}
-            {files.length > 0 && (
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                      <FileText className="h-4 w-4 text-gray-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Research Reports</h3>
-                      <p className="text-sm text-gray-600">{files.length} reports generated</p>
-                    </div>
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={handleClose}
-                    className="text-gray-600 hover:text-gray-900 border-gray-300"
-                  >
-                    <X className="h-4 w-4 mr-1" />
-                    Close
-                  </Button>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {files.map((file) => (
-                    <button
-                      key={file.id}
-                      className={`px-4 py-2 text-sm border rounded-lg transition-all duration-200 flex items-center gap-2 ${
-                        selectedFile?.id === file.id 
-                          ? 'bg-gray-900 border-gray-900 text-white' 
-                          : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
-                      }`}
-                      onClick={() => handleFileClick(file)}
-                    >
-                      <FileText className="h-3 w-3" />
-                      <span className="truncate max-w-[120px]">{file.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            
             {/* Report Display Panel */}
             <div
               className={`bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col transition-all duration-300 ${
@@ -2014,28 +1961,44 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
             >
               {/* Toolbar */}
               <div className="px-6 py-4 border-b bg-gray-50 rounded-t-xl">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center space-x-1">
-                    <button
-                      className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
-                        viewMode === "preview"
-                          ? "bg-gray-900 text-white"
-                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-                      }`}
-                      onClick={() => setViewMode("preview")}
+                {/* Top row - Navigation and Actions */}
+                <div className="flex justify-between items-center mb-3">
+                  <div className="flex items-center space-x-3">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={handleClose}
+                      title="Close Report"
+                      className="hover:bg-gray-100 text-gray-600 hover:text-gray-900"
                     >
-                      Preview
-                    </button>
-                    <button
-                      className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
-                        viewMode === "code"
-                          ? "bg-gray-900 text-white"
-                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-                      }`}
-                      onClick={() => setViewMode("code")}
-                    >
-                      Source
-                    </button>
+                      <X className="h-4 w-4 mr-1" />
+                      Close
+                    </Button>
+                    
+                    <div className="h-4 w-px bg-gray-300"></div>
+                    
+                    <div className="flex items-center space-x-1">
+                      <button
+                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
+                          viewMode === "preview"
+                            ? "bg-gray-900 text-white"
+                            : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                        }`}
+                        onClick={() => setViewMode("preview")}
+                      >
+                        Preview
+                      </button>
+                      <button
+                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
+                          viewMode === "code"
+                            ? "bg-gray-900 text-white"
+                            : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                        }`}
+                        onClick={() => setViewMode("code")}
+                      >
+                        Source
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex items-center space-x-1">
@@ -2069,16 +2032,15 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
                         <Maximize2 className="h-4 w-4" />
                       )}
                     </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={handleClose}
-                      title="Close Report"
-                      className="hover:bg-gray-100 text-gray-600 hover:text-gray-900"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
                   </div>
+                </div>
+                
+                {/* Bottom row - File Name */}
+                <div className="flex items-center space-x-2">
+                  <FileText className="h-4 w-4 text-gray-500" />
+                  <span className="text-sm font-medium text-gray-900 truncate">
+                    {selectedFile.name}
+                  </span>
                 </div>
               </div>
 
