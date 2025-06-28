@@ -22,6 +22,7 @@ import {
   Loader2,
   Info,
   ChevronLeft,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -154,23 +155,28 @@ const PodcastGenerationSection = ({
   const hasSelectedFiles = selectedFiles.length > 0;
 
   return (
-    <div className="border rounded-lg overflow-hidden">
+    <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition-all duration-200">
       <div 
-        className="p-4 bg-gray-50 border-b cursor-pointer hover:bg-gray-100 transition-colors"
+        className="px-6 py-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b border-orange-100 cursor-pointer hover:from-orange-100 hover:to-amber-100 transition-all duration-200 min-h-[72px]"
         onClick={onToggleCollapse}
       >
-        <div className="flex items-center justify-between">
-          <h3 className="font-medium text-gray-900 flex items-center">
-            <Play className="h-4 w-4 mr-2 text-gray-600" />
-            Generate Panel Discussion
-          </h3>
+        <div className="flex items-center justify-between h-full">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-500 rounded-lg flex items-center justify-center shadow-sm">
+              <Play className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Generate Panel Discussion</h3>
+              <p className="text-xs text-gray-600">Create engaging AI-powered conversations</p>
+            </div>
+          </div>
           {isCollapsed ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronUp className="h-4 w-4 text-gray-500" />}
         </div>
       </div>
       
       {!isCollapsed && (
-        <div className="p-4 space-y-4">
-          {(podcastGenerationState.isGenerating || podcastGenerationState.progress) && (
+        <div className="p-6 space-y-5">
+          {(podcastGenerationState.isGenerating || podcastGenerationState.progress || podcastGenerationState.error) && (
             <StatusCard
               title="Generating Panel Discussion"
               isGenerating={podcastGenerationState.isGenerating}
@@ -293,36 +299,27 @@ const ReportConfigSection = ({
   const hasValidInput = hasTopic || hasFiles;
 
   return (
-    <div className="border rounded-lg overflow-hidden">
+    <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition-all duration-200">
       <div 
-        className="p-4 bg-gray-50 border-b cursor-pointer hover:bg-gray-100 transition-colors"
+        className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 cursor-pointer hover:from-blue-100 hover:to-indigo-100 transition-all duration-200 min-h-[72px]"
         onClick={onToggleCollapse}
       >
-        <div className="flex items-center justify-between">
-          <h3 className="font-medium text-gray-900 flex items-center">
-            <FileText className="h-4 w-4 mr-2 text-gray-600" />
-            Generate Research Report
-          </h3>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                onShowCustomize();
-              }}
-              className="text-xs border-gray-300 text-gray-600 hover:bg-gray-50"
-            >
-              <Settings className="mr-1 h-3 w-3" />
-              Customize
-            </Button>
-            {isCollapsed ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronUp className="h-4 w-4 text-gray-500" />}
+        <div className="flex items-center justify-between h-full">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
+              <FileText className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Generate Research Report</h3>
+              <p className="text-xs text-gray-600">Comprehensive AI-powered research analysis</p>
+            </div>
           </div>
+          {isCollapsed ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronUp className="h-4 w-4 text-gray-500" />}
         </div>
       </div>
 
       {!isCollapsed && (
-        <div className="p-4 space-y-4">
+        <div className="p-6 space-y-5">
           {/* Report Generation Status */}
           {(reportGenerationState.isGenerating || reportGenerationState.progress || reportGenerationState.error) && (
             <StatusCard
@@ -391,8 +388,21 @@ const ReportConfigSection = ({
             </div>
           </div>
 
+          {/* Advanced Settings Button */}
+          <div className="flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onShowCustomize}
+              className="text-sm border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300 transition-all duration-200"
+            >
+              <Settings className="mr-2 h-4 w-4" />
+              Advanced Settings
+            </Button>
+          </div>
+
           <Button
-            className="w-full bg-gray-900 hover:bg-gray-800 text-white font-medium py-3"
+            className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium py-3 shadow-lg hover:shadow-xl transition-all duration-200"
             onClick={onGenerateReport}
             disabled={isGenerating || !hasValidInput}
           >
@@ -660,6 +670,8 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   const [collapsedSections, setCollapsedSections] = useState({
     podcast: true,
     report: true,
+    podcastList: true,
+    reportList: true,
   });
 
   // Report generation state
@@ -708,6 +720,56 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 
   const { toast } = useToast();
 
+  // Persistent job tracking helpers
+  const saveJobToStorage = useCallback((jobId, jobType, jobData) => {
+    try {
+      const storageKey = `activeJob_${notebookId}_${jobType}`;
+      const jobInfo = {
+        jobId,
+        jobType,
+        notebookId,
+        startTime: Date.now(),
+        ...jobData
+      };
+      localStorage.setItem(storageKey, JSON.stringify(jobInfo));
+      console.log(`Saved ${jobType} job to storage:`, jobInfo);
+    } catch (error) {
+      console.error('Error saving job to storage:', error);
+    }
+  }, [notebookId]);
+
+  const getJobFromStorage = useCallback((jobType) => {
+    try {
+      const storageKey = `activeJob_${notebookId}_${jobType}`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const jobInfo = JSON.parse(stored);
+        // Check if job is not too old (2 hours max)
+        const maxAge = 2 * 60 * 60 * 1000;
+        if (Date.now() - jobInfo.startTime < maxAge) {
+          console.log(`Retrieved ${jobType} job from storage:`, jobInfo);
+          return jobInfo;
+        } else {
+          console.log(`Stored ${jobType} job is too old, removing`);
+          localStorage.removeItem(storageKey);
+        }
+      }
+    } catch (error) {
+      console.error('Error retrieving job from storage:', error);
+    }
+    return null;
+  }, [notebookId]);
+
+  const clearJobFromStorage = useCallback((jobType) => {
+    try {
+      const storageKey = `activeJob_${notebookId}_${jobType}`;
+      localStorage.removeItem(storageKey);
+      console.log(`Cleared ${jobType} job from storage`);
+    } catch (error) {
+      console.error('Error clearing job from storage:', error);
+    }
+  }, [notebookId]);
+
   // Memoized helper functions
   const toggleSection = useCallback((section) => {
     setCollapsedSections(prev => ({
@@ -723,18 +785,114 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     loadExistingPodcasts();
   }, []);
 
-  // Clear stale report generation state on mount if no valid jobs are found
+  // Enhanced job restoration on component mount
   useEffect(() => {
-    // After loadExistingReports runs, clear state if we have stale data
-    const timeoutId = setTimeout(() => {
-      if ((reportGenerationState.currentJobId || reportGenerationState.error) && !reportGenerationState.isGenerating) {
-        console.log('Clearing stale report generation state on mount');
-        handleClearReportStatus();
+    const restoreJobsFromStorage = async () => {
+      console.log('Attempting to restore jobs from storage...');
+      
+      // Try to restore report generation state
+      const savedReportJob = getJobFromStorage('report');
+      if (savedReportJob && savedReportJob.jobId) {
+        console.log('Found saved report job, attempting to restore:', savedReportJob);
+        
+        // Verify job status by checking with backend
+        try {
+          const response = await apiService.listReportJobs(notebookId, 50);
+          const activeJob = response?.jobs?.find(job => job.job_id === savedReportJob.jobId);
+          
+          if (activeJob) {
+            if (activeJob.status === 'cancelled') {
+              console.log('Found cancelled report job, restoring cancelled state:', activeJob);
+              setReportGenerationState({
+                isGenerating: false,
+                currentJobId: savedReportJob.jobId,
+                progress: '',
+                error: 'Cancelled',
+              });
+            } else if (activeJob.status === 'running' || activeJob.status === 'pending') {
+              console.log('Verified job is still running, restoring state:', activeJob);
+              setReportGenerationState({
+                isGenerating: true,
+                currentJobId: savedReportJob.jobId,
+                progress: 'Reconnected to ongoing report generation...',
+                error: null,
+              });
+            } else {
+              console.log('Job completed or failed, clearing from storage');
+              clearJobFromStorage('report');
+            }
+          } else {
+            console.log('Job not found, clearing from storage');
+            clearJobFromStorage('report');
+          }
+        } catch (error) {
+          console.error('Error verifying report job status:', error);
+          // Keep the stored job info but mark as potentially stale
+          setReportGenerationState({
+            isGenerating: true,
+            currentJobId: savedReportJob.jobId,
+            progress: 'Reconnecting to report generation...',
+            error: null,
+          });
+        }
       }
-    }, 1500); // Give loadExistingReports time to restore valid state first
+      
+      // Try to restore podcast generation state
+      const savedPodcastJob = getJobFromStorage('podcast');
+      if (savedPodcastJob && savedPodcastJob.jobId) {
+        console.log('Found saved podcast job, attempting to restore:', savedPodcastJob);
+        
+        try {
+          const response = await apiService.listPodcastJobs(notebookId);
+          const activeJob = response?.jobs?.find(job => job.job_id === savedPodcastJob.jobId);
+          
+          if (activeJob) {
+            if (activeJob.status === 'cancelled') {
+              console.log('Found cancelled podcast job, restoring cancelled state:', activeJob);
+              setPodcastGenerationState({
+                isGenerating: false,
+                jobId: savedPodcastJob.jobId,
+                progress: '',
+                error: 'Cancelled',
+                title: savedPodcastJob.title || '',
+                description: savedPodcastJob.description || '',
+              });
+            } else if (activeJob.status === 'generating' || activeJob.status === 'pending') {
+              console.log('Verified podcast job is still running, restoring state:', activeJob);
+              setPodcastGenerationState({
+                isGenerating: true,
+                jobId: savedPodcastJob.jobId,
+                progress: 'Reconnected to ongoing panel discussion generation...',
+                error: null,
+                title: savedPodcastJob.title || '',
+                description: savedPodcastJob.description || '',
+              });
+            } else {
+              console.log('Podcast job completed or failed, clearing from storage');
+              clearJobFromStorage('podcast');
+            }
+          } else {
+            console.log('Podcast job not found, clearing from storage');
+            clearJobFromStorage('podcast');
+          }
+        } catch (error) {
+          console.error('Error verifying podcast job status:', error);
+          setPodcastGenerationState({
+            isGenerating: true,
+            jobId: savedPodcastJob.jobId,
+            progress: 'Reconnecting to panel discussion generation...',
+            error: null,
+            title: savedPodcastJob.title || '',
+            description: savedPodcastJob.description || '',
+          });
+        }
+      }
+    };
 
+    // Run restoration after a short delay to allow other effects to complete
+    const timeoutId = setTimeout(restoreJobsFromStorage, 500);
     return () => clearTimeout(timeoutId);
-  }, []); // Empty dependency array for mount-only effect
+  }, [getJobFromStorage, clearJobFromStorage, notebookId]);
 
   // Cleanup blob URLs when component unmounts
   useEffect(() => {
@@ -828,7 +986,9 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         progress: '',
         error: null,
     });
-  }, []);
+    // Clear the job from persistent storage
+    clearJobFromStorage('report');
+  }, [clearJobFromStorage]);
 
   // Effect to handle report job results and errors
   useEffect(() => {
@@ -881,6 +1041,19 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     }
   }, [connectionError, isConnected, reportGenerationState.currentJobId, handleClearReportStatus]);
 
+  const handleClearPodcastStatus = useCallback(() => {
+    setPodcastGenerationState({
+      isGenerating: false,
+      jobId: null,
+      progress: '',
+      error: null,
+      title: '',
+      description: '',
+    });
+    // Clear the job from persistent storage
+    clearJobFromStorage('podcast');
+  }, [clearJobFromStorage]);
+
   // Real-time job status monitoring using SSE for podcasts
   const { 
     status: podcastJobStatus, 
@@ -894,38 +1067,74 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     podcastGenerationState.jobId,
     // onComplete callback
     async (result) => {
-      setPodcastGenerationState(prev => ({
-        ...prev,
-        isGenerating: false,
-        progress: 'Panel discussion generated successfully!',
-      }));
+      console.log('Podcast generation completed, result:', result);
       
-      // Add the generated podcast to the podcast files list
-      if (result && (result.audioUrl || result.generated_files)) {
-        await loadGeneratedPodcast(result);
+      try {
+        setPodcastGenerationState(prev => ({
+          ...prev,
+          isGenerating: false,
+          progress: 'Panel discussion generated successfully!',
+        }));
+        
+        // Handle different result formats - check for audio_path, audioUrl, or generated_files
+        const hasAudio = result && (result.audio_path || result.audioUrl || result.generated_files);
+        console.log('Has audio result:', hasAudio, 'audio_path:', result?.audio_path, 'audioUrl:', result?.audioUrl);
+        
+        if (hasAudio) {
+          console.log('Loading generated podcast...');
+          await loadGeneratedPodcast(result);
+        } else {
+          console.warn('No audio found in result, reloading podcast list...');
+        }
+        
+        // Always reload the full list to ensure consistency
+        console.log('Reloading existing podcasts...');
+        await loadExistingPodcasts();
+        
+        toast({
+          title: "Panel Discussion Generated",
+          description: "Your panel discussion has been generated successfully!",
+        });
+        
+      } catch (error) {
+        console.error('Error in podcast completion callback:', error);
+        // Still show success toast since the podcast was generated
+        toast({
+          title: "Panel Discussion Generated",
+          description: "Your panel discussion has been generated successfully!",
+        });
+        
+        // Clear the job from persistent storage since it's completed
+        clearJobFromStorage('podcast');
+        
+        // Force reload to ensure UI is updated
+        await loadExistingPodcasts();
       }
-      
-      // Also reload the full list to ensure consistency
-      await loadExistingPodcasts();
-      
-      toast({
-        title: "Panel Discussion Generated",
-        description: "Your panel discussion has been generated successfully!",
-      });
     },
     // onError callback
     (error) => {
+      console.error('Podcast generation error:', error);
+      
+      // Check if this is a cancellation (don't show error toast for cancellations)
+      const isCancellation = typeof error === 'string' && (error.includes('cancelled') || error.includes('Cancelled'));
+      
       setPodcastGenerationState(prev => ({
         ...prev,
         isGenerating: false,
-        error: error || 'Panel discussion generation failed',
+        error: isCancellation ? 'Cancelled' : (error || 'Panel discussion generation failed'),
       }));
       
-      toast({
-        title: "Generation Failed",
-        description: error || "Panel discussion generation failed. Please try again.",
-        variant: "destructive",
-      });
+      // Only show error toast if it's not a cancellation
+      if (!isCancellation) {
+        toast({
+          title: "Generation Failed",
+          description: error || "Panel discussion generation failed. Please try again.",
+          variant: "destructive",
+        });
+      }
+      
+      // Clear the job from persistent storage since it failed or was cancelled
+      clearJobFromStorage('podcast');
     },
     // Pass notebookId and specify this is for podcast jobs
     notebookId,
@@ -947,12 +1156,12 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           const isCancelled = podcastJobStatus === 'cancelled';
           const isCompleted = podcastJobStatus === 'completed';
           
-                      return {
-              ...prev,
-              isGenerating: isGenerating && !isCompleted && !isCancelled,
-              progress: isCancelled ? '' : prev.progress,
-              error: isCancelled ? 'Cancelled' : prev.error,
-            };
+          return {
+            ...prev,
+            isGenerating: isGenerating && !isCompleted && !isCancelled,
+            progress: isCancelled ? '' : prev.progress,
+            error: isCancelled ? 'Cancelled' : prev.error,
+          };
         });
       }
       
@@ -969,6 +1178,21 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       }
     }
   }, [podcastJobStatus, podcastJobProgress, podcastJobError]);
+
+  // Effect to handle podcast connection errors and clear stale state
+  useEffect(() => {
+    if (podcastConnectionError && podcastGenerationState.jobId) {
+      // If we have persistent connection errors, the job might be stale
+      const timeoutId = setTimeout(() => {
+        if (podcastConnectionError && !podcastIsConnected) {
+          console.log('Clearing podcast state due to persistent connection error:', podcastConnectionError);
+          handleClearPodcastStatus();
+        }
+      }, 5000); // Wait 5 seconds before clearing due to connection error
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [podcastConnectionError, podcastIsConnected, podcastGenerationState.jobId, handleClearPodcastStatus]);
 
   const checkBackendHealth = async () => {
     try {
@@ -1206,11 +1430,15 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         
         // Convert completed jobs to podcast format
         const podcastList = completedJobs.map((job) => {
-          // Extract filename from audio_url or use job_id
+          // Extract filename from audio_path, audio_url, or use job_id
           let filename = `${job.job_id}.mp3`;
-          if (job.audio_url) {
-            const urlParts = job.audio_url.split('/');
+          
+          // Check for audio_path first (matches the log format), then audio_url as fallback
+          const audioSource = job.audio_path || job.audio_url;
+          if (audioSource) {
+            const urlParts = audioSource.split('/');
             filename = urlParts[urlParts.length - 1];
+            console.log('Extracted filename for existing podcast:', filename, 'from:', audioSource);
           }
 
           return {
@@ -1225,9 +1453,12 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           };
         });
 
+        console.log('Setting podcast files:', podcastList);
+        setPodcastFiles(podcastList);
+        
+        // Force a re-render by updating a dummy state if needed
         if (podcastList.length > 0) {
           console.log('Loaded existing podcasts:', podcastList);
-          setPodcastFiles(podcastList);
         }
       }
     } catch (error) {
@@ -1239,11 +1470,15 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     try {
       console.log('Loading newly generated podcast:', result);
       
-      // Extract filename from audio_url or use job_id
+      // Extract filename from audio_path, audio_url, or use job_id
       let filename = `${podcastGenerationState.jobId}.mp3`;
-      if (result.audio_url) {
-        const urlParts = result.audio_url.split('/');
+      
+      // Check for audio_path first (from your log), then audio_url as fallback
+      const audioSource = result.audio_path || result.audioUrl || result.audio_url;
+      if (audioSource) {
+        const urlParts = audioSource.split('/');
         filename = urlParts[urlParts.length - 1];
+        console.log('Extracted filename from audio source:', filename, 'from:', audioSource);
       }
 
       const newPodcast = {
@@ -1259,18 +1494,30 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       
       console.log('Adding new podcast to files list:', newPodcast);
       
-      // Check if podcast already exists (avoid duplicates)
+      // Force state update to ensure UI refresh
       setPodcastFiles(prev => {
         const exists = prev.find(p => p.jobId === podcastGenerationState.jobId);
         if (exists) {
           console.log('Podcast already exists, updating:', exists);
-          return prev.map(p => p.jobId === podcastGenerationState.jobId ? newPodcast : p);
+          // Update existing podcast
+          const updated = prev.map(p => p.jobId === podcastGenerationState.jobId ? newPodcast : p);
+          console.log('Updated podcast list:', updated);
+          return updated;
         }
-        return [newPodcast, ...prev];
+        console.log('Adding new podcast to list');
+        const newList = [newPodcast, ...prev];
+        console.log('New podcast list:', newList);
+        return newList;
       });
+      
+      // Force a small delay to ensure state has updated
+      setTimeout(() => {
+        console.log('Current podcast files after update:', podcastFiles);
+      }, 100);
       
     } catch (error) {
       console.error('Error loading generated podcast:', error);
+      throw error; // Re-throw so the calling function can handle it
     }
   };
 
@@ -1354,6 +1601,14 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         currentJobId: response.job_id,
         progress: 'Report generation started...',
       }));
+
+      // Save job to persistent storage for tracking across navigation
+      saveJobToStorage(response.job_id, 'report', {
+        topic: reportConfig.topic,
+        article_title: reportConfig.article_title,
+        hasFiles,
+        hasTopic,
+      });
 
       console.log('Report generation job created:', response.job_id);
 
@@ -1490,6 +1745,13 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         progress: 'Panel discussion generation started...',
       }));
 
+      // Save job to persistent storage for tracking across navigation
+      saveJobToStorage(response.job_id, 'podcast', {
+        title: podcastGenerationState.title || 'Generated Podcast',
+        description: podcastGenerationState.description || '',
+        sourceFileIds,
+      });
+
       toast({
         title: "Panel Discussion Generation Started",
         description: "Your panel discussion is being generated. This may take several minutes.",
@@ -1528,6 +1790,9 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           title: "Cancellation Requested",
           description: "Cancellation request sent. The job will stop shortly.",
         });
+
+        // Immediately clear the status so the UI doesn't hang (same as reports)
+        handleClearPodcastStatus();
       } else {
         // Fallback to HTTP API if SSE cancellation is not available
         console.warn('SSE cancellation failed, falling back to HTTP API');
@@ -1545,8 +1810,8 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
           description: "Panel discussion generation has been cancelled.",
         });
         
-        // Refresh podcast list in case there are any state inconsistencies
-        setTimeout(() => loadExistingPodcasts(), 1000);
+        // Immediately clear the status so the UI doesn't hang (same as reports)
+        handleClearPodcastStatus();
       }
     } catch (error) {
       toast({
@@ -1785,31 +2050,48 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 
   return (
     <div className="h-full flex flex-col bg-white">
-      {/* Simple Header */}
-      <div className="flex-shrink-0 px-4 py-3 bg-white border-b border-gray-200">
+      {/* Enhanced Header */}
+      <div className="flex-shrink-0 px-6 py-4 bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200/80">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="w-6 h-6 bg-gray-100 rounded-md flex items-center justify-center">
-              <FileText className="h-3 w-3 text-gray-600" />
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-sm">
+              <FileText className="h-4 w-4 text-white" />
             </div>
-            <h3 className="text-sm font-medium text-gray-900">Studio</h3>
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">AI Studio</h3>
+              <p className="text-xs text-gray-500">Create reports and panel discussions</p>
+            </div>
           </div>
-          <div className="flex items-center space-x-1">
+          <div className="flex items-center space-x-2">
             {(reportGenerationState.isGenerating || podcastGenerationState.isGenerating) && (
-              <div className="flex items-center space-x-1">
-                <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
-                <span className="text-xs text-gray-500">Working...</span>
+              <div className="flex items-center space-x-2 px-3 py-1.5 bg-blue-50 rounded-full border border-blue-100">
+                <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+                <span className="text-xs font-medium text-blue-700">Processing...</span>
               </div>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-3 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100/80 border border-transparent hover:border-gray-200 transition-all duration-200"
+              onClick={() => {
+                console.log('Manual refresh triggered');
+                loadExistingPodcasts();
+                loadExistingReports();
+              }}
+              title="Refresh content"
+            >
+              <RefreshCw className="h-3 w-3 mr-1.5" />
+              Refresh
+            </Button>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto">
-        {/* Main Generation Sections - Only show when no file is selected */}
+        {/* Unified Content Container - Only show when no file is selected */}
         {!selectedFile && (
-          <div className="p-6 space-y-6">
+          <div className="p-6 space-y-8">
             {/* Panel Discussion Generation Section */}
             <PodcastGenerationSection
               podcastGenerationState={podcastGenerationState}
@@ -1841,109 +2123,150 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
               isConnected={isConnected}
               connectionError={connectionError}
             />
-          </div>
-        )}
 
-        {/* Generated Podcasts List */}
-        {podcastFiles.length > 0 && !selectedFile && (
-          <div className="mx-6 mb-6">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 bg-gradient-to-r from-orange-50 to-red-50 border-b border-gray-200">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <Play className="h-4 w-4 text-orange-600" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Panel Discussions</h3>
-                    <p className="text-sm text-gray-600">{podcastFiles.length} ready to play</p>
+            {/* Generated Podcasts List */}
+            {podcastFiles.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
+                <div 
+                  className="px-6 py-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b border-orange-100 cursor-pointer hover:from-orange-100 hover:to-amber-100 transition-all duration-200 min-h-[72px]"
+                  onClick={() => toggleSection('podcastList')}
+                >
+                  <div className="flex items-center justify-between h-full">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-500 rounded-lg flex items-center justify-center shadow-sm">
+                        <Play className="h-4 w-4 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Panel Discussions</h3>
+                        <p className="text-sm text-gray-600">{podcastFiles.length} available • Ready to play</p>
+                      </div>
+                    </div>
+                    {collapsedSections.podcastList ? (
+                      <ChevronDown className="h-5 w-5 text-gray-500" />
+                    ) : (
+                      <ChevronUp className="h-5 w-5 text-gray-500" />
+                    )}
                   </div>
                 </div>
-              </div>
-              <div>
-                {podcastFiles.map((podcast) => (
-                  <PodcastListItem
-                    key={podcast.id}
-                    podcast={podcast}
-                    onDownload={handleDownloadPodcast}
-                    onMenuToggle={(podcastId) => setActiveMenuFileId(activeMenuFileId === podcastId ? null : podcastId)}
-                    isMenuOpen={activeMenuFileId === podcast.id}
-                    audioBlob={audioBlobs.get(podcast.id)}
-                    isLoading={loadingAudio.has(podcast.id)}
-                    onDelete={handleDeletePodcast}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Generated Files List */}
-        {files.length > 0 && !selectedFile && (
-          <div className="mx-6 mb-6">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                    <FileText className="h-4 w-4 text-gray-600" />
-                  </div>
+                {!collapsedSections.podcastList && (
                   <div>
-                    <h3 className="font-semibold text-gray-900">Generated Research Reports</h3>
-                    <p className="text-sm text-gray-600">{files.length} reports available</p>
+                    {podcastFiles.map((podcast) => (
+                      <PodcastListItem
+                        key={podcast.id}
+                        podcast={podcast}
+                        onDownload={handleDownloadPodcast}
+                        onMenuToggle={(podcastId) => setActiveMenuFileId(activeMenuFileId === podcastId ? null : podcastId)}
+                        isMenuOpen={activeMenuFileId === podcast.id}
+                        audioBlob={audioBlobs.get(podcast.id)}
+                        isLoading={loadingAudio.has(podcast.id)}
+                        onDelete={handleDeletePodcast}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Generated Files List */}
+            {files.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
+                <div 
+                  className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 cursor-pointer hover:from-blue-100 hover:to-indigo-100 transition-all duration-200 min-h-[72px]"
+                  onClick={() => toggleSection('reportList')}
+                >
+                  <div className="flex items-center justify-between h-full">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
+                        <FileText className="h-4 w-4 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Research Reports</h3>
+                        <p className="text-sm text-gray-600">{files.length} available • Ready to view</p>
+                      </div>
+                    </div>
+                    {collapsedSections.reportList ? (
+                      <ChevronDown className="h-5 w-5 text-gray-500" />
+                    ) : (
+                      <ChevronUp className="h-5 w-5 text-gray-500" />
+                    )}
                   </div>
                 </div>
+                {!collapsedSections.reportList && (
+                  <div className="divide-y divide-gray-100">
+                    {files.map((file) => (
+                      <FileListItem
+                        key={file.id}
+                        file={file}
+                        isSelected={selectedFile?.id === file.id}
+                        onFileClick={handleFileClick}
+                        onDownload={handleDownloadFile}
+                        onMenuToggle={(fileId) => setActiveMenuFileId(activeMenuFileId === fileId ? null : fileId)}
+                        isMenuOpen={activeMenuFileId === file.id}
+                        onEdit={(file) => {
+                          setModalContent(file.content);
+                          setSelectedFile(file);
+                          setModalOpen(true);
+                          setActiveMenuFileId(null);
+                        }}
+                        onDelete={(fileId) => {
+                          setFiles((prev) => prev.filter((f) => f.id !== fileId));
+                          setActiveMenuFileId(null);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="divide-y divide-gray-100">
-                {files.map((file) => (
-                  <FileListItem
-                    key={file.id}
-                    file={file}
-                    isSelected={selectedFile?.id === file.id}
-                    onFileClick={handleFileClick}
-                    onDownload={handleDownloadFile}
-                    onMenuToggle={(fileId) => setActiveMenuFileId(activeMenuFileId === fileId ? null : fileId)}
-                    isMenuOpen={activeMenuFileId === file.id}
-                    onEdit={(file) => {
-                      setModalContent(file.content);
-                      setSelectedFile(file);
-                      setModalOpen(true);
-                      setActiveMenuFileId(null);
-                    }}
-                    onDelete={(fileId) => {
-                      setFiles((prev) => prev.filter((f) => f.id !== fileId));
-                      setActiveMenuFileId(null);
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
+            )}
           </div>
         )}
 
-        {/* Empty State */}
+        {/* Enhanced Empty State */}
         {!selectedFile && files.length === 0 && podcastFiles.length === 0 && !reportGenerationState.isGenerating && !podcastGenerationState.isGenerating && (
           <div className="flex-1 flex items-center justify-center p-12">
-            <div className="text-center max-w-md">
-              <div className="w-16 h-16 bg-gray-100 rounded-2xl mx-auto mb-4 flex items-center justify-center">
-                <FileText className="h-8 w-8 text-gray-500" />
+            <div className="text-center max-w-lg">
+              <div className="relative mb-8">
+                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl mx-auto mb-4 flex items-center justify-center shadow-xl">
+                  <FileText className="h-10 w-10 text-white" />
+                </div>
+                <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-500 rounded-xl flex items-center justify-center shadow-lg">
+                  <Play className="h-4 w-4 text-white" />
+                </div>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Welcome to AI Studio</h3>
-              <p className="text-sm text-gray-500 mb-6">Generate comprehensive research reports and engaging panel discussions from your knowledge base</p>
-              <div className="flex flex-wrap gap-2 justify-center">
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">Welcome to AI Studio</h3>
+              <p className="text-gray-600 mb-8 leading-relaxed">Transform your knowledge into comprehensive research reports and engaging panel discussions with the power of AI</p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center mx-auto mb-2">
+                    <FileText className="h-4 w-4 text-white" />
+                  </div>
+                  <h4 className="font-semibold text-gray-900 mb-1">Research Reports</h4>
+                  <p className="text-xs text-gray-600">AI-powered comprehensive analysis</p>
+                </div>
+                <div className="p-4 bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl border border-orange-100">
+                  <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-500 rounded-lg flex items-center justify-center mx-auto mb-2">
+                    <Play className="h-4 w-4 text-white" />
+                  </div>
+                  <h4 className="font-semibold text-gray-900 mb-1">Panel Discussions</h4>
+                  <p className="text-xs text-gray-600">Engaging AI conversations</p>
+                </div>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs bg-white hover:bg-gray-50 border-gray-300 text-gray-700 hover:text-gray-900"
+                  className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl transition-all duration-200"
                   onClick={() => toggleSection('report')}
                 >
-                  Create Report
+                  <FileText className="mr-2 h-4 w-4" />
+                  Create Research Report
                 </Button>
                 <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs bg-white hover:bg-gray-50 border-gray-300 text-gray-700 hover:text-gray-900"
+                  className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-lg hover:shadow-xl transition-all duration-200"
                   onClick={() => toggleSection('podcast')}
                 >
-                  Generate Podcast
+                  <Play className="mr-2 h-4 w-4" />
+                  Generate Panel Discussion
                 </Button>
               </div>
             </div>
@@ -1952,7 +2275,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 
         {/* Report Viewer */}
         {selectedFile && (
-          <div className="p-6 space-y-6">
+          <div className="p-6 space-y-8">
             {/* Report Display Panel */}
             <div
               className={`bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col transition-all duration-300 ${
@@ -2320,11 +2643,22 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
          )}
       </div>
 
-      {/* Simple Footer */}
+      {/* Enhanced Footer */}
       {(files.length > 0 || podcastFiles.length > 0) && (
-        <div className="flex-shrink-0 p-4 bg-white border-t border-gray-200">
-          <div className="text-center text-xs text-gray-500">
-            {files.length} reports • {podcastFiles.length} podcasts
+        <div className="flex-shrink-0 px-6 py-3 bg-gradient-to-r from-slate-50 to-gray-50 border-t border-gray-200/80">
+          <div className="flex items-center justify-center space-x-6 text-xs text-gray-600">
+            {files.length > 0 && (
+              <div className="flex items-center space-x-1.5">
+                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                <span className="font-medium">{files.length} {files.length === 1 ? 'Report' : 'Reports'}</span>
+              </div>
+            )}
+            {podcastFiles.length > 0 && (
+              <div className="flex items-center space-x-1.5">
+                <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                <span className="font-medium">{podcastFiles.length} {podcastFiles.length === 1 ? 'Discussion' : 'Discussions'}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
