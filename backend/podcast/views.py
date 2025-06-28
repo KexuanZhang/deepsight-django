@@ -194,33 +194,17 @@ class NotebookPodcastJobCancelView(APIView):
             job = self.get_job(notebook_id, job_id)
 
             if job.status in ["pending", "generating"]:
-                # Import here to avoid circular imports
-                from backend.celery import app as celery_app
+                # Use orchestrator for cancellation (same pattern as reports)
+                success = podcast_orchestrator.cancel_podcast_job(str(job.job_id))
 
-                # Cancel the background task if it's running
-                try:
-                    if job.celery_task_id:
-                        celery_app.control.revoke(
-                            job.celery_task_id, terminate=True, signal="SIGTERM"
-                        )
-                        logger.info(
-                            f"Revoked Celery task {job.celery_task_id} for job {job.job_id}"
-                        )
-                    else:
-                        logger.warning(f"No Celery task ID stored for job {job.job_id}")
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to revoke Celery task for job {job.job_id}: {e}"
+                if success:
+                    serializer = PodcastJobSerializer(job)
+                    return Response(serializer.data)
+                else:
+                    return Response(
+                        {"error": "Failed to cancel job"},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     )
-
-                # Update job status in database
-                job.status = "cancelled"
-                job.error_message = "Job cancelled by user"
-                job.progress = "Job cancelled"
-                job.save()
-
-                serializer = PodcastJobSerializer(job)
-                return Response(serializer.data)
             else:
                 return Response(
                     {"error": f"Cannot cancel job with status: {job.status}"},

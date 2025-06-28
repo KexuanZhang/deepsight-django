@@ -36,10 +36,7 @@ schema_view = get_schema_view(
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/users/", include("users.urls")),
-    path("api/v1/reports/", include("reports.urls")),
-    path("api/v1/notebooks/", include("notebooks.urls")),
-    # Notebook-specific podcast endpoints are now handled through notebooks.urls
-    path("api/v1/", include("podcast.urls")),  # This handles notebooks/{id}/podcasts/ pattern
+    path("api/v1/notebooks/", include("notebooks.urls")),  # This handles notebooks/{id}/* patterns for files, podcasts, and reports
     path(
         "swagger/",
         schema_view.with_ui("swagger", cache_timeout=0),

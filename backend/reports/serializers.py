@@ -180,10 +180,11 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
     """Serializer for report generation requests (similar to FastAPI model)."""
 
     # Basic settings
-    topic = serializers.CharField(required=False, allow_blank=True, max_length=500)
+    topic = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=500)
     old_outline = serializers.CharField(
         required=False,
         allow_blank=True,
+        allow_null=True,
         help_text="User-provided outline content to use as starting point",
     )
     model_provider = serializers.ChoiceField(
@@ -241,12 +242,12 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
     )
 
     # CSV processing options
-    csv_session_code = serializers.CharField(required=False, allow_blank=True)
-    csv_date_filter = serializers.CharField(required=False, allow_blank=True)
+    csv_session_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    csv_date_filter = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     def validate(self, data):
         """Validate that at least one input source is provided."""
-        topic = data.get("topic", "").strip()
+        topic = (data.get("topic") or "").strip()
         selected_files_paths = data.get("selected_files_paths", [])
 
         if not topic and not selected_files_paths:

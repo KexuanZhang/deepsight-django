@@ -30,16 +30,43 @@ from utils.paper_processing import insert_figure_images, preserve_figure_formatt
 
 class TopicGenerator(dspy.Signature):
     __doc__ = prompts.TopicGenerator_docstring
-    transcript = dspy.InputField(
-        desc="Optional: Original transcript text, analyze the core theme, entities, technical terms, and high-frequency vocabulary to identify potential key content"
-    )
-    paper = dspy.InputField(
-        desc="Optional: Original paper text, analyze the core theme, entities, technical terms, and high-frequency vocabulary to identify potential key content"
+    text_input = dspy.InputField(
+        desc="Optional: Original text content, analyze the core theme, entities, technical terms, and high-frequency vocabulary to identify potential key content"
     )
     topic = dspy.InputField(desc="Topic to guide report generation")
     improved_topic = dspy.OutputField(
-        desc="Return ONLY the improved topic sentence with no additional text or formatting"
+        desc="Return ONLY the improved topic sentence with no additional text or formatting. If no topic is provided and no content is available, return an empty string."
     )
+
+    def forward(self, text_input, topic):
+        # If no topic and no content, return empty string
+        if not topic and not text_input:
+            return {"improved_topic": ""}
+            
+        # If no topic but have content, try to generate one
+        if not topic and text_input:
+            # Try to extract a topic from content
+            content = text_input
+                
+            # Analyze content to identify key themes
+            with dspy.settings.context(temperature=0.2):
+                improved = self.call(
+                    text_input=text_input,
+                    topic="",  # Empty topic
+                )
+                return {"improved_topic": improved.improved_topic}
+                
+        # If have topic, try to improve it using content
+        if topic:
+            with dspy.settings.context(temperature=0.2):
+                improved = self.call(
+                    text_input=text_input,
+                    topic=topic,
+                )
+                return {"improved_topic": improved.improved_topic}
+                
+        # Fallback - return original topic or empty string
+        return {"improved_topic": topic or ""}
 
 
 class UserInputTopicImprover(dspy.Signature):
@@ -59,8 +86,7 @@ class TopicImprover(dspy.Module):
 
     def forward(
         self,
-        transcript: Optional[str] = None,
-        paper: Optional[str] = None,
+        text_input: Optional[str] = None,
         user_input: Optional[str] = None,
     ) -> str:
         # Maintain backward compatibility by accepting user_input but treating it as topic
@@ -68,38 +94,16 @@ class TopicImprover(dspy.Module):
         system_topic = prompts.SystemTopic_docstring
 
         with dspy.settings.context(lm=self.engine):
-            if transcript and paper and topic:
-                # Both transcript, paper, and explicit topic provided
+            if text_input and topic:
+                # Both text input and explicit topic provided
                 result = self.topic_generator(
-                    transcript=transcript, paper=paper, topic=topic
+                    text_input=text_input, topic=topic
                 )
                 return result.improved_topic
-            elif transcript and topic:
-                # Transcript and explicit topic provided
+            elif text_input:
+                # Only text input provided
                 result = self.topic_generator(
-                    transcript=transcript, paper=None, topic=topic
-                )
-                return result.improved_topic
-            elif paper and topic:
-                # Paper and explicit topic provided
-                result = self.topic_generator(transcript=None, paper=paper, topic=topic)
-                return result.improved_topic
-            elif transcript and paper:
-                # Both transcript and paper provided, no explicit topic.
-                result = self.topic_generator(
-                    transcript=transcript, paper=paper, topic=system_topic
-                )
-                return result.improved_topic
-            elif transcript:
-                # Only transcript provided
-                result = self.topic_generator(
-                    transcript=transcript, paper=None, topic=system_topic
-                )
-                return result.improved_topic
-            elif paper:
-                # Only paper provided.
-                result = self.topic_generator(
-                    transcript=None, paper=paper, topic=system_topic
+                    text_input=text_input, topic=system_topic
                 )
                 return result.improved_topic
             elif topic:
@@ -107,7 +111,7 @@ class TopicImprover(dspy.Module):
                 result = self.user_input_topic_improver(topic=topic)
                 return result.improved_topic
             else:
-                raise ValueError("Either transcript, paper, or topic must be provided")
+                raise ValueError("Either text_input or topic must be provided")
 
 
 class STORMWikiLMConfigs(LMConfigs):
@@ -217,7 +221,15 @@ class STORMWikiLMConfigs(LMConfigs):
 
 @dataclass
 class STORMWikiRunnerArguments:
+    # Required fields first (no default values)
     output_dir: str = field(metadata={"help": "Output directory for the results."})
+    article_title: str = field(metadata={"help": "Title of the article."})
+    
+    # Optional fields with default values
+    topic: Optional[str] = field(default=None, metadata={"help": "Topic of the article."})
+    text_input: Optional[str] = field(default=None, metadata={"help": "Text input content."})
+    speakers: Optional[List[str]] = field(default=None, metadata={"help": "Speakers in the article."})
+    author_json: Optional[str] = field(default=None, metadata={"help": "Author JSON for the article."})
     max_conv_turn: int = field(
         default=3,
         metadata={
@@ -270,20 +282,43 @@ class STORMWikiRunnerArguments:
 
 
 class STORMWikiRunner(Engine):
-    def __init__(
-        self, args: STORMWikiRunnerArguments, lm_configs: STORMWikiLMConfigs, rm
-    ):
+    def __init__(self, args: STORMWikiRunnerArguments, lm_configs: STORMWikiLMConfigs, rm):
         super().__init__(lm_configs=lm_configs)
         self.args = args
         self.lm_configs = lm_configs
-        self.transcript: Union[None, str, List[str]] = None
-        self.paper: Union[None, str, List[str]] = None
-        self.speakers = None
-        self.author_json = None
-        self.article_title = None
-        self.generated_topic = None
+        self.article_title = args.article_title
+        self.generated_topic = args.topic if args.topic else None  # Keep empty topics as None
+        self.speakers = args.speakers if hasattr(args, "speakers") else None
+        self.author_json = args.author_json if hasattr(args, "author_json") else None
+        self.text_input = args.text_input if hasattr(args, "text_input") else None
+        self.figure_data = None
         self.parsed_paper_title = None
-        self.figure_data: List[Dict[str, str]] = []
+        self.article_dir_name = None
+        self.article_output_dir = None
+        self.storm_knowledge_curation = None
+        self.storm_outline_generation = None
+        self.storm_article_generation = None
+        self.storm_article_polishing = None
+        self.storm_persona_generator = None
+        self.storm_lm = None
+        self.storm_lm_for_polish = None
+        self.storm_retriever = None
+        self.storm_retriever_for_polish = None
+        self.storm_retriever_for_persona = None
+        self.storm_retriever_for_outline = None
+        self.storm_retriever_for_article = None
+        self.storm_retriever_for_polish = None
+        self.storm_retriever_for_knowledge = None
+        self.storm_retriever_for_knowledge_polish = None
+        self.storm_retriever_for_knowledge_outline = None
+        self.storm_retriever_for_knowledge_article = None
+        self.storm_retriever_for_knowledge_persona = None
+        self.storm_retriever_for_knowledge_polish_persona = None
+        self.storm_retriever_for_knowledge_polish_outline = None
+        self.storm_retriever_for_knowledge_polish_article = None
+        self.storm_retriever_for_knowledge_polish_persona_outline = None
+        self.storm_retriever_for_knowledge_polish_persona_article = None
+        self.storm_retriever_for_knowledge_polish_persona_outline_article = None
         self.retriever = Retriever(rm=rm, max_thread=self.args.max_thread_num)
         self.persona_generator = StormPersonaGenerator(
             self.lm_configs.question_asker_lm
@@ -316,40 +351,20 @@ class STORMWikiRunner(Engine):
         self.topic_improver = TopicImprover(self.lm_configs.topic_improver_lm)
         self.lm_configs.init_check()
         self.apply_decorators()
+        self.report_id = getattr(args, 'report_id', None)  # Store report_id from config
 
     def _get_formatted_inputs(self) -> str:
-        """Formats the transcript(s) and paper(s) for use in modules.
-        Returns 'N/A' if no transcript and no paper.
-        Returns formatted string for transcript(s) and/or paper(s).
-        """
-        parts = []
-        if self.transcript:
-            if isinstance(self.transcript, str):
-                parts.append(f"=== Transcript 1 ===\\n{self.transcript}")
-            elif isinstance(self.transcript, list):
-                if not self.transcript:  # Empty list
-                    pass
-                elif len(self.transcript) == 1:
-                    parts.append(f"=== Transcript 1 ===\\n{self.transcript[0]}")
-                else:
-                    for i, content in enumerate(self.transcript):
-                        parts.append(f"=== Transcript {i + 1} ===\\n{content}")
+        """Returns the text_input or 'N/A' if not available."""
+        if self.text_input:
+            return self.text_input
+        return "N/A"
 
-        if self.paper:
-            if isinstance(self.paper, str):
-                parts.append(f"=== Paper 1 ===\\n{self.paper}")
-            elif isinstance(self.paper, list):
-                if not self.paper:  # Empty list
-                    pass
-                elif len(self.paper) == 1:
-                    parts.append(f"=== Paper 1 ===\\n{self.paper[0]}")
-                else:
-                    for i, content in enumerate(self.paper):
-                        parts.append(f"=== Paper {i + 1} ===\\n{content}")
-
-        if not parts:
-            return "N/A"
-        return "\\n\\n".join(parts)
+    def _improve_topic(self, text_input: Optional[str] = None, user_input: Optional[str] = None) -> str:
+        """Improves the topic using the TopicImprover module."""
+        return self.topic_improver.forward(
+            text_input=text_input,
+            user_input=user_input
+        )
 
     def _get_considered_personas(
         self,
@@ -358,11 +373,9 @@ class STORMWikiRunner(Engine):
         topic: Optional[str] = None,
         old_outline: Optional[str] = None,
     ) -> List[str]:
-        # Method signature changed to accept combined_input_content
-        # The persona_generator might need to be aware of the structure "=== Transcript X ===" vs "=== Paper Y ==="
-        # For now, passing the combined content.
+        # The persona_generator will work with the consolidated text_input
         return self.persona_generator.generate_persona(
-            transcript=combined_input_content,
+            text_input=combined_input_content,
             max_num_persona=max_num_persona,
             topic=topic,
             old_outline=old_outline,
@@ -378,7 +391,7 @@ class STORMWikiRunner(Engine):
         combined_input_content = self._get_formatted_inputs()
         (information_table, conversation_log) = (
             self.storm_knowledge_curation_module.research(
-                transcript=combined_input_content,
+                text_input=combined_input_content,
                 ground_truth_url=ground_truth_url,
                 callback_handler=callback_handler,
                 max_perspective=self.args.max_perspective,
@@ -406,7 +419,7 @@ class STORMWikiRunner(Engine):
     ) -> StormArticle:
         combined_input_content = self._get_formatted_inputs()
         outline, draft_outline = self.storm_outline_generation_module.generate_outline(
-            transcript=combined_input_content,
+            text_input=combined_input_content,
             information_table=information_table,
             old_outline=old_outline,
             return_draft_outline=True,
@@ -437,7 +450,7 @@ class STORMWikiRunner(Engine):
         combined_input_content = self._get_formatted_inputs()
 
         draft_article = self.storm_article_generation.generate_article(
-            transcript=combined_input_content,
+            text_input=combined_input_content,
             information_table=information_table,
             article_with_outline=outline,
             callback_handler=callback_handler,
@@ -487,7 +500,7 @@ class STORMWikiRunner(Engine):
         # Apply image path fixing if we have selected_files_paths
         if hasattr(self, "selected_files_paths") and self.selected_files_paths:
             try:
-                from deep_researcher_agent.utils.post_processing import (
+                from agents.report_agent.utils.post_processing import (
                     fix_image_paths_advanced,
                 )
 
@@ -496,7 +509,6 @@ class STORMWikiRunner(Engine):
                     self.selected_files_paths,
                     report_output_dir=self.article_output_dir,
                 )
-                logging.info("Applied image path fixing to storm_gen_article.md")
             except Exception as e:
                 logging.warning(
                     f"Failed to fix image paths in storm_gen_article.md: {e}"
@@ -529,7 +541,7 @@ class STORMWikiRunner(Engine):
         combined_input_content = self._get_formatted_inputs()
 
         polished_article = self.storm_article_polishing_module.polish_article(
-            transcript=combined_input_content,
+            text_input=combined_input_content,
             draft_article=draft_article,
             recent_content_only=recent_content_only,
             speakers=speakers or self.speakers,
@@ -558,7 +570,7 @@ class STORMWikiRunner(Engine):
         # Apply image path fixing if we have selected_files_paths
         if hasattr(self, "selected_files_paths") and self.selected_files_paths:
             try:
-                from deep_researcher_agent.utils.post_processing import (
+                from agents.report_agent.utils.post_processing import (
                     fix_image_paths_advanced,
                 )
 
@@ -641,92 +653,45 @@ class STORMWikiRunner(Engine):
         old_outline_path: Optional[str] = None,
         skip_rewrite_outline: bool = False,
     ) -> None:
-        assert (
-            do_research
-            or do_generate_outline
-            or do_generate_article
-            or do_polish_article
-        ), makeStringRed("No action is specified.")
-        if (
-            self.transcript is None and self.paper is None and user_input is None
-        ):  # Check all three
-            raise ValueError("Either transcript, paper, or topic must be provided.")
+        """Run the STORM Wiki engine."""
+        if not hasattr(self, "article_title") or not self.article_title:
+            self.article_title = "StormReport"
 
-        original_topic = user_input
-        if original_topic:
-            print("Original topic provided. Improving topic.")
+        # Skip topic improvement for empty topics
+        if not user_input and not self.generated_topic:
+            logging.info("No topic provided - proceeding with empty topic")
+            return
 
-        # Prepare transcript and paper for TopicImprover
-        # _get_formatted_inputs returns "N/A" if empty, TopicImprover expects None.
-        formatted_transcript_for_improver = None
-        if self.transcript:
-            if isinstance(self.transcript, str):
-                formatted_transcript_for_improver = self.transcript
-            elif isinstance(self.transcript, list) and self.transcript:
-                formatted_transcript_for_improver = "\\n\\n".join(self.transcript)
-
-        formatted_paper_for_improver = None
-        if self.paper:
-            if isinstance(self.paper, str):
-                formatted_paper_for_improver = self.paper
-            elif isinstance(self.paper, list) and self.paper:
-                formatted_paper_for_improver = "\\n\\n".join(self.paper)
-
-        try:
-            improved_topic = self.topic_improver(
-                transcript=formatted_transcript_for_improver,
-                paper=formatted_paper_for_improver,
-                user_input=original_topic,
-            )
-            print(f"Improved topic: {improved_topic}")
-            self.generated_topic = improved_topic
-        except Exception as e:
-            logging.warning(f"Failed to improve topic: {e}")
-            improved_topic = original_topic  # Fallback to original if provided
-            self.generated_topic = original_topic
-            # If original_topic was None and improvement failed, generated_topic is None
-            # The TopicImprover itself should raise error if all inputs are None.
-            if not self.generated_topic and (
-                formatted_transcript_for_improver or formatted_paper_for_improver
-            ):
-                logging.error(
-                    "Topic could not be generated from transcript/paper and no user topic was provided."
+        # Only try to improve topic if one was provided
+        if user_input or self.generated_topic:
+            try:
+                improved_topic = self._improve_topic(
+                    text_input=self.text_input,
+                    user_input=user_input,
                 )
-                # Set a default or re-raise based on how TopicImprover is expected to behave.
-                # If it returns None silently, we need a fallback.
-                # Using a placeholder if all fails.
-                self.generated_topic = "Default Topic - Check Inputs"
+                logging.info(f"Improved topic: {improved_topic}")
+                self.generated_topic = improved_topic
+            except Exception as e:
+                logging.warning(f"Failed to improve topic: {e}")
+                # Fallback to original topic if improvement fails
+                self.generated_topic = user_input or self.generated_topic
 
         if not self.generated_topic:
             # This case occurs if user_input was None, and topic improvement (extraction) also resulted in None or failed.
             # TopicImprover should ideally handle the "no input" case by raising ValueError.
             # If it somehow returns None when it should have content, this is a fallback.
-            if formatted_transcript_for_improver and not formatted_paper_for_improver:
+            if self.text_input:
                 logging.warning(
-                    "Topic improvement returned None, attempting to use a generic topic from transcript."
+                    "Topic improvement returned None, attempting to use a generic topic from text input."
                 )
-                # This implies topic extraction logic from transcript alone inside TopicImprover needs to be robust.
-                # Forcing a re-attempt or using a placeholder.
-                # This path should ideally not be hit if TopicImprover is robust.
-                self.generated_topic = "Topic derived from transcript"
-            elif formatted_paper_for_improver and not formatted_transcript_for_improver:
-                logging.warning(
-                    "Topic improvement returned None, attempting to use a generic topic from paper."
-                )
-                self.generated_topic = "Topic derived from paper"
-            elif formatted_paper_for_improver and formatted_transcript_for_improver:
-                logging.warning(
-                    "Topic improvement returned None, attempting to use a generic topic from transcript and paper."
-                )
-                self.generated_topic = "Topic derived from transcript and paper"
+                self.generated_topic = "Topic derived from text input"
             else:
-                # This means transcript, paper, and user_input were all None initially, which TopicImprover should have caught.
-                # Or, topic_improver returned None despite having transcript/paper.
+                # This means text_input and user_input were all None initially, which TopicImprover should have caught.
                 logging.error(
                     "Generated topic is critically missing and could not be derived. Check TopicImprover logic and inputs."
                 )
                 raise ValueError(
-                    "Failed to determine a topic for the report. All inputs (topic, transcript, paper) might be missing or topic generation failed."
+                    "Failed to determine a topic for the report. All inputs (topic, text_input) might be missing or topic generation failed."
                 )
 
         if not hasattr(self, "article_dir_name") or self.article_dir_name is None:

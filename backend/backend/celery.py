@@ -23,7 +23,12 @@ app.conf.update(
     # Task routing
     task_routes={
         "podcast.tasks.process_podcast_generation": {"queue": "podcast"},
+        "podcast.tasks.cancel_podcast_generation": {"queue": "podcast"},
         "podcast.tasks.cleanup_old_podcast_jobs": {"queue": "maintenance"},
+        "reports.tasks.process_report_generation": {"queue": "reports"},
+        "reports.tasks.cleanup_old_reports": {"queue": "maintenance"},
+        "reports.tasks.cancel_report_generation": {"queue": "reports"},
+        "reports.tasks.validate_report_configuration": {"queue": "validation"},
         "notebooks.tasks.process_url_task": {"queue": "notebook_processing"},
         "notebooks.tasks.process_url_media_task": {"queue": "notebook_processing"},
         "notebooks.tasks.process_file_upload_task": {"queue": "notebook_processing"},
@@ -44,6 +49,10 @@ app.conf.update(
     beat_schedule={
         "cleanup-old-podcast-jobs": {
             "task": "podcast.tasks.cleanup_old_podcast_jobs",
+            "schedule": 86400.0,  # Run daily
+        },
+        "cleanup-old-reports": {
+            "task": "reports.tasks.cleanup_old_reports",
             "schedule": 86400.0,  # Run daily
         },
     },

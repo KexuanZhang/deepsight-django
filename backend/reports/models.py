@@ -209,6 +209,9 @@ class Report(models.Model):
         default=list, blank=True, help_text="Processing log messages"
     )
 
+    # Celery task tracking (optional – used for cancellation of background task)
+    celery_task_id = models.CharField(max_length=255, null=True, blank=True)
+
     # Job management
     job_id = models.CharField(
         max_length=100,

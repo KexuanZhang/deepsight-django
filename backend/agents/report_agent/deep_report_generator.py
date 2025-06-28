@@ -26,7 +26,7 @@ import logging
 import pathlib
 import tempfile
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 from dataclasses import dataclass
 from enum import Enum
 
@@ -108,6 +108,7 @@ class ReportGenerationConfig:
     temperature: float = 0.2
     top_p: float = 0.4
     prompt_type: PromptType = PromptType.GENERAL
+    report_id: Optional[int] = None
 
     # Generation flags
     do_research: bool = True
@@ -136,8 +137,8 @@ class ReportGenerationConfig:
     # Content inputs
     topic: Optional[str] = None
     article_title: str = "StormReport"
-    transcript_path: Optional[List[str]] = None
-    paper_path: Optional[List[str]] = None
+    # Consolidated text input (replaces paper_path, transcript_path, paper_content, transcript_content)
+    text_input: Optional[str] = None
     csv_path: Optional[str] = None
     author_json: Optional[str] = None
     caption_files: Optional[List[str]] = None
@@ -438,13 +439,13 @@ class DeepReportGenerator:
     def _process_csv_metadata(
         self, config: ReportGenerationConfig
     ) -> tuple[str, Optional[str], Optional[Union[str, List[str]]]]:
-        """Process CSV metadata and return article title, speakers, and transcript input."""
+        """Process CSV metadata and return article title, speakers, and text input."""
         article_title = config.article_title
         speakers = None
-        transcript_input = None
+        text_input = None
 
         if not config.csv_path:
-            return article_title, speakers, transcript_input
+            return article_title, speakers, text_input
 
         try:
             df_orig = pd.read_csv(config.csv_path)
@@ -530,11 +531,11 @@ class DeepReportGenerator:
                             )
                         date_filter_applied_and_matched = True
 
-                        # Check if transcript should be sourced from this date-filtered data
+                        # Check if text should be sourced from this date-filtered data
                         if (
-                            not config.transcript_path
-                            and not config.paper_path
-                            and transcript_input is None
+                            not config.text_input
+                            and not config.csv_path
+                            and text_input is None
                         ):
                             descriptions = df_date_filtered["Description"].tolist()
                             cleaned_descriptions = [
@@ -544,11 +545,11 @@ class DeepReportGenerator:
                             ]
                             if cleaned_descriptions:
                                 if len(cleaned_descriptions) == 1:
-                                    transcript_input = cleaned_descriptions[0]
+                                    text_input = cleaned_descriptions[0]
                                 else:
-                                    transcript_input = cleaned_descriptions
+                                    text_input = cleaned_descriptions
                                 self.logger.info(
-                                    f"Extracted {len(cleaned_descriptions)} descriptions for date {config.csv_date_filter} to be used as transcript."
+                                    f"Extracted {len(cleaned_descriptions)} descriptions for date {config.csv_date_filter} to be used as text input."
                                 )
                     else:
                         self.logger.info(
@@ -559,11 +560,11 @@ class DeepReportGenerator:
                         f"Invalid date format: {ve}. Please use YYYY-MM-DD. Skipping date filter."
                     )
 
-            # Core logic for transcript from Description if not otherwise provided
+            # Core logic for text input from Description if not otherwise provided
             if (
-                not config.transcript_path
-                and not config.paper_path
-                and transcript_input is None
+                not config.text_input
+                and not config.csv_path
+                and text_input is None
             ):
                 if (
                     "Description" in df_for_description_extraction.columns
@@ -579,11 +580,11 @@ class DeepReportGenerator:
                     ]
                     if cleaned_descriptions_from_csv:
                         if len(cleaned_descriptions_from_csv) == 1:
-                            transcript_input = cleaned_descriptions_from_csv[0]
+                            text_input = cleaned_descriptions_from_csv[0]
                         else:
-                            transcript_input = cleaned_descriptions_from_csv
+                            text_input = cleaned_descriptions_from_csv
                         self.logger.info(
-                            f"Used 'Description' column from CSV as transcript_input ({len(cleaned_descriptions_from_csv)} items)"
+                            f"Used 'Description' column from CSV as text_input ({len(cleaned_descriptions_from_csv)} items)"
                         )
 
                         # Set title and speakers from first row
@@ -617,115 +618,7 @@ class DeepReportGenerator:
                 f"Error processing CSV file: {e}. Using default title: {article_title}"
             )
 
-        return article_title, speakers, transcript_input
-
-    def _process_transcripts(
-        self, config: ReportGenerationConfig
-    ) -> Optional[Union[str, List[str]]]:
-        """Process transcript data from provided paths."""
-        transcripts_data = []
-
-        if not config.transcript_path:
-            return None
-
-        self.logger.info(f"Processing transcript paths: {config.transcript_path}")
-        for path_item in config.transcript_path:
-            content = self._load_structured_data(path_item)
-            if content:
-                if isinstance(content, list):
-                    transcripts_data.extend(content)
-                elif isinstance(content, str):
-                    transcripts_data.append(content)
-                self.logger.info(
-                    f"Successfully loaded transcript data from: {path_item}"
-                )
-            else:
-                self.logger.warning(f"No transcript data loaded from: {path_item}")
-
-        if not transcripts_data:
-            self.logger.info("No transcripts were loaded.")
-            return None
-        elif len(transcripts_data) == 1:
-            return transcripts_data[0]
-        else:
-            return transcripts_data
-
-    def _process_papers(
-        self, config: ReportGenerationConfig
-    ) -> tuple[Optional[Union[str, List[str]]], List[Dict], List[str]]:
-        """Process paper data and extract figures."""
-        paper_data = []
-        figure_data_for_runner = []
-        original_paper_paths_for_images = (
-            config.paper_path[:] if config.paper_path else []
-        )
-
-        if not config.paper_path:
-            return None, [], []
-
-        self.logger.info(f"Processing paper paths: {config.paper_path}")
-
-        for path_item in config.paper_path:
-            content = self._load_structured_data(path_item)
-            if content:
-                if isinstance(content, list):
-                    paper_data.extend(content)
-                elif isinstance(content, str):
-                    paper_data.append(content)
-                self.logger.info(f"Successfully loaded paper data from: {path_item}")
-            else:
-                self.logger.warning(f"No paper data loaded from: {path_item}")
-
-        loaded_paper_input = None
-        if not paper_data:
-            self.logger.info("No papers were loaded.")
-        elif len(paper_data) == 1:
-            loaded_paper_input = paper_data[0]
-            self.logger.info(
-                f"Loaded a single paper string, length {len(loaded_paper_input)} chars."
-            )
-        else:
-            loaded_paper_input = paper_data
-            self.logger.info(f"Loaded {len(loaded_paper_input)} paper segments.")
-
-        # Extract figure data
-        if loaded_paper_input:
-            paper_content_to_process_for_figures = (
-                loaded_paper_input
-                if isinstance(loaded_paper_input, str)
-                else paper_data[0]
-            )
-
-            try:
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".md", delete=False, encoding="utf-8"
-                ) as tmp_file:
-                    tmp_file.write(paper_content_to_process_for_figures)
-                    temp_md_file_to_process = tmp_file.name
-
-                self.logger.info(
-                    f"Extracting figures from temporary file: {temp_md_file_to_process}"
-                )
-                figure_data_for_runner = extract_figure_data(temp_md_file_to_process)
-                if figure_data_for_runner:
-                    self.logger.info(
-                        f"Successfully extracted {len(figure_data_for_runner)} figures."
-                    )
-
-            except Exception as e:
-                self.logger.error(f"Error during figure extraction: {e}")
-            finally:
-                if "temp_md_file_to_process" in locals() and os.path.exists(
-                    temp_md_file_to_process
-                ):
-                    os.remove(temp_md_file_to_process)
-                    self.logger.info(f"Removed temporary figure processing file")
-
-        return (
-            loaded_paper_input,
-            figure_data_for_runner,
-            original_paper_paths_for_images,
-        )
+        return article_title, speakers, text_input
 
     def _process_video(
         self, config: ReportGenerationConfig, article_output_dir: str
@@ -824,6 +717,9 @@ class DeepReportGenerator:
         generated_files = []
 
         try:
+            # Store report_id for use in filename generation
+            self.report_id = config.report_id
+            
             # Load API keys
             self._load_api_keys()
             processing_logs.append("API keys loaded successfully")
@@ -837,13 +733,12 @@ class DeepReportGenerator:
             # Validate inputs
             if (
                 not config.topic
-                and not config.transcript_path
-                and not config.paper_path
+                and not config.text_input
                 and not config.csv_path
                 and not config.caption_files
             ):
                 raise ValueError(
-                    "Either a topic, transcript, paper, CSV file, or caption files must be provided."
+                    "Either a topic, text input, CSV file, or caption files must be provided."
                 )
 
             # Setup language models and configurations
@@ -855,6 +750,7 @@ class DeepReportGenerator:
             # Set up engine arguments
             engine_args = STORMWikiRunnerArguments(
                 output_dir=config.output_dir,
+                article_title=config.article_title,
                 max_conv_turn=config.max_conv_turn,
                 max_perspective=config.max_perspective,
                 search_top_k=config.search_top_k,
@@ -864,6 +760,7 @@ class DeepReportGenerator:
                 recent_content_only=config.time_range is not None,
                 reranker_threshold=config.reranker_threshold,
                 time_range=config.time_range.value if config.time_range else None,
+                text_input=config.text_input,
             )
 
             # Setup retriever
@@ -879,43 +776,27 @@ class DeepReportGenerator:
                 runner.selected_files_paths = config.selected_files_paths
 
             # Process CSV metadata
-            article_title, speakers, csv_transcript_input = self._process_csv_metadata(
+            article_title, speakers, csv_text_input = self._process_csv_metadata(
                 config
             )
             processing_logs.append("CSV metadata processed")
 
-            # Process transcripts
-            transcript_input = self._process_transcripts(config) or csv_transcript_input
-            runner.transcript = transcript_input
+            # Use text_input directly if provided, otherwise use CSV text input
+            if config.text_input:
+                # text_input is already consolidated from the input processor
+                runner.text_input = config.text_input
+                processing_logs.append("Text input loaded")
+            elif csv_text_input:
+                runner.text_input = csv_text_input
+                processing_logs.append("CSV text input loaded as text input")
+            
             runner.speakers = speakers
             runner.article_title = article_title
-            processing_logs.append("Transcript data processed")
-
-            # Process papers
-            (
-                loaded_paper_input,
-                figure_data_for_runner,
-                original_paper_paths_for_images,
-            ) = self._process_papers(config)
-            runner.paper = loaded_paper_input
-            runner.figure_data = figure_data_for_runner
-            processing_logs.append("Paper data processed")
-
-            # Parse paper title if single paper provided
-            runner.parsed_paper_title = None
-            if loaded_paper_input and isinstance(loaded_paper_input, str):
-                runner.parsed_paper_title = parse_paper_title(loaded_paper_input)
-                if runner.parsed_paper_title and runner.article_title == "StormReport":
-                    article_title = runner.parsed_paper_title
-                    runner.article_title = article_title
-                    self.logger.info(
-                        f"Using parsed paper title as article title: {article_title}"
-                    )
 
             # Validate that we have content to work with
-            if not config.topic and not runner.transcript and not runner.paper:
+            if not config.topic and not runner.text_input:
                 raise ValueError(
-                    "Either a topic, transcript, or paper content must be provided for report generation."
+                    "Either a topic or text input must be provided for report generation."
                 )
 
             # Set article directory name (but don't create subfolder - use output_dir directly)
@@ -923,25 +804,6 @@ class DeepReportGenerator:
                 article_title.replace(" ", "_").replace("/", "_")
             )
             runner.article_dir_name = folder_name
-
-            # Update figure data paths
-            if (
-                not config.caption_files
-                and runner.figure_data
-                and runner.article_dir_name
-            ):
-                image_output_subfolder_name = f"Images_{runner.article_dir_name}"
-                updated_figure_data_list = []
-                for fig_dict in runner.figure_data:
-                    original_image_path = fig_dict.get("image_path")
-                    if original_image_path:
-                        base_image_filename = os.path.basename(original_image_path)
-                        new_relative_image_path = os.path.join(
-                            image_output_subfolder_name, base_image_filename
-                        )
-                        fig_dict["image_path"] = new_relative_image_path
-                    updated_figure_data_list.append(fig_dict)
-                runner.figure_data = updated_figure_data_list
 
             # Use output directory directly without creating subfolder
             article_output_dir = config.output_dir
@@ -953,44 +815,23 @@ class DeepReportGenerator:
             # Process video if provided
             video_figure_data = self._process_video(config, article_output_dir)
             if video_figure_data:
-                if figure_data_for_runner:
-                    figure_data_for_runner.extend(video_figure_data)
-                else:
-                    figure_data_for_runner = video_figure_data
-                runner.figure_data = figure_data_for_runner
+                runner.figure_data = video_figure_data
                 processing_logs.append("Video processed and figure data extracted")
 
             # Log processing information
             if config.topic:
-                if runner.transcript and runner.paper:
+                if runner.text_input:
                     self.logger.info(
-                        f"Topic, transcript, and paper provided. The topic ('{config.topic}') will be improved using both transcript and paper."
-                    )
-                elif runner.transcript:
-                    self.logger.info(
-                        f"Topic and transcript provided. The topic ('{config.topic}') will be improved using the transcript."
-                    )
-                elif runner.paper:
-                    self.logger.info(
-                        f"Topic and paper provided. The topic ('{config.topic}') will be improved using the paper."
+                        f"Topic and text input provided. The topic ('{config.topic}') will be improved using the text input."
                     )
                 else:
                     self.logger.info(
                         f"Only topic ('{config.topic}') provided. Using the provided topic for improvement/guidance."
                     )
             else:
-                if runner.transcript and runner.paper:
-                    self.logger.info(
-                        "Transcript and paper provided (no topic). Key insights will be extracted from both to form a topic."
-                    )
-                elif runner.transcript:
-                    self.logger.info(
-                        "Only transcript provided (no topic). Key technology or innovations will be extracted from the transcript to form a topic."
-                    )
-                elif runner.paper:
-                    self.logger.info(
-                        "Only paper provided (no topic). Key insights will be extracted from the paper to form a topic."
-                    )
+                self.logger.info(
+                    "Text input provided (no topic). Key technology or innovations will be extracted from the text input to form a topic."
+                )
 
             # Execute the pipeline
             runner.run(
@@ -1023,9 +864,14 @@ class DeepReportGenerator:
                     article_output_dir, "storm_gen_article_polished.md"
                 )
                 if os.path.exists(polished_article_path):
-                    # Use article_title directly for the output file name
+                    # Always use report_id in the filename (must be available from config)
+                    if not config.report_id:
+                        raise ValueError("report_id is required but not provided in config")
+                    
+                    output_filename = f"report_{config.report_id}.md"
+                    
                     output_file = os.path.join(
-                        article_output_dir, f"{article_title}.md"
+                        article_output_dir, output_filename
                     )
 
                     # Apply full post-processing (image paths + citations removal + etc.)
@@ -1037,7 +883,7 @@ class DeepReportGenerator:
 
                         # Apply image path fixing to ensure final Report file has correct paths
                         try:
-                            from deep_researcher_agent.utils.post_processing import (
+                            from agents.report_agent.utils.post_processing import (
                                 fix_image_paths_advanced,
                             )
 
@@ -1052,7 +898,7 @@ class DeepReportGenerator:
                             )
 
                         # Apply other post-processing (citations, captions, placeholders)
-                        from deep_researcher_agent.utils.post_processing import (
+                        from agents.report_agent.utils.post_processing import (
                             remove_citations,
                             remove_captions,
                             remove_figure_placeholders,
@@ -1080,41 +926,12 @@ class DeepReportGenerator:
 
                     generated_files.append(output_file)
                     processing_logs.append(
-                        f"Generated final Report file: {article_title}.md"
+                        f"Generated final Report file: {output_filename}"
                     )
             else:
                 processing_logs.append(
                     "Post-processing disabled: Only storm_gen_article.md and storm_gen_article_polished.md generated"
                 )
-
-            # Copy paper images if applicable
-            if original_paper_paths_for_images:
-                source_paper_location = original_paper_paths_for_images[0]
-                actual_md_or_txt_file_path = None
-
-                if os.path.isfile(
-                    source_paper_location
-                ) and source_paper_location.endswith((".md", ".txt")):
-                    actual_md_or_txt_file_path = source_paper_location
-                elif os.path.isdir(source_paper_location):
-                    found_md_files = glob.glob(
-                        os.path.join(source_paper_location, "*.md")
-                    )
-                    if found_md_files:
-                        actual_md_or_txt_file_path = found_md_files[0]
-                    else:
-                        found_txt_files = glob.glob(
-                            os.path.join(source_paper_location, "*.txt")
-                        )
-                        if found_txt_files:
-                            actual_md_or_txt_file_path = found_txt_files[0]
-
-                if actual_md_or_txt_file_path:
-                    copy_paper_images(
-                        paper_md_path=actual_md_or_txt_file_path,
-                        report_output_dir=article_output_dir,
-                    )
-                    processing_logs.append("Paper images copied successfully")
 
             return ReportGenerationResult(
                 success=True,

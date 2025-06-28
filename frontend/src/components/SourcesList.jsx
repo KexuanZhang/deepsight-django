@@ -473,7 +473,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
   const startUrlStatusPolling = useCallback((uploadUrlId, sourceId) => {
     const pollStatus = async () => {
       try {
-        const response = await apiService.getUrlParsingStatus(uploadUrlId);
+        const response = await apiService.getUrlParsingStatus(uploadUrlId, notebookId);
         if (response.success) {
           const { data } = response;
           const status = data.status;
@@ -537,7 +537,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     
     // Start polling after initial delay
     setTimeout(pollStatus, 2000);
-  }, []);
+  }, [notebookId]);
 
   // Expose methods to parent components
   useImperativeHandle(ref, () => ({
