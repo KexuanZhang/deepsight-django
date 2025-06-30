@@ -401,6 +401,7 @@ def fix_image_paths_advanced(
     content: str,
     selected_files_paths: List[str],
     report_output_dir: Optional[str] = None,
+    figure_data: Optional[List[dict]] = None,
 ) -> str:
     """
     Advanced version of fix_image_paths that handles conflicts and edge cases.
@@ -409,6 +410,7 @@ def fix_image_paths_advanced(
         content (str): The markdown content containing image references
         selected_files_paths (List[str]): List of folder paths from knowledge base
         report_output_dir (Optional[str]): Path to the report output directory for calculating relative paths
+        figure_data (Optional[List[dict]]): Figure data with absolute image paths
 
     Returns:
         str: The content with fixed image paths (using relative paths)
@@ -419,6 +421,16 @@ def fix_image_paths_advanced(
 
     # Create image mapping to handle conflicts
     image_mapping = resolve_image_conflicts(selected_files_paths)
+    
+    # Add figure_data images to mapping (these have absolute paths already)
+    if figure_data:
+        logger.info(f"Adding {len(figure_data)} figures from figure_data to image mapping")
+        for figure in figure_data:
+            if 'image_path' in figure and os.path.exists(figure['image_path']):
+                filename = os.path.basename(figure['image_path'])
+                image_mapping[filename] = figure['image_path']
+            else:
+                logger.warning(f"Figure image not found: {figure.get('image_path', 'No path')}")
 
     # Pattern to match img tags with problematic src paths (more comprehensive)
     # This pattern catches any image that starts with an underscore and contains common image extensions

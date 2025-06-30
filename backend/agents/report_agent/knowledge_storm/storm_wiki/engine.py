@@ -508,6 +508,7 @@ class STORMWikiRunner(Engine):
                     article_content,
                     self.selected_files_paths,
                     report_output_dir=self.article_output_dir,
+                    figure_data=self.figure_data,
                 )
             except Exception as e:
                 logging.warning(
@@ -578,6 +579,7 @@ class STORMWikiRunner(Engine):
                     hyperlinked_content_str,
                     self.selected_files_paths,
                     report_output_dir=self.article_output_dir,
+                    figure_data=self.figure_data,
                 )
                 logging.info(
                     "Applied image path fixing to storm_gen_article_polished.md"

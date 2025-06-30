@@ -800,6 +800,7 @@ class DeepReportGenerator:
                                 content,
                                 config.selected_files_paths,
                                 report_output_dir=article_output_dir,
+                                figure_data=config.figure_data if hasattr(config, 'figure_data') else None,
                             )
                         except Exception as e:
                             self.logger.warning(
