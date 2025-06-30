@@ -202,8 +202,8 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 # Media files (uploaded content) - Updated to use new DeepSight data storage path
-# DEEPSIGHT_DATA_ROOT = Path("/Users/huangruizhe/Library/CloudStorage/OneDrive-UniversityofToronto/RAY/Huawei/data00/Deepsight")
-DEEPSIGHT_DATA_ROOT = Path("/Users/eason/Downloads/data00/Deepsight")
+DEEPSIGHT_DATA_ROOT = Path("/Users/huangruizhe/Library/CloudStorage/OneDrive-UniversityofToronto/RAY/Huawei/data00/Deepsight")
+# DEEPSIGHT_DATA_ROOT = Path("/Users/eason/Downloads/data00/Deepsight")
 MEDIA_ROOT = DEEPSIGHT_DATA_ROOT
 MEDIA_URL = "/media/"
 

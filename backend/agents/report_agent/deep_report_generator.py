@@ -159,6 +159,7 @@ class ReportGenerationResult:
     generated_files: List[str]
     error_message: Optional[str] = None
     processing_logs: List[str] = None
+    report_content: Optional[str] = None
 
 
 class DeepReportGenerator:
@@ -858,30 +859,22 @@ class DeepReportGenerator:
             ]
             generated_files.extend(basic_storm_files)
 
-            # Only create the final Report file if post_processing is enabled
+            # Store the final processed report content for Django FileField storage
+            # The actual file will be created by job_service.py using Django FileField
+            final_report_content = None
             if config.post_processing:
                 polished_article_path = os.path.join(
                     article_output_dir, "storm_gen_article_polished.md"
                 )
                 if os.path.exists(polished_article_path):
-                    # Always use report_id in the filename (must be available from config)
-                    if not config.report_id:
-                        raise ValueError("report_id is required but not provided in config")
-                    
-                    output_filename = f"report_{config.report_id}.md"
-                    
-                    output_file = os.path.join(
-                        article_output_dir, output_filename
-                    )
-
                     # Apply full post-processing (image paths + citations removal + etc.)
                     if config.selected_files_paths:
                         # Storm files already have image path fixing, but we need to apply it again
-                        # plus other post-processing for the final Report file
+                        # plus other post-processing for the final Report content
                         with open(polished_article_path, "r", encoding="utf-8") as f:
                             content = f.read()
 
-                        # Apply image path fixing to ensure final Report file has correct paths
+                        # Apply image path fixing to ensure final Report content has correct paths
                         try:
                             from agents.report_agent.utils.post_processing import (
                                 fix_image_paths_advanced,
@@ -894,7 +887,7 @@ class DeepReportGenerator:
                             )
                         except Exception as e:
                             self.logger.warning(
-                                f"Failed to fix image paths in Report file: {e}"
+                                f"Failed to fix image paths in Report content: {e}"
                             )
 
                         # Apply other post-processing (citations, captions, placeholders)
@@ -908,25 +901,26 @@ class DeepReportGenerator:
                         content = remove_captions(content, True)
                         content = remove_figure_placeholders(content, True)
 
-                        # Write the fully processed Report file
-                        with open(output_file, "w", encoding="utf-8") as f:
-                            f.write(content)
-
+                        final_report_content = content
                         processing_logs.append(
-                            f"Full post-processing applied to Report file: {output_file}"
+                            "Full post-processing applied to Report content"
                         )
                     else:
                         # No image path fixing needed, just apply traditional post-processing
-                        process_file(
-                            polished_article_path, output_file, config.post_processing
-                        )
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(mode='w+', suffix='.md', delete=False) as temp_file:
+                            process_file(
+                                polished_article_path, temp_file.name, config.post_processing
+                            )
+                            with open(temp_file.name, 'r', encoding='utf-8') as f:
+                                final_report_content = f.read()
+                            os.unlink(temp_file.name)
                         processing_logs.append(
-                            f"Traditional post-processing applied to Report file: {output_file}"
+                            "Traditional post-processing applied to Report content"
                         )
 
-                    generated_files.append(output_file)
                     processing_logs.append(
-                        f"Generated final Report file: {output_filename}"
+                        "Generated final Report content (will be stored via Django FileField)"
                     )
             else:
                 processing_logs.append(
@@ -939,6 +933,7 @@ class DeepReportGenerator:
                 output_directory=article_output_dir,
                 generated_files=[f for f in generated_files if os.path.exists(f)],
                 processing_logs=processing_logs,
+                report_content=final_report_content,
             )
 
         except Exception as e:
