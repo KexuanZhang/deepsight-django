@@ -12,7 +12,7 @@ def remove_citations(content, post_processing=True):
     """
     Remove all citation markers in brackets except for pure numeric citations.
     
-    Keeps: [1], [11], [2][5][19] (pure numeric citations)
+    Keeps: [1], [11], [[1]], [2][5][19] (pure numeric citations)
     Removes: [transcript x], [paper x], [somewords], [somewords with numbers], [transcript x][00:00:00], etc.
 
     Args:
@@ -25,30 +25,28 @@ def remove_citations(content, post_processing=True):
     if not post_processing:
         return content
 
-    # Step 1: Replace non-numeric citations with a single space to preserve word boundaries
-    # Pattern to match any bracket notation that is NOT purely numeric
-    # \[(?!\[?\d+\]?\])[^\]]+\] matches:
-    # - \[ : opening bracket  
-    # - (?!\[?\d+\]?\]) : negative lookahead - not followed by a numeric citation like [1] or [[1]]
-    # - [^\]]+ : one or more characters that are not closing bracket
-    # - \] : closing bracket
-    pattern = r"\[(?!\[?\d+\]?\])[^\]]+\]"
-    content = re.sub(pattern, " ", content)
+    def replacer(match):
+        # If the content within the brackets is purely numeric, keep the original citation.
+        # Otherwise, replace it with a space.
+        if match.group(1).isdigit():
+            return match.group(0)
+        return " "
+
+    # Process level-1 nested citations first, e.g., [[...]]
+    # This pattern specifically looks for content that does not contain brackets itself.
+    content = re.sub(r"\[\[([^\[\]]+)\]\]", replacer, content)
+
+    # Process level-0 citations, e.g., [...]
+    content = re.sub(r"\[([^\[\]]+)\]", replacer, content)
     
-    # Step 2: Handle empty brackets [] specifically
-    empty_pattern = r"\[\s*\]"
-    content = re.sub(empty_pattern, " ", content)
-    
-    # Step 3: Clean up any multiple spaces that resulted from removals
-    # Replace multiple consecutive spaces/tabs with single space
+    # Clean up any multiple spaces that resulted from removals
     content = re.sub(r"[ \t]+", " ", content)
     
-    # Step 4: Clean up spaces at line boundaries (but preserve line breaks)
-    # Remove spaces at start and end of lines
+    # Clean up spaces at line boundaries (but preserve line breaks)
     content = re.sub(r"^ +", "", content, flags=re.MULTILINE)  # spaces at start of lines
     content = re.sub(r" +$", "", content, flags=re.MULTILINE)  # spaces at end of lines
     
-    # Step 5: Remove any empty lines that resulted from citations being on their own line
+    # Remove any empty lines that resulted from citations being on their own line
     # But be careful to preserve intentional double line breaks (paragraph breaks)
     # First normalize multiple newlines
     content = re.sub(r"\n{3,}", "\n\n", content)  # reduce 3+ newlines to 2
