@@ -97,13 +97,11 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     f"http://{HOST_IP}:{FRONTEND_PORT}",  # Configurable frontend server
     f"http://localhost:{FRONTEND_PORT}",  # Keep localhost for local development
-    "http://localhost:5175",  # Legacy port support
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     f"http://{HOST_IP}:{FRONTEND_PORT}",  # Configurable frontend server
     f"http://localhost:{FRONTEND_PORT}",  # Keep localhost for local development
-    "http://localhost:5175",  # Legacy port support
 ]
 
 # Additional CORS settings for SSE
