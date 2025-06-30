@@ -181,6 +181,7 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
 
     # Basic settings
     topic = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=500)
+    article_title = serializers.CharField(required=False, allow_blank=True, max_length=255, default="Research Report")
     old_outline = serializers.CharField(
         required=False,
         allow_blank=True,

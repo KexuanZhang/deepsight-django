@@ -334,7 +334,7 @@ const ReportConfigSection = ({
 
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">
-              Research Topic <span className="text-red-500">*</span>
+              Research Topic
             </label>
             <input
               type="text"
@@ -1274,7 +1274,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
         // Convert completed jobs to files format - simplified approach
         const reportFiles = completedJobs.map((job) => ({
           id: `report-${job.job_id}`,
-          name: `${job.article_title || 'Research Report'}.md`,
+          name: `${reportConfig.article_title || 'Research Report'}.md`,
           jobId: job.job_id,
           createdAt: job.created_at || new Date().toISOString(),
           // Content will be loaded on-demand when file is clicked
@@ -1363,7 +1363,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 
       const newReport = {
         id: `report-${Date.now()}`,
-        name: `${result.article_title}.md`,
+        name: `${reportConfig.article_title || 'Research Report'}.md`,
         content: reportContent,
         jobId: reportGenerationState.currentJobId,
         generatedFiles: result.generated_files,
@@ -1377,7 +1377,7 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
       // Ensure we still add the report even if content loading fails
       const fallbackReport = {
         id: `report-${Date.now()}`,
-        name: `${result.article_title}.md`,
+        name: `${reportConfig.article_title || 'Research Report'}.md`,
         content: `# ${result.article_title}\n\nReport generated successfully!\n\nOutput directory: ${result.output_directory}\n\nGenerated files:\n${result.generated_files.map(f => `- ${f}`).join('\n')}`,
         jobId: reportGenerationState.currentJobId,
         generatedFiles: result.generated_files,
