@@ -535,22 +535,33 @@ class FileListView(StandardAPIView, NotebookPermissionMixin, FileListResponseMix
 
 class RAGChatFromKBView(StandardAPIView, NotebookPermissionMixin):
     def post(self, request):
-        file_ids = request.data.get("file_ids", [])
+        # file_ids = request.data.get("file_ids", [])
         question = request.data.get("question")
         notebook_id = request.data.get("notebook_id")
 
-        if not file_ids or not question or not notebook_id:
-            return Response({"error": "file_ids, question, and notebook_id are required"}, status=400)
-        
+        # if not file_ids or not question or not notebook_id:
+        #     return Response({"error": "file_ids, question, and notebook_id are required"}, status=400)
+
         try:
             notebook = self.get_user_notebook(notebook_id, request.user)
         except Exception as e:
             return Response({"error": "Notebook not found"}, status=404)
 
-        # Filter valid knowledge items
+        # Filter valid KB items
+        # kb_items = KnowledgeBaseItem.objects.filter(
+        #     id__in=file_ids,
+        #     user=request.user,
+        #     file__isnull=False
+        # ).exclude(file="")
         kb_items = KnowledgeBaseItem.objects.filter(
-            id__in=file_ids, user=request.user, file__isnull=False
-        ).exclude(file__exact='')
+            notebook_links__notebook=notebook,
+            user=request.user,
+            file__isnull=False
+        ).exclude(file="").distinct()
+
+        if not kb_items.exists():
+            return Response({"error": "No valid text files found for this notebook"}, status=404)
+
 
         if not kb_items.exists():
             return Response(
