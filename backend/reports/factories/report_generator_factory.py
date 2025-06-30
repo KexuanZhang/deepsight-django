@@ -56,10 +56,16 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
                 logger.error("Must provide either topic or selected_files_paths")
                 return False
             
-            # Must have article title
+            # Provide default article_title if empty
             if not article_title:
-                logger.error(f"Missing or empty article_title: {article_title}")
-                return False
+                if topic:
+                    article_title = topic
+                    config['article_title'] = article_title
+                    logger.info(f"Using topic as article_title: {article_title}")
+                else:
+                    article_title = "Research Report"
+                    config['article_title'] = article_title
+                    logger.info(f"Using default article_title: {article_title}")
                 
             # Must have output directory  
             if not output_dir:
@@ -249,8 +255,8 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
             # Add input content if provided (no file paths, direct content like podcast)
             if config.get('text_input'):
                 deep_config.text_input = config['text_input']
-            if config.get('caption_files'):
-                deep_config.caption_files = config['caption_files']
+            if config.get('figure_data'):
+                deep_config.figure_data = config['figure_data']
             
             return deep_config
             

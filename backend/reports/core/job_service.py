@@ -25,6 +25,9 @@ class JobService:
     def create_job(self, report_data: Dict[str, Any], user=None, notebook=None) -> Report:
         """Create a new report generation job"""
         try:
+            # Handle figure_data parameter separately
+            figure_data = report_data.pop('figure_data', None)
+            
             # Ensure CharField fields with blank=True are empty strings, not None
             # since these fields are CharField(blank=True) but not null=True
             string_fields = ["topic", "csv_session_code", "csv_date_filter"]
@@ -47,7 +50,17 @@ class JobService:
             
             # Generate unique job ID
             report.job_id = str(uuid.uuid4())
-            report.save(update_fields=["job_id"])
+            
+            # Handle figure_data if provided
+            if figure_data:
+                from .figure_service import FigureDataService
+                figure_data_path = FigureDataService.create_knowledge_base_figure_data(
+                    user.pk, f"direct_{report.id}", figure_data
+                )
+                if figure_data_path:
+                    report.figure_data_path = figure_data_path
+            
+            report.save(update_fields=["job_id", "figure_data_path"])
             
             # Create job metadata for caching
             job_metadata = {

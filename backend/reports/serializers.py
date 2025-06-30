@@ -245,6 +245,13 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
     # CSV processing options
     csv_session_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     csv_date_filter = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
+    # Figure data input
+    figure_data = serializers.JSONField(
+        required=False, 
+        allow_null=True,
+        help_text="List of figure data dictionaries with image_path, figure_name, and caption"
+    )
 
     def validate(self, data):
         """Validate that at least one input source is provided."""
@@ -257,6 +264,27 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
             )
 
         return data
+    
+    def validate_figure_data(self, value):
+        """Validate figure_data structure"""
+        if not value:
+            return value
+            
+        if not isinstance(value, list):
+            raise serializers.ValidationError("figure_data must be a list")
+        
+        for i, figure in enumerate(value):
+            if not isinstance(figure, dict):
+                raise serializers.ValidationError(f"Figure {i} must be a dictionary")
+                
+            required_fields = ['image_path', 'figure_name', 'caption']
+            missing_fields = [field for field in required_fields if field not in figure]
+            if missing_fields:
+                raise serializers.ValidationError(
+                    f"Figure {i} missing required fields: {missing_fields}"
+                )
+        
+        return value
 
     def validate_time_range(self, value):
         """Convert empty string to None for time_range field."""

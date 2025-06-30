@@ -621,89 +621,6 @@ class DeepReportGenerator:
 
         return article_title, speakers, text_input
 
-    def _process_video(
-        self, config: ReportGenerationConfig, article_output_dir: str
-    ) -> Optional[List[Dict]]:
-        """Process caption files to extract figure data."""
-        if not config.caption_files:
-            return None
-
-        self.logger.info("Processing caption files for figure extraction...")
-
-        all_figure_data = []
-
-        for caption_file in config.caption_files:
-            if not os.path.exists(caption_file):
-                self.logger.warning(f"Caption file not found: {caption_file}")
-                continue
-
-            self.logger.info(f"Processing caption file: {caption_file}")
-
-            # Load and process caption data
-            try:
-                with open(caption_file, "r", encoding="utf-8") as f:
-                    caption_data = json.load(f)
-
-                if not isinstance(caption_data, list):
-                    self.logger.warning(
-                        f"Expected list in caption file {caption_file}, got {type(caption_data)}"
-                    )
-                    continue
-
-                # Extract figure data from caption data
-                video_figure_data = extract_figure_data(caption_file)
-                if not video_figure_data:
-                    self.logger.info(
-                        f"No figures found in caption file {caption_file}."
-                    )
-                    continue
-
-                # Update paths in figure data to be relative to article output directory
-                base_dir = os.path.dirname(caption_file)  # extractions directory
-
-                for fig_dict in video_figure_data:
-                    if "image_path" in fig_dict:
-                        image_path = fig_dict["image_path"]
-
-                        # If path is absolute, make it relative to article output directory
-                        if os.path.isabs(image_path):
-                            try:
-                                # Try to make path relative to article output directory
-                                rel_path = os.path.relpath(
-                                    image_path, article_output_dir
-                                )
-                                fig_dict["image_path"] = rel_path
-                            except ValueError:
-                                # If paths are on different drives, keep filename only
-                                fig_dict["image_path"] = os.path.basename(image_path)
-                        elif not image_path.startswith("."):
-                            # If it's a relative path but doesn't start with '.', make it relative to base_dir
-                            full_path = os.path.join(base_dir, image_path)
-                            try:
-                                rel_path = os.path.relpath(
-                                    full_path, article_output_dir
-                                )
-                                fig_dict["image_path"] = rel_path
-                            except ValueError:
-                                fig_dict["image_path"] = os.path.basename(image_path)
-
-                all_figure_data.extend(video_figure_data)
-                self.logger.info(
-                    f"Successfully extracted {len(video_figure_data)} figures from {caption_file}."
-                )
-
-            except Exception as e:
-                self.logger.error(f"Failed to process caption file {caption_file}: {e}")
-                continue
-
-        if all_figure_data:
-            self.logger.info(
-                f"Total figures extracted from all caption files: {len(all_figure_data)}"
-            )
-            return all_figure_data
-        else:
-            self.logger.info("No figures found in any caption files.")
-            return None
 
     def generate_report(self, config: ReportGenerationConfig) -> ReportGenerationResult:
         """Generate a research report based on the provided configuration.
@@ -813,11 +730,10 @@ class DeepReportGenerator:
                 article_output_dir
             )
 
-            # Process video if provided
-            video_figure_data = self._process_video(config, article_output_dir)
-            if video_figure_data:
-                runner.figure_data = video_figure_data
-                processing_logs.append("Video processed and figure data extracted")
+            # Handle figure data if provided
+            if hasattr(config, 'figure_data') and config.figure_data:
+                runner.figure_data = config.figure_data
+                processing_logs.append(f"Figure data loaded: {len(config.figure_data)} figures")
 
             # Log processing information
             if config.topic:

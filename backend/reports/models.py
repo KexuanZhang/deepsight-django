@@ -211,6 +211,14 @@ class Report(models.Model):
 
     # Celery task tracking (optional – used for cancellation of background task)
     celery_task_id = models.CharField(max_length=255, null=True, blank=True)
+    
+    # Figure data storage
+    figure_data_path = models.CharField(
+        max_length=500, 
+        blank=True, 
+        null=True,
+        help_text="Absolute path to combined figure_data.json file"
+    )
 
     # Job management
     job_id = models.CharField(
@@ -237,9 +245,21 @@ class Report(models.Model):
 
     def get_configuration_dict(self):
         """Get the configuration as a dictionary for the report generator."""
+        # Provide fallback defaults for empty values
+        article_title = self.article_title.strip() if self.article_title else ""
+        if not article_title:
+            if self.topic and self.topic.strip():
+                article_title = self.topic.strip()
+            else:
+                article_title = "Research Report"
+                
+        topic = self.topic.strip() if self.topic else ""
+        if not topic and self.selected_files_paths:
+            topic = "Research Analysis"
+        
         return {
-            "topic": self.topic,
-            "article_title": self.article_title,
+            "topic": topic,
+            "article_title": article_title,
             "old_outline": self.old_outline,
             "model_provider": self.model_provider,
             "retriever": self.retriever,

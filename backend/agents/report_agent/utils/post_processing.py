@@ -27,12 +27,12 @@ def remove_citations(content, post_processing=True):
 
     # Step 1: Replace non-numeric citations with a single space to preserve word boundaries
     # Pattern to match any bracket notation that is NOT purely numeric
-    # \[(?!\d+\])[^\]]+\] matches:
+    # \[(?!\[?\d+\]?\])[^\]]+\] matches:
     # - \[ : opening bracket  
-    # - (?!\d+\]) : negative lookahead - not followed by only digits and closing bracket
+    # - (?!\[?\d+\]?\]) : negative lookahead - not followed by a numeric citation like [1] or [[1]]
     # - [^\]]+ : one or more characters that are not closing bracket
     # - \] : closing bracket
-    pattern = r"\[(?!\d+\])[^\]]+\]"
+    pattern = r"\[(?!\[?\d+\]?\])[^\]]+\]"
     content = re.sub(pattern, " ", content)
     
     # Step 2: Handle empty brackets [] specifically
