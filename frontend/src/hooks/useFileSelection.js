@@ -26,14 +26,22 @@ export const useFileSelection = (sourcesListRef) => {
 
   // Optimized polling for file selection changes with mutation observer fallback
   useEffect(() => {
-    if (!sourcesListRef?.current) return;
+    if (!sourcesListRef?.current) {
+      console.debug('sourcesListRef not available, skipping file selection monitoring');
+      return;
+    }
 
     let lastSelectedIds = '';
     let observer;
     
     const checkForChanges = () => {
       try {
-        const currentFiles = sourcesListRef.current?.getSelectedFiles() || [];
+        // Additional null check inside the function
+        if (!sourcesListRef?.current?.getSelectedFiles) {
+          return;
+        }
+        
+        const currentFiles = sourcesListRef.current.getSelectedFiles() || [];
         const currentIds = currentFiles.map(f => f.file_id || f.file).join(',');
         
         if (currentIds !== lastSelectedIds) {
@@ -49,18 +57,21 @@ export const useFileSelection = (sourcesListRef) => {
     checkForChanges();
 
     // Try to observe DOM changes for immediate updates
-    if (typeof MutationObserver !== 'undefined' && sourcesListRef.current) {
+    if (typeof MutationObserver !== 'undefined' && sourcesListRef?.current) {
       observer = new MutationObserver(() => {
         checkForChanges();
       });
       
       try {
-        observer.observe(sourcesListRef.current, {
-          childList: true,
-          subtree: true,
-          attributes: true,
-          attributeFilter: ['class', 'data-selected']
-        });
+        // Double-check the ref is still valid
+        if (sourcesListRef.current && sourcesListRef.current instanceof Node) {
+          observer.observe(sourcesListRef.current, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'data-selected']
+          });
+        }
       } catch (error) {
         console.warn('Could not set up MutationObserver:', error);
       }
