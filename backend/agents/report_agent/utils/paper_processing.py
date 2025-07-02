@@ -369,69 +369,14 @@ def preserve_figure_formatting(content: str) -> str:
     return content
 
 
-def extract_figure_data_from_json(json_file_path):
-    """
-    Extracts figure information from a video caption JSON file.
-
-    Args:
-        json_file_path (str): The path to the JSON caption file.
-
-    Returns:
-        list: A list of dictionaries, where each dictionary represents a figure
-              and contains 'image_path', 'figure_name', and 'caption'.
-              Returns an empty list if the file_path is empty, or a ValueError
-              if the file cannot be read. Returns an empty list if no figures are found.
-    """
-    if not json_file_path:
-        return []
-
-    try:
-        with open(json_file_path, "r", encoding="utf-8") as f:
-            caption_data = json.load(f)
-
-        if not isinstance(caption_data, list):
-            logging.warning(
-                f"Expected list in JSON file {json_file_path}, got {type(caption_data)}"
-            )
-            return []
-
-        # Convert to figure data format with proper figure names
-        figures = []
-        figure_count = 1
-        for item in caption_data:
-            if isinstance(item, dict) and all(
-                key in item for key in ["image_path", "figure_name", "caption"]
-            ):
-                # Use "Figure X" format for consistency with markdown extraction
-                figure_name = f"Figure {figure_count}"
-                figures.append(
-                    {
-                        "image_path": item["image_path"],
-                        "figure_name": figure_name,
-                        "caption": item["caption"],
-                    }
-                )
-                figure_count += 1
-            else:
-                logging.warning(
-                    f"Skipping invalid item in JSON file {json_file_path}: {item}"
-                )
-
-        logging.info(
-            f"Extracted {len(figures)} figures from video caption file {json_file_path}"
-        )
-        return figures
-
-    except Exception as e:
-        raise ValueError(f"Error reading JSON file {json_file_path}: {e}")
 
 
 def extract_figure_data(file_path):
     """
-    Extracts figure information (image path, figure name, caption) from a Markdown file or JSON caption file.
+    Extracts figure information (image path, figure name, caption) from a Markdown file.
 
     Args:
-        file_path (str): The path to the Markdown file or JSON caption file.
+        file_path (str): The path to the Markdown file.
 
     Returns:
         list: A list of dictionaries, where each dictionary represents a figure
@@ -441,10 +386,6 @@ def extract_figure_data(file_path):
     """
     if not file_path:
         return []
-
-    # Check if it's a JSON caption file
-    if file_path.endswith(".json") and "_caption.json" in file_path:
-        return extract_figure_data_from_json(file_path)
 
     # Original markdown processing
     figures = []

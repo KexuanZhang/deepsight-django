@@ -21,7 +21,7 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
     
     def process_selected_files(self, file_paths: List[str]) -> Dict[str, Any]:
         """Process selected files from knowledge base and extract content"""
-        input_data = {"text_files": [], "caption_files": []}
+        input_data = {"text_files": [], "selected_file_ids": []}
         
         try:
             from notebooks.utils.file_storage import FileStorageService
@@ -44,6 +44,9 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
                         else:
                             logger.warning(f"Invalid file path or ID: {file_id}")
                             continue
+                    
+                    # Store file ID for figure data combination
+                    input_data["selected_file_ids"].append(f"f_{file_id}")
                     
                     # Get file content using the file storage service
                     content = file_storage.get_file_content(file_id)
@@ -70,14 +73,9 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
                                 "metadata": kb_item.metadata or {},
                             }
                             
-                            # Simplified categorization: caption files vs text files
-                            if filename.lower().endswith('.json') or "caption" in filename.lower():
-                                input_data["caption_files"].append(f"kb_item_{file_id}")
-                                logger.info(f"Found caption file: {filename} (ID: {file_id})")
-                            else:
-                                # All other files are treated as text files
-                                input_data["text_files"].append(file_data)
-                                logger.info(f"Loaded text file: {filename} (ID: {file_id})")
+                            # All files are treated as text files (no more caption file separation)
+                            input_data["text_files"].append(file_data)
+                            logger.info(f"Loaded text file: {filename} (ID: {file_id})")
                                 
                         except KnowledgeBaseItem.DoesNotExist:
                             logger.warning(f"Knowledge base item not found for ID: {file_id}")
@@ -91,7 +89,7 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
             
             logger.info(
                 f"Processed input data: {len(input_data['text_files'])} text files, "
-                f"{len(input_data['caption_files'])} caption files"
+                f"{len(input_data['selected_file_ids'])} file IDs for figure data"
             )
             
             return input_data
@@ -122,14 +120,7 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
                 except Exception as e:
                     logger.warning(f"Failed to read file {md_file}: {e}")
             
-            # Process caption files
-            caption_files = list(folder_path_obj.glob("*.json")) + \
-                           list(folder_path_obj.glob("**/*.json"))
-            
-            for caption_file in caption_files:
-                if "caption" in caption_file.name.lower():
-                    input_data["caption_files"].append(str(caption_file))
-                    logger.info(f"Found caption file: {caption_file}")
+            # Legacy folder processing no longer handles caption files
                     
         except Exception as e:
             logger.warning(f"Failed to process folder path {folder_path_obj}: {e}")
@@ -143,7 +134,7 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
             result = {
                 "paper_path": [],
                 "transcript_path": [],
-                "caption_files": processed_data.get("caption_files", [])
+                "selected_file_ids": processed_data.get("selected_file_ids", [])
             }
             
             # For backward compatibility, we still return paths but they will be ignored
@@ -156,7 +147,7 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
             
         except Exception as e:
             logger.error(f"Error preparing file paths: {e}")
-            return {"paper_path": [], "transcript_path": [], "caption_files": []}
+            return {"paper_path": [], "transcript_path": [], "selected_file_ids": []}
     
     def cleanup_temp_files(self, temp_file_paths: List[str]):
         """
@@ -167,7 +158,7 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
     
     def get_content_data(self, processed_data: Dict[str, Any]) -> Dict[str, Any]:
         """Get content data for report generation with consolidated text_input."""
-        content_data = {"text_input": "", "caption_files": []}
+        content_data = {"text_input": "", "selected_file_ids": []}
         
         try:
             text_contents = []
@@ -188,22 +179,22 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
             if text_contents:
                 content_data["text_input"] = "\n\n".join(text_contents)
             
-            # Caption files remain unchanged
-            if processed_data.get("caption_files"):
-                content_data["caption_files"] = processed_data["caption_files"]
+            # Pass selected file IDs for figure data combination
+            if processed_data.get("selected_file_ids"):
+                content_data["selected_file_ids"] = processed_data["selected_file_ids"]
             
             logger.info(f"Consolidated {len(text_contents)} files into text_input")
             return content_data
             
         except Exception as e:
             logger.error(f"Error preparing content data: {e}")
-            return {"text_input": "", "caption_files": []}
+            return {"text_input": "", "selected_file_ids": []}
     
     def validate_input_data(self, data: Dict[str, Any]) -> bool:
         """Validate that input data is in the correct format"""
         try:
             # Check that data has the expected structure
-            required_keys = ["text_files", "caption_files"]
+            required_keys = ["text_files", "selected_file_ids"]
             for key in required_keys:
                 if key not in data:
                     return False

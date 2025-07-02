@@ -70,7 +70,7 @@ const StudioPanel = ({
     topic: '',
     article_title: '',
     model_provider: 'openai',
-    retriever: 'google'
+    retriever: 'tavily'
   });
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation state ======
@@ -137,7 +137,7 @@ const StudioPanel = ({
       const config = {
         ...reportGeneration.config,
         notebook_id: notebookId,
-        selected_files: selectedFiles.map(f => f.id)
+        selected_files_paths: selectedFiles.map(f => f.id)
       };
 
       const response = await studioService.generateReport(config);
@@ -323,9 +323,11 @@ const StudioPanel = ({
         throw new Error('Report ID not found');
       }
       
-      await studioService.deleteFile(reportId);
+      // Delete from backend database using the proper API call
+      await studioService.api.deleteReport(reportId, notebookId);
       studioData.removeReport(reportId);
       
+      // Clear selected file if it's the one being deleted, without navigating to another file
       if (selectedFile?.id === reportId || selectedFile?.job_id === reportId) {
         setSelectedFile(null);
         setSelectedFileContent('');
@@ -333,7 +335,7 @@ const StudioPanel = ({
       
       toast({
         title: "Report Deleted",
-        description: "The report has been deleted successfully"
+        description: "The report has been deleted successfully from the database"
       });
     } catch (error) {
       toast({
@@ -342,7 +344,7 @@ const StudioPanel = ({
         variant: "destructive"
       });
     }
-  }, [studioService, studioData, selectedFile, toast]);
+  }, [studioService, studioData, selectedFile, notebookId, toast]);
 
   const handleDeletePodcast = useCallback(async (podcast) => {
     if (!confirm('Are you sure you want to delete this podcast?')) {
@@ -510,6 +512,7 @@ const StudioPanel = ({
           onToggleExpand={toggleExpanded}
           onToggleViewMode={toggleViewMode}
           onContentChange={setSelectedFileContent}
+          notebookId={notebookId}
         />
       )}
     </div>
