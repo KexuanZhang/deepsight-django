@@ -72,7 +72,7 @@ INSTALLED_APPS = [
     "users",
     "notebooks",
     "reports",
-    "publications",
+    "conferences",
     "events",
     "people",
     "podcast",
@@ -95,11 +95,13 @@ CORS_ALLOW_CREDENTIALS = True
 
 
 CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5174",
     f"http://{HOST_IP}:{FRONTEND_PORT}",  # Configurable frontend server
     f"http://localhost:{FRONTEND_PORT}",  # Keep localhost for local development
 ]
 
 CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5174",
     f"http://{HOST_IP}:{FRONTEND_PORT}",  # Configurable frontend server
     f"http://localhost:{FRONTEND_PORT}",  # Keep localhost for local development
 ]
