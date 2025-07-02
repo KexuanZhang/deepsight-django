@@ -1365,16 +1365,17 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
                 notebook_id, file_id, request.user
             )
 
-            # Get the base directory for this knowledge base item
-            paths = file_storage._generate_knowledge_base_paths(
+            # Resolve images directory using FigureDataService helper which considers
+            # the actual creation date and performs fallback searches across months.
+            # Import inside the method to avoid potential circular dependencies.
+            from reports.core.figure_service import FigureDataService  # noqa: WPS433, E402
+
+            images_dir = FigureDataService._get_knowledge_base_images_path(
                 user_id=request.user.pk,
-                original_filename=kb_item.title + '.pdf',  # Reconstruct filename
-                kb_item_id=str(kb_item.id)
+                file_id=str(kb_item.id),
             )
-            
-            # Build the full path to the image
-            base_dir_path = Path(file_storage.base_data_root) / paths['base_dir']
-            image_path = base_dir_path / 'images' / image_name
+
+            image_path = Path(images_dir) / image_name
             
             # Check if image exists
             if not image_path.exists():
