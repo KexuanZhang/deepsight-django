@@ -770,7 +770,7 @@ const FileListItem = React.memo(({ file, isSelected, onFileClick, onDownload, on
             <MoreVertical className="w-4 h-4" />
           </button>
           {isMenuOpen && (
-            <div className="absolute right-0 top-8 w-48 bg-white border rounded-lg shadow-xl z-50 overflow-hidden border-gray-200">
+            <div className="absolute right-0 bottom-8 w-48 bg-white border rounded-lg shadow-xl z-50 overflow-hidden border-gray-200">
               <button
                 className="w-full px-4 py-3 text-sm flex items-center gap-3 hover:bg-gray-50 text-gray-700 transition-colors"
                 onClick={() => onEdit(file)}
