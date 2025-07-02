@@ -35,6 +35,304 @@ import { useJobStatus } from "@/hooks/useJobStatus";
 import { Badge } from "@/components/ui/badge";
 import { config } from "@/config";
 
+const API_BASE_URL = config.API_BASE_URL;
+
+// Enhanced Authenticated Image component with multiple fallback strategies
+const AuthenticatedImage = ({ src, alt, title }) => {
+  const [imgSrc, setImgSrc] = useState(src);
+  const [imgError, setImgError] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [attemptCount, setAttemptCount] = useState(0);
+
+  useEffect(() => {
+    setImgError(false);
+    setIsLoading(true);
+    setAttemptCount(0);
+    
+    // If the src is a blob URL or already a data URL, use it directly
+    if (src.startsWith('blob:') || src.startsWith('data:')) {
+      setImgSrc(src);
+      setIsLoading(false);
+      return;
+    }
+
+    // If it's an API URL, try multiple strategies to fetch the image
+    if (src.includes('/api/v1/notebooks/') && src.includes('/images/')) {
+      fetchImageWithFallbacks(src);
+    } else {
+      // For external URLs, use directly
+      setImgSrc(src);
+      setIsLoading(false);
+    }
+  }, [src]);
+
+  const fetchImageWithFallbacks = async (originalSrc) => {
+    const strategies = [
+      // Strategy 1: Try the original URL with credentials
+      async () => {
+        console.log('Strategy 1: Fetching image with credentials:', originalSrc);
+        const response = await fetch(originalSrc, {
+          credentials: 'include',
+          headers: {
+            'Accept': 'image/*,*/*'
+          }
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.log('Strategy 1 failed:', response.status, errorText);
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        console.log('Strategy 1 succeeded: Image blob URL created:', blobUrl);
+        return blobUrl;
+      },
+
+      // Strategy 2: Try alternative path formats
+      async () => {
+        console.log('Strategy 2: Trying alternative path formats');
+        
+        // Extract components from URL: /api/v1/notebooks/{id}/files/{file_id}/images/{image_name}
+        const urlMatch = originalSrc.match(/\/notebooks\/(\d+)\/files\/([^\/]+)\/images\/([^\/]+)$/);
+        if (!urlMatch) throw new Error('Could not parse URL components');
+        
+        const [, notebookId, fileId, imageName] = urlMatch;
+        
+        // Try different API paths that might exist
+        const alternativePaths = [
+          `/api/v1/files/${fileId}/images/${imageName}`,
+          `/api/v1/notebooks/${notebookId}/images/${imageName}`,
+          `/api/v1/images/${fileId}/${imageName}`,
+          `/media/Users/u_1/knowledge_base_item/2025-07/f_${fileId}/images/${imageName}`,
+        ];
+
+        for (const altPath of alternativePaths) {
+          try {
+            const altUrl = `${API_BASE_URL}${altPath}`.replace('/api/v1/api/v1', '/api/v1');
+            console.log('Trying alternative path:', altUrl);
+            
+            const response = await fetch(altUrl, {
+              credentials: 'include',
+              headers: { 'Accept': 'image/*,*/*' }
+            });
+
+            if (response.ok) {
+              const blob = await response.blob();
+              const blobUrl = URL.createObjectURL(blob);
+              console.log('Strategy 2 succeeded with path:', altUrl);
+              return blobUrl;
+            }
+          } catch (error) {
+            console.log('Alternative path failed:', altPath, error.message);
+          }
+        }
+        
+        throw new Error('All alternative paths failed');
+      },
+
+      // Strategy 3: Try to generate a placeholder data URL
+      async () => {
+        console.log('Strategy 3: Generating placeholder image');
+        
+        // Create a canvas-based placeholder with the figure information
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 400;
+        canvas.height = 300;
+
+        // Draw placeholder background
+        ctx.fillStyle = '#f8f9fa';
+        ctx.fillRect(0, 0, 400, 300);
+
+        // Draw border
+        ctx.strokeStyle = '#dee2e6';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(1, 1, 398, 298);
+
+        // Draw icon
+        ctx.fillStyle = '#6c757d';
+        ctx.font = '24px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('🖼️', 200, 120);
+
+        // Draw alt text
+        if (alt) {
+          ctx.fillStyle = '#495057';
+          ctx.font = '16px Arial';
+          ctx.fillText(alt, 200, 160);
+        }
+
+        // Draw "Image not available" text
+        ctx.fillStyle = '#6c757d';
+        ctx.font = '14px Arial';
+        ctx.fillText('Image not available', 200, 190);
+        
+        // Extract image name from URL for display
+        const imageName = originalSrc.split('/').pop();
+        ctx.font = '12px Arial';
+        ctx.fillText(imageName, 200, 220);
+
+        // Convert canvas to data URL
+        const dataUrl = canvas.toDataURL('image/png');
+        console.log('Strategy 3 succeeded: Generated placeholder image');
+        return dataUrl;
+      }
+    ];
+
+    // Try each strategy in sequence
+    for (let i = 0; i < strategies.length; i++) {
+      try {
+        setAttemptCount(i + 1);
+        const result = await strategies[i]();
+        setImgSrc(result);
+        setIsLoading(false);
+        setImgError(false);
+        return; // Success!
+      } catch (error) {
+        console.error(`Strategy ${i + 1} failed:`, error);
+        if (i === strategies.length - 1) {
+          // All strategies failed
+          console.error('All image loading strategies failed for:', originalSrc);
+          setImgError(true);
+          setIsLoading(false);
+        }
+      }
+    }
+  };
+
+  // Cleanup blob URLs when component unmounts
+  useEffect(() => {
+    return () => {
+      if (imgSrc && imgSrc.startsWith('blob:')) {
+        URL.revokeObjectURL(imgSrc);
+      }
+    };
+  }, [imgSrc]);
+
+  return (
+    <div className="my-4">
+      {isLoading && (
+        <div className="bg-gray-100 border border-gray-200 rounded-lg p-4 text-center text-gray-500">
+          <div className="flex items-center justify-center space-x-2">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span className="text-sm">
+              Loading image... {attemptCount > 0 && `(Attempt ${attemptCount})`}
+            </span>
+          </div>
+        </div>
+      )}
+      
+      {!isLoading && !imgError && (
+        <img 
+          src={imgSrc} 
+          alt={alt || 'Image'} 
+          title={title}
+          className="max-w-full h-auto rounded-lg border border-gray-200 shadow-sm"
+          style={{ maxHeight: '500px' }}
+          onError={(e) => {
+            console.error('Image failed to load after processing:', { src: imgSrc, alt, title });
+            // Don't set error here as we've already tried all strategies
+          }}
+          onLoad={(e) => {
+            console.log('Image loaded successfully:', { src: imgSrc, alt });
+          }}
+        />
+      )}
+
+      {!isLoading && imgError && (
+        <div className="bg-gray-100 border border-gray-200 rounded-lg p-4 text-center text-gray-500">
+          <div className="flex items-center justify-center space-x-2">
+            <FileText className="h-5 w-5" />
+            <span className="text-sm">Image could not be loaded</span>
+          </div>
+          {alt && <p className="text-xs mt-1 text-gray-400">{alt}</p>}
+          <p className="text-xs mt-1 text-gray-400 break-all">URL: {src}</p>
+          <p className="text-xs mt-1 text-gray-400">Tried {attemptCount} loading strategies</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Function to process report markdown content and fix image URLs
+const processReportMarkdownContent = (content, notebookId) => {
+  if (!content) return content;
+  
+  console.log('processReportMarkdownContent called with:', { notebookId, contentLength: content.length });
+  
+  // Convert HTML img tags with knowledge_base_item paths to markdown syntax
+  // Pattern: <img src="../../../../knowledge_base_item/2025-06/f_3/images/_page_6_Figure_0.jpeg" alt="Figure 2" style="max-height: 500px;">
+  const htmlImagePattern = /<img\s+src="([^"]*knowledge_base_item[^"]*)"(?:\s+alt="([^"]*)")?[^>]*>/g;
+  
+  let processedContent = content.replace(htmlImagePattern, (match, imagePath, altText = '') => {
+    console.log('Processing HTML image:', { imagePath, altText, fullMatch: match });
+    
+    // Extract file ID from path pattern: knowledge_base_item/yyyy-mm/f_ID/images/filename
+    const fileIdMatch = imagePath.match(/f_(\d+)\/images\//);
+    if (!fileIdMatch) {
+      console.warn('Could not extract file ID from path:', imagePath);
+      return match;
+    }
+    
+    const fileId = fileIdMatch[1];
+    const imageName = imagePath.split('/').pop();
+    
+    // Use correct API endpoint format
+    const imageUrl = `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/images/${imageName}`;
+    console.log('Generated image URL for HTML->Markdown conversion:', imageUrl);
+    
+    // Convert to markdown syntax so it gets processed by AuthenticatedImage component
+    return `![${altText}](${imageUrl})`;
+  });
+  
+  // Also handle markdown image syntax: ![alt text](image_path)
+  const markdownImagePattern = /!\[([^\]]*)\]\(([^)]*knowledge_base_item[^)]*)\)/g;
+  
+  processedContent = processedContent.replace(markdownImagePattern, (match, altText, imagePath) => {
+    console.log('Processing markdown image:', { altText, imagePath });
+    
+    // Extract file ID from path pattern: knowledge_base_item/yyyy-mm/f_ID/images/filename
+    const fileIdMatch = imagePath.match(/f_(\d+)\/images\//);
+    if (!fileIdMatch) {
+      console.warn('Could not extract file ID from path:', imagePath);
+      return match;
+    }
+    
+    const fileId = fileIdMatch[1];
+    const imageName = imagePath.split('/').pop();
+    
+    // Use correct API endpoint format
+    const imageUrl = `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/images/${imageName}`;
+    console.log('Generated markdown image URL:', imageUrl);
+    
+    return `![${altText}](${imageUrl})`;
+  });
+  
+  // Additionally convert HTML img tags that already have the API /files/{id}/images/ path
+  const htmlImageFilesPattern = /<img\s+src="([^"\s]*\/files\/(\d+)\/images\/[^"\s]+)"(?:\s+alt="([^"]*)")?[^>]*>/g;
+
+  processedContent = processedContent.replace(htmlImageFilesPattern, (match, imagePath, fileId, altText = '') => {
+    const imageName = imagePath.split('/').pop();
+    const imageUrl = `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/images/${imageName}`;
+    console.log('Converted existing API HTML image to markdown:', { imageUrl });
+    return `![${altText}](${imageUrl})`;
+  });
+
+  // Also handle markdown images that already contain the /files/{id}/images/ path (ensure correct notebook)
+  const markdownImageFilesPattern = /!\[([^\]]*)\]\(([^)]+\/files\/(\d+)\/images\/[^)]+)\)/g;
+
+  processedContent = processedContent.replace(markdownImageFilesPattern, (match, altText, imagePath, fileId) => {
+    const imageName = imagePath.split('/').pop();
+    const imageUrl = `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/images/${imageName}`;
+    console.log('Normalising existing API markdown image URL:', { imageUrl });
+    return `![${altText}](${imageUrl})`;
+  });
+
+  return processedContent;
+};
+
 // Utility function for formatting model names
 const formatModelName = (value) => {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -610,12 +908,44 @@ const MarkdownContent = React.memo(({ content }) => (
         blockquote: ({children}) => <blockquote className="border-l-4 border-blue-200 pl-4 italic text-gray-600 my-4">{children}</blockquote>,
         code: ({children}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800">{children}</code>,
         pre: ({children}) => <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4">{children}</pre>,
+        img: AuthenticatedImage,
       }}
     >
       {content}
     </ReactMarkdown>
   </div>
 ));
+
+// Special markdown content component for Research Reports with image processing
+const ReportMarkdownContent = React.memo(({ content, notebookId }) => {
+  const processedContent = useMemo(() => {
+    return processReportMarkdownContent(content, notebookId);
+  }, [content, notebookId]);
+
+  return (
+    <div className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={{
+          h1: ({children}) => <h1 className="text-3xl font-bold text-gray-900 mb-6 pb-3 border-b">{children}</h1>,
+          h2: ({children}) => <h2 className="text-2xl font-semibold text-gray-800 mt-8 mb-4">{children}</h2>,
+          h3: ({children}) => <h3 className="text-xl font-medium text-gray-800 mt-6 mb-3">{children}</h3>,
+          p: ({children}) => <p className="text-gray-700 leading-relaxed mb-4">{children}</p>,
+          ul: ({children}) => <ul className="list-disc pl-6 mb-4 space-y-2">{children}</ul>,
+          ol: ({children}) => <ol className="list-decimal pl-6 mb-4 space-y-2">{children}</ol>,
+          li: ({children}) => <li className="text-gray-700">{children}</li>,
+          blockquote: ({children}) => <blockquote className="border-l-4 border-blue-200 pl-4 italic text-gray-600 my-4">{children}</blockquote>,
+          code: ({children}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800">{children}</code>,
+          pre: ({children}) => <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4">{children}</pre>,
+          img: AuthenticatedImage,
+        }}
+      >
+        {processedContent}
+      </ReactMarkdown>
+    </div>
+  );
+});
 
 // Main StudioPanel Component
 const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
@@ -2208,9 +2538,33 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
                           setModalOpen(true);
                           setActiveMenuFileId(null);
                         }}
-                        onDelete={(fileId) => {
-                          setFiles((prev) => prev.filter((f) => f.id !== fileId));
-                          setActiveMenuFileId(null);
+                        onDelete={async (fileId) => {
+                          try {
+                            // Find the file to get its jobId
+                            const fileToDelete = files.find(f => f.id === fileId);
+                            if (fileToDelete && fileToDelete.jobId) {
+                              // Delete from backend using the jobId
+                              await apiService.deleteReport(fileToDelete.jobId, notebookId);
+                              toast({
+                                title: "Report deleted",
+                                description: "The report has been successfully deleted from the database.",
+                              });
+                            }
+                            
+                            // Remove from frontend state
+                            setFiles((prev) => prev.filter((f) => f.id !== fileId));
+                            setActiveMenuFileId(null);
+                            
+                            // Always clear selectedFile when deleting any report to prevent unwanted navigation
+                            setSelectedFile(null);
+                          } catch (error) {
+                            console.error('Failed to delete report:', error);
+                            toast({
+                              title: "Delete failed",
+                              description: `Failed to delete report: ${error.message}`,
+                              variant: "destructive",
+                            });
+                          }
                         }}
                       />
                     ))}
@@ -2371,7 +2725,11 @@ const StudioPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
               <div className="flex-1 overflow-auto">
                 {viewMode === "preview" ? (
                   <div className="p-8">
-                    <MarkdownContent content={selectedFile.content} />
+                    {selectedFile.name.includes('Research Report') || selectedFile.name.includes('.md') ? (
+                      <ReportMarkdownContent content={selectedFile.content} notebookId={notebookId} />
+                    ) : (
+                      <MarkdownContent content={selectedFile.content} />
+                    )}
                   </div>
                 ) : (
                   <div className="p-6">
