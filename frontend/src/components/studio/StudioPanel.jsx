@@ -104,17 +104,32 @@ const StudioPanel = ({
   // ====== SINGLE RESPONSIBILITY: Job status monitoring ======
   const reportJobStatus = useJobStatus(
     reportGeneration.currentJobId,
-    reportGeneration.updateProgress,
     handleReportComplete,
-    reportGeneration.failGeneration
+    reportGeneration.failGeneration,
+    notebookId,
+    'report'
   );
 
   const podcastJobStatus = useJobStatus(
     podcastGeneration.currentJobId,
-    podcastGeneration.updateProgress,
     handlePodcastComplete,
-    podcastGeneration.failGeneration
+    podcastGeneration.failGeneration,
+    notebookId,
+    'podcast'
   );
+
+  // ====== SINGLE RESPONSIBILITY: Progress sync ======
+  useEffect(() => {
+    if (reportJobStatus.progress) {
+      reportGeneration.updateProgress(reportJobStatus.progress);
+    }
+  }, [reportJobStatus.progress, reportGeneration.updateProgress]);
+
+  useEffect(() => {
+    if (podcastJobStatus.progress) {
+      podcastGeneration.updateProgress(podcastJobStatus.progress);
+    }
+  }, [podcastJobStatus.progress, podcastGeneration.updateProgress]);
 
   // ====== SINGLE RESPONSIBILITY: Source selection sync ======
   useEffect(() => {
@@ -164,7 +179,7 @@ const StudioPanel = ({
       const config = {
         ...podcastGeneration.config,
         notebook_id: notebookId,
-        selected_files: selectedFiles.map(f => f.id)
+        source_file_ids: selectedFiles.map(f => f.id)
       };
 
       const response = await studioService.generatePodcast(config);
