@@ -70,7 +70,7 @@ const StudioPanel = ({
     topic: '',
     article_title: '',
     model_provider: 'openai',
-    retriever: 'google'
+    retriever: 'tavily'
   });
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation state ======
@@ -137,7 +137,7 @@ const StudioPanel = ({
       const config = {
         ...reportGeneration.config,
         notebook_id: notebookId,
-        selected_files: selectedFiles.map(f => f.id)
+        selected_files_paths: selectedFiles.map(f => f.id)
       };
 
       const response = await studioService.generateReport(config);
