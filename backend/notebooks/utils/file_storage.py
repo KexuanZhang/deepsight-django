@@ -191,8 +191,22 @@ class FileStorageService:
             'year_month': year_month
         }
 
-    def _calculate_content_hash(self, content: str) -> str:
-        """Calculate SHA-256 hash of content for deduplication."""
+    def _calculate_content_hash(self, content: str, metadata: Dict[str, Any] = None) -> str:
+        """
+        Calculate SHA-256 hash of content for deduplication.
+        
+        For files with minimal or empty content (like marker-processed PDFs),
+        include file metadata to prevent false duplicates.
+        """
+        # If content is empty
+        # include metadata to create a unique hash
+        if not content.strip():
+            if metadata:
+                # Create a more unique identifier using file metadata
+                hash_input = f"{content}|{metadata.get('original_filename', '')}|{metadata.get('file_size', 0)}|{metadata.get('upload_timestamp', '')}"
+                return hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+        
+        # For substantial content, use content-based hashing as before
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     def store_processed_file(
@@ -211,7 +225,7 @@ class FileStorageService:
             from ..models import KnowledgeBaseItem, KnowledgeItem, Notebook, Source
 
             # Calculate content hash for deduplication
-            content_hash = self._calculate_content_hash(content)
+            content_hash = self._calculate_content_hash(content, metadata)
 
             # Check if this content already exists in user's knowledge base
             existing_item = KnowledgeBaseItem.objects.filter(
