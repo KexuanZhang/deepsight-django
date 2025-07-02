@@ -238,10 +238,21 @@ def insert_figure_images(
 ) -> str:
     """
     Inserts image paths and captions into the article content at placeholders in the format <Figure X>.
+    Only inserts at the first occurrence of each figure placeholder, and skips figures that have already been inserted.
     """
     figure_dict = {
         fig["figure_name"]: (fig["image_path"], fig["caption"]) for fig in figures
     }
+    
+    # Check which figures have already been inserted by looking for existing img tags with alt text
+    already_inserted = set()
+    for figure_name in figure_dict:
+        # Check if there's already an img tag with this figure's alt text (handle both single and double quotes)
+        existing_img_pattern = rf'<img\s+[^>]*alt=["\']' + re.escape(figure_name) + r'["\'][^>]*>'
+        if re.search(existing_img_pattern, article_content, re.IGNORECASE):
+            already_inserted.add(figure_name)
+            logging.info(f"Figure '{figure_name}' already inserted, skipping.")
+    
     # Look for placeholders in format <Figure X> on standalone lines
     pattern = r"^\s*<Figure \d+>\s*$"
     matches = list(re.finditer(pattern, article_content, re.MULTILINE | re.IGNORECASE))
@@ -255,6 +266,11 @@ def insert_figure_images(
         figure_name = re.sub(
             r"[<>]", "", placeholder_text
         )  # Remove < and > to get "Figure X"
+        
+        # Skip if this figure has already been inserted
+        if figure_name in already_inserted:
+            continue
+            
         if figure_name not in first_occurrences:
             first_occurrences[figure_name] = match.start()
 
