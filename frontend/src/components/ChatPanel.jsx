@@ -12,6 +12,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 import { useFileSelection } from "@/hooks/useFileSelection";
+import { API_BASE_URL } from "@/config";
 
 function getCookie(name) {
   const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
@@ -143,7 +144,9 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 
   const fetchSuggestions = async () => {
     try {
-      const response = await fetch(`/api/v1/notebooks/${notebookId}/suggested-questions/`);
+      const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/suggested-questions/`, {
+        credentials: 'include',
+      });
       if (!response.ok) throw new Error("Failed to fetch suggestions");
       const data = await response.json();
       setSuggestedQuestions(data.suggestions || []);
@@ -172,7 +175,9 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 useEffect(() => {
   const fetchChatHistory = async () => {
     try {
-      const response = await fetch(`/api/v1/notebooks/${notebookId}/chat-history/`);
+      const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/chat-history/`, {
+        credentials: 'include',
+      });
       if (!response.ok) throw new Error("Failed to fetch chat history");
       const data = await response.json();
       const formattedMessages = data.history.map((msg) => ({
@@ -246,8 +251,9 @@ useEffect(() => {
     }
 
     try {
-      const response = await fetch("/api/v1/notebooks/chat/", {
+      const response = await fetch(`${API_BASE_URL}/notebooks/chat/`, {
         method: "POST",
+        credentials: 'include',
         headers: {
           "Content-Type": "application/json",
           "X-CSRFToken": getCookie("csrftoken"),  // if you're using CSRF protection
@@ -275,7 +281,9 @@ useEffect(() => {
 
       setMessages(prev => [...prev, assistantMessage]);
       
-      const followupResp = await fetch(`/api/v1/notebooks/${notebookId}/suggested-questions/`);
+      const followupResp = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/suggested-questions/`, {
+        credentials: 'include',
+      });
       const followupData = await followupResp.json();
       const newSuggestions = followupData.suggestions || [];
       setSuggestedQuestions(newSuggestions);
@@ -330,8 +338,9 @@ useEffect(() => {
               className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
               onClick={async () => {
                 try {
-                  const response = await fetch(`/api/v1/notebooks/${notebookId}/chat-history/clear/`, {
+                  const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/chat-history/clear/`, {
                     method: "DELETE",
+                    credentials: 'include',
                     headers: {
                       "Content-Type": "application/json",
                       "X-CSRFToken": getCookie("csrftoken"),

@@ -56,6 +56,96 @@ class ApiService {
     }
   }
 
+  // ─── STANDARD HTTP METHODS ──────────────────────────────────────────────
+  
+  async get(endpoint, options = {}) {
+    return this.request(endpoint, {
+      method: 'GET',
+      ...options
+    });
+  }
+
+  async post(endpoint, data = null, options = {}) {
+    const config = {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+        ...options.headers
+      },
+      ...options
+    };
+
+    // Handle different data types
+    if (data instanceof FormData) {
+      config.body = data;
+    } else if (data !== null) {
+      config.body = JSON.stringify(data);
+      config.headers = {
+        'Content-Type': 'application/json',
+        ...config.headers
+      };
+    }
+
+    return this.request(endpoint, config);
+  }
+
+  async put(endpoint, data = null, options = {}) {
+    const config = {
+      method: 'PUT',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+        ...options.headers
+      },
+      ...options
+    };
+
+    if (data instanceof FormData) {
+      config.body = data;
+    } else if (data !== null) {
+      config.body = JSON.stringify(data);
+      config.headers = {
+        'Content-Type': 'application/json',
+        ...config.headers
+      };
+    }
+
+    return this.request(endpoint, config);
+  }
+
+  async delete(endpoint, options = {}) {
+    return this.request(endpoint, {
+      method: 'DELETE',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+        ...options.headers
+      },
+      ...options
+    });
+  }
+
+  async patch(endpoint, data = null, options = {}) {
+    const config = {
+      method: 'PATCH',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+        ...options.headers
+      },
+      ...options
+    };
+
+    if (data instanceof FormData) {
+      config.body = data;
+    } else if (data !== null) {
+      config.body = JSON.stringify(data);
+      config.headers = {
+        'Content-Type': 'application/json',
+        ...config.headers
+      };
+    }
+
+    return this.request(endpoint, config);
+  }
+
   // ─── FILES ────────────────────────────────────────────────────────────────
 
   async listParsedFiles(notebookId, { limit = 50, offset = 0 } = {}) {

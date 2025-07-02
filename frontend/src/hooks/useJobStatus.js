@@ -234,7 +234,9 @@ export const useJobStatus = (jobId, onComplete, onError, notebookId, jobType = '
 
   // Function to disconnect from current job
   const disconnect = useCallback(() => {
-    console.log('Disconnecting from job status updates');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Disconnecting from job status updates');
+    }
     
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
