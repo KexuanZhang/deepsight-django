@@ -212,7 +212,7 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
             
             # Create the configuration
             deep_config = ReportGenerationConfig(
-                topic=config.get('topic') or config.get('article_title', f"Report_{config.get('report_id', 'Unknown')}"),
+                topic=config.get('topic'),  # Keep topic empty if not provided - let TopicGenerator handle it
                 article_title=config.get('article_title') or f"Report_{config.get('report_id', 'Unknown')}",
                 output_dir=str(config['output_dir']),
                 report_id=config.get('report_id'),

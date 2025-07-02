@@ -550,6 +550,21 @@ class ApiService {
     return response;
   }
 
+  async deleteReport(jobId, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for deleting report');
+    }
+    
+    const url = `/notebooks/${notebookId}/report-jobs/${jobId}/`;
+    const response = await this.request(url, {
+      method: 'DELETE',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+    return response;
+  }
+
   // Get the correct SSE endpoint for podcast job status
   getPodcastJobStatusStreamUrl(jobId, notebookId) {
     if (!notebookId) {

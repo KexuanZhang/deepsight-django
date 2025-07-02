@@ -84,10 +84,7 @@ class GenerationService:
                 **content_data  # Add content data directly (no file paths)
             })
             
-            # Ensure we have a topic for the generation engine
-            if not config_dict.get('topic', '').strip() and config_dict.get('selected_files_paths'):
-                config_dict['topic'] = 'Research Analysis'
-                logger.info("No topic provided, using default topic for file-based generation: 'Research Analysis'")
+            # Topic will be generated from content if empty - no need for default
             
             # Validate configuration
             if not self.report_generator.validate_configuration(config_dict):

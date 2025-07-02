@@ -254,8 +254,6 @@ class Report(models.Model):
                 article_title = "Research Report"
                 
         topic = self.topic.strip() if self.topic else ""
-        if not topic and self.selected_files_paths:
-            topic = "Research Analysis"
         
         return {
             "topic": topic,

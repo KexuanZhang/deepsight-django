@@ -115,15 +115,67 @@ class FigureDataService:
     
     @staticmethod
     def _get_knowledge_base_images_path(user_id: int, file_id: str) -> str:
-        """Generate absolute path to knowledge base item images folder."""
-        data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
-        current_date = datetime.now()
-        year_month = current_date.strftime("%Y-%m")
-        
-        return os.path.join(
-            data_root,
-            f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/images"
-        )
+        """
+        Generate absolute path to knowledge base item images folder.
+        Uses the actual creation date of the KnowledgeBaseItem with fallback logic.
+        """
+        try:
+            # Import here to avoid circular imports
+            from notebooks.models import KnowledgeBaseItem
+            
+            # Get the knowledge base item to find its actual creation date
+            kb_item = KnowledgeBaseItem.objects.filter(id=file_id, user_id=user_id).first()
+            
+            if kb_item:
+                # Use the actual creation date
+                creation_date = kb_item.created_at
+                year_month = creation_date.strftime("%Y-%m")
+                
+                data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
+                images_path = os.path.join(
+                    data_root,
+                    f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/images"
+                )
+                
+                # Check if the path exists
+                if os.path.exists(images_path):
+                    return images_path
+                else:
+                    logger.info(f"Images path doesn't exist at {images_path}, trying fallback")
+            
+            # Fallback: try different month combinations if the exact date doesn't work
+            # This handles cases where there might be slight date mismatches
+            data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
+            base_pattern = f"Users/u_{user_id}/knowledge_base_item/*/f_{file_id}/images"
+            full_pattern = os.path.join(data_root, base_pattern)
+            
+            matching_paths = glob.glob(full_pattern)
+            if matching_paths:
+                # Use the first matching path found
+                fallback_path = matching_paths[0]
+                logger.info(f"Found images folder via fallback: {fallback_path}")
+                return fallback_path
+            
+            # Final fallback: use current date (original behavior)
+            current_date = datetime.now()
+            year_month = current_date.strftime("%Y-%m")
+            fallback_path = os.path.join(
+                data_root,
+                f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/images"
+            )
+            logger.warning(f"No images folder found, using current date fallback: {fallback_path}")
+            return fallback_path
+            
+        except Exception as e:
+            logger.error(f"Error in _get_knowledge_base_images_path: {e}")
+            # Final fallback: use current date
+            data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
+            current_date = datetime.now()
+            year_month = current_date.strftime("%Y-%m")
+            return os.path.join(
+                data_root,
+                f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/images"
+            )
     
     @staticmethod
     def _get_report_figure_data_path(report) -> str:
@@ -280,12 +332,63 @@ class FigureDataService:
     
     @staticmethod
     def _get_knowledge_base_content_path(user_id: int, file_id: str) -> str:
-        """Generate absolute path to knowledge base item content folder."""
-        data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
-        current_date = datetime.now()
-        year_month = current_date.strftime("%Y-%m")
-        
-        return os.path.join(
-            data_root,
-            f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/content"
-        )
+        """
+        Generate absolute path to knowledge base item content folder.
+        Uses the actual creation date of the KnowledgeBaseItem with fallback logic.
+        """
+        try:
+            # Import here to avoid circular imports
+            from notebooks.models import KnowledgeBaseItem
+            
+            # Get the knowledge base item to find its actual creation date
+            kb_item = KnowledgeBaseItem.objects.filter(id=file_id, user_id=user_id).first()
+            
+            if kb_item:
+                # Use the actual creation date
+                creation_date = kb_item.created_at
+                year_month = creation_date.strftime("%Y-%m")
+                
+                data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
+                content_path = os.path.join(
+                    data_root,
+                    f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/content"
+                )
+                
+                # Check if the path exists
+                if os.path.exists(content_path):
+                    return content_path
+                else:
+                    logger.info(f"Content path doesn't exist at {content_path}, trying fallback")
+            
+            # Fallback: try different month combinations if the exact date doesn't work
+            data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
+            base_pattern = f"Users/u_{user_id}/knowledge_base_item/*/f_{file_id}/content"
+            full_pattern = os.path.join(data_root, base_pattern)
+            
+            matching_paths = glob.glob(full_pattern)
+            if matching_paths:
+                # Use the first matching path found
+                fallback_path = matching_paths[0]
+                logger.info(f"Found content folder via fallback: {fallback_path}")
+                return fallback_path
+            
+            # Final fallback: use current date (original behavior)
+            current_date = datetime.now()
+            year_month = current_date.strftime("%Y-%m")
+            fallback_path = os.path.join(
+                data_root,
+                f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/content"
+            )
+            logger.warning(f"No content folder found, using current date fallback: {fallback_path}")
+            return fallback_path
+            
+        except Exception as e:
+            logger.error(f"Error in _get_knowledge_base_content_path: {e}")
+            # Final fallback: use current date
+            data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
+            current_date = datetime.now()
+            year_month = current_date.strftime("%Y-%m")
+            return os.path.join(
+                data_root,
+                f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/content"
+            )

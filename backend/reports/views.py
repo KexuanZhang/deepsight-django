@@ -218,7 +218,7 @@ class NotebookReportDetailView(APIView):
             # Remove job metadata if exists
             if report.job_id:
                 deleted_metadata = report_orchestrator.delete_report_job(
-                    report.job_id, report.user.id
+                    report.job_id, report.user.user_id
                 )
 
             # Delete the report instance

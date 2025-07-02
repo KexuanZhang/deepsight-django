@@ -38,36 +38,6 @@ class TopicGenerator(dspy.Signature):
         desc="Return ONLY the improved topic sentence with no additional text or formatting. If no topic is provided and no content is available, return an empty string."
     )
 
-    def forward(self, text_input, topic):
-        # If no topic and no content, return empty string
-        if not topic and not text_input:
-            return {"improved_topic": ""}
-            
-        # If no topic but have content, try to generate one
-        if not topic and text_input:
-            # Try to extract a topic from content
-            content = text_input
-                
-            # Analyze content to identify key themes
-            with dspy.settings.context(temperature=0.2):
-                improved = self.call(
-                    text_input=text_input,
-                    topic="",  # Empty topic
-                )
-                return {"improved_topic": improved.improved_topic}
-                
-        # If have topic, try to improve it using content
-        if topic:
-            with dspy.settings.context(temperature=0.2):
-                improved = self.call(
-                    text_input=text_input,
-                    topic=topic,
-                )
-                return {"improved_topic": improved.improved_topic}
-                
-        # Fallback - return original topic or empty string
-        return {"improved_topic": topic or ""}
-
 
 class UserInputTopicImprover(dspy.Signature):
     __doc__ = prompts.UserInputTopicImprover_docstring
@@ -91,23 +61,25 @@ class TopicImprover(dspy.Module):
     ) -> str:
         # Maintain backward compatibility by accepting user_input but treating it as topic
         topic = user_input
-        system_topic = prompts.SystemTopic_docstring
 
         with dspy.settings.context(lm=self.engine):
             if text_input and topic:
-                # Both text input and explicit topic provided
+                # Both text input and topic provided - use TopicGenerator to improve topic with text
                 result = self.topic_generator(
                     text_input=text_input, topic=topic
                 )
-                return result.improved_topic
-            elif text_input:
-                # Only text input provided
-                result = self.topic_generator(
-                    text_input=text_input, topic=system_topic
-                )
-                return result.improved_topic
-            elif topic:
-                # Only user input topic provided
+                generated_topic = result.improved_topic
+                
+                # Check if the result is valid
+                if not generated_topic or generated_topic.strip() == "":
+                    logging.warning("TopicGenerator returned empty result, fallback to generic topic based on content")
+                    # Fallback to a simple topic extraction
+                    words = text_input.split()[:10]  # First 10 words
+                    generated_topic = f"Analysis of {' '.join(words)}"
+                
+                return generated_topic
+            elif topic and not text_input:
+                # Only topic provided - use UserInputTopicImprover
                 result = self.user_input_topic_improver(topic=topic)
                 return result.improved_topic
             else:
@@ -659,24 +631,57 @@ class STORMWikiRunner(Engine):
         if not hasattr(self, "article_title") or not self.article_title:
             self.article_title = "StormReport"
 
-        # Skip topic improvement for empty topics
-        if not user_input and not self.generated_topic:
-            logging.info("No topic provided - proceeding with empty topic")
+        # Set up output directory early to ensure post_run() works even if we return early
+        if not hasattr(self, "article_dir_name") or self.article_dir_name is None:
+            if not self.article_title:
+                self.article_title = "Untitled_Report"
+            self.article_dir_name = truncate_filename(
+                self.article_title.replace(" ", "_").replace("/", "_")
+            )
+
+        # Always use output directory directly without creating subfolder
+        self.article_output_dir = self.args.output_dir
+        os.makedirs(self.article_output_dir, exist_ok=True)
+
+        # Skip topic improvement for empty topics when no content is available
+        if not user_input and not self.generated_topic and not self.text_input:
+            logging.info("No topic or content provided - cannot generate report")
             return
 
-        # Only try to improve topic if one was provided
-        if user_input or self.generated_topic:
+        # Determine the topic to improve
+        topic_to_improve = user_input or self.generated_topic
+        
+        # If no topic provided but we have text_input, use system_topic as the base topic
+        if not topic_to_improve and self.text_input:
+            from prompts import import_prompts
+            prompts = import_prompts()
+            topic_to_improve = prompts.SystemTopic_docstring
+            logging.info(f"No topic provided, using system_topic as base: {topic_to_improve}")
+        
+        # Try to improve topic if we have something to work with
+        if topic_to_improve or self.text_input:
             try:
                 improved_topic = self._improve_topic(
                     text_input=self.text_input,
-                    user_input=user_input,
+                    user_input=topic_to_improve,
                 )
-                logging.info(f"Improved topic: {improved_topic}")
+                
+                # Check if TopicImprover returned a valid result
+                if not improved_topic or improved_topic.strip() == "":
+                    logging.warning("TopicImprover returned None or empty string")
+                    improved_topic = None
+                else:
+                    # Log the result
+                    if not user_input and not self.generated_topic and self.text_input:
+                        logging.info(f"Generated topic from text input: {improved_topic}")
+                    else:
+                        logging.info(f"Improved topic: {improved_topic}")
+                    
                 self.generated_topic = improved_topic
             except Exception as e:
                 logging.warning(f"Failed to improve topic: {e}")
                 # Fallback to original topic if improvement fails
-                self.generated_topic = user_input or self.generated_topic
+                self.generated_topic = topic_to_improve
 
         if not self.generated_topic:
             # This case occurs if user_input was None, and topic improvement (extraction) also resulted in None or failed.
@@ -696,18 +701,6 @@ class STORMWikiRunner(Engine):
                     "Failed to determine a topic for the report. All inputs (topic, text_input) might be missing or topic generation failed."
                 )
 
-        if not hasattr(self, "article_dir_name") or self.article_dir_name is None:
-            if not self.article_title:
-                self.article_title = (
-                    self.generated_topic if self.generated_topic else "Untitled_Report"
-                )
-            self.article_dir_name = truncate_filename(
-                self.article_title.replace(" ", "_").replace("/", "_")
-            )
-
-        # Always use output directory directly without creating subfolder
-        self.article_output_dir = self.args.output_dir
-        os.makedirs(self.article_output_dir, exist_ok=True)
 
         old_outline = None
         old_outline_str = None
