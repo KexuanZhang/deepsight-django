@@ -90,12 +90,16 @@ export const useStudioData = (notebookId, studioService) => {
 
   // Single responsibility: Remove report from state
   const removeReport = useCallback((reportId) => {
-    setReports(prev => prev.filter(report => report.id !== reportId));
+    setReports(prev => prev.filter(report => 
+      report.id !== reportId && report.job_id !== reportId
+    ));
   }, []);
 
   // Single responsibility: Remove podcast from state
   const removePodcast = useCallback((podcastId) => {
-    setPodcasts(prev => prev.filter(podcast => podcast.id !== podcastId));
+    setPodcasts(prev => prev.filter(podcast => 
+      podcast.id !== podcastId && podcast.job_id !== podcastId
+    ));
   }, []);
 
   return {
