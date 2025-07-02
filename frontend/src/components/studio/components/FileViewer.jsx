@@ -1,7 +1,7 @@
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Component focused solely on displaying file content
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   X, 
   Edit, 
@@ -14,13 +14,20 @@ import { Button } from '@/components/ui/button';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import AuthenticatedImage from './AuthenticatedImage';
+import { processReportMarkdownContent } from '../utils';
 
 // ====== SINGLE RESPONSIBILITY: Markdown content renderer ======
-const MarkdownContent = React.memo(({ content }) => (
+const MarkdownContent = React.memo(({ content, notebookId }) => (
   <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-a:text-blue-600 prose-strong:text-gray-900 prose-code:text-red-600 prose-pre:bg-gray-50">
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeHighlight]}
+      components={{
+        img: ({ src, alt, title }) => (
+          <AuthenticatedImage src={src} alt={alt} title={title} />
+        )
+      }}
     >
       {content}
     </ReactMarkdown>
@@ -42,9 +49,16 @@ const FileViewer = ({
   onDownload,
   onToggleExpand,
   onToggleViewMode,
-  onContentChange
+  onContentChange,
+  notebookId
 }) => {
   const [editContent, setEditContent] = useState(content || '');
+
+  // Process the content for display with proper image URLs
+  const processedContent = useMemo(() => {
+    if (!content || !notebookId) return content;
+    return processReportMarkdownContent(content, notebookId);
+  }, [content, notebookId]);
 
   const handleSave = () => {
     onSave(editContent);
@@ -148,8 +162,8 @@ const FileViewer = ({
           />
         ) : (
           <div className="p-6">
-            {content ? (
-              <MarkdownContent content={content} />
+            {processedContent ? (
+              <MarkdownContent content={processedContent} notebookId={notebookId} />
             ) : (
               <div className="text-center py-12">
                 <p className="text-gray-500">No content available</p>

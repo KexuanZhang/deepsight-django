@@ -93,7 +93,7 @@ const ReportGenerationForm = ({
           {/* Research topic input */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">
-              Research Topic <span className="text-red-500">*</span>
+              Research Topic
             </label>
             <input
               type="text"

@@ -323,9 +323,11 @@ const StudioPanel = ({
         throw new Error('Report ID not found');
       }
       
-      await studioService.deleteFile(reportId);
+      // Delete from backend database using the proper API call
+      await studioService.api.deleteReport(reportId, notebookId);
       studioData.removeReport(reportId);
       
+      // Clear selected file if it's the one being deleted, without navigating to another file
       if (selectedFile?.id === reportId || selectedFile?.job_id === reportId) {
         setSelectedFile(null);
         setSelectedFileContent('');
@@ -333,7 +335,7 @@ const StudioPanel = ({
       
       toast({
         title: "Report Deleted",
-        description: "The report has been deleted successfully"
+        description: "The report has been deleted successfully from the database"
       });
     } catch (error) {
       toast({
@@ -342,7 +344,7 @@ const StudioPanel = ({
         variant: "destructive"
       });
     }
-  }, [studioService, studioData, selectedFile, toast]);
+  }, [studioService, studioData, selectedFile, notebookId, toast]);
 
   const handleDeletePodcast = useCallback(async (podcast) => {
     if (!confirm('Are you sure you want to delete this podcast?')) {
@@ -510,6 +512,7 @@ const StudioPanel = ({
           onToggleExpand={toggleExpanded}
           onToggleViewMode={toggleViewMode}
           onContentChange={setSelectedFileContent}
+          notebookId={notebookId}
         />
       )}
     </div>
