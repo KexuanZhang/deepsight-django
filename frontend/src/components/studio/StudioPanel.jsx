@@ -24,6 +24,7 @@ import PodcastGenerationForm from './components/PodcastGenerationForm';
 import ReportListSection from './components/ReportListSection';
 import PodcastListSection from './components/PodcastListSection';
 import FileViewer from './components/FileViewer';
+import AdvancedSettingsModal from './components/AdvancedSettingsModal';
 
 // ====== INTERFACE SEGREGATION PRINCIPLE (ISP) ======
 // Import type definitions and prop creators
@@ -54,6 +55,7 @@ const StudioPanel = ({
     reports: false,
     podcasts: false
   });
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
 
   // ====== SINGLE RESPONSIBILITY: File Selection State ======
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -510,7 +512,7 @@ const StudioPanel = ({
           isCollapsed={collapsedSections.report}
           onToggleCollapse={() => toggleSection('report')}
           selectedFiles={selectedFiles}
-          onShowCustomize={() => {/* TODO: Implement customize modal */}}
+          onShowCustomize={() => setShowAdvancedSettings(true)}
         />
 
         <PodcastGenerationForm
@@ -571,6 +573,15 @@ const StudioPanel = ({
           notebookId={notebookId}
         />
       )}
+
+      {/* ====== SINGLE RESPONSIBILITY: Advanced settings modal ====== */}
+      <AdvancedSettingsModal
+        isOpen={showAdvancedSettings}
+        onClose={() => setShowAdvancedSettings(false)}
+        config={reportGeneration.config}
+        onConfigChange={reportGeneration.updateConfig}
+        availableModels={studioData.availableModels}
+      />
     </div>
   );
 };
