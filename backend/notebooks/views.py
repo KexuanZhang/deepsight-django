@@ -14,7 +14,7 @@ from .utils.rag_engine import RAGChatbot, SuggestionRAGAgent
 from django.db import transaction
 from django.http import StreamingHttpResponse, Http404, FileResponse
 from django.shortcuts import get_object_or_404
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
@@ -96,6 +96,12 @@ class FileUploadView(StandardAPIView, NotebookPermissionMixin):
             upload_id = serializer.validated_data.get("upload_file_id") or uuid4().hex
             return self._handle_single_file_upload(inbound_file, upload_id, notebook, request.user)
 
+        except ValidationError as e:
+            return self.error_response(
+                "File validation failed",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                details={"error": str(e)},
+            )
         except Exception as e:
             return self.error_response(
                 "File upload failed",
