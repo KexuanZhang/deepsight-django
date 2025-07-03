@@ -82,17 +82,25 @@ export const loginUser = createAsyncThunk(
   'auth/login',
   async (credentials: { username: string; password: string }, { rejectWithValue }) => {
     try {
+      // Helper function to get CSRF token from cookies
+      const getCookie = (name: string) => {
+        const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+        return match ? decodeURIComponent(match[2]) : null;
+      };
+
       const response = await fetch(`${config.API_BASE_URL}/users/login/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken') || '',
         },
         credentials: 'include', // Include credentials for session-based auth
         body: JSON.stringify(credentials),
       });
 
       if (!response.ok) {
-        throw new Error('Login failed');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Login failed');
       }
 
       const data = await response.json();
@@ -107,23 +115,60 @@ export const signupUser = createAsyncThunk(
   'auth/signup',
   async (userData: { username: string; email: string; password: string }, { rejectWithValue }) => {
     try {
+      // Helper function to get CSRF token from cookies
+      const getCookie = (name: string) => {
+        const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+        return match ? decodeURIComponent(match[2]) : null;
+      };
+
       const response = await fetch(`${config.API_BASE_URL}/users/signup/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken') || '',
         },
         credentials: 'include', // Include credentials for session-based auth
         body: JSON.stringify(userData),
       });
 
       if (!response.ok) {
-        throw new Error('Signup failed');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Signup failed');
       }
 
       const data = await response.json();
       return data;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Signup failed');
+    }
+  }
+);
+
+export const logoutUser = createAsyncThunk(
+  'auth/logout',
+  async (_, { rejectWithValue }) => {
+    try {
+      // Helper function to get CSRF token from cookies
+      const getCookie = (name: string) => {
+        const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+        return match ? decodeURIComponent(match[2]) : null;
+      };
+
+      const response = await fetch(`${config.API_BASE_URL}/users/logout/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken') || '',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Logout failed');
+      }
+
+      return true;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Logout failed');
     }
   }
 );
@@ -185,6 +230,24 @@ const authSlice = createSlice({
       .addCase(signupUser.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
+      })
+      .addCase(logoutUser.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(logoutUser.fulfilled, (state) => {
+        state.isLoading = false;
+        state.user = null;
+        state.token = null;
+        state.isAuthenticated = false;
+      })
+      .addCase(logoutUser.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+        // Even if logout fails on server, clear local state to be safe
+        state.user = null;
+        state.token = null;
+        state.isAuthenticated = false;
       });
   },
 });

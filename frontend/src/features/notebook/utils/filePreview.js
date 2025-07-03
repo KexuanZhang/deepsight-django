@@ -1,7 +1,7 @@
-import apiService from './api';
+import apiService from '../../../common/utils/api';
 
 // API Base URL for raw file access (should match the one in api.js)
-import { config } from '../../config.js';
+import { config } from '../../../config.js';
 
 const API_BASE_URL = config.API_BASE_URL;
 
