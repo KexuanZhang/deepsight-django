@@ -108,6 +108,19 @@ const ReportGenerationForm = ({
             </p>
           </div>
 
+          {/* Prompt Style selection */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">Prompt Style</label>
+            <select
+              className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={config.prompt_type || 'general'}
+              onChange={(e) => onConfigChange({ prompt_type: e.target.value })}
+            >
+              <option value="general">General</option>
+              <option value="financial">Financial</option>
+            </select>
+          </div>
+
 
           {/* Advanced settings button */}
           <div className="flex justify-center">
