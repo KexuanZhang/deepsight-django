@@ -5,7 +5,7 @@ Rewrite to a core topic sentence to guide report generation by deeply analyzing 
 UserInputTopicImprover_docstring = """Understand the user intention, and improve the user input to guide report generation. Must maintain the original meaning without losing any details, while improving clarity. Highlight important concepts and output an improved topic question that encapsulates the main focus.
 """
 
-SystemTopic_docstring = "Analyze the target company's capital expenditure efficiency, supply chain resilience, segment margin evolution, and capacity utilization to gauge sustainable growth and competitiveness."
+SystemTopic_docstring = """Analyze the target company's capital expenditure efficiency, supply chain resilience, segment margin evolution, and capacity utilization to gauge sustainable growth and competitiveness."""
 
 AskQuestion_docstring = """You are an experienced analysis report writer. You are chatting with an expert to get information for the financial analysis report you want to contribute on the target company. You have a topic that guides your focus. Ask good questions to get more useful information relevant to the text input and the topic.
 When you have no more question to ask, say "Thank you so much for your help!" to end the conversation.

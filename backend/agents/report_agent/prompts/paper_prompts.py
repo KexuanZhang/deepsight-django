@@ -1,26 +1,25 @@
 TopicGenerator_docstring = """
-Rewrite to a core topic sentence to guide report generation by deeply analyzing user intent and text input content. Only output the improved topic sentence, without additional explanatory text or rationale.
+Rewrite to a core topic sentence to guide report generation by deeply analyzing user intent and text input content. Only output the improved topic sentence that guides the generation of a technical blog post or report. The topic should capture the central theme or core question to be explored. Output only the topic sentence.
 """
 
-UserInputTopicImprover_docstring = """Understand the user intention, and improve the user input to guide report generation. Must maintain the original meaning without losing any details, while improving clarity. Highlight important concepts and output an improved topic question that encapsulates the main focus.
+UserInputTopicImprover_docstring = """Refine the user's input into a clear and compelling topic for a technical report. Maintain the original intent but improve focus and clarity, highlighting the core concepts to guide the narrative. Output a single, improved topic statement.
 """
 
-SystemTopic_docstring = """Analyze important key technology trends, breakthrough innovations, and reusability potential."""
+SystemTopic_docstring = """Analyze the central argument, supporting evidence, and broader implications of a key technological development or finding."""
 
-AskQuestion_docstring = """You are an experienced report writer. You are chatting with an expert to get information for the technical report you want to contribute. You have a topic that guides your focus. Ask good questions to get more useful information relevant to the text input and the topic.
-When you have no more question to ask, say "Thank you so much for your help!" to end the conversation.
-Please only ask a question at a time and don't ask what you have asked before. Your questions should be related to the text input and the topic. You must use the topic to guide your questions.
+AskQuestion_docstring = """You are a researcher conducting a literature review for a technical report guided by a central topic. You are interviewing an expert to gather evidence. Ask specific, probing questions to elicit detailed information, data, counterarguments, and citations relevant to the thesis.
+When you have no more questions, say "Thank you for your help." to end the conversation.
+Please ask only one question at a time. Your questions must be directly related to the provided text and the guiding thesis.
 If an outline is provided, use it to guide your questions to gather specific information needed for the outlined sections.
 """
 
-AskQuestionWithPersona_docstring = """You are an experienced report writer with a specific persona. You are chatting with an expert to get information for the technical report you want to contribute. You have a topic that guides your focus. Ask good questions to get more useful information relevant to the text input and the topic.
-When you have no more question to ask, say "Thank you so much for your help!" to end the conversation.
-Please only ask a question at a time and don't ask what you have asked before. Your questions should be related to the text input and the topic.
-You must use the topic to guide your questions.
+AskQuestionWithPersona_docstring = """You are a researcher with a specific persona. You are interviewing an expert to gather information for a technical report guided by a central topic. Ask insightful questions from your persona's perspective to uncover nuanced details, potential flaws, or broader implications of the topic.
+When you have no more questions, say "Thank you for your help." to end the conversation.
+Please ask only one question at a time. Your questions must be related to the text input and the guiding thesis.
 If an outline is provided, use it to guide your questions to gather specific information needed for the outlined sections.
 """
 
-QuestionToQuery_docstring = """You want to answer the question using Google search, focusing on finding data, figures, or quantifiable information related to the topic. What do you type in the search box?
+QuestionToQuery_docstring = """You want to answer the question using Google search, focusing on finding data, articles, or quantifiable information related to the topic. What do you type in the search box?
 Write the queries you will use in the following format:
 - query 1
 - query 2
@@ -34,53 +33,45 @@ Make your response as informative as possible, prioritizing data, statistics, an
 If an outline is provided, tailor your response to help the writer develop that specific section.
 """
 
-FindRelatedTopic_docstring = """I'm writing a report for the text input or topic mentioned below. Please identify and recommend some pages closely related to the text input or topic. I'm looking for examples that provide insights into in-depth aspects commonly associated with this text input, or examples that help me understand the typical content and structure included in pages for similar topics.
+FindRelatedTopic_docstring = """I'm writing a technical report on the text input or topic below. Please recommend insightful articles, blog posts, or analyses that explore similar themes or offer interesting perspectives. I'm looking for content that helps build a compelling narrative.
 Please list the URLs in separate lines.
-If a topic is provided, please focus on finding pages that are specifically related to that topic in the context of the text input.
-If an outline is provided, use it to guide your search for related topics that would be most relevant to the outlined sections."""
+If a topic is provided, focus on finding pages that explore its different facets.
+If an outline is provided, use it to find content relevant to its thematic sections."""
 
-GenPersona_docstring = """You need to select a group of editors who will work together to create a comprehensive report on the text input. If no text input is provided ('N/A' for the formatted content), base the personas solely on the topic. Each editor represents a different perspective, role, or affiliation related to this text input or topic. You can use other reports of related topics for inspiration. For each editor, add a description of what they will focus on.
-Give your answer in the following format: 1. short summary of editor 1: description
-2. short summary of editor 2: description
+GenPersona_docstring = """You need to assemble a virtual team of contributors for a multi-faceted technical report. Based on the text input or topic, define several personas. Each persona should represent a unique viewpoint (e.g., the innovator, the critic, the end-user, the business analyst) that can contribute to a rich, narrative-driven report. For each, describe their focus.
+Give your answer in the following format:
+1. Persona 1 (e.g., The Lead Researcher): Description of their focus.
+2. Persona 2 (e.g., The Industry Analyst): Description of their focus.
 ...
-If a topic is provided, ensure that the editors have expertise or perspectives specifically related to that topic in the context of the text input.
-If an outline is provided, make sure the editors have expertise that covers all sections of the outline."""
+If a topic is provided, ensure the personas are equipped to explore it from multiple angles.
+If an outline is provided, make sure the personas' expertise covers the thematic sections."""
 
 WritePageOutline_docstring = """Generate an in-depth technical report outline. If text input is provided, use it along with the specified topic to create the outline. If no text input is provided (indicated by 'N/A' for the formatted content), use the topic and any available information to guide the outline generation. The outline must be strictly topic orientated.
 
 Before creating the outline, analyze the provided information (but do not output these analysis as final output):
-1. List out all AI innovations mentioned in the topic and text input.
-2. For each innovation, write down relevant quotes or paraphrases from the source material that describe its key features, potential applications, and impacts.
-3. Rank these innovations based on their potential significance and relevance to the topic.
-4. Select the top 10 most critical key points related to AI innovations.
-5. For each key point, consider:
-   - What specific aspect of AI does it cover?
-   - Why is it important?
-   - What potential impact could it have?
+1.  Identify the core innovation or problem statement. This is often the first major theme.
+2.  List the key components of the methodology or architecture. These form the middle sections.
+3.  Pinpoint the main results or performance benchmarks. This is a crucial section.
+4.  Determine the broader significance, takeaways, or future directions. This forms the concluding part of the narrative.
 
 Now, create an outline based on your analysis. Follow these guidelines:
 1. Use Markdown heading levels: '#' for level 1, '##' for level 2, '###' for level 3.
 2. Begin directly with a level 1 heading that includes specific entities or terms from the text input, not just a general heading without any entity.
-3. Do not include any unstructured text outside of headings.
-4. Do not include sections related to speakers' background, company introduction, general introduction, or conclusion.
-5. Do not use numbers for numbering in headings.
-6. Limit the outline to three levels of headings maximum.
-7. Use original entity terms from the provided information for Level 1 headings.
-8. Use Level 2 and Level 3 headings to clarify what each Level 1 heading covers, why it matters, and its potential impact.
-Ensure that your outline covers the most critical aspects of AI innovations mentioned in the provided information, adhering strictly to the topic and formatting requirements.
-
-# Steps
-1. Identify AI innovations in the source material.
-2. Record and analyze key features, applications, and impacts.
-3. Rank and select the most critical key points.
-4. Draft an outline using specific terms for level 1 headings.
+3. Headings must be descriptive and outcome-oriented
+4. Do not include any unstructured text outside of headings.
+5. Do not include sections related to speakers' background, company introduction, general introduction, or conclusion.
+6. Do not use numbers for numbering in headings.
+7. Limit the outline to three levels of headings maximum.
+8. Use original entity terms from the provided information for Level 1 headings.
+9. The outline should have a logical flow, guiding the reader through the topic step-by-step.
+Ensure that your outline covers the most critical aspects mentioned in the provided information, adhering strictly to the topic and formatting requirements.
 
 # Output Format
 
 The outline should be formatted strictly using Markdown heading levels without any additional text. Do not output any bullet points.
 """
 
-WritePageOutlineFromConv_docstring = """You are an expert technical writer specializing in AI hardware technology. Your task is to extract key technical points from provided materials and use them to improve a technical report outline. The revised outline should be highly relevant to an AI hardware tech company audience.
+WritePageOutlineFromConv_docstring = """You are an expert report editor. Your task is to extract key technical points from provided materials and use them to improve a technical report outline. The revised outline should be highly relevant to an AI hardware tech company audience.
 Note that the outline score json is the importance score for each headings. It's better not to change the order of the provided old outline, but should supplement more details into it. However, if you find it necessary to change the order due to the writing style, you can change it.
 
 Before drafting the final outline, carry out the following analysis steps (but do not output these analysis as final output):  
@@ -136,7 +127,7 @@ Kimi
 ... followed by any additional rewritten queries that meet the rules above.
 """
 
-WriteSection_docstring = """Write an in-depth technical report in English, based on the information collected, the outline, and the text input (if provided). The value of the report lies in offering original, thoughtful insights that help reframe the topic and inspire new perspectives.
+WriteSection_docstring = """Write an engaging and insightful section for a technical report or blog post in English, based on the information collected, the outline, and the text input (if provided). The value of the report lies in offering original, thoughtful insights that help reframe the topic and inspire new perspectives.
 Your report should reflect deep thinking, independent analysis, and offer fresh perspectives (without explicitly mentioning surprise). Before writing, reflect thoroughly: Why is this report being written? What are the possible underlying intentions or broader context behind it? Don't just focus on the task or question itself—explore whether the assumptions behind the task are valid and whether more fundamental issues remain unaddressed.
 Your goal is not to simply follow instructions, but to engage in a thoughtful process that helps refine the problem, uncover more meaningful directions, and inspire better analytical approaches.
 Before writing, establish what makes a successful report:
@@ -210,8 +201,8 @@ WriteLeadSection_docstring = """根据草稿和文本输入（若有），请遵
 ## 回答前请先完成下列思考（**仅供思考，禁止在最终答案中透露**）
 1. 全面研读全部草稿和文本输入，捕捉关键信息，并提取原文的所有一级标题。  
 2. 优先级排序：要点需按原文中一级标题（#）排序（除人物与机构介绍外），总结前五条最具价值且互不重叠的要点。  
-3. 评估价值：判断每个要点对 AI 芯片/系统厂商的战略与落地意义。  
-4. 推演影响：考虑该要点对行业格局、产品路线或商业模式的潜在冲击。  
+3. 识别关键实体：谁（团队/公司）做了什么（模型/技术）？
+4. 量化成就：取得了什么关键结果（例如，性能超越了谁）？
 5. 去重：确保每条要点独立、自洽、信息密集；严格避免要点内容出现重复或类似信息。  
 6. 精准表述：用专业、具体且富有洞察的中文描述（专有名词可保留英文）。  
 7. 最终核对：确认全部内容均为中文叙述，且完全对应所选 Top 5 要点。
@@ -219,7 +210,7 @@ WriteLeadSection_docstring = """根据草稿和文本输入（若有），请遵
 ## 输出要求
 - **格式**：
   - 输出要点需按照原始文章中的一级标题（#）排序（除人物与机构介绍外），列出最多**5 条**不重复或类似的要点，每条是详细的单句式片段（不要写完整段落）。  
-  - 每条要点必须包含足够的技术或业务细节，并用括号给出**一个示例**（数字指标、产品型号、合作案例等），确保信息量充实。 
+  - 每条要点必须包含足够的技术或业务细节，并用括号给出**一个示例**（数字指标等），确保信息量充实。 
   - 要点格式参考：**要点简短总结**：要点内容（内容中出现重要信息用**粗体** 突出。）
   - 在要点内容中用 **粗体** 突出关键信息或专有名词。
   - 确保每个要点使用(-)标出，不要使用数字标号。
