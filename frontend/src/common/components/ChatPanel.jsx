@@ -144,7 +144,7 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 
   const fetchSuggestions = async () => {
     try {
-      const response = await fetch(`${config.config.API_BASE_URL}/notebooks/${notebookId}/suggested-questions/`, {
+      const response = await fetch(`${config.API_BASE_URL}/notebooks/${notebookId}/suggested-questions/`, {
         credentials: 'include',
       });
       if (!response.ok) throw new Error("Failed to fetch suggestions");

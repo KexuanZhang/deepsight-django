@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { config } from '../../config';
 
 interface Notebook {
   id: string;
@@ -26,7 +27,7 @@ export const fetchNotebooks = createAsyncThunk(
   'notebook/fetchAll',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/notebooks/');
+      const response = await fetch(`${config.API_BASE_URL}/notebooks/`);
       if (!response.ok) {
         throw new Error('Failed to fetch notebooks');
       }
@@ -41,7 +42,7 @@ export const fetchNotebook = createAsyncThunk(
   'notebook/fetchOne',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/notebooks/${id}/`);
+      const response = await fetch(`${config.API_BASE_URL}/notebooks/${id}/`);
       if (!response.ok) {
         throw new Error('Failed to fetch notebook');
       }

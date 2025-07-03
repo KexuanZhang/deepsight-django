@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { config } from '../../config';
 
 interface Report {
   id: string;
@@ -27,7 +28,7 @@ export const fetchReports = createAsyncThunk(
   'report/fetchAll',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/reports/');
+      const response = await fetch(`${config.API_BASE_URL}/reports/`);
       if (!response.ok) {
         throw new Error('Failed to fetch reports');
       }
@@ -42,7 +43,7 @@ export const fetchReport = createAsyncThunk(
   'report/fetchOne',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/reports/${id}/`);
+      const response = await fetch(`${config.API_BASE_URL}/reports/${id}/`);
       if (!response.ok) {
         throw new Error('Failed to fetch report');
       }

@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { config } from '../../config';
 
 interface DashboardStats {
   notebooksCount: number;
@@ -23,7 +24,7 @@ export const fetchDashboardStats = createAsyncThunk(
   'dashboard/fetchStats',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/dashboard/stats/');
+      const response = await fetch(`${config.API_BASE_URL}/dashboard/stats/`);
       if (!response.ok) {
         throw new Error('Failed to fetch dashboard stats');
       }

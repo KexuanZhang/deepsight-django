@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { config } from '../../config';
 
 interface Conference {
   id: string;
@@ -27,7 +28,7 @@ export const fetchConferences = createAsyncThunk(
   'conference/fetchAll',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/conferences/');
+      const response = await fetch(`${config.API_BASE_URL}/conferences/`);
       if (!response.ok) {
         throw new Error('Failed to fetch conferences');
       }
@@ -42,7 +43,7 @@ export const fetchConference = createAsyncThunk(
   'conference/fetchOne',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/conferences/${id}/`);
+      const response = await fetch(`${config.API_BASE_URL}/conferences/${id}/`);
       if (!response.ok) {
         throw new Error('Failed to fetch conference');
       }

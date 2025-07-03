@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { useSelector, useDispatch } from "react-redux";
+import { checkCurrentUser } from "../auth/authSlice";
 import { 
   Menu, 
   X, 
@@ -26,39 +28,55 @@ function getCookie(name) {
 
 export default function NotebookListPage() {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const { isAuthenticated, user, isLoading } = useSelector((state) => state.auth);
 
   // UI / data state
   const [menuOpen, setMenuOpen] = useState(false);
   const [notebooks, setNotebooks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
   const [error, setError] = useState("");
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [isGridView, setIsGridView] = useState(true);
   const [sortOrder, setSortOrder] = useState("recent");
-  const [currentUser, setCurrentUser] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
 
-  // 1) Prime CSRF & fetch current user
+  // Check authentication state on component mount
   useEffect(() => {
-    fetch(`${config.API_BASE_URL}/users/csrf/`, { credentials: "include" }).catch(() => {});
-    fetch(`${config.API_BASE_URL}/users/me/`, { credentials: "include" })
-      .then(res => {
-        if (res.ok) return res.json();
-        throw new Error("Not authenticated");
-      })
-      .then(data => setCurrentUser(data))
-      .catch(() => {
-        setCurrentUser(null);
-        navigate("/login");
-      });
-  }, [navigate]);
+    const checkAuth = async () => {
+      // If we already have a user (from login), skip the API check
+      if (user) {
+        setAuthChecked(true);
+        return;
+      }
+      
+      // Only check current user if we don't already have authentication state
+      await dispatch(checkCurrentUser());
+      setAuthChecked(true);
+    };
+    checkAuth();
+  }, [dispatch, user]);
 
-  // 2) load the list of notebooks for currentUser
+  // Redirect to login if not authenticated (after auth check is complete)
   useEffect(() => {
-    if (!currentUser) return;
+    if (authChecked && !isAuthenticated) {
+      navigate("/login");
+      return;
+    }
+    
+    // Prime CSRF for authenticated users
+    if (authChecked && isAuthenticated) {
+      fetch(`${config.API_BASE_URL}/users/csrf/`, { credentials: "include" }).catch(() => {});
+    }
+  }, [isAuthenticated, authChecked, navigate]);
+
+  // 2) load the list of notebooks for authenticated user
+  useEffect(() => {
+    if (!authChecked || !isAuthenticated || !user) return;
     (async () => {
       setLoading(true);
       setError("");
@@ -79,12 +97,12 @@ export default function NotebookListPage() {
         setLoading(false);
       }
     })();
-  }, [currentUser, sortOrder, navigate]);
+  }, [authChecked, isAuthenticated, user, sortOrder, navigate]);
 
   // 3) create a new notebook, including user
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!newName.trim() || !currentUser) return;
+    if (!newName.trim() || !user) return;
     setCreating(true);
     setError("");
     try {
@@ -96,7 +114,7 @@ export default function NotebookListPage() {
           "X-CSRFToken": getCookie("csrftoken"),
         },
         body: JSON.stringify({
-          user: currentUser.id,
+          user: user.id,
           name: newName.trim(),
           description: newDescription.trim(),
         }),
@@ -136,6 +154,18 @@ export default function NotebookListPage() {
     if (diffDays < 30) return `${Math.ceil(diffDays / 7)} weeks ago`;
     return date.toLocaleDateString();
   };
+
+  // Show loading screen while checking authentication
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">

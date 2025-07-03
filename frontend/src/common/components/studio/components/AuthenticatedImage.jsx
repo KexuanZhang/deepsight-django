@@ -69,15 +69,15 @@ const AuthenticatedImage = ({ src, alt, title }) => {
         
         // Try different API paths that might exist
         const alternativePaths = [
-          `/api/v1/files/${fileId}/images/${imageName}`,
-          `/api/v1/notebooks/${notebookId}/images/${imageName}`,
-          `/api/v1/images/${fileId}/${imageName}`,
+          `/files/${fileId}/images/${imageName}`,
+          `/notebooks/${notebookId}/images/${imageName}`,
+          `/images/${fileId}/${imageName}`,
           `/media/Users/u_1/knowledge_base_item/2025-07/f_${fileId}/images/${imageName}`,
         ];
 
         for (const altPath of alternativePaths) {
           try {
-            const altUrl = `${API_BASE_URL}${altPath}`.replace('/api/v1/api/v1', '/api/v1');
+            const altUrl = `${API_BASE_URL}${altPath}`;
             console.log('Trying alternative path:', altUrl);
             
             const response = await fetch(altUrl, {
