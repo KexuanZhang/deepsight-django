@@ -421,10 +421,10 @@ def extract_figure_data(file_path):
         r'^<img\s+[^>]*?src=["\'](.*?)["\'][^>]*?>$', re.IGNORECASE
     )
 
-    # Regex to find figure line: Allow optional HTML tags before "Figure X..."
-    # Captures figure number and caption.
+    # Regex to find figure line: Allow optional HTML tags before "Figure X..." or "Fig. X |"
+    # Captures figure number and caption. Handles both "Figure X:" and "Fig. X |" formats.
     figure_line_regex = re.compile(
-        r"^(?:<[^>]+>\s*)*(?:Figure|图)\s+(\d+)\.?[\s:]?(.*)", re.IGNORECASE
+        r"^(?:<[^>]+>\s*)*\*{0,2}(?:Figure|Fig\.?|图)\s+(\d+)\.?[\s:|]+(.+?)(?:\*{0,2})?$", re.IGNORECASE
     )
 
     # First pass: collect all images
@@ -448,6 +448,11 @@ def extract_figure_data(file_path):
         if figure_match:
             figure_number = figure_match.group(1)
             caption = figure_match.group(2).strip()
+            
+            # Clean up markdown formatting in caption
+            caption = re.sub(r'\*{2,}', '', caption)  # Remove ** markdown bold
+            caption = caption.strip()
+            
             figure_name = f"Figure {figure_number}"
 
             # Find the nearest preceding image
