@@ -27,6 +27,13 @@ ALLOWED_FILE_EXTENSIONS = {
     ".mp4": "video/mp4",
     ".avi": "video/x-msvideo",
     ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska",
+    ".webm": "video/webm",
+    ".flv": "video/x-flv",
+    ".wmv": "video/x-ms-wmv",
+    ".3gp": "video/3gpp",
+    ".ogv": "video/ogg",
+    ".m4v": "video/x-m4v",
 }
 
 
@@ -140,7 +147,7 @@ class FileValidator:
 
     def is_media_file(self, file_extension: str) -> bool:
         """Check if file is a media file (audio/video)."""
-        media_extensions = [".mp3", ".wav", ".m4a", ".mp4", ".avi", ".mov"]
+        media_extensions = [".mp3", ".wav", ".m4a", ".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".3gp", ".ogv", ".m4v"]
         return file_extension.lower() in media_extensions
 
     def is_document_file(self, file_extension: str) -> bool:

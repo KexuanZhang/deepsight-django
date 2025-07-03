@@ -4,7 +4,7 @@ Celery tasks for async processing of notebook content.
 
 import logging
 from celery import shared_task
-from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from asgiref.sync import async_to_sync
 from uuid import uuid4
 
@@ -282,6 +282,21 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
             'source_id': source.id
         }
 
+    except ValidationError as e:
+        logger.warning(f"File validation failed for {filename}: {str(e)}")
+        
+        # Update batch item status on validation error
+        if batch_item_id:
+            try:
+                batch_item = BatchJobItem.objects.get(id=batch_item_id)
+                batch_item.status = 'failed'
+                batch_item.error_message = f"File validation failed: {str(e)}"
+                batch_item.save()
+                _check_batch_completion(batch_job_id)
+            except:
+                pass
+        
+        raise
     except Exception as e:
         logger.error(f"Error processing file upload {filename}: {str(e)}")
         
