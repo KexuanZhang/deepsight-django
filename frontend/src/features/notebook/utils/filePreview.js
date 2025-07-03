@@ -15,7 +15,7 @@ export const FILE_CATEGORIES = {
   PDF: ['pdf'],
   PRESENTATION: ['ppt', 'pptx'],
   AUDIO: ['mp3', 'wav', 'm4a'],
-  VIDEO: ['mp4', 'avi', 'mov', 'mkv', 'webm', 'flv', 'wmv', '3gp', 'ogv', 'm4v'],
+  VIDEO: ['mp4', 'avi', 'mov', 'mkv', 'webm', 'wmv', 'm4v'],
   URL: ['url']
 };
 
@@ -71,7 +71,7 @@ export function getVideoMimeType(format) {
     'mp4': 'video/mp4',
     'avi': 'video/x-msvideo',
     'mov': 'video/quicktime',
-    'mkv': 'video/x-matroska',
+    'mkv': 'video/mp4', // Use video/mp4 MIME type for MKV to improve browser compatibility
     'webm': 'video/webm',
     'flv': 'video/x-flv',
     'wmv': 'video/x-ms-wmv',

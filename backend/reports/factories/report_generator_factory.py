@@ -197,7 +197,8 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
             
             prompt_type_map = {
                 "general": PromptType.GENERAL,
-                "financial": PromptType.FINANCIAL
+                "financial": PromptType.FINANCIAL,
+                "paper": PromptType.PAPER
             }
             
             # Handle old_outline

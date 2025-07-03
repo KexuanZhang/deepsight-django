@@ -102,9 +102,11 @@ class Report(models.Model):
 
     PROMPT_TYPE_GENERAL = "general"
     PROMPT_TYPE_FINANCIAL = "financial"
+    PROMPT_TYPE_PAPER = "paper"
     PROMPT_TYPE_CHOICES = [
         (PROMPT_TYPE_GENERAL, "General"),
         (PROMPT_TYPE_FINANCIAL, "Financial"),
+        (PROMPT_TYPE_PAPER, "Paper"),
     ]
     prompt_type = models.CharField(
         max_length=50, choices=PROMPT_TYPE_CHOICES, default=PROMPT_TYPE_GENERAL

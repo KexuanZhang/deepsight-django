@@ -22,6 +22,7 @@ import PodcastGenerationForm from './components/PodcastGenerationForm';
 import ReportListSection from './components/ReportListSection';
 import PodcastListSection from './components/PodcastListSection';
 import FileViewer from './components/FileViewer';
+import AdvancedSettingsModal from './components/AdvancedSettingsModal';
 
 // ====== INTERFACE SEGREGATION PRINCIPLE (ISP) ======
 // Import type definitions and prop creators
@@ -52,6 +53,7 @@ const StudioPanel = ({
     reports: false,
     podcasts: false
   });
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
 
   // ====== SINGLE RESPONSIBILITY: File Selection State ======
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -68,7 +70,8 @@ const StudioPanel = ({
     topic: '',
     article_title: '',
     model_provider: 'openai',
-    retriever: 'tavily'
+    retriever: 'tavily',
+    prompt_type: 'general'
   });
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation state ======
@@ -436,20 +439,32 @@ const StudioPanel = ({
     if (!selectedFile) return;
     
     try {
-      await studioService.updateFile(selectedFile.id, content);
+      // Use job_id if id is not available, as API expects job_id for reports
+      const fileId = selectedFile.id || selectedFile.job_id;
+      if (!fileId) {
+        throw new Error('File ID not found');
+      }
+      
+      console.log('Saving file:', { fileId, notebookId, contentLength: content.length });
+      await studioService.updateFile(fileId, content);
       setSelectedFileContent(content);
+      
+      // Refresh the report data to ensure it's synchronized
+      studioData.loadReports();
+      
       toast({
         title: "File Saved",
-        description: "Your changes have been saved"
+        description: "Your changes have been saved and synchronized"
       });
     } catch (error) {
+      console.error('Save error:', error);
       toast({
         title: "Save Failed",
-        description: error.message,
+        description: `Failed to save: ${error.message}`,
         variant: "destructive"
       });
     }
-  }, [selectedFile, studioService, toast]);
+  }, [selectedFile, studioService, studioData, notebookId, toast]);
 
   const handleCloseFile = useCallback(() => {
     setSelectedFile(null);
@@ -508,7 +523,7 @@ const StudioPanel = ({
           isCollapsed={collapsedSections.report}
           onToggleCollapse={() => toggleSection('report')}
           selectedFiles={selectedFiles}
-          onShowCustomize={() => {/* TODO: Implement customize modal */}}
+          onShowCustomize={() => setShowAdvancedSettings(true)}
         />
 
         <PodcastGenerationForm
@@ -569,6 +584,15 @@ const StudioPanel = ({
           notebookId={notebookId}
         />
       )}
+
+      {/* ====== SINGLE RESPONSIBILITY: Advanced settings modal ====== */}
+      <AdvancedSettingsModal
+        isOpen={showAdvancedSettings}
+        onClose={() => setShowAdvancedSettings(false)}
+        config={reportGeneration.config}
+        onConfigChange={reportGeneration.updateConfig}
+        availableModels={studioData.availableModels}
+      />
     </div>
   );
 };

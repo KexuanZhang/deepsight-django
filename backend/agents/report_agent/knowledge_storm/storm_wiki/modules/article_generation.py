@@ -15,8 +15,6 @@ from ...utils import ArticleTextProcessing
 from .enhanced_rag import EnhancedStormInformationTable
 from prompts import import_prompts
 
-prompts = import_prompts()
-
 import json
 
 
@@ -30,7 +28,7 @@ def get_device():
 
 
 class QueryRewrite(dspy.Signature):
-    __doc__ = prompts.QueryRewrite_docstring
+    __doc__ = import_prompts().QueryRewrite_docstring
     queries = dspy.InputField(
         description="List of search queries to rewrite", format=list
     )
@@ -523,7 +521,7 @@ class ConvToSection(dspy.Module):
 
 
 class WriteSection(dspy.Signature):
-    __doc__ = prompts.WriteSection_docstring
+    __doc__ = import_prompts().WriteSection_docstring
 
     text_input = dspy.InputField(
         prefix="text(or 'N/A' if not available):\n", format=str

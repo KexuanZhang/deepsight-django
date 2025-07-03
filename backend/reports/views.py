@@ -186,6 +186,62 @@ class NotebookReportDetailView(APIView):
                 {"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    def put(self, request, notebook_id, job_id):
+        """Update report content"""
+        try:
+            notebook, report = self.get_notebook_and_report(notebook_id, job_id)
+
+            # Only allow editing completed reports
+            if report.status != Report.STATUS_COMPLETED:
+                return Response(
+                    {"detail": "Only completed reports can be edited"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Get the new content from request
+            content = request.data.get('content')
+            if content is None:
+                return Response(
+                    {"detail": "Content field is required"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Update the report content
+            report.result_content = content
+            report.save(update_fields=['result_content', 'updated_at'])
+
+            # Also update the main report file if it exists
+            if report.main_report_file:
+                try:
+                    # Use the file path directly for text operations
+                    file_path = Path(report.main_report_file.path)
+                    file_path.write_text(content, encoding='utf-8')
+                    logger.info(f"Updated report file for job {job_id}")
+                except Exception as e:
+                    logger.warning(f"Could not update report file for {job_id}: {e}")
+
+            logger.info(f"Report content updated for job {job_id} by user {request.user.username}")
+
+            return Response(
+                {
+                    "message": "Report updated successfully",
+                    "job_id": job_id,
+                    "report_id": report.id,
+                    "updated_at": report.updated_at.isoformat(),
+                }
+            )
+
+        except Http404:
+            return Response(
+                {"detail": "Report not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error updating report {job_id}: {e}")
+            return Response(
+                {"detail": f"Error updating report: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
     def delete(self, request, notebook_id, job_id):
         """Delete a report and all its associated files"""
         try:
@@ -559,7 +615,7 @@ def notebook_report_status_stream(request, notebook_id, job_id):
         return response
 
     try:
-        # Verify user’s access to notebook and report
+        # Verify user's access to notebook and report
         notebook = get_object_or_404(
             Notebook.objects.filter(user=request.user),
             pk=notebook_id,

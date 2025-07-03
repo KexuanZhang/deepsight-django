@@ -22,11 +22,8 @@ const fileIcons = {
   mov: Video,
   mkv: Video,
   webm: Video,
-  flv: Video,
   wmv: Video,
-  '3gp': Video,
-  ogv: Video,
-  'm4v': Video,
+  m4v: Video,
   url: Link2,
   website: Globe,
   media: Video
@@ -1008,7 +1005,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
   };
 
   const validateFile = (file) => {
-    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav", "m4a", "avi", "mov", "mkv", "webm", "flv", "wmv", "3gp", "ogv", "m4v"];
+    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav", "m4a", "avi", "mov", "mkv", "webm", "wmv", "m4v"];
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
     const maxSize = 100 * 1024 * 1024; // 100MB
     const minSize = 100; // 100 bytes minimum
@@ -1049,10 +1046,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         "mov": "video/quicktime",
         "mkv": "video/x-matroska",
         "webm": "video/webm",
-        "flv": "video/x-flv",
         "wmv": "video/x-ms-wmv",
-        "3gp": "video/3gpp",
-        "ogv": "video/ogg",
         "m4v": "video/x-m4v"
       };
       
@@ -1700,7 +1694,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                     </div>
                   </div>
                   <p className="text-sm text-gray-500 mt-6">
-                    Supported file types: PDF, .txt, Markdown, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, flv, wmv, 3gp, ogv, m4v)
+                    Supported file types: PDF, .txt, Markdown, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
                   </p>
                 </div>
               )}
@@ -2033,7 +2027,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         type="file"
         onChange={handleFileChange}
         style={{ display: 'none' }}
-        accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav,.m4a,.avi,.mov,.mkv,.webm,.flv,.wmv,.3gp,.ogv,.m4v"
+        accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav,.m4a,.avi,.mov,.mkv,.webm,.wmv,.m4v"
       />
 
       {/* File Preview Modal */}

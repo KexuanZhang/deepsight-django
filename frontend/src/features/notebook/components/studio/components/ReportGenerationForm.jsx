@@ -108,50 +108,20 @@ const ReportGenerationForm = ({
             </p>
           </div>
 
-          {/* Report title input */}
+          {/* Prompt Style selection */}
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">Report Title</label>
-            <input
-              type="text"
-              placeholder="Enter report title..."
+            <label className="block text-sm font-medium text-gray-700">Prompt Style</label>
+            <select
               className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              value={config.article_title || ''}
-              onChange={(e) => onConfigChange({ article_title: e.target.value })}
-            />
+              value={config.prompt_type || 'general'}
+              onChange={(e) => onConfigChange({ prompt_type: e.target.value })}
+            >
+              <option value="general">General</option>
+              <option value="paper">Paper</option>
+              <option value="financial">Financial Report</option>
+            </select>
           </div>
 
-          {/* Model and retriever selection */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">AI Model</label>
-              <select
-                className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={config.model_provider || ''}
-                onChange={(e) => onConfigChange({ model_provider: e.target.value })}
-              >
-                {(availableModels?.model_providers || []).map(provider => (
-                  <option key={provider} value={provider}>
-                    {formatModelName(provider)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Search Engine</label>
-              <select
-                className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={config.retriever || ''}
-                onChange={(e) => onConfigChange({ retriever: e.target.value })}
-              >
-                {(availableModels?.retrievers || []).map(retriever => (
-                  <option key={retriever} value={retriever}>
-                    {formatModelName(retriever)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
 
           {/* Advanced settings button */}
           <div className="flex justify-center">

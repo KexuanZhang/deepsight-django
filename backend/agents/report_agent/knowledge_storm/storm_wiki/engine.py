@@ -19,8 +19,6 @@ from ..lm import LitellmModel
 from ..utils import FileIOHelper, makeStringRed, truncate_filename
 from prompts import import_prompts
 
-prompts = import_prompts()
-
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
 )
@@ -29,7 +27,7 @@ from utils.paper_processing import insert_figure_images, preserve_figure_formatt
 
 
 class TopicGenerator(dspy.Signature):
-    __doc__ = prompts.TopicGenerator_docstring
+    __doc__ = import_prompts().TopicGenerator_docstring
     text_input = dspy.InputField(
         desc="Optional: Original text content, analyze the core theme, entities, technical terms, and high-frequency vocabulary to identify potential key content"
     )
@@ -40,7 +38,7 @@ class TopicGenerator(dspy.Signature):
 
 
 class UserInputTopicImprover(dspy.Signature):
-    __doc__ = prompts.UserInputTopicImprover_docstring
+    __doc__ = import_prompts().UserInputTopicImprover_docstring
     topic = dspy.InputField(desc="Topic to guide report generation")
     improved_topic = dspy.OutputField(
         desc="Return ONLY the improved topic sentence with no additional text or formatting"
@@ -655,7 +653,7 @@ class STORMWikiRunner(Engine):
         if not topic_to_improve and self.text_input:
             from prompts import import_prompts
             prompts = import_prompts()
-            topic_to_improve = prompts.SystemTopic_docstring
+            topic_to_improve = import_prompts().SystemTopic_docstring
             logging.info(f"No topic provided, using system_topic as base: {topic_to_improve}")
         
         # Try to improve topic if we have something to work with
