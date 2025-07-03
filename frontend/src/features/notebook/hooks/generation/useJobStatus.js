@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import { config } from '../../config';
-import apiService from '../utils/api';
+import { config } from '@/config';
+import apiService from '@/common/utils/api';
 
 class AbortError extends Error {
   constructor() {

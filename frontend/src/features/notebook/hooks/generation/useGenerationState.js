@@ -2,7 +2,7 @@
 // Custom hook focused solely on generation state management
 
 import { useState, useCallback } from 'react';
-import { GenerationState } from '../types';
+import { GenerationState } from '@/features/notebook/components/studio/types';
 
 export const useGenerationState = (initialConfig = {}) => {
   const [state, setState] = useState(GenerationState.IDLE);

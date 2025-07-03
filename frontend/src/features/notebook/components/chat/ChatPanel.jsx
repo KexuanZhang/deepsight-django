@@ -11,7 +11,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
-import { useFileSelection } from "@/common/hooks/useFileSelection";
+import { useFileSelection } from "@/features/notebook/hooks";
 import { config } from "@/config";
 
 function getCookie(name) {
