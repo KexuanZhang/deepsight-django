@@ -113,9 +113,8 @@ export class ApiStudioService extends IStudioService {
   }
 
   async updateFile(fileId, content) {
-    // For reports, we'll need to implement a proper update endpoint
-    // For now, this is a placeholder
-    return await this.api.put(`/notebooks/${this.notebookId}/report-jobs/${fileId}/`, { content });
+    // Use the dedicated updateReport method for proper report content updates
+    return await this.api.updateReport(fileId, this.notebookId, content);
   }
 
   async loadAudio(podcastId) {

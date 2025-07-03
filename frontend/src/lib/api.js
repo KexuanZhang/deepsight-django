@@ -655,6 +655,19 @@ class ApiService {
     return response;
   }
 
+  async updateReport(jobId, notebookId, content) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for updating report');
+    }
+    
+    if (!content) {
+      throw new Error('content is required for updating report');
+    }
+    
+    const url = `/notebooks/${notebookId}/report-jobs/${jobId}/`;
+    return await this.put(url, { content });
+  }
+
   // Get the correct SSE endpoint for podcast job status
   getPodcastJobStatusStreamUrl(jobId, notebookId) {
     if (!notebookId) {
