@@ -173,22 +173,6 @@ const MarkdownContent = React.memo(({ content }) => (
 
 MarkdownContent.displayName = 'MarkdownContent';
 
-// Helper function to get the correct MIME type for video formats
-const getVideoMimeType = (format) => {
-  const formatLower = format.toLowerCase();
-  const mimeTypes = {
-    'mp4': 'video/mp4',
-    'avi': 'video/x-msvideo',
-    'mov': 'video/quicktime',
-    'mkv': 'video/mp4', // Use video/mp4 MIME type for MKV to improve browser compatibility
-    'webm': 'video/webm',
-    'wmv': 'video/x-ms-wmv',
-    'm4v': 'video/x-m4v'
-  };
-  
-  return mimeTypes[formatLower] || `video/${formatLower}`;
-};
-
 const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
   // Consolidate all state into a single object to avoid hook order issues
   const [state, setState] = useState({
@@ -542,9 +526,9 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
       const formatLower = format.toLowerCase();
       const compatibilityInfo = {
         'mkv': {
-          supported: false,
-          reason: 'MKV files have limited browser support',
-          suggestion: 'Try downloading the file and playing in VLC or another media player'
+          supported: 'partial',
+          reason: 'MKV files have limited browser support, using MP4 compatibility mode',
+          suggestion: 'If playback fails, try downloading the file and playing in VLC or another media player'
         },
         'flv': {
           supported: false,
@@ -757,126 +741,94 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
           )}
         </div>
         
-        {/* Video Element */}
-        <video 
-          controls 
-          className="w-full rounded-lg bg-black"
-          preload="metadata"
-          controlsList="nodownload"
-          style={{ maxHeight: '400px' }}
-          onError={(e) => {
-            console.log('Video load error:', e);
-            updateState({ videoError: true });
-          }}
-          onLoadedMetadata={() => {
-            updateState({ videoLoaded: true, videoError: false });
-          }}
-          onCanPlay={() => {
-            updateState({ videoLoaded: true, videoError: false });
-          }}
-        >
-          <source 
-            src={state.preview.videoUrl} 
-            type={getVideoMimeType(state.preview.format)} 
-          />
-          Your browser does not support the video element.
-        </video>
-        
-        {state.videoError && (
-          <div className="mt-2 text-xs text-center">
-            <span className="text-red-500">⚠️ Video file could not be loaded</span>
-          </div>
-        )}
-      </div>
-      
-      {/* Transcript Content Display */}
-      {state.preview.hasTranscript && (
-        <div className="bg-white rounded-lg border border-gray-200">
-          <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
-                  <FileText className="h-4 w-4 text-white" />
-                </div>
-                <div className="flex-1">
-                  <h4 className="text-base font-semibold text-gray-900">Video Transcript</h4>
-                  {/* Document Stats */}
-                  <div className="flex flex-wrap gap-2 mt-2 -ml-1">
-                    <Badge variant="secondary">
-                      <FileText className="h-3 w-3 mr-1" />
-                      {state.preview.wordCount} words
-                    </Badge>
+        {/* Transcript Content Display */}
+        {state.preview.hasTranscript && (
+          <div className="bg-white rounded-lg border border-gray-200">
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <FileText className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-base font-semibold text-gray-900">Video Transcript</h4>
+                    {/* Document Stats */}
+                    <div className="flex flex-wrap gap-2 mt-2 -ml-1">
+                      <Badge variant="secondary">
+                        <FileText className="h-3 w-3 mr-1" />
+                        {state.preview.wordCount} words
+                      </Badge>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+            <div className="p-6 max-h-[600px] overflow-y-auto">
+              <MarkdownContent content={state.preview.content} />
+            </div>
           </div>
-          <div className="p-6 max-h-[600px] overflow-y-auto">
-            <MarkdownContent content={state.preview.content} />
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Video Information */}
-      <div className="bg-gray-50 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-gray-900 mb-3">Video Information</h4>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <span className="text-sm font-medium text-gray-700">Format:</span>
-            <p className="text-sm text-gray-600">{state.preview.format}</p>
+        {/* Video Information */}
+        <div className="bg-gray-50 rounded-lg p-4">
+          <h4 className="text-sm font-medium text-gray-900 mb-3">Video Information</h4>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <span className="text-sm font-medium text-gray-700">Format:</span>
+              <p className="text-sm text-gray-600">{state.preview.format}</p>
+            </div>
+            <div>
+              <span className="text-sm font-medium text-gray-700">File Size:</span>
+              <p className="text-sm text-gray-600">{state.preview.fileSize}</p>
+            </div>
+            {state.preview.duration !== 'Unknown' && (
+              <div>
+                <span className="text-sm font-medium text-gray-700">Duration:</span>
+                <p className="text-sm text-gray-600">{state.preview.duration}</p>
+              </div>
+            )}
+            {state.preview.resolution !== 'Unknown' && (
+              <div>
+                <span className="text-sm font-medium text-gray-700">Resolution:</span>
+                <p className="text-sm text-gray-600">{state.preview.resolution}</p>
+              </div>
+            )}
+            {state.preview.language && state.preview.language !== 'Unknown' && (
+              <div>
+                <span className="text-sm font-medium text-gray-700">Language:</span>
+                <p className="text-sm text-gray-600 capitalize">{state.preview.language}</p>
+              </div>
+            )}
           </div>
-          <div>
-            <span className="text-sm font-medium text-gray-700">File Size:</span>
-            <p className="text-sm text-gray-600">{state.preview.fileSize}</p>
-          </div>
-          {state.preview.duration !== 'Unknown' && (
-            <div>
-              <span className="text-sm font-medium text-gray-700">Duration:</span>
-              <p className="text-sm text-gray-600">{state.preview.duration}</p>
-            </div>
-          )}
-          {state.preview.resolution !== 'Unknown' && (
-            <div>
-              <span className="text-sm font-medium text-gray-700">Resolution:</span>
-              <p className="text-sm text-gray-600">{state.preview.resolution}</p>
-            </div>
-          )}
-          {state.preview.language && state.preview.language !== 'Unknown' && (
-            <div>
-              <span className="text-sm font-medium text-gray-700">Language:</span>
-              <p className="text-sm text-gray-600 capitalize">{state.preview.language}</p>
-            </div>
-          )}
         </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   const renderPdfContentPreview = () => (
     <div className="space-y-6">
       {/* PDF Header with Action Buttons */}
       <div className="bg-gradient-to-r from-red-50 to-orange-50 rounded-lg p-4 border border-red-200">
         <div className="flex items-start justify-between">
-                      <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0">
-                <FileText className="h-5 w-5 text-white" />
-              </div>
-              <div className="flex-1">
-                <h4 className="text-base font-semibold text-gray-900 mb-3">PDF Document</h4>
-                {/* Document Stats - aligned with title */}
-                <div className="flex flex-wrap gap-2 -ml-1">
-                  <Badge variant="secondary">
-                    <FileText className="h-3 w-3 mr-1" />
-                    {state.preview.wordCount} words
-                  </Badge>
-                  <Badge variant="secondary">
-                    <HardDrive className="h-3 w-3 mr-1" />
-                    {state.preview.fileSize}
-                  </Badge>
-                </div>
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0">
+              <FileText className="h-5 w-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <h4 className="text-base font-semibold text-gray-900 mb-3">PDF Document</h4>
+              {/* Document Stats - aligned with title */}
+              <div className="flex flex-wrap gap-2 -ml-1">
+                <Badge variant="secondary">
+                  <FileText className="h-3 w-3 mr-1" />
+                  {state.preview.wordCount} words
+                </Badge>
+                <Badge variant="secondary">
+                  <HardDrive className="h-3 w-3 mr-1" />
+                  {state.preview.fileSize}
+                </Badge>
               </div>
             </div>
+          </div>
           <div className="flex items-center h-full pt-2">
             <Button
               size="sm"
@@ -1068,4 +1020,4 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
   );
 };
 
-export default FilePreview; 
+export default FilePreview;
