@@ -15,7 +15,7 @@ export const FILE_CATEGORIES = {
   PDF: ['pdf'],
   PRESENTATION: ['ppt', 'pptx'],
   AUDIO: ['mp3', 'wav', 'm4a'],
-  VIDEO: ['mp4', 'avi', 'mov'],
+  VIDEO: ['mp4', 'avi', 'mov', 'mkv', 'webm', 'wmv', 'm4v'],
   URL: ['url']
 };
 

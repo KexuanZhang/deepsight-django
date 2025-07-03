@@ -173,6 +173,22 @@ const MarkdownContent = React.memo(({ content }) => (
 
 MarkdownContent.displayName = 'MarkdownContent';
 
+// Helper function to get the correct MIME type for video formats
+const getVideoMimeType = (format) => {
+  const formatLower = format.toLowerCase();
+  const mimeTypes = {
+    'mp4': 'video/mp4',
+    'avi': 'video/x-msvideo',
+    'mov': 'video/quicktime',
+    'mkv': 'video/mp4', // Use video/mp4 MIME type for MKV to improve browser compatibility
+    'webm': 'video/webm',
+    'wmv': 'video/x-ms-wmv',
+    'm4v': 'video/x-m4v'
+  };
+  
+  return mimeTypes[formatLower] || `video/${formatLower}`;
+};
+
 const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
   // Consolidate all state into a single object to avoid hook order issues
   const [state, setState] = useState({
@@ -553,7 +569,7 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
         >
           <source 
             src={state.preview.videoUrl} 
-            type={`video/${state.preview.format.toLowerCase()}`} 
+            type={getVideoMimeType(state.preview.format)} 
           />
           Your browser does not support the video element.
         </video>
