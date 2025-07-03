@@ -526,8 +526,8 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
       const formatLower = format.toLowerCase();
       const compatibilityInfo = {
         'mkv': {
-          supported: 'partial',
-          reason: 'MKV files have limited browser support, using MP4 compatibility mode',
+          supported: true,
+          reason: 'MKV files have limited browser support',
           suggestion: 'If playback fails, try downloading the file and playing in VLC or another media player'
         },
         'flv': {
