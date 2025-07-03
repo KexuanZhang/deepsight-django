@@ -27,7 +27,7 @@ class NotebooksConfig:
         self.ALLOWED_FILE_TYPES = getattr(
             django_settings,
             "NOTEBOOKS_ALLOWED_FILE_TYPES",
-            [".txt", ".md", ".pdf", ".mp3", ".wav", ".m4a", ".mp4", ".avi", ".mov", ".ppt", ".pptx"],
+            [".txt", ".md", ".pdf", ".mp3", ".wav", ".m4a", ".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".3gp", ".ogv", ".m4v", ".ppt", ".pptx"],
         )
 
         # Processing settings
@@ -66,7 +66,7 @@ def get_notebooks_config():
         # Minimal fallback config
         class MinimalConfig:
             MAX_FILE_SIZE = 100 * 1024 * 1024
-            ALLOWED_FILE_TYPES = [".txt", ".md", ".pdf", ".mp3", ".wav", ".m4a", ".mp4", ".avi", ".mov", ".ppt", ".pptx"]
+            ALLOWED_FILE_TYPES = [".txt", ".md", ".pdf", ".mp3", ".wav", ".m4a", ".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".3gp", ".ogv", ".m4v", ".ppt", ".pptx"]
             redis_url = f"redis://{os.getenv('REDIS_HOST', 'localhost')}:6379/0"
         return MinimalConfig()
 

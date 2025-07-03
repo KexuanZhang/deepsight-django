@@ -15,7 +15,7 @@ export const FILE_CATEGORIES = {
   PDF: ['pdf'],
   PRESENTATION: ['ppt', 'pptx'],
   AUDIO: ['mp3', 'wav', 'm4a'],
-  VIDEO: ['mp4', 'avi', 'mov'],
+  VIDEO: ['mp4', 'avi', 'mov', 'mkv', 'webm', 'flv', 'wmv', '3gp', 'ogv', 'm4v'],
   URL: ['url']
 };
 
@@ -61,6 +61,44 @@ export function getPreviewType(fileExtension, metadata = {}) {
   }
   
   return PREVIEW_TYPES.METADATA;
+}
+
+/**
+ * Get proper MIME type for video formats
+ */
+export function getVideoMimeType(format) {
+  const mimeTypeMap = {
+    'mp4': 'video/mp4',
+    'avi': 'video/x-msvideo',
+    'mov': 'video/quicktime',
+    'mkv': 'video/x-matroska',
+    'webm': 'video/webm',
+    'flv': 'video/x-flv',
+    'wmv': 'video/x-ms-wmv',
+    '3gp': 'video/3gpp',
+    'ogv': 'video/ogg',
+    'm4v': 'video/x-m4v'
+  };
+  
+  const normalizedFormat = format.toLowerCase().replace('.', '');
+  return mimeTypeMap[normalizedFormat] || `video/${normalizedFormat}`;
+}
+
+/**
+ * Get proper MIME type for audio formats
+ */
+export function getAudioMimeType(format) {
+  const mimeTypeMap = {
+    'mp3': 'audio/mpeg',
+    'wav': 'audio/wav',
+    'm4a': 'audio/mp4',
+    'aac': 'audio/aac',
+    'ogg': 'audio/ogg',
+    'flac': 'audio/flac'
+  };
+  
+  const normalizedFormat = format.toLowerCase().replace('.', '');
+  return mimeTypeMap[normalizedFormat] || `audio/${normalizedFormat}`;
 }
 
 /**

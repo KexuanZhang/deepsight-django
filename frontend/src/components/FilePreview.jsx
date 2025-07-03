@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Eye, FileText, Globe, Music, Video, File, HardDrive, Calendar, ExternalLink, Loader2 } from 'lucide-react';
+import { X, Eye, FileText, Globe, Music, Video, File, HardDrive, Calendar, ExternalLink, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { generatePreview, supportsPreview, PREVIEW_TYPES, formatDate } from '@/lib/filePreview';
+import { generatePreview, supportsPreview, PREVIEW_TYPES, formatDate, getVideoMimeType, getAudioMimeType } from '@/lib/filePreview';
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -440,11 +440,12 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
         >
           <source 
             src={state.preview.audioUrl} 
-            type={
-              state.preview.format.toLowerCase() === 'm4a' ? 'audio/mp4' : 
-              state.preview.format.toLowerCase() === 'mp3' ? 'audio/mpeg' :
-              `audio/${state.preview.format.toLowerCase()}`
-            } 
+            type={getAudioMimeType(state.preview.format)} 
+          />
+          {/* Fallback source with generic MIME type */}
+          <source 
+            src={state.preview.audioUrl} 
+            type={`audio/${state.preview.format.toLowerCase()}`} 
           />
           Your browser does not support the audio element.
         </audio>
@@ -519,51 +520,226 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
     </div>
   );
 
-  const renderVideoPreview = () => (
-    <div className="space-y-6">
-      {/* Video Player Section */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
-        <div className="flex items-center space-x-3 mb-3">
-          <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
-            <Video className="h-5 w-5 text-white" />
+  const renderVideoPreview = () => {
+    // Format-specific compatibility info
+    const getFormatCompatibility = (format) => {
+      const formatLower = format.toLowerCase();
+      const compatibilityInfo = {
+        'mkv': {
+          supported: false,
+          reason: 'MKV files have limited browser support',
+          suggestion: 'Try downloading the file and playing in VLC or another media player'
+        },
+        'flv': {
+          supported: false,
+          reason: 'FLV format is no longer supported by modern browsers',
+          suggestion: 'Consider converting to MP4 format for web playback'
+        },
+        'wmv': {
+          supported: false,
+          reason: 'WMV files are not supported in most browsers',
+          suggestion: 'Try downloading the file and playing in a Windows media player'
+        },
+        'avi': {
+          supported: 'partial',
+          reason: 'AVI support depends on the internal codecs used',
+          suggestion: 'If playback fails, download and use a dedicated media player'
+        },
+        'webm': {
+          supported: true,
+          reason: 'WebM is well-supported in modern browsers'
+        },
+        'mp4': {
+          supported: true,
+          reason: 'MP4 is universally supported'
+        },
+        'mov': {
+          supported: 'partial',
+          reason: 'MOV support varies by browser and codec',
+          suggestion: 'If playback fails, try Safari or download the file'
+        }
+      };
+      
+      return compatibilityInfo[formatLower] || {
+        supported: 'unknown',
+        reason: 'Browser support for this format may vary'
+      };
+    };
+
+    const compatibility = getFormatCompatibility(state.preview.format);
+    const isUnsupported = compatibility.supported === false;
+
+    return (
+      <div className="space-y-6">
+        {/* Video Section */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                <Video className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <h4 className="text-sm font-medium text-gray-900">
+                  {isUnsupported ? 'Video File' : 'Video Player'}
+                </h4>
+                <p className="text-xs text-gray-600">
+                  {isUnsupported 
+                    ? 'Preview not available in browser' 
+                    : compatibility.supported === true 
+                      ? 'Click play to watch the video file'
+                      : 'Browser compatibility may be limited'}
+                </p>
+              </div>
+            </div>
+            {/* Download Button */}
+            <Button
+              size="sm"
+              variant={isUnsupported ? "default" : "outline"}
+              onClick={async () => {
+                try {
+                  const response = await fetch(state.preview.videoUrl, {
+                    credentials: 'include'
+                  });
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  // Remove existing extension if present before adding the format extension
+                  const title = state.preview.title || 'video';
+                  const cleanTitle = title.replace(/\.[^/.]+$/, ''); // Remove any existing extension
+                  link.download = `${cleanTitle}.${state.preview.format.toLowerCase()}`;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                  window.URL.revokeObjectURL(url);
+                } catch (error) {
+                  console.error('Download failed:', error);
+                }
+              }}
+              className="text-xs"
+            >
+              <HardDrive className="h-3 w-3 mr-1" />
+              Download
+            </Button>
           </div>
-          <div className="flex-1">
-            <h4 className="text-sm font-medium text-gray-900">Video Player</h4>
-            <p className="text-xs text-gray-600">Click play to watch the video file</p>
-          </div>
+
+          {/* Format Not Supported Message */}
+          {isUnsupported ? (
+            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
+              <div className="flex">
+                <AlertCircle className="h-5 w-5 text-blue-400 mr-3 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm text-blue-800 font-medium">
+                    {compatibility.reason}
+                  </p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    {compatibility.suggestion}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Show video player for supported/partially supported formats */
+            <>
+              {/* Format Compatibility Warning for partial support */}
+              {compatibility.supported === 'partial' && !state.videoError && (
+                <div className="mb-3 bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+                  <div className="flex">
+                    <AlertCircle className="h-4 w-4 text-yellow-400 mr-2 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-yellow-800 font-medium">{compatibility.reason}</p>
+                      {compatibility.suggestion && (
+                        <p className="text-xs text-yellow-700 mt-1">{compatibility.suggestion}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Video Element */}
+              <video 
+                controls 
+                className="w-full rounded-lg bg-black"
+                preload="metadata"
+                controlsList="nodownload"
+                style={{ maxHeight: '400px' }}
+                onError={(e) => {
+                  console.error('Video load error:', e);
+                  console.error('Video error details:', {
+                    error: e.target?.error,
+                    networkState: e.target?.networkState,
+                    readyState: e.target?.readyState,
+                    src: e.target?.src,
+                    format: state.preview.format
+                  });
+                  updateState({ videoError: true });
+                }}
+                onLoadedMetadata={() => {
+                  updateState({ videoLoaded: true, videoError: false });
+                }}
+                onCanPlay={() => {
+                  updateState({ videoLoaded: true, videoError: false });
+                }}
+              >
+                <source 
+                  src={state.preview.videoUrl} 
+                  type={getVideoMimeType(state.preview.format)} 
+                />
+                {/* Fallback source with generic MIME type */}
+                <source 
+                  src={state.preview.videoUrl} 
+                  type={`video/${state.preview.format.toLowerCase()}`} 
+                />
+                Your browser does not support the video element.
+              </video>
+              
+              {/* Enhanced Error Display */}
+              {state.videoError && (
+                <div className="mt-3 bg-red-50 border-l-4 border-red-400 p-3 rounded">
+                  <div className="flex">
+                    <AlertCircle className="h-4 w-4 text-red-400 mr-2 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm text-red-800 font-medium">
+                        Video file could not be loaded
+                      </p>
+                      <p className="text-xs text-red-700 mt-1">
+                        {compatibility.reason}
+                        {compatibility.suggestion && ` ${compatibility.suggestion}`}
+                      </p>
+                      <div className="mt-2 flex space-x-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => window.open(state.preview.videoUrl, '_blank')}
+                          className="text-xs bg-white hover:bg-gray-50"
+                        >
+                          <HardDrive className="h-3 w-3 mr-1" />
+                          Download Video
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            updateState({ videoError: false });
+                            // Force video reload by recreating the element
+                            const video = document.querySelector('video');
+                            if (video) {
+                              video.load();
+                            }
+                          }}
+                          className="text-xs"
+                        >
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          Retry
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
-        
-        {/* Video Element */}
-        <video 
-          controls 
-          className="w-full rounded-lg bg-black"
-          preload="metadata"
-          controlsList="nodownload"
-          style={{ maxHeight: '400px' }}
-          onError={(e) => {
-            console.log('Video load error:', e);
-            updateState({ videoError: true });
-          }}
-          onLoadedMetadata={() => {
-            updateState({ videoLoaded: true, videoError: false });
-          }}
-          onCanPlay={() => {
-            updateState({ videoLoaded: true, videoError: false });
-          }}
-        >
-          <source 
-            src={state.preview.videoUrl} 
-            type={`video/${state.preview.format.toLowerCase()}`} 
-          />
-          Your browser does not support the video element.
-        </video>
-        
-        {state.videoError && (
-          <div className="mt-2 text-xs text-center">
-            <span className="text-red-500">⚠️ Video file could not be loaded</span>
-          </div>
-        )}
-      </div>
       
       {/* Transcript Content Display */}
       {state.preview.hasTranscript && (
@@ -627,6 +803,7 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
       </div>
     </div>
   );
+};
 
   const renderPdfContentPreview = () => (
     <div className="space-y-6">

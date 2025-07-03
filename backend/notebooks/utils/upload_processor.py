@@ -20,7 +20,8 @@ except ImportError:
 
 # Django imports for file handling
 from django.core.files.uploadedfile import UploadedFile as UploadFile
-from django.http import Http404 as HTTPException
+from django.http import Http404
+from django.core.exceptions import ValidationError
 
 try:
     from .file_storage import FileStorageService
@@ -410,9 +411,8 @@ class UploadProcessor:
                         "error",
                         error=f"File validation failed: {'; '.join(validation['errors'])}",
                     )
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"File validation failed: {'; '.join(validation['errors'])}",
+                raise ValidationError(
+                    f"File validation failed: {'; '.join(validation['errors'])}"
                 )
 
             # Update status to processing
@@ -433,9 +433,8 @@ class UploadProcessor:
                         "error",
                         error=f"File content validation failed: {'; '.join(content_validation['errors'])}",
                     )
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"File content validation failed: {'; '.join(content_validation['errors'])}",
+                raise ValidationError(
+                    f"File content validation failed: {'; '.join(content_validation['errors'])}"
                 )
 
             # Get file size
@@ -526,8 +525,8 @@ class UploadProcessor:
                 "upload_file_id": upload_file_id,
             }
 
-        except HTTPException:
-            # Clean up and re-raise HTTP exceptions
+        except ValidationError:
+            # Clean up and re-raise validation errors
             if temp_path and os.path.exists(temp_path):
                 os.unlink(temp_path)
             raise
@@ -540,7 +539,7 @@ class UploadProcessor:
                 self._update_upload_status(upload_file_id, "error", error=str(e))
 
             self.log_operation("process_upload_error", str(e), "error")
-            raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+            raise Exception(f"Processing failed: {str(e)}")
 
     def _save_uploaded_file(self, file: UploadFile) -> str:
         """Save uploaded file to temporary directory."""
@@ -583,7 +582,7 @@ class UploadProcessor:
             return self._process_pdf_marker(file_path, file_metadata)
         elif file_extension in ['.mp3', '.wav', '.m4a']:
             return await self._process_audio_immediate(file_path, file_metadata)
-        elif file_extension in [".mp4", ".avi", ".mov"]:
+        elif file_extension in [".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".3gp", ".ogv", ".m4v"]:
             return await self._process_video_immediate(file_path, file_metadata)
         elif file_extension in [".txt", ".md"]:
             return self._process_text_immediate(file_path, file_metadata)

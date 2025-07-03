@@ -20,6 +20,13 @@ const fileIcons = {
   m4a: Music,
   avi: Video,
   mov: Video,
+  mkv: Video,
+  webm: Video,
+  flv: Video,
+  wmv: Video,
+  '3gp': Video,
+  ogv: Video,
+  'm4v': Video,
   url: Link2,
   website: Globe,
   media: Video
@@ -1001,7 +1008,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
   };
 
   const validateFile = (file) => {
-    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav", "m4a", "avi", "mov"];
+    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav", "m4a", "avi", "mov", "mkv", "webm", "flv", "wmv", "3gp", "ogv", "m4v"];
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
     const maxSize = 100 * 1024 * 1024; // 100MB
     const minSize = 100; // 100 bytes minimum
@@ -1039,7 +1046,14 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         "wav": "audio/wav",
         "m4a": "audio/mp4",
         "avi": "video/x-msvideo",
-        "mov": "video/quicktime"
+        "mov": "video/quicktime",
+        "mkv": "video/x-matroska",
+        "webm": "video/webm",
+        "flv": "video/x-flv",
+        "wmv": "video/x-ms-wmv",
+        "3gp": "video/3gpp",
+        "ogv": "video/ogg",
+        "m4v": "video/x-m4v"
       };
       
       const expectedType = expectedTypes[extension];
@@ -1134,8 +1148,8 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
             return newProgress;
           });
           
-          // Since the upload completed immediately, no need for SSE monitoring
-          // We already have the file_id and original display information is preserved
+          // Refresh the file list to get complete metadata and ensure UI is up to date
+          await loadParsedFiles();
           
         } else {
           // Handle upload failure
@@ -1686,7 +1700,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                     </div>
                   </div>
                   <p className="text-sm text-gray-500 mt-6">
-                    Supported file types: PDF, .txt, Markdown, Audio (mp3, wav, m4a), Video (mp4, avi, mov)
+                    Supported file types: PDF, .txt, Markdown, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, flv, wmv, 3gp, ogv, m4v)
                   </p>
                 </div>
               )}
@@ -2019,7 +2033,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         type="file"
         onChange={handleFileChange}
         style={{ display: 'none' }}
-        accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav,.m4a,.avi,.mov"
+        accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav,.m4a,.avi,.mov,.mkv,.webm,.flv,.wmv,.3gp,.ogv,.m4v"
       />
 
       {/* File Preview Modal */}
