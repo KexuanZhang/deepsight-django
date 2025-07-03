@@ -8,14 +8,12 @@ import { useToast } from '@/common/components/ui/use-toast';
 
 // ====== DEPENDENCY INVERSION PRINCIPLE (DIP) ======
 // Import service abstractions, not concrete implementations
-import { ApiStudioService, LocalStorageJobService } from './services/StudioService';
+import { ApiStudioService, LocalStorageJobService } from '@/features/notebook/services/StudioService';
 import apiService from '@/common/utils/api';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused custom hooks for specific concerns
-import { useStudioData } from './hooks/useStudioData';
-import { useGenerationState } from './hooks/useGenerationState';
-import { useJobStatus } from '@/common/hooks/useJobStatus';
+import { useStudioData, useGenerationState, useJobStatus } from '@/features/notebook/hooks';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused UI components

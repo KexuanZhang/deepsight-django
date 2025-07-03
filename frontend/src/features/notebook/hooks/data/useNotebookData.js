@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { config } from '../../../config';
+import { config } from '@/config';
 
 /**
  * Custom hook for notebook data management

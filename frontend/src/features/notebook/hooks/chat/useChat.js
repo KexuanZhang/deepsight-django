@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from '@/common/components/ui/use-toast';
-import { config } from '../../../config';
+import { config } from '@/config';
 
 /**
  * Custom hook for chat functionality

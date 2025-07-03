@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../common/hooks/useAuth";
-import { useNotebookData } from "./hooks/useNotebookData";
+import { useNotebookData } from "@/features/notebook/hooks";
 import SidebarMenu from "./components/layout/SidebarMenu";
 import NotebookGrid from "./components/NotebookGrid";
 import NotebookList from "./components/NotebookList";
