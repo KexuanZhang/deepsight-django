@@ -3,9 +3,9 @@ import { useParams } from "react-router-dom";
 import { useAuth } from "../../common/hooks/useAuth";
 import { useNotebookData } from "./hooks/useNotebookData";
 import NotebookLayout from "./components/layout/NotebookLayout";
-import SourcesList from "./components/SourcesList";
-import ChatPanel from "./components/ChatPanel";
-import StudioPanel from "./components/studio/StudioPanel";
+import SourcesPanel from "./components/panels/SourcesPanel";
+import ChatPanel from "./components/panels/ChatPanel";
+import StudioPanel from "./components/panels/StudioPanel";
 import "highlight.js/styles/github.css";
 
 /**
@@ -77,7 +77,7 @@ export default function DeepdivePage() {
   return (
     <NotebookLayout
       notebookTitle={currentNotebook?.name}
-      sourcesPanel={<SourcesList notebookId={notebookId} />}
+      sourcesPanel={<SourcesPanel notebookId={notebookId} />}
       chatPanel={<ChatPanel notebookId={notebookId} />}
       studioPanel={<StudioPanel notebookId={notebookId} />}
     />

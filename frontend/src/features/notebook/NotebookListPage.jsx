@@ -23,6 +23,7 @@ export default function NotebookListPage() {
     error, 
     fetchNotebooks, 
     createNotebook,
+    deleteNotebook,
     primeCsrf,
     clearError 
   } = useNotebookData();
@@ -33,6 +34,7 @@ export default function NotebookListPage() {
   const [sortOrder, setSortOrder] = useState("recent");
   const [searchTerm, setSearchTerm] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   // Prime CSRF and load notebooks
   useEffect(() => {
@@ -44,13 +46,29 @@ export default function NotebookListPage() {
 
   // Handle notebook creation
   const handleCreateNotebook = async (name, description) => {
-    if (!user) return { success: false, error: "User not found" };
-
-    const result = await createNotebook(name, description, user.id);
-    if (result.success) {
-      navigate(`/deepdive/${result.data.id}`);
+    if (!user) {
+      return { success: false, error: "User not authenticated" };
     }
-    return result;
+
+    setCreating(true);
+    try {
+      const data = await createNotebook(name, description);
+      navigate(`/deepdive/${data.id}`);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Handle notebook deletion
+  const handleDeleteNotebook = async (notebookId) => {
+    try {
+      await deleteNotebook(notebookId);
+    } catch (err) {
+      console.error('Failed to delete notebook:', err);
+    }
   };
 
   // Filter notebooks based on search term
@@ -199,7 +217,7 @@ export default function NotebookListPage() {
             <CreateNotebookForm 
               onSubmit={handleCreateNotebook}
               onCancel={() => setShowCreateForm(false)}
-              loading={loading}
+              loading={creating}
               error={error}
             />
           )}
@@ -252,12 +270,14 @@ export default function NotebookListPage() {
           <NotebookGrid 
             notebooks={filteredNotebooks}
             onNotebookClick={(notebook) => navigate(`/deepdive/${notebook.id}`)}
+            onDeleteNotebook={handleDeleteNotebook}
             formatDate={formatDate}
           />
         ) : (
           <NotebookList 
             notebooks={filteredNotebooks}
             onNotebookClick={(notebook) => navigate(`/deepdive/${notebook.id}`)}
+            onDeleteNotebook={handleDeleteNotebook}
             formatDate={formatDate}
           />
         )}

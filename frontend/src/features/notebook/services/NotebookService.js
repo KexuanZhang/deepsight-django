@@ -64,7 +64,7 @@ class NotebookService {
   }
 
   // Create notebook
-  async createNotebook(name, description, userId) {
+  async createNotebook(name, description) {
     const response = await fetch(`${this.baseUrl}/notebooks/`, {
       method: "POST",
       credentials: "include",
@@ -73,7 +73,6 @@ class NotebookService {
         "X-CSRFToken": this.getCsrfToken(),
       },
       body: JSON.stringify({
-        user: userId,
         name: name.trim(),
         description: description.trim(),
       }),

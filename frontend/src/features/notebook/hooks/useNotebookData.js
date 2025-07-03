@@ -101,9 +101,9 @@ export const useNotebookData = () => {
   }, []);
 
   // Create new notebook
-  const createNotebook = useCallback(async (name, description, userId) => {
-    if (!name.trim() || !userId) {
-      throw new Error('Name and user ID are required');
+  const createNotebook = useCallback(async (name, description) => {
+    if (!name.trim()) {
+      throw new Error('Name is required');
     }
 
     setLoading(true);
@@ -118,7 +118,6 @@ export const useNotebookData = () => {
           "X-CSRFToken": getCookie("csrftoken"),
         },
         body: JSON.stringify({
-          user: userId,
           name: name.trim(),
           description: description.trim(),
         }),
@@ -130,14 +129,14 @@ export const useNotebookData = () => {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        throw new Error(payload?.detail || "Create failed");
+        throw new Error(payload?.detail || "Failed to create notebook");
       }
 
       const data = await response.json();
-      return { success: true, data };
+      return data;
     } catch (err) {
       setError(err.message);
-      return { success: false, error: err.message };
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -147,6 +146,46 @@ export const useNotebookData = () => {
   const clearError = useCallback(() => {
     setError(null);
   }, []);
+
+  // Delete notebook
+  const deleteNotebook = useCallback(async (notebookId) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${config.API_BASE_URL}/notebooks/${notebookId}/`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: {
+          "X-CSRFToken": getCookie("csrftoken"),
+        },
+      });
+
+      if (response.status === 401) {
+        throw new Error('Unauthorized');
+      }
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "Failed to delete notebook");
+      }
+
+      // Remove notebook from local state
+      setNotebooks(prev => prev.filter(nb => nb.id !== notebookId));
+      
+      // Clear current notebook if it was deleted
+      if (currentNotebook?.id === notebookId) {
+        setCurrentNotebook(null);
+      }
+      
+      return { success: true };
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [getCookie, currentNotebook]);
 
   // Clear current notebook
   const clearCurrentNotebook = useCallback(() => {
@@ -161,6 +200,7 @@ export const useNotebookData = () => {
     fetchNotebooks,
     fetchNotebook,
     createNotebook,
+    deleteNotebook,
     primeCsrf,
     clearError,
     clearCurrentNotebook,

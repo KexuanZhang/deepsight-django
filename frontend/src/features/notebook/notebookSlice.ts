@@ -59,9 +59,9 @@ export const fetchNotebook = createAsyncThunk(
 
 export const createNotebook = createAsyncThunk(
   'notebook/create',
-  async ({ name, description, userId }: { name: string; description: string; userId: string }, { rejectWithValue }) => {
+  async ({ name, description }: { name: string; description: string }, { rejectWithValue }) => {
     try {
-      const data = await NotebookService.createNotebook(name, description, userId);
+      const data = await NotebookService.createNotebook(name, description);
       return data;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Failed to create notebook');

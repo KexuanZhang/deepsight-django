@@ -82,17 +82,25 @@ export const loginUser = createAsyncThunk(
   'auth/login',
   async (credentials: { username: string; password: string }, { rejectWithValue }) => {
     try {
+      // Helper function to get CSRF token from cookies
+      const getCookie = (name: string) => {
+        const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+        return match ? decodeURIComponent(match[2]) : null;
+      };
+
       const response = await fetch(`${config.API_BASE_URL}/users/login/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken') || '',
         },
         credentials: 'include', // Include credentials for session-based auth
         body: JSON.stringify(credentials),
       });
 
       if (!response.ok) {
-        throw new Error('Login failed');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Login failed');
       }
 
       const data = await response.json();
@@ -107,17 +115,25 @@ export const signupUser = createAsyncThunk(
   'auth/signup',
   async (userData: { username: string; email: string; password: string }, { rejectWithValue }) => {
     try {
+      // Helper function to get CSRF token from cookies
+      const getCookie = (name: string) => {
+        const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+        return match ? decodeURIComponent(match[2]) : null;
+      };
+
       const response = await fetch(`${config.API_BASE_URL}/users/signup/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken') || '',
         },
         credentials: 'include', // Include credentials for session-based auth
         body: JSON.stringify(userData),
       });
 
       if (!response.ok) {
-        throw new Error('Signup failed');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Signup failed');
       }
 
       const data = await response.json();

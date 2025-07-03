@@ -7,13 +7,21 @@ export { default as NotebookLayout } from './components/layout/NotebookLayout';
 export { default as NotebookHeader } from './components/layout/NotebookHeader';
 export { default as SidebarMenu } from './components/layout/SidebarMenu';
 
+// Main Panels
+export { default as SourcesPanel } from './components/panels/SourcesPanel';
+export { default as ChatPanel } from './components/panels/ChatPanel';
+export { default as StudioPanel } from './components/panels/StudioPanel';
+
 // UI Components
 export { default as CreateNotebookForm } from './components/CreateNotebookForm';
 export { default as NotebookGrid } from './components/NotebookGrid';
 export { default as NotebookList } from './components/NotebookList';
-export { default as SourcesList } from './components/SourcesList';
-export { default as ChatPanel } from './components/ChatPanel';
-export { default as FilePreview } from './components/FilePreview';
+export { default as FilePreview } from './components/shared/FilePreview';
+
+// Individual Panel Components (for direct access if needed)
+export { default as SourcesList } from './components/sources/SourcesList';
+export { default as Chat } from './components/chat/ChatPanel';
+export { default as Studio } from './components/studio/StudioPanel';
 
 // Hooks
 export { useNotebookData } from './hooks/useNotebookData';

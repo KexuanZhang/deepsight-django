@@ -1,7 +1,7 @@
 import React from "react";
 import { ArrowLeft, Menu, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../../../common/hooks/useAuth";
+import { useAuth } from "@/common/hooks/useAuth";
 
 /**
  * Header component for notebook pages
