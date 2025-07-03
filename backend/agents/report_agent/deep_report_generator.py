@@ -31,39 +31,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 import pandas as pd
-from knowledge_storm import (
-    STORMWikiLMConfigs,
-    STORMWikiRunner,
-    STORMWikiRunnerArguments,
-)
-from knowledge_storm.lm import OpenAIModel, GoogleModel
-from knowledge_storm.rm import (
-    BraveRM,
-    TavilySearchRM,
-    SerperRM,
-    YouRM,
-    BingSearch,
-    DuckDuckGoSearchRM,
-    SearXNG,
-    AzureAISearch,
-)
-from knowledge_storm.storm_wiki.modules.retriever import (
-    get_whitelisted_domains,
-    is_valid_source,
-)
-from knowledge_storm.utils import (
-    FileIOHelper,
-    QueryLogger,
-    load_api_key,
-    truncate_filename,
-)
-from utils.paper_processing import (
-    clean_paper_content,
-    copy_paper_images,
-    extract_figure_data,
-    parse_paper_title,
-)
-from utils.post_processing import process_file
 from prompts import PromptType, configure_prompts, create_prompt_module
 
 # Get the directory where the script is located
@@ -71,6 +38,93 @@ SCRIPT_DIR = pathlib.Path(__file__).parent.absolute()
 
 # Add parent directory to sys.path
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+# NOTE: We perform knowledge_storm imports lazily (after prompt configuration)
+# to ensure the correct prompt type is loaded before any modules evaluate
+# their docstrings. See `_lazy_import_knowledge_storm()` below.
+
+# Placeholder type hints (optional) – will be overwritten after lazy import
+STORMWikiLMConfigs = None  # type: ignore
+STORMWikiRunner = None  # type: ignore
+STORMWikiRunnerArguments = None  # type: ignore
+OpenAIModel = GoogleModel = None  # type: ignore
+BraveRM = TavilySearchRM = SerperRM = YouRM = BingSearch = DuckDuckGoSearchRM = SearXNG = AzureAISearch = None  # type: ignore
+get_whitelisted_domains = is_valid_source = None  # type: ignore
+FileIOHelper = QueryLogger = load_api_key = truncate_filename = None  # type: ignore
+
+# ---------------------------------------------------------------------------
+# Lazy import helper
+# ---------------------------------------------------------------------------
+
+def _lazy_import_knowledge_storm():
+    """Import knowledge_storm modules *after* prompts are configured.
+
+    This avoids loading the default GENERAL prompts when the package-level
+    imports evaluate docstrings at import time. We import once and cache the
+    objects in ``globals()`` so subsequent calls are no-ops.
+    """
+
+    if globals().get("STORMWikiRunner") is not None:
+        # Already imported
+        return
+
+    global STORMWikiLMConfigs, STORMWikiRunner, STORMWikiRunnerArguments
+    global OpenAIModel, GoogleModel
+    global BraveRM, TavilySearchRM, SerperRM, YouRM, BingSearch, DuckDuckGoSearchRM, SearXNG, AzureAISearch
+    global get_whitelisted_domains, is_valid_source
+    global FileIOHelper, QueryLogger, load_api_key, truncate_filename
+
+    from knowledge_storm import (
+        STORMWikiLMConfigs as _STORMWikiLMConfigs,
+        STORMWikiRunner as _STORMWikiRunner,
+        STORMWikiRunnerArguments as _STORMWikiRunnerArguments,
+    )
+
+    from knowledge_storm.lm import OpenAIModel as _OpenAIModel, GoogleModel as _GoogleModel
+
+    from knowledge_storm.rm import (
+        BraveRM as _BraveRM,
+        TavilySearchRM as _TavilySearchRM,
+        SerperRM as _SerperRM,
+        YouRM as _YouRM,
+        BingSearch as _BingSearch,
+        DuckDuckGoSearchRM as _DuckDuckGoSearchRM,
+        SearXNG as _SearXNG,
+        AzureAISearch as _AzureAISearch,
+    )
+
+    from knowledge_storm.storm_wiki.modules.retriever import (
+        get_whitelisted_domains as _get_whitelisted_domains,
+        is_valid_source as _is_valid_source,
+    )
+
+    from knowledge_storm.utils import (
+        FileIOHelper as _FileIOHelper,
+        QueryLogger as _QueryLogger,
+        load_api_key as _load_api_key,
+        truncate_filename as _truncate_filename,
+    )
+
+    # Assign to globals so that other methods/classes can use them
+    STORMWikiLMConfigs = _STORMWikiLMConfigs
+    STORMWikiRunner = _STORMWikiRunner
+    STORMWikiRunnerArguments = _STORMWikiRunnerArguments
+    OpenAIModel = _OpenAIModel
+    GoogleModel = _GoogleModel
+    BraveRM = _BraveRM
+    TavilySearchRM = _TavilySearchRM
+    SerperRM = _SerperRM
+    YouRM = _YouRM
+    BingSearch = _BingSearch
+    DuckDuckGoSearchRM = _DuckDuckGoSearchRM
+    SearXNG = _SearXNG
+    AzureAISearch = _AzureAISearch
+    get_whitelisted_domains = _get_whitelisted_domains
+    is_valid_source = _is_valid_source
+    FileIOHelper = _FileIOHelper
+    QueryLogger = _QueryLogger
+    load_api_key = _load_api_key
+    truncate_filename = _truncate_filename
 
 
 class ModelProvider(str, Enum):
@@ -638,15 +692,18 @@ class DeepReportGenerator:
             # Store report_id for use in filename generation
             self.report_id = config.report_id
             
-            # Load API keys
-            self._load_api_keys()
-            processing_logs.append("API keys loaded successfully")
-
             # Configure prompts based on the configuration
             configure_prompts(config.prompt_type)
             processing_logs.append(
                 f"Prompts configured for {config.prompt_type.value} type"
             )
+
+            # Perform lazy import of knowledge_storm now that prompts are configured
+            _lazy_import_knowledge_storm()
+
+            # Load API keys (requires knowledge_storm.utils.load_api_key)
+            self._load_api_keys()
+            processing_logs.append("API keys loaded successfully")
 
             # Validate inputs
             if (

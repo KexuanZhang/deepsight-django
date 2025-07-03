@@ -3,10 +3,11 @@ Prompts module for configurable prompt management.
 Supports both financial and general prompts.
 """
 
-import os
-from typing import Union, Optional
+from pathlib import Path
+from typing import Union
 from enum import Enum
 
+import yaml
 
 class PromptType(str, Enum):
     FINANCIAL = "financial"
@@ -22,19 +23,31 @@ class PromptModule:
         self._load_prompts()
 
     def _load_prompts(self):
-        """Load the appropriate prompt module based on prompt_type."""
-        if self.prompt_type == PromptType.FINANCIAL:
-            from . import financial_prompts as prompts_module
-        elif self.prompt_type == PromptType.PAPER:
-            from . import paper_prompts as prompts_module
-        else:
-            from . import general_prompts as prompts_module
+        """Load prompts from the corresponding YAML file and expose them as attributes."""
+        filename_map = {
+            PromptType.FINANCIAL: "financial_prompts.yaml",
+            PromptType.GENERAL: "general_prompts.yaml",
+            PromptType.PAPER: "paper_prompts.yaml",
+        }
 
-        # Copy all attributes from the selected prompts module
-        for attr_name in dir(prompts_module):
-            if not attr_name.startswith("_"):
-                setattr(self, attr_name, getattr(prompts_module, attr_name))
+        yaml_file = filename_map.get(self.prompt_type)
+        base_dir = Path(__file__).parent
+        file_path = base_dir / yaml_file
 
+        if not file_path.exists():
+            raise FileNotFoundError(f"Prompt file not found: {file_path}")
+
+        with file_path.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+        # Accept both {prompts: {...}} or direct mapping
+        prompts_dict = data.get("prompts", data)
+
+        for key, value in prompts_dict.items():
+            # Create attributes for each prompt key
+            setattr(self, key, value)
+            # Preserve original constant naming convention used throughout the codebase
+            setattr(self, f"{key}_docstring", value)
 
 # Global variable to store the current prompt configuration (deprecated)
 _current_prompt_type = PromptType.GENERAL
