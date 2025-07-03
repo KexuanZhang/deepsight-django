@@ -5,7 +5,7 @@ import { Menu, X, ArrowLeft, LogOut, ChevronLeft } from "lucide-react";
 import Logo from "@/common/components/Logo";
 import SourcesList from "@/common/components/SourcesList";
 import ChatPanel from "@/common/components/ChatPanel";
-import StudioPanel from "@/common/components/studio/StudioPanel";
+import StudioPanel from "./components/studio/StudioPanel";
 import "highlight.js/styles/github.css";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { config } from "../../config";
