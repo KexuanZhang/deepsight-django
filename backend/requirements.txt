@@ -59,4 +59,4 @@ langchain-openai
 faiss-cpu
 crawl4ai
 toml
-marker-pdf
+marker-pdf==1.7.5

@@ -117,7 +117,8 @@ const ReportGenerationForm = ({
               onChange={(e) => onConfigChange({ prompt_type: e.target.value })}
             >
               <option value="general">General</option>
-              <option value="financial">Financial</option>
+              <option value="paper">Paper</option>
+              <option value="financial">Financial Report</option>
             </select>
           </div>
 

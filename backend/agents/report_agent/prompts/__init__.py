@@ -11,6 +11,7 @@ from enum import Enum
 class PromptType(str, Enum):
     FINANCIAL = "financial"
     GENERAL = "general"
+    PAPER = "paper"
 
 
 class PromptModule:
@@ -24,6 +25,8 @@ class PromptModule:
         """Load the appropriate prompt module based on prompt_type."""
         if self.prompt_type == PromptType.FINANCIAL:
             from . import financial_prompts as prompts_module
+        elif self.prompt_type == PromptType.PAPER:
+            from . import paper_prompts as prompts_module
         else:
             from . import general_prompts as prompts_module
 
@@ -33,20 +36,29 @@ class PromptModule:
                 setattr(self, attr_name, getattr(prompts_module, attr_name))
 
 
-# Global variable to store the current prompt configuration
+# Global variable to store the current prompt configuration (deprecated)
 _current_prompt_type = PromptType.GENERAL
 _prompt_module_instance = None
 
 
 def configure_prompts(prompt_type: Union[PromptType, str] = PromptType.GENERAL):
-    """Configure the global prompt type."""
+    """Configure the global prompt type. (Thread-safe version)"""
     global _current_prompt_type, _prompt_module_instance
 
     if isinstance(prompt_type, str):
         prompt_type = PromptType(prompt_type.lower())
 
     _current_prompt_type = prompt_type
-    _prompt_module_instance = None  # Reset to force reload
+    # Force immediate reload to ensure thread-safe operation
+    _prompt_module_instance = PromptModule(prompt_type)
+
+
+def create_prompt_module(prompt_type: Union[PromptType, str] = PromptType.GENERAL) -> PromptModule:
+    """Create and return a prompt module instance for the specified prompt type."""
+    if isinstance(prompt_type, str):
+        prompt_type = PromptType(prompt_type.lower())
+    
+    return PromptModule(prompt_type)
 
 
 def import_prompts() -> PromptModule:

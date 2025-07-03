@@ -64,7 +64,7 @@ from utils.paper_processing import (
     parse_paper_title,
 )
 from utils.post_processing import process_file
-from prompts import PromptType, configure_prompts
+from prompts import PromptType, configure_prompts, create_prompt_module
 
 # Get the directory where the script is located
 SCRIPT_DIR = pathlib.Path(__file__).parent.absolute()
