@@ -1,12 +1,10 @@
 import React from 'react';
 import SourcesList from '../sources/SourcesList';
 
-/**
- * Sources Panel - Main entry point for sources functionality
- * Follows same pattern as StudioPanel for consistency
- */
-const SourcesPanel = (props) => {
-  return <SourcesList {...props} />;
-};
+// Forward the ref so parent components (e.g., NotebookLayout) can access
+// the imperative handle exposed by SourcesList via useImperativeHandle
+const SourcesPanel = React.forwardRef((props, ref) => {
+  return <SourcesList {...props} ref={ref} />;
+});
 
 export default SourcesPanel;
