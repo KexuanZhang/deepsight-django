@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { loginUser } from "./authSlice";
+import { loginUser, clearError } from "./authSlice";
 import { config } from "../../config";
 
 // helper to read CSRF token from cookies
@@ -24,6 +24,11 @@ export default function LoginPage() {
       credentials: "include",
     }).catch(() => {});
   }, []);
+
+  // Clear any previous auth errors when component mounts
+  useEffect(() => {
+    dispatch(clearError());
+  }, [dispatch]);
 
   const handleLogin = async (e) => {
     e.preventDefault();

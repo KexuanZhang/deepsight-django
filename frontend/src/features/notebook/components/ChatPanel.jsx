@@ -12,7 +12,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 import { useFileSelection } from "@/common/hooks/useFileSelection";
-import { config } from "../../config";
+import { config } from "../../../config";
 
 function getCookie(name) {
   const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));

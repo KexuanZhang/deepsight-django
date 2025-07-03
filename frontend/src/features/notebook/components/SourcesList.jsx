@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from "@/common/components/ui/alert";
 import { Badge } from "@/common/components/ui/badge";
 import apiService from "@/common/utils/api";
 import FilePreview from "./FilePreview";
-import { supportsPreview } from "@/common/utils/filePreview";
+import { supportsPreview } from "../utils/filePreview";
 
 const fileIcons = {
   pdf: File,
