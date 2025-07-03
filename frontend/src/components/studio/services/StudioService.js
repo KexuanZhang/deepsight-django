@@ -122,6 +122,15 @@ export class ApiStudioService extends IStudioService {
     const blob = await this.api.downloadPodcastAudio(podcastId, this.notebookId);
     return window.URL.createObjectURL(blob);
   }
+
+  // Convenience methods for job recovery
+  async getReports() {
+    return await this.loadReports(this.notebookId);
+  }
+
+  async getPodcasts() {
+    return await this.loadPodcasts(this.notebookId);
+  }
 }
 
 // Job management service - separated concern
