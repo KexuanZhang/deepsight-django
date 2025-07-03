@@ -118,6 +118,47 @@ const StudioPanel = ({
     'podcast'
   );
 
+  // ====== SINGLE RESPONSIBILITY: Job recovery on page load ======
+  useEffect(() => {
+    const recoverRunningJobs = async () => {
+      try {
+        // Fetch current reports to check for running jobs
+        const reports = await studioService.getReports();
+        
+        // Find running report jobs
+        const runningReport = reports.find(report => 
+          report.status === 'running' || report.status === 'pending'
+        );
+        
+        // Find running podcast jobs
+        const podcasts = await studioService.getPodcasts();
+        const runningPodcast = podcasts.find(podcast => 
+          podcast.status === 'generating' || podcast.status === 'pending'
+        );
+        
+        // Recover report job if found
+        if (runningReport) {
+          console.log('Recovering running report job:', runningReport.job_id);
+          reportGeneration.startGeneration(runningReport.job_id);
+          reportGeneration.updateProgress(runningReport.progress || 'Generating report...');
+        }
+        
+        // Recover podcast job if found
+        if (runningPodcast) {
+          console.log('Recovering running podcast job:', runningPodcast.job_id);
+          podcastGeneration.startGeneration(runningPodcast.job_id);
+          podcastGeneration.updateProgress(runningPodcast.progress || 'Generating podcast...');
+        }
+      } catch (error) {
+        console.error('Error recovering running jobs:', error);
+      }
+    };
+    
+    if (notebookId) {
+      recoverRunningJobs();
+    }
+  }, [notebookId, studioService, reportGeneration, podcastGeneration]);
+
   // ====== SINGLE RESPONSIBILITY: Progress sync ======
   useEffect(() => {
     if (reportJobStatus.progress) {
