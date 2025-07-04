@@ -211,41 +211,62 @@ useEffect(() => {
   if (notebookId) fetchChatHistory();
 }, [notebookId, getCachedSuggestions]);
 
+  function parseSSE(buffer, onEvent) {
+    const text = buffer.join("");
+    const parts = text.split("\n\n");
+    // Keep any incomplete tail in the buffer
+    buffer.length = 0;
+    buffer.push(parts.pop() || "");
+    for (let evt of parts) {
+      evt = evt.trim();
+      if (!evt) continue;
+      const lines = evt.split("\n");
+      let dataLine = lines.find(l => l.startsWith("data: "));
+      let eventLine = lines.find(l => l.startsWith("event: "));
+      if (dataLine) {
+        try {
+          const payload = JSON.parse(dataLine.replace(/^data: /, ""));
+          onEvent(payload);
+        } catch (e) {
+          console.error("SSE JSON parse error:", e, dataLine);
+        }
+      }
+      if (eventLine === "event: done") {
+        onEvent({ type: "done" });
+      }
+    }
+  }
 
   const handleSendMessage = async (overrideMessage = null) => {
     const messageToSend = overrideMessage || inputMessage.trim();
     if (!messageToSend || isLoading) return;
 
+    // 1) Push the user message
     const userMessage = {
       id: Date.now().toString(),
       type: 'user',
-      content: messageToSend.trim(),
-      timestamp: new Date().toISOString()
+      content: messageToSend,
+      timestamp: new Date().toISOString(),
     };
-
     setMessages(prev => [...prev, userMessage]);
-    setInputMessage("");
+    setInputMessage('');
     setIsLoading(true);
     setIsTyping(true);
     setError(null);
     setSuggestedQuestions([]);
 
-    // Get the current selected files
+    // 2) Build your payload
     const currentSelectedFiles = getCurrentSelectedFiles();
-    const readyFiles = currentSelectedFiles;
-    
-    // Extract file_id which is the knowledge base item ID
-    const selectedFileIds = readyFiles.map(file => file.file_id || file.file).filter(id => id);
-
-    // Check if at least one file is selected
+    const selectedFileIds = currentSelectedFiles
+      .map(f => f.file_id || f.file)
+      .filter(Boolean);
     if (selectedFileIds.length === 0) {
       setIsLoading(false);
       setIsTyping(false);
-      setError("Please select at least one document from your sources to start a conversation.");
       toast({
         title: "No Documents Selected",
-        description: "Please select at least one document from the sources panel to chat about your knowledge base.",
-        variant: "destructive"
+        description: "Please select at least one document.",
+        variant: "destructive",
       });
       return;
     }
@@ -253,58 +274,87 @@ useEffect(() => {
     try {
       const response = await fetch(`${API_BASE_URL}/notebooks/chat/`, {
         method: "POST",
-        credentials: 'include',
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          "X-CSRFToken": getCookie("csrftoken"),  // if you're using CSRF protection
+          "X-CSRFToken": getCookie("csrftoken"),
         },
         body: JSON.stringify({
           file_ids: selectedFileIds,
-          question: userMessage.content,
-          notebook_id: notebookId
-        })
+          question: messageToSend,
+          notebook_id: notebookId,
+        }),
       });
-
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(errorData.error || `HTTP ${response.status}`);
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${response.status}`);
       }
 
-      const data = await response.json();
+      // 3) Set up SSE reader
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      const assistantMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: data.answer,
-        timestamp: new Date().toISOString()
-      };
+      // 4) Insert a placeholder assistant message
+      const assistantId = (Date.now() + 1).toString();
+      setMessages(prev => [
+        ...prev,
+        { id: assistantId, type: "assistant", content: "", timestamp: new Date().toISOString() },
+      ]);
 
-      setMessages(prev => [...prev, assistantMessage]);
-      
-      const followupResp = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/suggested-questions/`, {
-        credentials: 'include',
-      });
-      const followupData = await followupResp.json();
-      const newSuggestions = followupData.suggestions || [];
-      setSuggestedQuestions(newSuggestions);
-      
-      // Cache the new suggestions
-      if (newSuggestions.length > 0) {
-        cacheSuggestions(newSuggestions);
+      // 5) Read the stream chunk-by-chunk
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop(); // leftover
+
+        for (const part of parts) {
+          // each part looks like "data: { … }" or "event: done"
+          if (part.startsWith("data:")) {
+            const payload = JSON.parse(part.slice(5));
+            if (payload.type === "metadata") {
+              // display your retrieved-docs panel however you like:
+              // e.g. setDocsInfo(payload.docs)
+            } else if (payload.type === "token") {
+              // append each token to the assistant bubble
+              setMessages(prev =>
+                prev.map(msg =>
+                  msg.id === assistantId
+                    ? { ...msg, content: msg.content + payload.text }
+                    : msg
+                )
+              );
+            }
+          }
+        }
+      }
+
+      // 6) Stream is done – fetch follow-ups
+      const followupResp = await fetch(
+        `${API_BASE_URL}/notebooks/${notebookId}/suggested-questions/`,
+        { credentials: "include" }
+      );
+      if (followupResp.ok) {
+        const { suggestions } = await followupResp.json();
+        setSuggestedQuestions(suggestions || []);
+        localStorage.setItem(`suggestedQuestions_${notebookId}`, JSON.stringify(suggestions || []));
       }
     } catch (err) {
       console.error("Chat error:", err);
       setError("Failed to get a response from the AI. Please try again.");
       toast({
         title: "Message Failed",
-        description: "Could not connect to the backend. Please try again.",
-        variant: "destructive"
+        description: err.message,
+        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
       setIsTyping(false);
     }
   };
+
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

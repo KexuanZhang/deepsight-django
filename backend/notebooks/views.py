@@ -9,8 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
 
-from .utils.rag_engine import RAGChatbot, SuggestionRAGAgent
-
 from django.db import transaction
 from django.http import StreamingHttpResponse, Http404, FileResponse
 from django.shortcuts import get_object_or_404
@@ -52,6 +50,18 @@ from .utils.view_mixins import (
     PaginationMixin,
     FileListResponseMixin,
 )
+from .utils.rag_engine import (
+    RAGChatbot, 
+    SuggestionRAGAgent, 
+    add_user_files, 
+    MILVUS_HOST, 
+    MILVUS_PORT, 
+    LOCAL_COLLECTION
+)
+from langchain_milvus import Milvus
+from langchain_openai import OpenAIEmbeddings
+from pymilvus.orm.collection import Collection
+from pymilvus.exceptions import SchemaNotReadyException
 
 
 upload_processor = UploadProcessor()
@@ -533,77 +543,168 @@ class FileListView(StandardAPIView, NotebookPermissionMixin, FileListResponseMix
             )
 
 
-class RAGChatFromKBView(StandardAPIView, NotebookPermissionMixin):
+class RAGChatFromKBView(StandardAPIView, NotebookPermissionMixin, APIView):
+    """
+    POST /api/rag/chat/
+    {
+      "notebook_id": 123,
+      "question":    "Explain quantum tunneling"
+    }
+    """
     def post(self, request):
-        # file_ids = request.data.get("file_ids", [])
-        question = request.data.get("question")
         notebook_id = request.data.get("notebook_id")
+        question    = request.data.get("question")
 
-        # if not file_ids or not question or not notebook_id:
-        #     return Response({"error": "file_ids, question, and notebook_id are required"}, status=400)
+        if not notebook_id or not question:
+            return Response(
+                {"error": "Both notebook_id and question are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
+        # 1) authorize & fetch notebook
         try:
             notebook = self.get_user_notebook(notebook_id, request.user)
-        except Exception as e:
-            return Response({"error": "Notebook not found"}, status=404)
+        except:
+            return Response({"error": "Notebook not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Filter valid KB items
-        # kb_items = KnowledgeBaseItem.objects.filter(
-        #     id__in=file_ids,
-        #     user=request.user,
-        #     file__isnull=False
-        # ).exclude(file="")
-        kb_items = KnowledgeBaseItem.objects.filter(
+        # 2) gather KB items
+        kb_qs = KnowledgeBaseItem.objects.filter(
             notebook_links__notebook=notebook,
             user=request.user,
             file__isnull=False
         ).exclude(file="").distinct()
 
-        if not kb_items.exists():
-            return Response({"error": "No valid text files found for this notebook"}, status=404)
-
-
-        if not kb_items.exists():
+        if not kb_qs.exists():
             return Response(
-                {
-                    "error": "No valid knowledge items found."
-                },
-                status=404,
+                {"error": "No valid documents in this notebook."},
+                status=status.HTTP_404_NOT_FOUND
             )
 
-        # Load file content
-        docs = []
-        for item in kb_items:
-            if item.file and item.file.name:
-                with item.file.open("rb") as f:
-                    content = f.read().decode("utf-8")
-                    docs.append({"content": content, "name": item.title})
+        # 3) collect file paths
+        file_paths: List[str] = [
+            item.file.path
+            for item in kb_qs
+            if hasattr(item.file, "path")
+        ]
+        if not file_paths:
+            return Response(
+                {"error": "No file paths available."},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        # Load previous chat history
-        history = list(
-            NotebookChatMessage.objects.filter(notebook=notebook)
-            .order_by("timestamp")
-            .values_list("sender", "message")
+        user_id = request.user.pk
+
+        # ─── Check whether any vectors exist for this user ───────────────────────
+        existing = 0
+        try:
+            coll = Collection(LOCAL_COLLECTION)  # will raise if no schema
+            user_vectors = coll.query(
+                expr=f"user_id=={user_id}",
+                output_fields=["user_id"]
+            )
+            existing = len(user_vectors)
+        except SchemaNotReadyException:
+            # collection doesn’t exist yet
+            existing = 0
+
+        if existing == 0:
+            # first‐time or no prior ingest for this user
+            add_user_files(user_id, file_paths)
+
+        # 4) load chat history
+        history: List[Tuple[str, str]] = list(
+            NotebookChatMessage.objects
+                .filter(notebook=notebook)
+                .order_by("timestamp")
+                .values_list("sender", "message")
         )
 
-        # Add new user message to DBAdd commentMore actions
+        # 5) record user question
         NotebookChatMessage.objects.create(
-            notebook=notebook,
-            sender="user",
-            message=question
+            notebook=notebook, sender="user", message=question
         )
 
-        # Run RAG with chat history
-        bot = RAGChatbot(docs, history)
-        answer = bot.ask(question)
-
-        # Add assistant message to DB
-        NotebookChatMessage.objects.create(
-            notebook=notebook,
-            sender="assistant",
-            message=answer
+        # 6) instantiate chatbot (no re‐ingestion here)
+        bot = RAGChatbot(
+            user_id=request.user.pk,
+            chat_history=history
         )
-        return Response({"answer": answer, "notebook_id": notebook_id, "history": history + [("user", question), ("assistant", answer)]})
+
+        return StreamingHttpResponse(
+            bot.stream(question),
+            content_type="text/event-stream",
+        )
+# class RAGChatFromKBView(StandardAPIView, NotebookPermissionMixin):
+#     def post(self, request):
+#         # file_ids = request.data.get("file_ids", [])
+#         question = request.data.get("question")
+#         notebook_id = request.data.get("notebook_id")
+
+#         # if not file_ids or not question or not notebook_id:
+#         #     return Response({"error": "file_ids, question, and notebook_id are required"}, status=400)
+
+#         try:
+#             notebook = self.get_user_notebook(notebook_id, request.user)
+#         except Exception as e:
+#             return Response({"error": "Notebook not found"}, status=404)
+
+#         # Filter valid KB items
+#         # kb_items = KnowledgeBaseItem.objects.filter(
+#         #     id__in=file_ids,
+#         #     user=request.user,
+#         #     file__isnull=False
+#         # ).exclude(file="")
+#         kb_items = KnowledgeBaseItem.objects.filter(
+#             notebook_links__notebook=notebook,
+#             user=request.user,
+#             file__isnull=False
+#         ).exclude(file="").distinct()
+
+#         if not kb_items.exists():
+#             return Response({"error": "No valid text files found for this notebook"}, status=404)
+
+
+#         if not kb_items.exists():
+#             return Response(
+#                 {
+#                     "error": "No valid knowledge items found."
+#                 },
+#                 status=404,
+#             )
+
+#         # Load file content
+#         docs = []
+#         for item in kb_items:
+#             if item.file and item.file.name:
+#                 with item.file.open("rb") as f:
+#                     content = f.read().decode("utf-8")
+#                     docs.append({"content": content, "name": item.title})
+
+#         # Load previous chat history
+#         history = list(
+#             NotebookChatMessage.objects.filter(notebook=notebook)
+#             .order_by("timestamp")
+#             .values_list("sender", "message")
+#         )
+
+#         # Add new user message to DBAdd commentMore actions
+#         NotebookChatMessage.objects.create(
+#             notebook=notebook,
+#             sender="user",
+#             message=question
+#         )
+
+#         # Run RAG with chat history
+#         bot = RAGChatbot(docs, history)
+#         answer = bot.ask(question)
+
+#         # Add assistant message to DB
+#         NotebookChatMessage.objects.create(
+#             notebook=notebook,
+#             sender="assistant",
+#             message=answer
+#         )
+#         return Response({"answer": answer, "notebook_id": notebook_id, "history": history + [("user", question), ("assistant", answer)]})
 
 
 class ChatHistoryView(StandardAPIView, NotebookPermissionMixin):
