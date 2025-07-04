@@ -238,10 +238,21 @@ def insert_figure_images(
 ) -> str:
     """
     Inserts image paths and captions into the article content at placeholders in the format <Figure X>.
+    Only inserts at the first occurrence of each figure placeholder, and skips figures that have already been inserted.
     """
     figure_dict = {
         fig["figure_name"]: (fig["image_path"], fig["caption"]) for fig in figures
     }
+    
+    # Check which figures have already been inserted by looking for existing img tags with alt text
+    already_inserted = set()
+    for figure_name in figure_dict:
+        # Check if there's already an img tag with this figure's alt text (handle both single and double quotes)
+        existing_img_pattern = rf'<img\s+[^>]*alt=["\']' + re.escape(figure_name) + r'["\'][^>]*>'
+        if re.search(existing_img_pattern, article_content, re.IGNORECASE):
+            already_inserted.add(figure_name)
+            logging.info(f"Figure '{figure_name}' already inserted, skipping.")
+    
     # Look for placeholders in format <Figure X> on standalone lines
     pattern = r"^\s*<Figure \d+>\s*$"
     matches = list(re.finditer(pattern, article_content, re.MULTILINE | re.IGNORECASE))
@@ -255,6 +266,11 @@ def insert_figure_images(
         figure_name = re.sub(
             r"[<>]", "", placeholder_text
         )  # Remove < and > to get "Figure X"
+        
+        # Skip if this figure has already been inserted
+        if figure_name in already_inserted:
+            continue
+            
         if figure_name not in first_occurrences:
             first_occurrences[figure_name] = match.start()
 
@@ -369,69 +385,14 @@ def preserve_figure_formatting(content: str) -> str:
     return content
 
 
-def extract_figure_data_from_json(json_file_path):
-    """
-    Extracts figure information from a video caption JSON file.
-
-    Args:
-        json_file_path (str): The path to the JSON caption file.
-
-    Returns:
-        list: A list of dictionaries, where each dictionary represents a figure
-              and contains 'image_path', 'figure_name', and 'caption'.
-              Returns an empty list if the file_path is empty, or a ValueError
-              if the file cannot be read. Returns an empty list if no figures are found.
-    """
-    if not json_file_path:
-        return []
-
-    try:
-        with open(json_file_path, "r", encoding="utf-8") as f:
-            caption_data = json.load(f)
-
-        if not isinstance(caption_data, list):
-            logging.warning(
-                f"Expected list in JSON file {json_file_path}, got {type(caption_data)}"
-            )
-            return []
-
-        # Convert to figure data format with proper figure names
-        figures = []
-        figure_count = 1
-        for item in caption_data:
-            if isinstance(item, dict) and all(
-                key in item for key in ["image_path", "figure_name", "caption"]
-            ):
-                # Use "Figure X" format for consistency with markdown extraction
-                figure_name = f"Figure {figure_count}"
-                figures.append(
-                    {
-                        "image_path": item["image_path"],
-                        "figure_name": figure_name,
-                        "caption": item["caption"],
-                    }
-                )
-                figure_count += 1
-            else:
-                logging.warning(
-                    f"Skipping invalid item in JSON file {json_file_path}: {item}"
-                )
-
-        logging.info(
-            f"Extracted {len(figures)} figures from video caption file {json_file_path}"
-        )
-        return figures
-
-    except Exception as e:
-        raise ValueError(f"Error reading JSON file {json_file_path}: {e}")
 
 
 def extract_figure_data(file_path):
     """
-    Extracts figure information (image path, figure name, caption) from a Markdown file or JSON caption file.
+    Extracts figure information (image path, figure name, caption) from a Markdown file.
 
     Args:
-        file_path (str): The path to the Markdown file or JSON caption file.
+        file_path (str): The path to the Markdown file.
 
     Returns:
         list: A list of dictionaries, where each dictionary represents a figure
@@ -441,10 +402,6 @@ def extract_figure_data(file_path):
     """
     if not file_path:
         return []
-
-    # Check if it's a JSON caption file
-    if file_path.endswith(".json") and "_caption.json" in file_path:
-        return extract_figure_data_from_json(file_path)
 
     # Original markdown processing
     figures = []
@@ -464,10 +421,10 @@ def extract_figure_data(file_path):
         r'^<img\s+[^>]*?src=["\'](.*?)["\'][^>]*?>$', re.IGNORECASE
     )
 
-    # Regex to find figure line: Allow optional HTML tags before "Figure X..."
-    # Captures figure number and caption.
+    # Regex to find figure line: Allow optional HTML tags before "Figure X..." or "Fig. X |"
+    # Captures figure number and caption. Handles both "Figure X:" and "Fig. X |" formats.
     figure_line_regex = re.compile(
-        r"^(?:<[^>]+>\s*)*(?:Figure|图)\s+(\d+)\.?[\s:]?(.*)", re.IGNORECASE
+        r"^(?:<[^>]+>\s*)*\*{0,2}(?:Figure|Fig\.?|图)\s+(\d+)\.?[\s:|]+(.+?)(?:\*{0,2})?$", re.IGNORECASE
     )
 
     # First pass: collect all images
@@ -491,6 +448,11 @@ def extract_figure_data(file_path):
         if figure_match:
             figure_number = figure_match.group(1)
             caption = figure_match.group(2).strip()
+            
+            # Clean up markdown formatting in caption
+            caption = re.sub(r'\*{2,}', '', caption)  # Remove ** markdown bold
+            caption = caption.strip()
+            
             figure_name = f"Figure {figure_number}"
 
             # Find the nearest preceding image

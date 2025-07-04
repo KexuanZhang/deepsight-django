@@ -12,8 +12,6 @@ from ...interface import OutlineGenerationModule
 from ...utils import ArticleTextProcessing
 from prompts import import_prompts
 
-prompts = import_prompts()
-
 from .outline_rater import OutlineRater
 
 logger = logging.getLogger(__name__)
@@ -220,7 +218,7 @@ class WriteOutline(dspy.Module):
 
 
 class WritePageOutline(dspy.Signature):
-    __doc__ = prompts.WritePageOutline_docstring
+    __doc__ = import_prompts().WritePageOutline_docstring
     text_input = dspy.InputField(
         prefix="The text input (or 'N/A' if not available): ", format=str
     )
@@ -241,7 +239,7 @@ class NaiveOutlineGen(dspy.Module):
 
 
 class WritePageOutlineFromConv(dspy.Signature):
-    __doc__ = prompts.WritePageOutlineFromConv_docstring
+    __doc__ = import_prompts().WritePageOutlineFromConv_docstring
 
     text_input = dspy.InputField(
         prefix="The text input (or 'N/A' if not available): ", format=str

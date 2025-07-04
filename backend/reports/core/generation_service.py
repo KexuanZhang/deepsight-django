@@ -56,15 +56,36 @@ class GenerationService:
                     report.selected_files_paths
                 )
                 content_data = self.input_processor.get_content_data(processed_data)
+                
+                # Conditionally create combined figure_data.json file based on include_image flag
+                if report.include_image:
+                    from .figure_service import FigureDataService
+                    selected_file_ids = content_data.get("selected_file_ids", [])
+                    if selected_file_ids:
+                        figure_data_path = FigureDataService.create_combined_figure_data(
+                            report, selected_file_ids
+                        )
+                        if figure_data_path:
+                            report.figure_data_path = figure_data_path
+                            report.save(update_fields=['figure_data_path'])
             
+            # Load figure data if available
+            figure_data = []
+            if report.include_image and report.figure_data_path:
+                from .figure_service import FigureDataService
+                figure_data = FigureDataService.load_combined_figure_data(report.figure_data_path)
+
             # Create configuration for report generation
             config_dict = report.get_configuration_dict()
             config_dict.update({
                 'output_dir': output_dir,
                 'old_outline': report.old_outline,
                 'report_id': report.id,
+                'figure_data': figure_data,  # Add figure data to config
                 **content_data  # Add content data directly (no file paths)
             })
+            
+            # Topic will be generated from content if empty - no need for default
             
             # Validate configuration
             if not self.report_generator.validate_configuration(config_dict):
@@ -101,6 +122,7 @@ class GenerationService:
                 "processing_logs": result.get('processing_logs', []),
                 "report_content": result.get('report_content', ''),
                 "created_at": result.get('created_at', ''),
+                "generated_topic": result.get('generated_topic', ''),
             }
             
             logger.info(f"Report generation completed successfully for report {report_id}")

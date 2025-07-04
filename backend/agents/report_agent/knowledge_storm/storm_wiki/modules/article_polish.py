@@ -10,8 +10,6 @@ from ...utils import ArticleTextProcessing
 
 from prompts import import_prompts
 
-prompts = import_prompts()
-
 import sys
 import os
 
@@ -25,7 +23,7 @@ from utils.paper_processing import (
 
 
 class GenerateKeySection(dspy.Signature):
-    __doc__ = prompts.GenerateKeySection_docstring
+    __doc__ = import_prompts().GenerateKeySection_docstring
 
     speakers_json = dspy.InputField(desc="包含姓名和公司的 JSON 格式发言人名单")
     section = dspy.OutputField(
@@ -34,7 +32,7 @@ class GenerateKeySection(dspy.Signature):
 
 
 class GenerateOverallTitle(dspy.Signature):
-    __doc__ = prompts.GenerateOverallTitle_docstring
+    __doc__ = import_prompts().GenerateOverallTitle_docstring
     article_text = dspy.InputField(desc="文章内容")
     overall_title = dspy.OutputField(desc="生成的标题，不含任何前缀或后缀")
 
@@ -51,6 +49,7 @@ class StormArticlePolishingModule(ArticlePolishingModule):
             write_lead_engine=self.article_gen_lm, polish_engine=self.article_polish_lm
         )
         self.generate_overall_title = dspy.Predict(GenerateOverallTitle)
+        self.generated_title = None  # Store the generated title
 
     def polish_article(
         self,
@@ -161,6 +160,9 @@ class StormArticlePolishingModule(ArticlePolishingModule):
                     article_text=polished_article_text
                 )
                 overall_title = overall_title_result.overall_title.strip()
+        
+        # Store the generated title for external access
+        self.generated_title = overall_title
 
         current_date = datetime.date.today()
         date_str = current_date.strftime("%Y-%m-%d")
@@ -204,7 +206,7 @@ class StormArticlePolishingModule(ArticlePolishingModule):
 
 
 class WriteLeadSection(dspy.Signature):
-    __doc__ = prompts.WriteLeadSection_docstring
+    __doc__ = import_prompts().WriteLeadSection_docstring
 
     text_input = dspy.InputField(prefix="文本输入（或'N/A'如果不可用）: ", format=str)
     draft_page = dspy.InputField(prefix="原始草稿:\\n", format=str)
@@ -212,7 +214,7 @@ class WriteLeadSection(dspy.Signature):
 
 
 class PolishPage(dspy.Signature):
-    __doc__ = prompts.PolishPage_docstring
+    __doc__ = import_prompts().PolishPage_docstring
 
     draft_page = dspy.InputField(prefix="原始英文草稿:\n", format=str)
     page = dspy.OutputField(

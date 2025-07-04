@@ -13,8 +13,6 @@ from ...interface import KnowledgeCurationModule, Retriever, Information
 from ...utils import ArticleTextProcessing
 from prompts import import_prompts
 
-prompts = import_prompts()
-
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -146,7 +144,7 @@ class WikiWriter(dspy.Module):
 
 
 class AskQuestion(dspy.Signature):
-    __doc__ = prompts.AskQuestion_docstring
+    __doc__ = import_prompts().AskQuestion_docstring
     text_input = dspy.InputField(
         prefix="The relevant text (or 'N/A' if not available): ", format=str
     )
@@ -159,7 +157,7 @@ class AskQuestion(dspy.Signature):
 
 
 class AskQuestionWithPersona(dspy.Signature):
-    __doc__ = prompts.AskQuestionWithPersona_docstring
+    __doc__ = import_prompts().AskQuestionWithPersona_docstring
     text_input = dspy.InputField(
         prefix="The relevant text (or 'N/A' if not available): ", format=str
     )
@@ -175,7 +173,7 @@ class AskQuestionWithPersona(dspy.Signature):
 
 
 class QuestionToQuery(dspy.Signature):
-    __doc__ = prompts.QuestionToQuery_docstring
+    __doc__ = import_prompts().QuestionToQuery_docstring
     text_input = dspy.InputField(prefix="The relevant text: ", format=str)
     question = dspy.InputField(prefix="Question you want to answer: ", format=str)
     old_outline = dspy.InputField(
@@ -185,7 +183,7 @@ class QuestionToQuery(dspy.Signature):
 
 
 class AnswerQuestion(dspy.Signature):
-    __doc__ = prompts.AnswerQuestion_docstring
+    __doc__ = import_prompts().AnswerQuestion_docstring
     text_input = dspy.InputField(prefix="The relevant text: ", format=str)
     conv = dspy.InputField(prefix="Question:\n", format=str)
     info = dspy.InputField(prefix="Gathered information:\n", format=str)

@@ -5,11 +5,9 @@ from typing import Union, List, Optional
 import dspy
 from prompts import import_prompts
 
-prompts = import_prompts()
-
 
 class FindRelatedTopic(dspy.Signature):
-    __doc__ = prompts.FindRelatedTopic_docstring
+    __doc__ = import_prompts().FindRelatedTopic_docstring
     text_input = dspy.InputField(prefix="The relevant text: ", format=str)
     topic = dspy.InputField(prefix="Topic to focus on: ", format=str, required=False)
     old_outline = dspy.InputField(
@@ -19,7 +17,7 @@ class FindRelatedTopic(dspy.Signature):
 
 
 class GenPersona(dspy.Signature):
-    __doc__ = prompts.GenPersona_docstring
+    __doc__ = import_prompts().GenPersona_docstring
     text_input = dspy.InputField(
         prefix="The relevant text (or 'N/A' if not available): ", format=str
     )

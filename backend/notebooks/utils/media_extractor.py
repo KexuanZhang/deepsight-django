@@ -172,7 +172,7 @@ class MediaFeatureExtractor:
                 final_dir_name = f"{video_title}_Dedup_Images"
             
             final_images_dir = os.path.join(output_dir, final_dir_name)
-            captions_file = os.path.join(final_images_dir, f"{video_title}_caption.json")
+            captions_file = os.path.join(final_images_dir, "figure_data.json")
 
             results["output_files"] = {
                 "images_dir": temp_images_dir,

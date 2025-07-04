@@ -10,7 +10,6 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone, timedelta
 from django.core.cache import cache
 from django.conf import settings
-from pathlib import Path
 from ..models import Report
 from django.core.files.base import ContentFile
 
@@ -26,6 +25,9 @@ class JobService:
     def create_job(self, report_data: Dict[str, Any], user=None, notebook=None) -> Report:
         """Create a new report generation job"""
         try:
+            # Handle figure_data parameter separately
+            figure_data = report_data.pop('figure_data', None)
+            
             # Ensure CharField fields with blank=True are empty strings, not None
             # since these fields are CharField(blank=True) but not null=True
             string_fields = ["topic", "csv_session_code", "csv_date_filter"]
@@ -48,7 +50,17 @@ class JobService:
             
             # Generate unique job ID
             report.job_id = str(uuid.uuid4())
-            report.save(update_fields=["job_id"])
+            
+            # Handle figure_data if provided
+            if figure_data:
+                from .figure_service import FigureDataService
+                figure_data_path = FigureDataService.create_knowledge_base_figure_data(
+                    user.pk, f"direct_{report.id}", figure_data
+                )
+                if figure_data_path:
+                    report.figure_data_path = figure_data_path
+            
+            report.save(update_fields=["job_id", "figure_data_path"])
             
             # Create job metadata for caching
             job_metadata = {
@@ -134,113 +146,66 @@ class JobService:
         except Exception as e:
             logger.error(f"Error updating job progress for {job_id}: {e}")
     
-    def _find_report_file(self, output_directory: str, report_id: int) -> Optional[str]:
-        """Find the report_{report_id}.md file in the output directory"""
-        try:
-            output_dir = Path(output_directory)
-            report_filename = f"report_{report_id}.md"
-            report_file_path = output_dir / report_filename
-            
-            if report_file_path.exists():
-                return str(report_file_path.absolute())
-            
-            # Fallback: look for any file with report_{report_id} pattern
-            for file_path in output_dir.glob(f"*report_{report_id}*"):
-                if file_path.suffix == '.md':
-                    logger.info(f"Found alternative report file: {file_path}")
-                    return str(file_path.absolute())
-            
-            logger.warning(f"Could not find report_{report_id}.md in {output_directory}")
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error finding report file for report {report_id}: {e}")
-            return None
-    
-    def _read_report_content(self, file_path: str) -> Optional[str]:
-        """Read the content of the report file"""
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                content = file.read()
-                logger.info(f"Successfully read report content from {file_path}")
-                return content
-        except FileNotFoundError:
-            logger.warning(f"Report file not found: {file_path}")
-            return None
-        except Exception as e:
-            logger.error(f"Error reading report file {file_path}: {e}")
-            return None
 
     def update_job_result(self, job_id: str, result: Dict[str, Any], status: str = Report.STATUS_COMPLETED):
         """Update job with final result"""
         try:
             report = Report.objects.get(job_id=job_id)
             
-            # Try to find and read the report_{report_id}.md file
-            output_directory = result.get("output_directory", "")
-            report_file_path = None
-            report_content = None
-            
-            if output_directory and report.id:
-                report_file_path = self._find_report_file(output_directory, report.id)
-                if report_file_path:
-                    report_content = self._read_report_content(report_file_path)
-            
-            # Store the main content (prefer content from report_{report_id}.md file)
-            if report_content:
-                report.result_content = report_content
-                logger.info(f"Stored content from report_{report.id}.md file")
-            elif "report_content" in result:
+            # Store the main content (prefer processed content from result data)
+            if "report_content" in result and result["report_content"]:
+                # Use the processed content from the report generator
                 report.result_content = result["report_content"]
-                logger.info("Stored content from result data")
-            
-            # Store additional metadata
-            metadata = {
-                "output_directory": result.get("output_directory", ""),
-                "generated_files": result.get("generated_files", []),
-                "main_report_file": result.get("main_report_file"),
-                "processing_logs": result.get("processing_logs", []),
-                "created_at": result.get("created_at", datetime.now(timezone.utc).isoformat()),
-            }
-            
-            # Add report file path to metadata if found
-            if report_file_path:
-                metadata["report_path"] = report_file_path
-                logger.info(f"Stored report file path in metadata: {report_file_path}")
+                logger.info("Stored processed report content from result data")
                 
-                # Set the main_report_file field to the absolute path of report_{report_id}.md
+                # Save the processed content to Django FileField
                 try:
-                    # Read the file content and save it to the main_report_file field
-                    with open(report_file_path, 'rb') as f:
-                        file_content = f.read()
-                    
-                    # Generate the proper file path for Django FileField
                     filename = f"report_{report.id}.md"
                     report.main_report_file.save(
                         filename, 
-                        ContentFile(file_content), 
+                        ContentFile(result["report_content"].encode('utf-8')), 
                         save=False
                     )
                     logger.info(f"Saved main_report_file: {report.main_report_file.name}")
                 except Exception as e:
                     logger.warning(f"Could not save main_report_file: {e}")
+            else:
+                logger.warning("No processed report content found in result data")
+            
+            # Update article_title with generated title from polishing
+            if "article_title" in result and result["article_title"] != report.article_title:
+                report.article_title = result["article_title"]
+                logger.info(f"Updated article_title from GenerateOverallTitle: {result['article_title']}")
+            
+            # Update topic with improved/generated topic if available
+            if "generated_topic" in result and result["generated_topic"] and result["generated_topic"] != report.topic:
+                report.topic = result["generated_topic"]
+                logger.info(f"Updated topic from STORM generation: {result['generated_topic']}")
+            
+            # Store additional metadata
+            metadata = {
+                "output_directory": result.get("output_directory", ""),
+                "generated_files": result.get("generated_files", []),
+                "processing_logs": result.get("processing_logs", []),
+                "created_at": result.get("created_at", datetime.now(timezone.utc).isoformat()),
+            }
+            
+            # Add main_report_file path to metadata if saved
+            if report.main_report_file:
+                metadata["main_report_file"] = report.main_report_file.name
+                logger.info(f"Stored main_report_file path in metadata: {report.main_report_file.name}")
             
             report.result_metadata = metadata
             
-            # Update file references - filter out the main report file to avoid duplicate storage
+            # Store generated files (no need to filter since we no longer create duplicate files)
             if result.get("generated_files"):
-                # Filter out report_{report_id}.md from generated_files since it's stored in main_report_file
-                filtered_files = [
-                    f for f in result["generated_files"] 
-                    if not (f.endswith(f"report_{report.id}.md") or f"report_{report.id}.md" in f)
-                ]
-                report.generated_files = filtered_files
+                report.generated_files = result["generated_files"]
             
             if result.get("processing_logs"):
                 report.processing_logs = result["processing_logs"]
             
-            # Save all changes to database including result_content, result_metadata, and main_report_file
-            report.save(update_fields=["result_content", "result_metadata", "generated_files", "processing_logs", "main_report_file", "updated_at"])
+            # Save all changes to database including result_content, result_metadata, article_title, topic, and main_report_file
+            report.save(update_fields=["result_content", "result_metadata", "article_title", "topic", "generated_files", "processing_logs", "main_report_file", "updated_at"])
             
             # Update status after saving content and metadata
             report.update_status(status, progress="Report generation completed successfully")

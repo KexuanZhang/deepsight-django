@@ -31,46 +31,100 @@ from dataclasses import dataclass
 from enum import Enum
 
 import pandas as pd
-from knowledge_storm import (
-    STORMWikiLMConfigs,
-    STORMWikiRunner,
-    STORMWikiRunnerArguments,
-)
-from knowledge_storm.lm import OpenAIModel, GoogleModel
-from knowledge_storm.rm import (
-    BraveRM,
-    TavilySearchRM,
-    SerperRM,
-    YouRM,
-    BingSearch,
-    DuckDuckGoSearchRM,
-    SearXNG,
-    AzureAISearch,
-)
-from knowledge_storm.storm_wiki.modules.retriever import (
-    get_whitelisted_domains,
-    is_valid_source,
-)
-from knowledge_storm.utils import (
-    FileIOHelper,
-    QueryLogger,
-    load_api_key,
-    truncate_filename,
-)
-from utils.paper_processing import (
-    clean_paper_content,
-    copy_paper_images,
-    extract_figure_data,
-    parse_paper_title,
-)
-from utils.post_processing import process_file
-from prompts import PromptType, configure_prompts
+from prompts import PromptType, configure_prompts, create_prompt_module
 
 # Get the directory where the script is located
 SCRIPT_DIR = pathlib.Path(__file__).parent.absolute()
 
 # Add parent directory to sys.path
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+# NOTE: We perform knowledge_storm imports lazily (after prompt configuration)
+# to ensure the correct prompt type is loaded before any modules evaluate
+# their docstrings. See `_lazy_import_knowledge_storm()` below.
+
+# Placeholder type hints (optional) – will be overwritten after lazy import
+STORMWikiLMConfigs = None  # type: ignore
+STORMWikiRunner = None  # type: ignore
+STORMWikiRunnerArguments = None  # type: ignore
+OpenAIModel = GoogleModel = None  # type: ignore
+BraveRM = TavilySearchRM = SerperRM = YouRM = BingSearch = DuckDuckGoSearchRM = SearXNG = AzureAISearch = None  # type: ignore
+get_whitelisted_domains = is_valid_source = None  # type: ignore
+FileIOHelper = QueryLogger = load_api_key = truncate_filename = None  # type: ignore
+
+# ---------------------------------------------------------------------------
+# Lazy import helper
+# ---------------------------------------------------------------------------
+
+def _lazy_import_knowledge_storm():
+    """Import knowledge_storm modules *after* prompts are configured.
+
+    This avoids loading the default GENERAL prompts when the package-level
+    imports evaluate docstrings at import time. We import once and cache the
+    objects in ``globals()`` so subsequent calls are no-ops.
+    """
+
+    if globals().get("STORMWikiRunner") is not None:
+        # Already imported
+        return
+
+    global STORMWikiLMConfigs, STORMWikiRunner, STORMWikiRunnerArguments
+    global OpenAIModel, GoogleModel
+    global BraveRM, TavilySearchRM, SerperRM, YouRM, BingSearch, DuckDuckGoSearchRM, SearXNG, AzureAISearch
+    global get_whitelisted_domains, is_valid_source
+    global FileIOHelper, QueryLogger, load_api_key, truncate_filename
+
+    from knowledge_storm import (
+        STORMWikiLMConfigs as _STORMWikiLMConfigs,
+        STORMWikiRunner as _STORMWikiRunner,
+        STORMWikiRunnerArguments as _STORMWikiRunnerArguments,
+    )
+
+    from knowledge_storm.lm import OpenAIModel as _OpenAIModel, GoogleModel as _GoogleModel
+
+    from knowledge_storm.rm import (
+        BraveRM as _BraveRM,
+        TavilySearchRM as _TavilySearchRM,
+        SerperRM as _SerperRM,
+        YouRM as _YouRM,
+        BingSearch as _BingSearch,
+        DuckDuckGoSearchRM as _DuckDuckGoSearchRM,
+        SearXNG as _SearXNG,
+        AzureAISearch as _AzureAISearch,
+    )
+
+    from knowledge_storm.storm_wiki.modules.retriever import (
+        get_whitelisted_domains as _get_whitelisted_domains,
+        is_valid_source as _is_valid_source,
+    )
+
+    from knowledge_storm.utils import (
+        FileIOHelper as _FileIOHelper,
+        QueryLogger as _QueryLogger,
+        load_api_key as _load_api_key,
+        truncate_filename as _truncate_filename,
+    )
+
+    # Assign to globals so that other methods/classes can use them
+    STORMWikiLMConfigs = _STORMWikiLMConfigs
+    STORMWikiRunner = _STORMWikiRunner
+    STORMWikiRunnerArguments = _STORMWikiRunnerArguments
+    OpenAIModel = _OpenAIModel
+    GoogleModel = _GoogleModel
+    BraveRM = _BraveRM
+    TavilySearchRM = _TavilySearchRM
+    SerperRM = _SerperRM
+    YouRM = _YouRM
+    BingSearch = _BingSearch
+    DuckDuckGoSearchRM = _DuckDuckGoSearchRM
+    SearXNG = _SearXNG
+    AzureAISearch = _AzureAISearch
+    get_whitelisted_domains = _get_whitelisted_domains
+    is_valid_source = _is_valid_source
+    FileIOHelper = _FileIOHelper
+    QueryLogger = _QueryLogger
+    load_api_key = _load_api_key
+    truncate_filename = _truncate_filename
 
 
 class ModelProvider(str, Enum):
@@ -159,6 +213,8 @@ class ReportGenerationResult:
     generated_files: List[str]
     error_message: Optional[str] = None
     processing_logs: List[str] = None
+    report_content: Optional[str] = None
+    generated_topic: Optional[str] = None
 
 
 class DeepReportGenerator:
@@ -620,89 +676,6 @@ class DeepReportGenerator:
 
         return article_title, speakers, text_input
 
-    def _process_video(
-        self, config: ReportGenerationConfig, article_output_dir: str
-    ) -> Optional[List[Dict]]:
-        """Process caption files to extract figure data."""
-        if not config.caption_files:
-            return None
-
-        self.logger.info("Processing caption files for figure extraction...")
-
-        all_figure_data = []
-
-        for caption_file in config.caption_files:
-            if not os.path.exists(caption_file):
-                self.logger.warning(f"Caption file not found: {caption_file}")
-                continue
-
-            self.logger.info(f"Processing caption file: {caption_file}")
-
-            # Load and process caption data
-            try:
-                with open(caption_file, "r", encoding="utf-8") as f:
-                    caption_data = json.load(f)
-
-                if not isinstance(caption_data, list):
-                    self.logger.warning(
-                        f"Expected list in caption file {caption_file}, got {type(caption_data)}"
-                    )
-                    continue
-
-                # Extract figure data from caption data
-                video_figure_data = extract_figure_data(caption_file)
-                if not video_figure_data:
-                    self.logger.info(
-                        f"No figures found in caption file {caption_file}."
-                    )
-                    continue
-
-                # Update paths in figure data to be relative to article output directory
-                base_dir = os.path.dirname(caption_file)  # extractions directory
-
-                for fig_dict in video_figure_data:
-                    if "image_path" in fig_dict:
-                        image_path = fig_dict["image_path"]
-
-                        # If path is absolute, make it relative to article output directory
-                        if os.path.isabs(image_path):
-                            try:
-                                # Try to make path relative to article output directory
-                                rel_path = os.path.relpath(
-                                    image_path, article_output_dir
-                                )
-                                fig_dict["image_path"] = rel_path
-                            except ValueError:
-                                # If paths are on different drives, keep filename only
-                                fig_dict["image_path"] = os.path.basename(image_path)
-                        elif not image_path.startswith("."):
-                            # If it's a relative path but doesn't start with '.', make it relative to base_dir
-                            full_path = os.path.join(base_dir, image_path)
-                            try:
-                                rel_path = os.path.relpath(
-                                    full_path, article_output_dir
-                                )
-                                fig_dict["image_path"] = rel_path
-                            except ValueError:
-                                fig_dict["image_path"] = os.path.basename(image_path)
-
-                all_figure_data.extend(video_figure_data)
-                self.logger.info(
-                    f"Successfully extracted {len(video_figure_data)} figures from {caption_file}."
-                )
-
-            except Exception as e:
-                self.logger.error(f"Failed to process caption file {caption_file}: {e}")
-                continue
-
-        if all_figure_data:
-            self.logger.info(
-                f"Total figures extracted from all caption files: {len(all_figure_data)}"
-            )
-            return all_figure_data
-        else:
-            self.logger.info("No figures found in any caption files.")
-            return None
 
     def generate_report(self, config: ReportGenerationConfig) -> ReportGenerationResult:
         """Generate a research report based on the provided configuration.
@@ -720,15 +693,18 @@ class DeepReportGenerator:
             # Store report_id for use in filename generation
             self.report_id = config.report_id
             
-            # Load API keys
-            self._load_api_keys()
-            processing_logs.append("API keys loaded successfully")
-
             # Configure prompts based on the configuration
             configure_prompts(config.prompt_type)
             processing_logs.append(
                 f"Prompts configured for {config.prompt_type.value} type"
             )
+
+            # Perform lazy import of knowledge_storm now that prompts are configured
+            _lazy_import_knowledge_storm()
+
+            # Load API keys (requires knowledge_storm.utils.load_api_key)
+            self._load_api_keys()
+            processing_logs.append("API keys loaded successfully")
 
             # Validate inputs
             if (
@@ -812,11 +788,10 @@ class DeepReportGenerator:
                 article_output_dir
             )
 
-            # Process video if provided
-            video_figure_data = self._process_video(config, article_output_dir)
-            if video_figure_data:
-                runner.figure_data = video_figure_data
-                processing_logs.append("Video processed and figure data extracted")
+            # Handle figure data if provided
+            if hasattr(config, 'figure_data') and config.figure_data:
+                runner.figure_data = config.figure_data
+                processing_logs.append(f"Figure data loaded: {len(config.figure_data)} figures")
 
             # Log processing information
             if config.topic:
@@ -858,30 +833,22 @@ class DeepReportGenerator:
             ]
             generated_files.extend(basic_storm_files)
 
-            # Only create the final Report file if post_processing is enabled
+            # Store the final processed report content for Django FileField storage
+            # The actual file will be created by job_service.py using Django FileField
+            final_report_content = None
             if config.post_processing:
                 polished_article_path = os.path.join(
                     article_output_dir, "storm_gen_article_polished.md"
                 )
                 if os.path.exists(polished_article_path):
-                    # Always use report_id in the filename (must be available from config)
-                    if not config.report_id:
-                        raise ValueError("report_id is required but not provided in config")
-                    
-                    output_filename = f"report_{config.report_id}.md"
-                    
-                    output_file = os.path.join(
-                        article_output_dir, output_filename
-                    )
-
                     # Apply full post-processing (image paths + citations removal + etc.)
                     if config.selected_files_paths:
                         # Storm files already have image path fixing, but we need to apply it again
-                        # plus other post-processing for the final Report file
+                        # plus other post-processing for the final Report content
                         with open(polished_article_path, "r", encoding="utf-8") as f:
                             content = f.read()
 
-                        # Apply image path fixing to ensure final Report file has correct paths
+                        # Apply image path fixing to ensure final Report content has correct paths
                         try:
                             from agents.report_agent.utils.post_processing import (
                                 fix_image_paths_advanced,
@@ -891,10 +858,11 @@ class DeepReportGenerator:
                                 content,
                                 config.selected_files_paths,
                                 report_output_dir=article_output_dir,
+                                figure_data=config.figure_data if hasattr(config, 'figure_data') else None,
                             )
                         except Exception as e:
                             self.logger.warning(
-                                f"Failed to fix image paths in Report file: {e}"
+                                f"Failed to fix image paths in Report content: {e}"
                             )
 
                         # Apply other post-processing (citations, captions, placeholders)
@@ -908,37 +876,43 @@ class DeepReportGenerator:
                         content = remove_captions(content, True)
                         content = remove_figure_placeholders(content, True)
 
-                        # Write the fully processed Report file
-                        with open(output_file, "w", encoding="utf-8") as f:
-                            f.write(content)
-
+                        final_report_content = content
                         processing_logs.append(
-                            f"Full post-processing applied to Report file: {output_file}"
+                            "Full post-processing applied to Report content"
                         )
                     else:
                         # No image path fixing needed, just apply traditional post-processing
-                        process_file(
-                            polished_article_path, output_file, config.post_processing
-                        )
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(mode='w+', suffix='.md', delete=False) as temp_file:
+                            process_file(
+                                polished_article_path, temp_file.name, config.post_processing
+                            )
+                            with open(temp_file.name, 'r', encoding='utf-8') as f:
+                                final_report_content = f.read()
+                            os.unlink(temp_file.name)
                         processing_logs.append(
-                            f"Traditional post-processing applied to Report file: {output_file}"
+                            "Traditional post-processing applied to Report content"
                         )
 
-                    generated_files.append(output_file)
                     processing_logs.append(
-                        f"Generated final Report file: {output_filename}"
+                        "Generated final Report content (will be stored via Django FileField)"
                     )
             else:
                 processing_logs.append(
                     "Post-processing disabled: Only storm_gen_article.md and storm_gen_article_polished.md generated"
                 )
 
+            # Use generated article title if available, otherwise use original
+            final_article_title = getattr(runner, 'generated_article_title', None) or article_title
+            
             return ReportGenerationResult(
                 success=True,
-                article_title=article_title,
+                article_title=final_article_title,
                 output_directory=article_output_dir,
                 generated_files=[f for f in generated_files if os.path.exists(f)],
                 processing_logs=processing_logs,
+                report_content=final_report_content,
+                generated_topic=getattr(runner, 'generated_topic', None),
             )
 
         except Exception as e:
@@ -951,6 +925,7 @@ class DeepReportGenerator:
                 generated_files=[],
                 error_message=error_message,
                 processing_logs=processing_logs,
+                generated_topic=None,
             )
 
 

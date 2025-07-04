@@ -95,13 +95,11 @@ CORS_ALLOW_CREDENTIALS = True
 
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5174",
     f"http://{HOST_IP}:{FRONTEND_PORT}",  # Configurable frontend server
     f"http://localhost:{FRONTEND_PORT}",  # Keep localhost for local development
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5174",
     f"http://{HOST_IP}:{FRONTEND_PORT}",  # Configurable frontend server
     f"http://localhost:{FRONTEND_PORT}",  # Keep localhost for local development
 ]
@@ -202,8 +200,8 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 # Media files (uploaded content) - Updated to use new DeepSight data storage path
-# DEEPSIGHT_DATA_ROOT = Path("/Users/huangruizhe/Library/CloudStorage/OneDrive-UniversityofToronto/RAY/Huawei/data00/Deepsight")
-DEEPSIGHT_DATA_ROOT = Path("/Users/zhang/Desktop/huawei/ds-django-2/deepsight-django/backend/backend/data00")
+DEEPSIGHT_DATA_ROOT = Path("/Users/huangruizhe/Library/CloudStorage/OneDrive-UniversityofToronto/RAY/Huawei/data00/Deepsight")
+# DEEPSIGHT_DATA_ROOT = Path("/Users/eason/Downloads/data00/Deepsight")
 MEDIA_ROOT = DEEPSIGHT_DATA_ROOT
 MEDIA_URL = "/media/"
 

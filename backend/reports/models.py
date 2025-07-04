@@ -102,9 +102,11 @@ class Report(models.Model):
 
     PROMPT_TYPE_GENERAL = "general"
     PROMPT_TYPE_FINANCIAL = "financial"
+    PROMPT_TYPE_PAPER = "paper"
     PROMPT_TYPE_CHOICES = [
         (PROMPT_TYPE_GENERAL, "General"),
         (PROMPT_TYPE_FINANCIAL, "Financial"),
+        (PROMPT_TYPE_PAPER, "Paper"),
     ]
     prompt_type = models.CharField(
         max_length=50, choices=PROMPT_TYPE_CHOICES, default=PROMPT_TYPE_GENERAL
@@ -162,6 +164,12 @@ class Report(models.Model):
         default=list, blank=True, help_text="Whitelist domains"
     )
 
+    # New flag to control inclusion of figure data/image in report generation
+    include_image = models.BooleanField(
+        default=False,
+        help_text="Whether to include figure data (images) during report generation",
+    )
+
     SEARCH_DEPTH_BASIC = "basic"
     SEARCH_DEPTH_ADVANCED = "advanced"
     SEARCH_DEPTH_CHOICES = [
@@ -211,6 +219,14 @@ class Report(models.Model):
 
     # Celery task tracking (optional – used for cancellation of background task)
     celery_task_id = models.CharField(max_length=255, null=True, blank=True)
+    
+    # Figure data storage
+    figure_data_path = models.CharField(
+        max_length=500, 
+        blank=True, 
+        null=True,
+        help_text="Absolute path to combined figure_data.json file"
+    )
 
     # Job management
     job_id = models.CharField(
@@ -237,9 +253,13 @@ class Report(models.Model):
 
     def get_configuration_dict(self):
         """Get the configuration as a dictionary for the report generator."""
+        # Use article_title as-is (no fallback to topic)
+        article_title = self.article_title.strip() if self.article_title else "Research Report"
+        topic = self.topic.strip() if self.topic else ""
+        
         return {
-            "topic": self.topic,
-            "article_title": self.article_title,
+            "topic": topic,
+            "article_title": article_title,
             "old_outline": self.old_outline,
             "model_provider": self.model_provider,
             "retriever": self.retriever,
@@ -264,6 +284,7 @@ class Report(models.Model):
             "skip_rewrite_outline": self.skip_rewrite_outline,
             "domain_list": self.domain_list,
             "search_depth": self.search_depth,
+            "include_image": self.include_image,
             "selected_files_paths": self.selected_files_paths,
             "csv_session_code": self.csv_session_code,
             "csv_date_filter": self.csv_date_filter,
