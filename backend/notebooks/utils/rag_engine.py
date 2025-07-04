@@ -1,79 +1,313 @@
-# from langchain.chat_models import ChatOpenAI
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain.vectorstores import FAISS
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains import RetrievalQA
-from langchain.schema import Document
-from langchain.prompts import PromptTemplate
 import os
+import json
+import queue
+import threading
+import re
+from typing import List, Tuple, Generator
 
+from PyPDF2 import PdfReader
+from PyPDF2.errors import PdfReadError
+from langchain.prompts import PromptTemplate
+from pydantic import Extra
+from langchain.schema import BaseRetriever, Document, SystemMessage, HumanMessage
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain_milvus import Milvus
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import ConversationalRetrievalChain
 
+from rag.engine import get_rag_chain   
+
+# ─── Configuration ─────────────────────────────────────────────────────────
+MILVUS_HOST      = os.getenv("MILVUS_HOST", "localhost")
+MILVUS_PORT      = os.getenv("MILVUS_PORT", "19530")
+LOCAL_COLLECTION = os.getenv("MILVUS_LOCAL_COLLECTION", "user_files")
+OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY")
+
+CHAT_PROMPT = PromptTemplate(
+    input_variables=["context", "chat_history", "question"],
+    template="""
+You are an expert research assistant.  Use the following context to answer the user’s question.
+If the answer is not contained in the context, say “I don’t know.”
+
+Context:
+{context}
+
+Conversation History:
+{chat_history}
+
+Question:
+{question}
+
+Answer:
+"""
+)
+
+class SSEStreamer(BaseCallbackHandler):
+    def __init__(self):
+        self._queue = queue.Queue()
+        self._stop = False
+        self._last_norm = None
+
+    def on_llm_new_token(self, token: str, **kwargs):
+        # collapse all whitespace to single spaces, then strip
+        norm = re.sub(r'\s+', ' ', token).strip()
+        # ignore if empty after stripping
+        if not norm:
+            return
+        # only enqueue if different from last normalized token
+        if norm != self._last_norm:
+            self._queue.put(token)
+            self._last_norm = norm
+
+    def end_stream(self):
+        self._stop = True
+
+    def tokens(self):
+        """
+        Yields tokens until end_stream() is called AND the queue is empty,
+        then a final None as sentinel.
+        """
+        while not self._stop or not self._queue.empty():
+            try:
+                t = self._queue.get(timeout=0.1)
+                yield t
+            except queue.Empty:
+                continue
+        yield None
+
+def _pdf_to_text(path: str) -> str:
+    """
+    Extract text via PyPDF2; fallback to raw text on error.
+    """
+    try:
+        reader = PdfReader(path)
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    except PdfReadError:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+
+
+def add_user_files(user_id: int, pdf_paths: List[str]) -> None:
+    """
+    Ingest the given PDFs into the shared Milvus collection
+    under metadata 'user_id' so they persist across sessions.
+    Call this once on upload, not on every chat invocation.
+    """
+    store = Milvus(
+        embedding_function=OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY")),
+        collection_name=LOCAL_COLLECTION,
+        connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
+        drop_old=False,
+    )
+    docs = []
+    for path in pdf_paths:
+        text = _pdf_to_text(path)
+        docs.append(Document(
+            page_content=text,
+            metadata={"user_id": user_id, "source": os.path.basename(path)}
+        ))
+    chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap  =100) \
+             .split_documents(docs)
+    store.add_documents(chunks)
+
+
+def delete_user_file(user_id: int, source: str) -> None:
+    """
+    Remove all vectors matching a given user's 'source' filename.
+    """
+    store = Milvus(
+        embedding_function=OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY")),
+        collection_name=LOCAL_COLLECTION,
+        connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
+        drop_old=False,
+    )
+    expr = f'user_id=={user_id} && source=="{source}"'
+    store.delete(expr=expr)
+
+
+class CombinedRetriever(BaseRetriever):
+    """
+    Combines:
+      1) local Milvus retriever filtered by user_id
+      2) global RAG retriever (Milvus+BM25)
+    Returns local hits first, then global hits, deduped.
+    """
+    local_retriever:  BaseRetriever
+    global_retriever: BaseRetriever
+    k_local:  int = 3
+    k_global: int = 5
+
+    class Config:
+        arbitrary_types_allowed = True
+        extra = Extra.ignore
+
+    def __init__(
+        self,
+        local_retriever: BaseRetriever,
+        global_retriever: BaseRetriever,
+        k_local: int = 3,
+        k_global: int = 5,
+    ):
+        super().__init__(
+            local_retriever=local_retriever,
+            global_retriever=global_retriever,
+            k_local=k_local,
+            k_global=k_global,
+        )
+
+    def get_relevant_documents(self, query: str) -> List[Document]:
+        local_docs  = self.local_retriever.get_relevant_documents(query)[: self.k_local]
+        global_docs = self.global_retriever.get_relevant_documents(query)[: self.k_global]
+        seen, results = set(), []
+        for doc in local_docs + global_docs:
+            key = doc.metadata.get("source") or doc.page_content[:30]
+            if key not in seen:
+                seen.add(key)
+                results.append(doc)
+        return results
+
+
 class RAGChatbot:
-    def __init__(self, kb_items, chat_history=None):
-        openai_key = os.getenv("OPENAI_API_KEY")
-        self.llm = ChatOpenAI(model_name="gpt-4.1-mini", openai_api_key=openai_key)
-        self.embeddings = OpenAIEmbeddings(openai_api_key=openai_key)
+    """
+    Hybrid local+global RAG with streaming API via `.stream()`.
+    """
+    def __init__(
+        self,
+        user_id: int,
+        chat_history: List[Tuple[str, str]] = None,
+        k_local: int = 3,
+        k_global: int = 5,
+    ):
         self.chat_history = chat_history or []
 
-        # Load docs and split
-        docs = [
-            Document(page_content=item["content"], metadata={"title": item.get("title", "Document")})
-            for item in kb_items
-        ]
-        chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100).split_documents(docs)
-        
-        # Vector store
-        vectordb = FAISS.from_documents(chunks, self.embeddings)
-        retriever = vectordb.as_retriever()
-        self.retriever = retriever
-
-        # Conversational chain
-        self.chain = ConversationalRetrievalChain.from_llm(
-            llm=self.llm,
-            retriever=retriever,
-            return_source_documents=False
+        # 1) Local Milvus retriever (per-user)
+        embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+        store = Milvus(
+            embedding_function=embeddings,
+            collection_name=LOCAL_COLLECTION,
+            connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
+            drop_old=False,
         )
-        print(f"[DEBUG] Total documents: {len(kb_items)}")
-        print(f"[DEBUG] Total chunks created: {len(chunks)}")
-        for i, chunk in enumerate(chunks[:5]):  # limit to first 5 for readability
-            print(f"--- Chunk {i + 1} ---\n{chunk.page_content[:300]}\n")
+        local_ret = store.as_retriever(search_kwargs={
+            "k":   k_local,
+            "expr": f"user_id=={user_id}"
+        })
 
-    def ask(self, query: str) -> str:
-        try:
-            retrieved_docs = self.retriever.get_relevant_documents(query)
-            print(f"[DEBUG] Retrieved {len(retrieved_docs)} documents for query: '{query}'")
-            for i, doc in enumerate(retrieved_docs[:3]):  # show first 3 for brevity
-                print(f"--- Retrieved Doc {i + 1} ---\n{doc.page_content[:300]}\n")
+        # 2) Global retriever from your deployed hybrid chain
+        global_ret = get_rag_chain().retriever
 
-            result = self.chain.invoke({"question": query, "chat_history": self.chat_history})
-            return result.get("answer", "I couldn’t generate a response.")
-        except Exception as e:
-            return f"Sorry, error during response: {str(e)}"
+        # 3) Combine them so local docs come first
+        self.retriever = CombinedRetriever(
+            local_retriever=local_ret,
+            global_retriever=global_ret,
+            k_local=k_local,
+            k_global=k_global,
+        )
+
+        # 4) Prepare streaming LLM + SSE callback
+        self.streamer = SSEStreamer()
+        self.llm = ChatOpenAI(
+            model_name     = "gpt-4o-mini",
+            openai_api_key = OPENAI_API_KEY,
+            streaming      = True,
+            callbacks      = [self.streamer],
+        )
+
+        # 5) We won’t actually call the RAG chain here; 
+        #    we’ll drive the LLM ourselves with a prompt.
+        #    We still build the vanilla chain so docs/sources logic is intact:
+        self.chain = ConversationalRetrievalChain.from_llm(
+            llm                     = self.llm,
+            retriever               = self.retriever,
+            return_source_documents = True,
+        )
+
+    def stream(self, question: str) -> Generator[str, None, None]:
+        """
+        Yields SSE‐style chunks:
+         • a `metadata` event listing {source, snippet}
+         • a series of `token` events as the LLM streams
+         • a final `done` event
+        """
+        # 1) retrieve docs
+        docs = self.retriever.get_relevant_documents(question)
+
+        # 2) emit metadata
+        meta = {
+            "type": "metadata",
+            "docs": [
+                {
+                    "source":  d.metadata.get("source") or "unknown",
+                    "snippet": d.page_content[:200].replace("\n", " ")
+                }
+                for d in docs
+            ]
+        }
+        yield f"data: {json.dumps(meta)}\n\n"
+
+        # 3) build a single-system+user chat, including all snippets
+        context = "\n\n---\n\n".join(
+            f"Source: {d.metadata.get('source')}\n{d.page_content[:500]}"
+            for d in docs
+        )
+        system_prompt = (
+            "You are a helpful AI research assistant. "
+            "Use the following document snippets to answer the user’s question, "
+            "focusing on technical details, methods, results, and implications:\n\n"
+            f"{context}"
+        )
+
+        # 4) background thread to drive the LLM’s streaming
+        def _run_background():
+            # invoke the model directly
+            self.llm([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=question),
+            ])
+            # signal end of stream
+            self.streamer.end_stream()
+
+        threading.Thread(target=_run_background, daemon=True).start()
+
+        # 5) yield tokens as they arrive
+        for token in self.streamer.tokens():
+            if token is None:
+                break
+            payload = {"type": "token", "text": token}
+            yield f"data: {json.dumps(payload)}\n\n"
+
+        # 6) final done event
+        yield "event: done\ndata: {}\n\n"
 
 
 class SuggestionRAGAgent:
-    def __init__(self):
-        self.llm = ChatOpenAI(model_name="gpt-4.1-mini", temperature=0.7)
+    """
+    Given a conversation history, suggest 4 follow-up questions.
+    """
+    def __init__(self, model_name: str = "gpt-4o-mini", temperature: float = 0.7):
+        openai_key = os.getenv("OPENAI_API_KEY")
+        self.llm = ChatOpenAI(model_name=model_name, temperature=temperature, openai_api_key=openai_key)
+        self.prompt = PromptTemplate(
+            input_variables=["chat_history"],
+            template=(
+                "You are a helpful AI research assistant. Based on the following conversation "
+                "history, suggest 4 helpful, relevant follow-up questions the user might ask next.\n\n"
+                "Conversation History:\n{chat_history}\n\nSuggested Questions:\n"
+                "1.\n2.\n3.\n4."
+            )
+        )
 
-    def generate_suggestions(self, chat_history: str):
-        prompt = PromptTemplate.from_template("""
-        You are a helpful AI research assistant. Based on the following conversation history between a user and assistant, suggest 4 helpful, relevant follow-up questions the user might ask next.
-
-        Conversation History:
-        {chat_history}
-
-        Suggested Questions:
-        1.
-        2.
-        3.
-        4.
-        """)
-        try:
-            response = self.llm.invoke(prompt.format(chat_history=chat_history))
-            raw_output = response.content.strip()
-            lines = raw_output.split("\n")
-            cleaned = [line.split(".", 1)[-1].strip() for line in lines if line.strip()]
-            return cleaned
-        except Exception as e:
-            return ["What are the main themes across my documents?", "Can you identify key patterns or trends?", "How do these findings connect to my research goals?", "What should I explore next based on this analysis?"]
+    def generate_suggestions(self, chat_history: str) -> List[str]:
+        inp = self.prompt.format(chat_history=chat_history)
+        resp = self.llm.invoke(inp) if hasattr(self.llm, "invoke") else self.llm(inp)
+        text = resp.content.strip() if hasattr(resp, "content") else resp.strip()
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        suggestions = []
+        for line in lines:
+            parts = line.split(".", 1)
+            if len(parts) == 2 and parts[0].isdigit():
+                suggestions.append(parts[1].strip())
+            else:
+                suggestions.append(line)
+        return suggestions[:4]
