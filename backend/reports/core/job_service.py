@@ -172,6 +172,16 @@ class JobService:
             else:
                 logger.warning("No processed report content found in result data")
             
+            # Update article_title with generated title from polishing
+            if "article_title" in result and result["article_title"] != report.article_title:
+                report.article_title = result["article_title"]
+                logger.info(f"Updated article_title from GenerateOverallTitle: {result['article_title']}")
+            
+            # Update topic with improved/generated topic if available
+            if "generated_topic" in result and result["generated_topic"] and result["generated_topic"] != report.topic:
+                report.topic = result["generated_topic"]
+                logger.info(f"Updated topic from STORM generation: {result['generated_topic']}")
+            
             # Store additional metadata
             metadata = {
                 "output_directory": result.get("output_directory", ""),
@@ -194,8 +204,8 @@ class JobService:
             if result.get("processing_logs"):
                 report.processing_logs = result["processing_logs"]
             
-            # Save all changes to database including result_content, result_metadata, and main_report_file
-            report.save(update_fields=["result_content", "result_metadata", "generated_files", "processing_logs", "main_report_file", "updated_at"])
+            # Save all changes to database including result_content, result_metadata, article_title, topic, and main_report_file
+            report.save(update_fields=["result_content", "result_metadata", "article_title", "topic", "generated_files", "processing_logs", "main_report_file", "updated_at"])
             
             # Update status after saving content and metadata
             report.update_status(status, progress="Report generation completed successfully")
