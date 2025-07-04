@@ -34,12 +34,18 @@ const GallerySection = ({ videoFileId, notebookId }) => {
     try {
       // Try to fetch captions / manifest JSON to get ordered list of images
       const possibleFiles = ['figure_data.json', 'captions.json', 'manifest.json'];
+      
+      // Add cache-busting timestamp to ensure fresh data
+      const cacheBuster = Date.now();
 
       let imageList = [];
       for (const filename of possibleFiles) {
-        const url = `${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/${filename}`;
+        const url = `${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/${filename}?t=${cacheBuster}`;
         try {
-          const res = await fetch(url, { credentials: 'include' });
+          const res = await fetch(url, { 
+            credentials: 'include',
+            cache: 'no-cache' // Ensure fresh data from server
+          });
           if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
             const data = await res.json();
             // data could be an array or object with images key
@@ -90,7 +96,12 @@ const GallerySection = ({ videoFileId, notebookId }) => {
         needFetch.map(async (img) => {
           img.loading = true;
           try {
-            const res = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/${img.name}`, { credentials: 'include' });
+            // Add cache busting for image files to ensure fresh content
+            const cacheBuster = Date.now();
+            const res = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/${img.name}?t=${cacheBuster}`, { 
+              credentials: 'include',
+              cache: 'no-cache'
+            });
             if (res.ok) {
               const blob = await res.blob();
               img.blobUrl = URL.createObjectURL(blob);
@@ -122,6 +133,14 @@ const GallerySection = ({ videoFileId, notebookId }) => {
       };
       const response = await apiService.extractVideoImages(notebookId, payload);
       setExtractResult(response);
+      
+      // Clear existing images and reload to ensure fresh data
+      setImages([]);
+      
+      // Add a small delay to ensure backend has processed the new images
+      setTimeout(() => {
+        loadImages();
+      }, 1000);
     } catch (error) {
       console.error('Image extraction failed:', error);
       setExtractError(error.message || 'Extraction failed');
