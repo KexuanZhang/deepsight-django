@@ -237,6 +237,9 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
         choices=Report.SEARCH_DEPTH_CHOICES, default=Report.SEARCH_DEPTH_BASIC
     )
 
+    # New flag to specify whether to include images (figure_data)
+    include_image = serializers.BooleanField(default=False)
+
     # Content inputs from knowledge base
     selected_files_paths = serializers.ListField(
         child=serializers.CharField(), required=False, default=list

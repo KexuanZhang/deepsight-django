@@ -164,6 +164,12 @@ class Report(models.Model):
         default=list, blank=True, help_text="Whitelist domains"
     )
 
+    # New flag to control inclusion of figure data/image in report generation
+    include_image = models.BooleanField(
+        default=False,
+        help_text="Whether to include figure data (images) during report generation",
+    )
+
     SEARCH_DEPTH_BASIC = "basic"
     SEARCH_DEPTH_ADVANCED = "advanced"
     SEARCH_DEPTH_CHOICES = [
@@ -278,6 +284,7 @@ class Report(models.Model):
             "skip_rewrite_outline": self.skip_rewrite_outline,
             "domain_list": self.domain_list,
             "search_depth": self.search_depth,
+            "include_image": self.include_image,
             "selected_files_paths": self.selected_files_paths,
             "csv_session_code": self.csv_session_code,
             "csv_date_filter": self.csv_date_filter,

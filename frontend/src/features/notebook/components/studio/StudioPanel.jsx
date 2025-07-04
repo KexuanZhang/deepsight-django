@@ -71,7 +71,8 @@ const StudioPanel = ({
     article_title: '',
     model_provider: 'openai',
     retriever: 'tavily',
-    prompt_type: 'general'
+    prompt_type: 'general',
+    include_image: true
   });
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation state ======
