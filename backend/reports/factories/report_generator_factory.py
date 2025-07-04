@@ -121,6 +121,7 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
             return {
                 'success': result.success,
                 'article_title': result.article_title,
+                'generated_topic': getattr(result, 'generated_topic', None),
                 'report_content': getattr(result, 'report_content', ''),
                 'generated_files': result.generated_files or [],
                 'processing_logs': result.processing_logs or [],

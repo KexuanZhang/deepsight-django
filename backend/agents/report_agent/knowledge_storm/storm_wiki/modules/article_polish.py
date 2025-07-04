@@ -49,6 +49,7 @@ class StormArticlePolishingModule(ArticlePolishingModule):
             write_lead_engine=self.article_gen_lm, polish_engine=self.article_polish_lm
         )
         self.generate_overall_title = dspy.Predict(GenerateOverallTitle)
+        self.generated_title = None  # Store the generated title
 
     def polish_article(
         self,
@@ -159,6 +160,9 @@ class StormArticlePolishingModule(ArticlePolishingModule):
                     article_text=polished_article_text
                 )
                 overall_title = overall_title_result.overall_title.strip()
+        
+        # Store the generated title for external access
+        self.generated_title = overall_title
 
         current_date = datetime.date.today()
         date_str = current_date.strftime("%Y-%m-%d")

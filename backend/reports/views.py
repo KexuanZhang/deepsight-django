@@ -124,6 +124,7 @@ class NotebookReportListCreateView(APIView):
             "report_id": report.id,
             "status": report.status,
             "progress": report.progress,
+            "title": report.article_title,  # Add title field for frontend compatibility
             "article_title": report.article_title,
             "created_at": report.created_at.isoformat(),
             "updated_at": report.updated_at.isoformat(),

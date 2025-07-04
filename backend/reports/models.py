@@ -247,14 +247,8 @@ class Report(models.Model):
 
     def get_configuration_dict(self):
         """Get the configuration as a dictionary for the report generator."""
-        # Provide fallback defaults for empty values
-        article_title = self.article_title.strip() if self.article_title else ""
-        if not article_title:
-            if self.topic and self.topic.strip():
-                article_title = self.topic.strip()
-            else:
-                article_title = "Research Report"
-                
+        # Use article_title as-is (no fallback to topic)
+        article_title = self.article_title.strip() if self.article_title else "Research Report"
         topic = self.topic.strip() if self.topic else ""
         
         return {

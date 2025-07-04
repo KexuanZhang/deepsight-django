@@ -522,6 +522,9 @@ class STORMWikiRunner(Engine):
             time_range=time_range,
             parsed_paper_title=self.parsed_paper_title,
         )
+        
+        # Capture the generated title from the polishing module
+        self.generated_article_title = getattr(self.storm_article_polishing_module, 'generated_title', None)
 
         article_content_str = polished_article.to_string()
         reference_data = polished_article.reference

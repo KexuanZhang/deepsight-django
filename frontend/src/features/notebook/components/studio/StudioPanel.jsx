@@ -81,9 +81,9 @@ const StudioPanel = ({
   });
 
   // ====== SINGLE RESPONSIBILITY: Report generation completion ======
-  const handleReportComplete = useCallback((result) => {
+  const handleReportComplete = useCallback(() => {
     reportGeneration.completeGeneration();
-    studioData.addReport(result);
+    studioData.loadReports(); // Refresh the entire list to get updated titles
     jobService.clearJob(reportGeneration.currentJobId);
     toast({
       title: "Report Generated",

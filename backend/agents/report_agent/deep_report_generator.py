@@ -214,6 +214,7 @@ class ReportGenerationResult:
     error_message: Optional[str] = None
     processing_logs: List[str] = None
     report_content: Optional[str] = None
+    generated_topic: Optional[str] = None
 
 
 class DeepReportGenerator:
@@ -901,13 +902,17 @@ class DeepReportGenerator:
                     "Post-processing disabled: Only storm_gen_article.md and storm_gen_article_polished.md generated"
                 )
 
+            # Use generated article title if available, otherwise use original
+            final_article_title = getattr(runner, 'generated_article_title', None) or article_title
+            
             return ReportGenerationResult(
                 success=True,
-                article_title=article_title,
+                article_title=final_article_title,
                 output_directory=article_output_dir,
                 generated_files=[f for f in generated_files if os.path.exists(f)],
                 processing_logs=processing_logs,
                 report_content=final_report_content,
+                generated_topic=getattr(runner, 'generated_topic', None),
             )
 
         except Exception as e:
@@ -920,6 +925,7 @@ class DeepReportGenerator:
                 generated_files=[],
                 error_message=error_message,
                 processing_logs=processing_logs,
+                generated_topic=None,
             )
 
 
