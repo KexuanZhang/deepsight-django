@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Eye, FileText, Globe, Music, Video, File, HardDrive, Calendar, ExternalLink, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { X, Eye, FileText, Globe, Music, Video, File, HardDrive, Calendar, ExternalLink, Loader2, AlertCircle, RefreshCw, Trash2, Plus, ChevronLeft, CheckCircle, Clock, Upload, Link2, Youtube, Group, Presentation } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
 import { Badge } from '@/common/components/ui/badge';
 import { generatePreview, supportsPreview, PREVIEW_TYPES, formatDate, getVideoMimeType, getAudioMimeType } from '@/features/notebook/utils/filePreview';
@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
+import GallerySection from './GallerySection';
 
 // API Base URL for raw file access
 import { config } from '@/config';
@@ -741,6 +742,9 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
           )}
         </div>
         
+        {/* Gallery (Image Extraction) */}
+        <GallerySection videoFileId={source.file_id} notebookId={notebookId} />
+
         {/* Transcript Content Display */}
         {state.preview.hasTranscript && (
           <div className="bg-white rounded-lg border border-gray-200">
@@ -769,7 +773,7 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
           </div>
         )}
 
-        {/* Video Information */}
+        {/* File Information */}
         <div className="bg-gray-50 rounded-lg p-4">
           <h4 className="text-sm font-medium text-gray-900 mb-3">Video Information</h4>
           <div className="grid grid-cols-2 gap-4">

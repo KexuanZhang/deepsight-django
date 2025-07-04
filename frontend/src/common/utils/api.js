@@ -713,6 +713,10 @@ class ApiService {
   async getBatchJobStatus(notebookId, batchJobId) {
     return this.request(`/${notebookId}/batch-jobs/${batchJobId}/status/`);
   }
+
+  async extractVideoImages(notebookId, data = {}) {
+    return this.post(`/notebooks/${notebookId}/extraction/video_image_extraction/`, data);
+  }
 }
 
 const apiService = new ApiService();
