@@ -57,20 +57,21 @@ class GenerationService:
                 )
                 content_data = self.input_processor.get_content_data(processed_data)
                 
-                # Create combined figure_data.json file from selected files
-                from .figure_service import FigureDataService
-                selected_file_ids = content_data.get("selected_file_ids", [])
-                if selected_file_ids:
-                    figure_data_path = FigureDataService.create_combined_figure_data(
-                        report, selected_file_ids
-                    )
-                    if figure_data_path:
-                        report.figure_data_path = figure_data_path
-                        report.save(update_fields=['figure_data_path'])
+                # Conditionally create combined figure_data.json file based on include_image flag
+                if report.include_image:
+                    from .figure_service import FigureDataService
+                    selected_file_ids = content_data.get("selected_file_ids", [])
+                    if selected_file_ids:
+                        figure_data_path = FigureDataService.create_combined_figure_data(
+                            report, selected_file_ids
+                        )
+                        if figure_data_path:
+                            report.figure_data_path = figure_data_path
+                            report.save(update_fields=['figure_data_path'])
             
             # Load figure data if available
             figure_data = []
-            if report.figure_data_path:
+            if report.include_image and report.figure_data_path:
                 from .figure_service import FigureDataService
                 figure_data = FigureDataService.load_combined_figure_data(report.figure_data_path)
 

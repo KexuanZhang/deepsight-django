@@ -634,7 +634,7 @@ def notebook_report_status_stream(request, notebook_id, job_id):
         def event_stream():
             """Generator that yields SSE messages."""
             last_status = None
-            max_duration = 300  # 5-minute safety limit
+            max_duration = 3600  # 60-minute safety limit to accommodate longer report generation
             start_time = time.time()
             poll_interval = 2  # seconds – server-side polling (DB/cache)
 
