@@ -46,69 +46,55 @@ prompts:
     If a topic is provided, ensure the personas are equipped to explore it from multiple angles.
     If an outline is provided, make sure the personas' expertise covers the thematic sections.
   WritePageOutline: |-
-    Generate an in-depth technical report outline. If text input is provided, use it along with the specified topic to create the outline. If no text input is provided (indicated by 'N/A' for the formatted content), use the topic and any available information to guide the outline generation. The outline must be strictly topic orientated.
-
-    Before creating the outline, analyze the provided information (but do not output these analysis as final output):
-    1.  Identify the core innovation or problem statement. This is often the first major theme.
-    2.  List the key components of the methodology or architecture. These form the middle sections.
-    3.  Pinpoint the main results or performance benchmarks. This is a crucial section.
-    4.  Determine the broader significance, takeaways, or future directions. This forms the concluding part of the narrative.
+    Generate an in-depth technical report outline that follows a logical progression from problem/innovation to methodology, results, and future implications, without using explicit, generic headings like "Introduction" or "Conclusion". If text input is provided, use it along with the specified topic to create the outline. If no text input is provided (indicated by 'N/A' for the formatted content), use the topic and any available information to guide the outline generation. The outline must be strictly topic-oriented.
+    
+    Before creating the outline, analyze the provided information to structure the narrative logically (but do not output this analysis):
+    1.  Identify the core innovation or problem statement. This will form the opening sections of the outline.
+    2.  List the key components of the methodology, architecture, or process. These will form the middle sections, detailing *how* the innovation is achieved.
+    3.  Pinpoint the main results, performance benchmarks, or key findings. This will follow the methodology, showing the outcome.
+    4.  Determine the broader significance, applications, or future research directions. This will form the concluding part of the narrative.
 
     Now, create an outline based on your analysis. Follow these guidelines:
     1. Use Markdown heading levels: '#' for level 1, '##' for level 2, '###' for level 3.
-    2. Begin directly with a level 1 heading that includes specific entities or terms from the text input, not just a general heading without any entity.
-    3. Headings must be descriptive and outcome-oriented
+    2. Begin directly with a level 1 heading that is specific and uses key terms from the input, not a generic topic.
+    3. Headings must be descriptive and outcome-oriented, clearly stating the purpose of the section.
     4. Do not include any unstructured text outside of headings.
-    5. Do not include sections related to speakers' background, company introduction, general introduction, or conclusion.
-    6. Do not use numbers for numbering in headings.
-    7. Limit the outline to three levels of headings maximum.
-    8. Use original entity terms from the provided information for Level 1 headings.
-    9. The outline should have a logical flow, guiding the reader through the topic step-by-step.
-    Ensure that your outline covers the most critical aspects mentioned in the provided information, adhering strictly to the topic and formatting requirements.
+    5. Do not include sections related to speakers' background, company introduction, or general agenda.
+    6. Do not use numbers for list-style numbering in headings.
+    7. Limit the outline to a maximum of three levels of headings.
+    8. Use original, specific entity terms from the provided information for Level 1 headings.
+    9. Ensure the outline has a clear, logical flow that guides the reader through the technical narrative as analyzed above.
+  WritePageOutlineFromConv: |-
+    You are an expert report editor. Your task is to extract key technical points from provided materials and use them to improve a technical report outline. The revised outline should be highly relevant to an AI hardware tech company audience and follow a logical progression from problem/innovation to methodology, results, and future implications.
+    Note that the outline score json is the importance score for each heading. It's better not to change the order of the provided old outline, but you should supplement more details into it. However, if you find it necessary to change the order to improve the narrative flow, you are permitted to do so.
 
-    # Output Format
+    Before drafting the final outline, carry out the following analysis steps (but do not output these analysis as final output):
+    1.  Extract and rank up to 10 of the most critical key points from the provided information that specifically relate to AI innovations.
+    2.  Identify all AI-related technologies explicitly mentioned or logically implied by the topic.
+    3.  For each identified technology:
+      a. Summarize its core functionality and role.
+      b. List its principal AI-related applications.
+      c. Highlight notable recent advancements or breakthrough innovations.
+    4.  Map these technologies to potential outline sections, showing how each supports the main topic.
+    5.  Evaluate how the ranked key points and mapped technologies can be woven into the outline to maximize technical depth and relevance.
+    6.  For every key point, note significant implementation or adoption challenges.
+    7.  Brainstorm practical, real-world applications or use cases for each technology or key point.
+    8.  Consider current industry trends and incorporate them where they strengthen the outline's relevance.
+    9.  Plan the outline structure, limiting it to a maximum of three heading levels and ensuring a logical flow.
+    10. Ensure the outline aligns strictly with the topic, excluding any generic introduction or conclusion sections.
 
-    The outline should be formatted strictly using Markdown heading levels without any additional text. Do not output any bullet points.
-  WritePageOutlineFromConv: "You are an expert report editor. Your task is to extract\
-    \ key technical points from provided materials and use them to improve a technical\
-    \ report outline. The revised outline should be highly relevant to an AI hardware\
-    \ tech company audience.\nNote that the outline score json is the importance score\
-    \ for each headings. It's better not to change the order of the provided old outline,\
-    \ but should supplement more details into it. However, if you find it necessary\
-    \ to change the order due to the writing style, you can change it.\n\nBefore drafting\
-    \ the final outline, carry out the following analysis steps (but do not output\
-    \ these analysis as final output):  \n1. Extract and rank at most 10 most critical\
-    \ key points from the provided information that specifically relate to AI innovations.\
-    \  \n2. Identify all AI related technologies explicitly mentioned or logically\
-    \ implied by the topic.  \n3. For each identified technology:  \n   a. Summarize\
-    \ its core functionality and role.  \n   b. List its principal AI-related applications.\
-    \  \n   c. Highlight notable recent advancements or breakthrough innovations.\
-    \  \n4. Map these technologies to potential outline sections, showing how each\
-    \ supports the main topic.  \n5. Evaluate how the ranked key points and mapped\
-    \ technologies can be woven into the outline to maximize technical depth and relevance.\
-    \  \n6. For every key point, note significant implementation or adoption challenges.\
-    \  \n7. Brainstorm practical, real-world applications or use cases for each technology\
-    \ or key point.  \n8. Consider current industry trends and incorporate them where\
-    \ they strengthen the outline's relevance.  \n9. Plan the outline structure, limiting\
-    \ it to a maximum of three heading levels.  \n10. Ensure the outline aligns strictly\
-    \ with the topic, excluding any introduction and conclusion.\n\nDuring your analysis,\
-    \ give special attention to:  \n- Ensuring each Level 1 heading is specific, detailed,\
-    \ and self-contained. \n- Using Level 2 and Level 3 headings to clarify what each\
-    \ Level 1 heading covers, why it matters, and its potential impact.\n\nAfter completing\
-    \ your analysis, create the improved outline with these formatting rules: \n-\
-    \ Use '#' for level-one headings, '##' for level-two headings, '###' for level-three\
-    \ headings.\n- Include only structured text; avoid any unstructured or explanatory\
-    \ text.\n- Do not use bullet points in the outline; all outline headings must\
-    \ start with hashtags.\n- Omit an overarching document title; directly start from\
-    \ level-one headings.\n- Exclude all content related to speaker biographies or\
-    \ company background information.\n- Strictly utilize the provided topic as the\
-    \ framework for the entire outline.\n- Do not include any introduction or conclusion\
-    \ sections.\n- End EVERY heading with a period (e.g., \"# Technical Innovations.\"\
-    , \"## Implementation Details.\").\n\nPlease provide the improved outline now,\
-    \ adhering strictly to these guidelines and focusing on the most important technical\
-    \ points relevant to an AI hardware tech company. Your final output should consist\
-    \ only of the outline and should not duplicate or rehash any of the work you did\
-    \ in the outline planning section."
+    During your analysis, give special attention to:
+    - Ensuring each Level 1 heading is specific, detailed, and self-contained.
+    - Using Level 2 and Level 3 headings to clarify what each Level 1 heading covers, why it matters, and its potential impact.
+
+    After completing your analysis, create the improved outline with these formatting rules:
+    - Use '#' for level-one headings, '##' for level-two headings, '###' for level-three headings.
+    - Include only structured headings; avoid any unstructured or explanatory text.
+    - Do not use bullet points in the outline; all outline headings must start with hashtags.
+    - Omit an overarching document title; directly start from level-one headings.
+    - Exclude all content related to speaker biographies or company background information.
+    - Strictly utilize the provided topic as the framework for the entire outline.
+    - End EVERY heading with a period (e.g., "# Technical Innovations.", "## Implementation Details.").
   QueryRewrite: "Given a list of queries, rewrite them to improve hybrid (vector-similarity\
     \ + BM25) RAG retrieval while guaranteeing that every detected entity can also\
     \ be searched directly.\n\nInstructions:\n1. Detect every explicit entity in the\
