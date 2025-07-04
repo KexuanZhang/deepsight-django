@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/common/components/ui/button';
-import { Settings, Image as ImageIcon, Loader2, X } from 'lucide-react';
+import { Settings, Image as ImageIcon, Loader2, X, ZoomIn } from 'lucide-react';
 import apiService from '@/common/utils/api';
+import { config } from '@/config';
 
 /**
  * GallerySection component renders a placeholder gallery box beneath the video player.
@@ -15,6 +16,99 @@ const GallerySection = ({ videoFileId, notebookId }) => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractError, setExtractError] = useState(null);
   const [extractResult, setExtractResult] = useState(null);
+  const [images, setImages] = useState([]);
+  const [visibleCount, setVisibleCount] = useState(40);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const API_BASE_URL = config.API_BASE_URL;
+
+  // Attempt to load gallery images when extraction completes or component mounts
+  useEffect(() => {
+    if (!notebookId || !videoFileId) return;
+
+    // Auto-load if extraction result already exists or on component mount (user reloads page)
+    loadImages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extractResult, notebookId, videoFileId]);
+
+  const loadImages = async () => {
+    try {
+      // Try to fetch captions / manifest JSON to get ordered list of images
+      const possibleFiles = ['figure_data.json', 'captions.json', 'manifest.json'];
+
+      let imageList = [];
+      for (const filename of possibleFiles) {
+        const url = `${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/${filename}`;
+        try {
+          const res = await fetch(url, { credentials: 'include' });
+          if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+            const data = await res.json();
+            // data could be an array or object with images key
+            imageList = Array.isArray(data) ? data : data.images || [];
+            if (imageList.length) break;
+          }
+        } catch (err) {
+          // continue trying next filename
+        }
+      }
+
+      // Build filenames list only (blob fetched lazily)
+      const files = imageList.map((item) => {
+        if (typeof item === 'string') {
+          return { name: item, caption: '' };
+        }
+        // If object, try various fields to resolve filename
+        let filename = item.file_name || item.filename || item.name;
+        if (!filename && item.image_path) {
+          filename = item.image_path.split('/').pop();
+        }
+        if (!filename && item.figure_name) {
+          // assume png extension if not provided
+          filename = `${item.figure_name}.png`;
+        }
+        return {
+          name: filename,
+          caption: item.caption || ''
+        };
+      });
+      setImages(files);
+    } catch (error) {
+      console.error('Failed to load images:', error);
+    }
+  };
+
+  const handleLoadMore = () => {
+    setVisibleCount((prev) => Math.min(prev + 40, images.length));
+  };
+
+  // Fetch blobs lazily for visible images
+  useEffect(() => {
+    const fetchBlobs = async () => {
+      const subset = images.slice(0, visibleCount);
+      const needFetch = subset.filter((img) => !img.blobUrl && !img.loading);
+
+      await Promise.all(
+        needFetch.map(async (img) => {
+          img.loading = true;
+          try {
+            const res = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/${img.name}`, { credentials: 'include' });
+            if (res.ok) {
+              const blob = await res.blob();
+              img.blobUrl = URL.createObjectURL(blob);
+            }
+          } catch (e) {
+            console.error('Image fetch failed', img.name, e);
+          } finally {
+            img.loading = false;
+            setImages((prev) => [...prev]); // trigger re-render
+          }
+        })
+      );
+    };
+
+    if (images.length) {
+      fetchBlobs();
+    }
+  }, [visibleCount, images, API_BASE_URL, notebookId, videoFileId]);
 
   const handleExtract = async () => {
     if (!videoFileId || !notebookId) return;
@@ -115,7 +209,7 @@ const GallerySection = ({ videoFileId, notebookId }) => {
         </div>
       </div>
 
-      {/* Placeholder content or extraction result info */}
+      {/* Extraction banners */}
       {extractError && (
         <div className="bg-red-50 border-l-4 border-red-400 p-3 rounded mb-3 text-sm text-red-700">
           {extractError}
@@ -127,10 +221,54 @@ const GallerySection = ({ videoFileId, notebookId }) => {
         </div>
       )}
 
-      <p className="text-xs text-gray-500">Images will appear here after extraction.</p>
+      {/* Gallery grid */}
+      {images.length === 0 ? (
+        <p className="text-xs text-gray-500">No images yet. Run extraction or reload to view gallery.</p>
+      ) : (
+        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
+          {images.slice(0, visibleCount).map((img, idx) => (
+            <div
+              key={idx}
+              className="relative group border rounded overflow-hidden bg-white shadow-sm cursor-zoom-in"
+              onClick={() => img.blobUrl && setSelectedImage(img.blobUrl)}
+            >
+              <img
+                src={img.blobUrl || `${API_BASE_URL}/static/placeholder.png`}
+                alt="thumbnail"
+                loading="lazy"
+                className="object-cover w-full h-32 group-hover:opacity-90 transition-opacity"/>
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
+                <ZoomIn className="h-5 w-5 text-white" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Load more button for large galleries */}
+      {visibleCount < images.length && (
+        <div className="flex justify-center mt-4">
+          <Button variant="outline" size="sm" onClick={handleLoadMore}>Load More</Button>
+        </div>
+      )}
 
       {/* Settings Modal */}
       <SettingsModal />
+
+      {/* Image Modal */}
+      {selectedImage && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center" onClick={() => setSelectedImage(null)}>
+          <div className="relative max-w-[90vw] max-h-[90vh]">
+            <img src={selectedImage} alt="full" className="object-contain max-w-full max-h-full" />
+            <button
+              className="absolute top-2 right-2 text-white hover:text-gray-200"
+              onClick={(e) => { e.stopPropagation(); setSelectedImage(null); }}
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
