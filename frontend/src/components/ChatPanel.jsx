@@ -11,6 +11,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
+import { useFileSelection } from "@/hooks/useFileSelection";
+import { API_BASE_URL } from "@/config";
 
 function getCookie(name) {
   const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
@@ -56,6 +58,56 @@ const MarkdownContent = React.memo(({ content }) => (
 
 MarkdownContent.displayName = 'MarkdownContent';
 
+// Memoized suggestion button component for better performance
+const SuggestionButton = React.memo(({ suggestion, hasFiles, onSendMessage, index }) => (
+  <motion.div
+    key={index}
+    initial={{ opacity: 0, scale: 0.95 }}
+    animate={{ opacity: 1, scale: 1 }}
+    transition={{ 
+      duration: 0.3, 
+      delay: 0.4 + (index * 0.08),
+      ease: "easeOut"
+    }}
+    whileHover={{ scale: 1.02, y: -2 }}
+    whileTap={{ scale: 0.98 }}
+  >
+    <Button
+      variant="outline"
+      size="lg"
+      data-suggestion-button
+      className={`w-full text-left justify-start transition-all duration-300 h-auto py-4 px-5 group ${
+        !hasFiles 
+          ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-50' 
+          : 'bg-white hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 border-gray-200 hover:border-blue-300 text-gray-700 hover:text-blue-700 shadow-sm hover:shadow-md'
+      }`}
+      disabled={!hasFiles}
+      onClick={() => {
+        if (hasFiles) {
+          onSendMessage(suggestion.text);
+        }
+      }}
+    >
+      <div className="flex items-start space-x-4 w-full">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 ${
+          !hasFiles 
+            ? 'bg-gray-100/50' 
+            : 'bg-gradient-to-br from-blue-100 to-indigo-100 group-hover:from-blue-200 group-hover:to-indigo-200'
+        }`}>
+          <suggestion.icon className={`h-5 w-5 ${!hasFiles ? 'text-gray-400/75' : 'text-blue-600'}`} />
+        </div>
+        <div className="flex-1 min-h-[2.5rem] flex items-center">
+          <span className={`text-sm leading-relaxed font-medium transition-colors duration-200 ${
+            !hasFiles ? 'text-gray-400/75' : 'text-gray-700 group-hover:text-blue-700'
+          }`}>{suggestion.text}</span>
+        </div>
+      </div>
+    </Button>
+  </motion.div>
+));
+
+SuggestionButton.displayName = 'SuggestionButton';
+
 const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -66,9 +118,10 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const { toast } = useToast();
-  const [selectedFiles, setSelectedFiles] = useState([]);
-  const [selectedSources, setSelectedSources] = useState([]);
   const [suggestedQuestions, setSuggestedQuestions] = useState([]);
+  
+  // Use custom hook for file selection management
+  const { selectedFiles, selectedSources, hasSelectedFiles, getCurrentSelectedFiles, updateSelectedFiles } = useFileSelection(sourcesListRef);
 
   // Helper functions for caching suggested questions
   const getCachedSuggestions = useCallback(() => {
@@ -89,35 +142,11 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     }
   }, [notebookId]);
 
-  const updateSelectedFiles = useCallback(() => {
-    if (sourcesListRef?.current) {
-      // console.log("changing")
-      const newSelectedFiles = sourcesListRef.current.getSelectedFiles() || [];
-      const newSelectedSources = sourcesListRef.current.getSelectedSources() || [];
-      // console.log("change", newSelectedFiles)
-      setSelectedFiles(newSelectedFiles);
-      setSelectedSources(newSelectedSources);
-      // console.log("after", selectedFiles)
-    }
-  }, [sourcesListRef]);
-
-  // useEffect(() => {
-  //   const fetchSuggestions = async () => {
-  //     try {
-  //       const response = await fetch(`/api/v1/notebooks/${notebookId}/suggested-questions/`);
-  //       if (!response.ok) throw new Error("Failed to fetch suggestions");
-  //       const data = await response.json();
-  //       setSuggestedQuestions(data.suggestions || []);
-  //     } catch (err) {
-  //       console.error("Failed to load suggestions:", err);
-  //     }
-  //   };
-
-  //   if (notebookId) fetchSuggestions();
-  // }, [notebookId]);
-    const fetchSuggestions = async () => {
+  const fetchSuggestions = async () => {
     try {
-      const response = await fetch(`/api/v1/notebooks/${notebookId}/suggested-questions/`);
+      const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/suggested-questions/`, {
+        credentials: 'include',
+      });
       if (!response.ok) throw new Error("Failed to fetch suggestions");
       const data = await response.json();
       setSuggestedQuestions(data.suggestions || []);
@@ -126,34 +155,17 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
     }
   };
 
-  useEffect(() => {
-    console.log("Updated state - selectedFiles:", selectedFiles);
-  }, [selectedFiles]);
-
-  useEffect(() => {
-    console.log("Updated state - selectedSources:", selectedSources);
-  }, [selectedSources]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-    // Register callback with parent component only once
+  // Register callback with parent component
   useEffect(() => {
     if (onSelectionChange) {
-      console.log("use effect")
       onSelectionChange(updateSelectedFiles);
     }
   }, [onSelectionChange, updateSelectedFiles]);
-    
-    // Initial load with a small delay to avoid race conditions
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      updateSelectedFiles();
-    }, 200);
-      
-    return () => clearTimeout(timer);
-  }, []); // Empty dependency array for one-time initial load
     
 
   useEffect(() => {
@@ -163,7 +175,9 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }) => {
 useEffect(() => {
   const fetchChatHistory = async () => {
     try {
-      const response = await fetch(`/api/v1/notebooks/${notebookId}/chat-history/`);
+      const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/chat-history/`, {
+        credentials: 'include',
+      });
       if (!response.ok) throw new Error("Failed to fetch chat history");
       const data = await response.json();
       const formattedMessages = data.history.map((msg) => ({
@@ -216,35 +230,12 @@ useEffect(() => {
     setError(null);
     setSuggestedQuestions([]);
 
-    // Get the LATEST selected files directly from SourcesList ref to ensure we have current data
-    const currentSelectedFiles = sourcesListRef?.current?.getSelectedFiles() || [];
-
-    // Debug: Log selected files structure
-    console.log("=== CHAT DEBUG ===");
-    console.log("State selectedFiles:", selectedFiles.length);
-    console.log("Current selectedFiles from ref:", currentSelectedFiles.length);
-    console.log("currentSelectedFiles structure:", currentSelectedFiles);
-    
-    // Use current files directly from the ref to ensure we have the latest selection
+    // Get the current selected files
+    const currentSelectedFiles = getCurrentSelectedFiles();
     const readyFiles = currentSelectedFiles;
     
-    // Log each file for debugging
-    readyFiles.forEach(file => {
-      console.log(`Ready file "${file.title || file.name}":`, {
-        file_id: file.file_id,
-        file: file.file,
-        parsing_status: file.parsing_status,
-        hasValidId: !!(file.file_id || file.file)
-      });
-    });
-    
     // Extract file_id which is the knowledge base item ID
-    // Handle both file_id and file properties (as per SourcesList logic)
     const selectedFileIds = readyFiles.map(file => file.file_id || file.file).filter(id => id);
-    
-    console.log("Filtered readyFiles:", readyFiles);
-    console.log("Final selectedFileIds (knowledge base item IDs):", selectedFileIds);
-    console.log("=== END CHAT DEBUG ===");
 
     // Check if at least one file is selected
     if (selectedFileIds.length === 0) {
@@ -260,8 +251,9 @@ useEffect(() => {
     }
 
     try {
-      const response = await fetch("/api/v1/notebooks/chat/", {
+      const response = await fetch(`${API_BASE_URL}/notebooks/chat/`, {
         method: "POST",
+        credentials: 'include',
         headers: {
           "Content-Type": "application/json",
           "X-CSRFToken": getCookie("csrftoken"),  // if you're using CSRF protection
@@ -289,7 +281,9 @@ useEffect(() => {
 
       setMessages(prev => [...prev, assistantMessage]);
       
-      const followupResp = await fetch(`/api/v1/notebooks/${notebookId}/suggested-questions/`);
+      const followupResp = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/suggested-questions/`, {
+        credentials: 'include',
+      });
       const followupData = await followupResp.json();
       const newSuggestions = followupData.suggestions || [];
       setSuggestedQuestions(newSuggestions);
@@ -344,8 +338,9 @@ useEffect(() => {
               className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
               onClick={async () => {
                 try {
-                  const response = await fetch(`/api/v1/notebooks/${notebookId}/chat-history/clear/`, {
+                  const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/chat-history/clear/`, {
                     method: "DELETE",
+                    credentials: 'include',
                     headers: {
                       "Content-Type": "application/json",
                       "X-CSRFToken": getCookie("csrftoken"),
@@ -462,30 +457,6 @@ useEffect(() => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* {messages.length <= 1 && !isLoading && (
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="text-center max-w-md">
-            <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl mx-auto mb-4 flex items-center justify-center">
-              <MessageCircle className="h-8 w-8 text-blue-500" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Start a conversation</h3>
-            <p className="text-sm text-gray-500 mb-6">Ask me anything about your uploaded documents and knowledge base</p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {["Summarize my documents", "What are the key findings?", "Find connections between sources", "Explain this topic"].map((suggestion, index) => (
-                <Button
-                  key={index}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs bg-white hover:bg-blue-50 border-gray-300 hover:border-blue-300 text-gray-700 hover:text-blue-700"
-                  onClick={() => setInputMessage(suggestion)}
-                >
-                  {suggestion}
-                </Button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )} */}
       {messages.length === 0 && !isLoading ? (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
@@ -536,43 +507,13 @@ useEffect(() => {
                  { text: "How do these sources relate to each other?", icon: RefreshCw },
                  { text: "Help me explore a specific topic in depth", icon: HelpCircle }
                ].map((suggestion, index) => (
-                <motion.div
+                <SuggestionButton
                   key={index}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ 
-                    duration: 0.3, 
-                    delay: 0.4 + (index * 0.08),
-                    ease: "easeOut"
-                  }}
-                  whileHover={{ scale: 1.02, y: -2 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    className={`w-full text-left justify-start transition-all duration-300 h-auto py-4 px-5 group ${
-                      selectedFiles.length === 0 
-                        ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed' 
-                        : 'bg-white hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 border-gray-200 hover:border-blue-300 text-gray-700 hover:text-blue-700 shadow-sm hover:shadow-md'
-                    }`}
-                    disabled={selectedFiles.length === 0}
-                    onClick={() => selectedFiles.length > 0 && handleSendMessage(suggestion.text)}
-                  >
-                    <div className="flex items-start space-x-4 w-full">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors duration-200 flex-shrink-0 ${
-                        selectedFiles.length === 0 
-                          ? 'bg-gray-100' 
-                          : 'bg-gradient-to-br from-blue-100 to-indigo-100 group-hover:from-blue-200 group-hover:to-indigo-200'
-                      }`}>
-                        <suggestion.icon className={`h-5 w-5 ${selectedFiles.length === 0 ? 'text-gray-400' : 'text-blue-600'}`} />
-                      </div>
-                      <div className="flex-1 min-h-[2.5rem] flex items-center">
-                        <span className="text-sm leading-relaxed font-medium">{suggestion.text}</span>
-                      </div>
-                    </div>
-                  </Button>
-                </motion.div>
+                  suggestion={suggestion}
+                  hasFiles={hasSelectedFiles()}
+                  onSendMessage={handleSendMessage}
+                  index={index}
+                />
               ))}
             </motion.div>
           </div>
