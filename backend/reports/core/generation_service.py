@@ -121,6 +121,7 @@ class GenerationService:
                 "processing_logs": result.get('processing_logs', []),
                 "report_content": result.get('report_content', ''),
                 "created_at": result.get('created_at', ''),
+                "generated_topic": result.get('generated_topic', ''),
             }
             
             logger.info(f"Report generation completed successfully for report {report_id}")
