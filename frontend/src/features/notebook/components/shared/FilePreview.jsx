@@ -747,27 +747,17 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
 
         {/* Transcript Content Display */}
         {state.preview.hasTranscript && (
-          <div className="bg-white rounded-lg border border-gray-200">
-            <div className="p-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
-                    <FileText className="h-4 w-4 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-base font-semibold text-gray-900">Video Transcript</h4>
-                    {/* Document Stats */}
-                    <div className="flex flex-wrap gap-2 mt-2 -ml-1">
-                      <Badge variant="secondary">
-                        <FileText className="h-3 w-3 mr-1" />
-                        {state.preview.wordCount} words
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
+          <div className="bg-gradient-to-r from-slate-50 to-gray-50 rounded-lg p-4 border border-slate-200">
+            <div className="flex items-center space-x-3 mb-3">
+              <div className="w-10 h-10 bg-slate-500 rounded-full flex items-center justify-center">
+                <FileText className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <h4 className="text-sm font-medium text-gray-900">Video Transcript</h4>
+                <p className="text-xs text-gray-600">{state.preview.wordCount} words</p>
               </div>
             </div>
-            <div className="p-6 max-h-[600px] overflow-y-auto">
+            <div className="bg-white rounded-lg p-4 max-h-[400px] overflow-y-auto">
               <MarkdownContent content={state.preview.content} />
             </div>
           </div>

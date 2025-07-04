@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/common/components/ui/button';
-import { Settings, Image as ImageIcon, Loader2, X, ZoomIn, ChevronDown, ChevronUp, HardDrive } from 'lucide-react';
+import { Settings, Image as ImageIcon, Loader2, X, ZoomIn, ChevronDown, ChevronUp, Camera } from 'lucide-react';
 import apiService from '@/common/utils/api';
 import { config } from '@/config';
 
@@ -247,7 +247,7 @@ const GallerySection = ({ videoFileId, notebookId }) => {
               </>
             ) : (
               <>
-                <HardDrive className="h-3 w-3 mr-1" />
+                <Camera className="h-3 w-3 mr-1" />
                 Extract Image
               </>
             )}
