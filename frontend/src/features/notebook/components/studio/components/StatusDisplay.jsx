@@ -70,6 +70,20 @@ const StatusDisplay = ({
   const displayText = config.getText(title);
   const formattedProgress = formatProgress(progress);
 
+  // Map specific Celery log messages to a deterministic progress percentage
+  const getProgressPercentage = (msg) => {
+    if (!msg) return 0;
+    const lower = msg.toLowerCase();
+    if (lower.includes('run_knowledge_curation_module')) return 20;
+    if (lower.includes('run_outline_generation_module')) return 40;
+    if (lower.includes('run_article_generation_module')) return 60;
+    if (lower.includes('run_article_polishing_module')) return 80;
+    if (lower.includes('succeeded') || lower.includes('completed successfully')) return 100;
+    return 0; // Unknown stage
+  };
+
+  const progressPercentage = getProgressPercentage(progress);
+
   return (
     <div className={`rounded-xl p-4 border ${config.borderColor} ${config.bgColor}`}>
       <div className="flex items-center justify-between">
@@ -102,9 +116,9 @@ const StatusDisplay = ({
       {state === GenerationState.GENERATING && (
         <div className="mt-3">
           <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-blue-600 h-2 rounded-full animate-pulse transition-all duration-500" 
-              style={{ width: '65%' }}
+            <div
+              className={`bg-blue-600 h-2 rounded-full transition-all duration-500 ${progressPercentage === 0 ? 'animate-pulse' : ''}`}
+              style={{ width: `${progressPercentage}%` }}
             />
           </div>
         </div>
