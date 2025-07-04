@@ -327,7 +327,7 @@ def notebook_job_status_stream(request, notebook_id, job_id):
             """Generator function for SSE events"""
             redis_client = redis.Redis.from_url(settings.CELERY_BROKER_URL)
             last_status = None
-            max_duration = 300  # 5 minutes maximum
+            max_duration = 3600  # 60 minutes maximum
             start_time = time.time()
             poll_interval = 2  # Check every 2 seconds
 
