@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/common/components/ui/button';
-import { Settings, Image as ImageIcon, Loader2, X, ZoomIn } from 'lucide-react';
+import { Settings, Image as ImageIcon, Loader2, X, ZoomIn, ChevronDown, ChevronUp, HardDrive } from 'lucide-react';
 import apiService from '@/common/utils/api';
 import { config } from '@/config';
 
@@ -19,6 +19,7 @@ const GallerySection = ({ videoFileId, notebookId }) => {
   const [images, setImages] = useState([]);
   const [visibleCount, setVisibleCount] = useState(40);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [isExpanded, setIsExpanded] = useState(false);
   const API_BASE_URL = config.API_BASE_URL;
 
   // Attempt to load gallery images when extraction completes or component mounts
@@ -86,10 +87,20 @@ const GallerySection = ({ videoFileId, notebookId }) => {
     setVisibleCount((prev) => Math.min(prev + 40, images.length));
   };
 
+  // Calculate how many images to display based on expand/collapse state
+  const getDisplayCount = () => {
+    if (isExpanded) {
+      return visibleCount; // Show all loaded images when expanded
+    } else {
+      // Show only first row (approximately 6 images for 140px grid)
+      return Math.min(6, images.length);
+    }
+  };
+
   // Fetch blobs lazily for visible images
   useEffect(() => {
     const fetchBlobs = async () => {
-      const subset = images.slice(0, visibleCount);
+      const subset = images.slice(0, getDisplayCount());
       const needFetch = subset.filter((img) => !img.blobUrl && !img.loading);
 
       await Promise.all(
@@ -119,7 +130,7 @@ const GallerySection = ({ videoFileId, notebookId }) => {
     if (images.length) {
       fetchBlobs();
     }
-  }, [visibleCount, images, API_BASE_URL, notebookId, videoFileId]);
+  }, [visibleCount, images, API_BASE_URL, notebookId, videoFileId, isExpanded]);
 
   const handleExtract = async () => {
     if (!videoFileId || !notebookId) return;
@@ -213,16 +224,32 @@ const GallerySection = ({ videoFileId, notebookId }) => {
           </div>
         </div>
         <div className="flex items-center space-x-2">
-          <button onClick={() => setIsSettingsOpen(true)} className="text-gray-500 hover:text-gray-700" title="Settings">
+          {/* Settings Button - gear icon only */}
+          <button 
+            onClick={() => setIsSettingsOpen(true)} 
+            className="text-gray-500 hover:text-gray-700 p-1 rounded"
+            title="Settings"
+          >
             <Settings className="h-5 w-5" />
           </button>
-          <Button size="sm" onClick={handleExtract} disabled={isExtracting}>
+          {/* Extract Image Button - white background */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExtract}
+            disabled={isExtracting}
+            className="text-xs font-medium bg-white hover:bg-gray-50"
+          >
             {isExtracting ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin mr-1" /> Extracting...
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                Extracting...
               </>
             ) : (
-              'Extract Image'
+              <>
+                <HardDrive className="h-3 w-3 mr-1" />
+                Extract Image
+              </>
             )}
           </Button>
         </div>
@@ -244,28 +271,47 @@ const GallerySection = ({ videoFileId, notebookId }) => {
       {images.length === 0 ? (
         <p className="text-xs text-gray-500">No images yet. Run extraction or reload to view gallery.</p>
       ) : (
-        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
-          {images.slice(0, visibleCount).map((img, idx) => (
-            <div
-              key={idx}
-              className="relative group border rounded overflow-hidden bg-white shadow-sm cursor-zoom-in"
-              onClick={() => img.blobUrl && setSelectedImage(img.blobUrl)}
-            >
-              <img
-                src={img.blobUrl || `${API_BASE_URL}/static/placeholder.png`}
-                alt="thumbnail"
-                loading="lazy"
-                className="object-cover w-full h-32 group-hover:opacity-90 transition-opacity"/>
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
-                <ZoomIn className="h-5 w-5 text-white" />
+        <div>
+          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
+            {images.slice(0, getDisplayCount()).map((img, idx) => (
+              <div
+                key={idx}
+                className="relative group border rounded overflow-hidden bg-white shadow-sm cursor-zoom-in"
+                onClick={() => img.blobUrl && setSelectedImage(img.blobUrl)}
+              >
+                <img
+                  src={img.blobUrl || `${API_BASE_URL}/static/placeholder.png`}
+                  alt="thumbnail"
+                  loading="lazy"
+                  className="object-cover w-full h-32 group-hover:opacity-90 transition-opacity"/>
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
+                  <ZoomIn className="h-5 w-5 text-white" />
+                </div>
               </div>
+            ))}
+          </div>
+          
+          {/* Expand/Collapse Button at gallery bottom edge */}
+          {images.length > 6 && (
+            <div className="flex justify-center mt-2">
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+                title={isExpanded ? "Show less" : "Show all"}
+              >
+                {isExpanded ? (
+                  <ChevronUp className="h-5 w-5" />
+                ) : (
+                  <ChevronDown className="h-5 w-5" />
+                )}
+              </button>
             </div>
-          ))}
+          )}
         </div>
       )}
 
-      {/* Load more button for large galleries */}
-      {visibleCount < images.length && (
+      {/* Load more button for large galleries - only show when expanded */}
+      {isExpanded && visibleCount < images.length && (
         <div className="flex justify-center mt-4">
           <Button variant="outline" size="sm" onClick={handleLoadMore}>Load More</Button>
         </div>
