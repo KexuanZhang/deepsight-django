@@ -183,3 +183,6 @@ logs/
 *.backup
 *.old 
 *.rdb
+
+data00/
+papers_summaries.json
