@@ -184,5 +184,5 @@ logs/
 *.old 
 *.rdb
 
-data00/
+*data00/
 papers_summaries.json
