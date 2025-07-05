@@ -19,6 +19,7 @@ imagehash
 langchain_huggingface
 langchain_qdrant
 langchain_text_splitters
+langchain_milvus
 litellm==1.59.3
 numpy
 open-clip-torch

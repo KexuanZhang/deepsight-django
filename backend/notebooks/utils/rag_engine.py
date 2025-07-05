@@ -5,8 +5,9 @@ import threading
 import re
 from typing import List, Tuple, Generator
 
-from PyPDF2 import PdfReader
-from PyPDF2.errors import PdfReadError
+import pymupdf  # <-- use PyMuPDF for PDF text extraction
+# from PyPDF2 import PdfReader
+# from PyPDF2.errors import PdfReadError
 from langchain.prompts import PromptTemplate
 from pydantic import Extra
 from langchain.schema import BaseRetriever, Document, SystemMessage, HumanMessage
@@ -78,12 +79,12 @@ class SSEStreamer(BaseCallbackHandler):
 
 def _pdf_to_text(path: str) -> str:
     """
-    Extract text via PyPDF2; fallback to raw text on error.
+    Extract text via PyMuPDF; fallback to raw text on error.
     """
     try:
-        reader = PdfReader(path)
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
-    except PdfReadError:
+        with pymupdf.open(path) as doc:
+            return "\n".join(page.get_text() or "" for page in doc)
+    except Exception:
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             return f.read()
 

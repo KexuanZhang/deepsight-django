@@ -7,8 +7,8 @@ from pymilvus import connections
 from pydantic import Extra
 from langchain.schema import BaseRetriever
 from langchain.docstore.document import Document
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.chat_models import ChatOpenAI
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.chat_models import ChatOpenAI
 from langchain_community.retrievers import TFIDFRetriever
 from langchain.chains import ConversationalRetrievalChain
 from langchain_milvus import Milvus
