@@ -182,12 +182,12 @@ class PdfService:
                 margin-bottom: 16px;
             }
             h1 { 
-                font-size: 28px; 
+                font-size: 24px; 
                 border-bottom: 2px solid #eee; 
                 padding-bottom: 8px; 
             }
-            h2 { font-size: 24px; }
-            h3 { font-size: 20px; }
+            h2 { font-size: 20px; }
+            h3 { font-size: 18px; }
             code {
                 background-color: #f4f4f4;
                 padding: 2px 6px;
