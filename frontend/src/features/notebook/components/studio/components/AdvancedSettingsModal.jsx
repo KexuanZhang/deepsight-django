@@ -55,14 +55,11 @@ const AdvancedSettingsModal = ({
                 <label className="block text-sm font-medium text-gray-700">Search Engine</label>
                 <select
                   className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={config.retriever || ''}
+                  value={config.retriever || 'searxng'}
                   onChange={(e) => onConfigChange({ retriever: e.target.value })}
                 >
-                  {(availableModels?.retrievers || []).map(retriever => (
-                    <option key={retriever} value={retriever}>
-                      {formatModelName(retriever)}
-                    </option>
-                  ))}
+                  <option value="searxng">SearXNG</option>
+                  <option value="tavily">Tavily</option>
                 </select>
               </div>
             </div>
@@ -78,6 +75,20 @@ const AdvancedSettingsModal = ({
               />
               <label htmlFor="include-image-checkbox" className="text-sm font-medium text-gray-700 select-none">
                 Include Image
+              </label>
+            </div>
+
+            {/* White Domain Section */}
+            <div className="flex items-center space-x-2 pt-2">
+              <input
+                type="checkbox"
+                id="white-domain-checkbox"
+                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                checked={config.include_domains}
+                onChange={(e) => onConfigChange({ include_domains: e.target.checked })}
+              />
+              <label htmlFor="white-domain-checkbox" className="text-sm font-medium text-gray-700 select-none">
+                White Domain
               </label>
             </div>
           </div>

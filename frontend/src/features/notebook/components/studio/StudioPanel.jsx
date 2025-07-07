@@ -70,9 +70,10 @@ const StudioPanel = ({
     topic: '',
     article_title: '',
     model_provider: 'openai',
-    retriever: 'tavily',
+    retriever: 'searxng',
     prompt_type: 'general',
-    include_image: true
+    include_image: true,
+    include_domains: false
   });
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation state ======
