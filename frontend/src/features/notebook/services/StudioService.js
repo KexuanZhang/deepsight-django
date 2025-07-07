@@ -87,18 +87,20 @@ export class ApiStudioService extends IStudioService {
 
   async downloadFile(fileId, filename) {
     try {
-      // Try report download first
-      const blob = await this.api.downloadReportFile(fileId, this.notebookId);
+      // Download report as PDF instead of markdown
+      const blob = await this.api.downloadReportPdf(fileId, this.notebookId);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = filename;
+      // Change file extension to .pdf
+      const pdfFilename = filename.replace(/\.[^/.]+$/, '') + '.pdf';
+      link.download = pdfFilename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Download failed:', error);
+      console.error('PDF download failed:', error);
       throw error;
     }
   }
