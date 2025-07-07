@@ -64,32 +64,51 @@ const AdvancedSettingsModal = ({
               </div>
             </div>
 
-            {/* Include Image Section */}
-            <div className="flex items-center space-x-2 pt-2">
-              <input
-                type="checkbox"
-                id="include-image-checkbox"
-                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                checked={config.include_image}
-                onChange={(e) => onConfigChange({ include_image: e.target.checked })}
-              />
-              <label htmlFor="include-image-checkbox" className="text-sm font-medium text-gray-700 select-none">
-                Include Image
-              </label>
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-4">
+                {/* Include Image Section */}
+                <div className="flex items-center space-x-2 pt-2">
+                  <input
+                    type="checkbox"
+                    id="include-image-checkbox"
+                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    checked={config.include_image}
+                    onChange={(e) => onConfigChange({ include_image: e.target.checked })}
+                  />
+                  <label htmlFor="include-image-checkbox" className="text-sm font-medium text-gray-700 select-none">
+                    Include Image
+                  </label>
+                </div>
 
-            {/* White Domain Section */}
-            <div className="flex items-center space-x-2 pt-2">
-              <input
-                type="checkbox"
-                id="white-domain-checkbox"
-                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                checked={config.include_domains}
-                onChange={(e) => onConfigChange({ include_domains: e.target.checked })}
-              />
-              <label htmlFor="white-domain-checkbox" className="text-sm font-medium text-gray-700 select-none">
-                White Domain
-              </label>
+                {/* White Domain Section */}
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="white-domain-checkbox"
+                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    checked={config.include_domains}
+                    onChange={(e) => onConfigChange({ include_domains: e.target.checked })}
+                  />
+                  <label htmlFor="white-domain-checkbox" className="text-sm font-medium text-gray-700 select-none">
+                    White Domain
+                  </label>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">Time Range</label>
+                <select
+                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={config.time_range || 'ALL'}
+                  onChange={(e) => onConfigChange({ time_range: e.target.value })}
+                >
+                  <option value="ALL">ALL</option>
+                  <option value="day">Last 24 hours</option>
+                  <option value="week">Last 7 days</option>
+                  <option value="month">Last 30 days</option>
+                  <option value="year">Last 365 days</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>

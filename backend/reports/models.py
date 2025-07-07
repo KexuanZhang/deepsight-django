@@ -144,11 +144,13 @@ class Report(models.Model):
     )
 
     # Optional parameters
+    TIME_RANGE_ALL = "ALL"
     TIME_RANGE_DAY = "day"
     TIME_RANGE_WEEK = "week"
     TIME_RANGE_MONTH = "month"
     TIME_RANGE_YEAR = "year"
     TIME_RANGE_CHOICES = [
+        (TIME_RANGE_ALL, "All Time"),
         (TIME_RANGE_DAY, "Day"),
         (TIME_RANGE_WEEK, "Week"),
         (TIME_RANGE_MONTH, "Month"),
