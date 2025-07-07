@@ -523,6 +523,35 @@ class ApiService {
     return response.blob();
   }
 
+  async downloadReportPdf(jobId, notebookId) {
+    if (!notebookId) {
+      throw new Error('notebookId is required for downloading report PDF');
+    }
+    
+    const url = `/notebooks/${notebookId}/report-jobs/${jobId}/download-pdf/`;
+    
+    const response = await fetch(`${this.baseUrl}${url}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.detail || errorMessage;
+      } catch (e) {
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.blob();
+  }
+
   async cancelReportJob(jobId, notebookId) {
     if (!notebookId) {
       throw new Error('notebookId is required for cancelling report jobs');

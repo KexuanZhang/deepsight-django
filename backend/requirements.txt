@@ -21,6 +21,7 @@ langchain_qdrant
 langchain_text_splitters
 langchain_milvus
 litellm==1.59.3
+markdown-pdf
 numpy
 open-clip-torch
 openai

@@ -162,6 +162,7 @@ urlpatterns = [
     path("<int:notebook_id>/report-jobs/<str:job_id>/", report_views.NotebookReportDetailView.as_view(), name="notebook-report-detail"),
     path("<int:notebook_id>/report-jobs/<str:job_id>/cancel/", report_views.NotebookReportCancelView.as_view(), name="notebook-report-cancel"),
     path("<int:notebook_id>/report-jobs/<str:job_id>/download/", report_views.NotebookReportDownloadView.as_view(), name="notebook-report-download"),
+    path("<int:notebook_id>/report-jobs/<str:job_id>/download-pdf/", report_views.NotebookReportPdfDownloadView.as_view(), name="notebook-report-pdf-download"),
     path("<int:notebook_id>/report-jobs/<str:job_id>/files/", report_views.NotebookReportFilesView.as_view(), name="notebook-report-files"),
     path("<int:notebook_id>/report-jobs/<str:job_id>/content/", report_views.NotebookReportContentView.as_view(), name="notebook-report-content"),
     

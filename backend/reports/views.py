@@ -28,6 +28,7 @@ from .serializers import (
 from .orchestrator import report_orchestrator
 from notebooks.models import Notebook
 from .tasks import process_report_generation
+from .core.pdf_service import PdfService
 
 logger = logging.getLogger(__name__)
 
@@ -421,6 +422,131 @@ class NotebookReportDownloadView(APIView):
             )
         except Exception as e:
             logger.error(f"Error downloading report for job {job_id}: {e}")
+            return Response(
+                {"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class NotebookReportPdfDownloadView(APIView):
+    """Download generated report files as PDF"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_notebook_and_report(self, notebook_id, job_id):
+        """Get the notebook and report, verify user access"""
+        notebook = get_object_or_404(
+            Notebook.objects.filter(user=self.request.user),
+            pk=notebook_id
+        )
+        report = get_object_or_404(
+            Report.objects.filter(user=self.request.user, notebooks=notebook),
+            job_id=job_id
+        )
+        return notebook, report
+
+    def get(self, request, notebook_id, job_id):
+        """Download generated report as PDF"""
+        try:
+            notebook, report = self.get_notebook_and_report(notebook_id, job_id)
+
+            if report.status != Report.STATUS_COMPLETED:
+                return Response(
+                    {"detail": "Job is not completed yet"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Initialize PDF service
+            pdf_service = PdfService()
+            
+            # Get markdown content
+            markdown_content = None
+            
+            # Try to get content from database first
+            if report.result_content:
+                markdown_content = report.result_content
+            # Fallback: read from file
+            elif report.main_report_file:
+                try:
+                    with report.main_report_file.open("r", encoding="utf-8") as f:
+                        markdown_content = f.read()
+                except Exception as e:
+                    logger.error(f"Error reading report file for {job_id}: {e}")
+            
+            if not markdown_content:
+                return Response(
+                    {"detail": "No report content found to convert to PDF"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            # Generate a temporary PDF file
+            report_title = report.article_title or "Research Report"
+            filename = f"{report_title.replace(' ', '_')}.pdf"
+            
+            # Create PDF in the same directory as the markdown file if available,
+            # otherwise use a temporary location
+            if report.main_report_file:
+                report_dir = Path(report.main_report_file.path).parent
+                pdf_path = report_dir / filename
+                
+                # Use intelligent image root detection based on the report structure
+                # The report directory is like: Users/u_{user_id}/n_{notebook_id}/report/{year_month}/r_{report_id}/
+                # But images are in: Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/images/
+                # So we need to go up to the Users/u_{user_id}/ level
+                user_data_dir = report_dir.parent.parent.parent  # Go up 3 levels to get to Users/u_{user_id}/
+                image_root = str(user_data_dir)
+                logger.info(f"Using user data directory as image root: {image_root}")
+            else:
+                # Use a temp directory if no main file exists, but still try to find user data directory
+                from django.core.files.storage import default_storage
+                import tempfile
+                temp_dir = Path(tempfile.mkdtemp())
+                pdf_path = temp_dir / filename
+                
+                # Try to determine the user data directory from Django settings
+                try:
+                    from django.conf import settings
+                    data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
+                    user_data_dir = Path(data_root) / f"Users/u_{report.user.pk}"
+                    if user_data_dir.exists():
+                        image_root = str(user_data_dir)
+                        logger.info(f"Using user data directory from settings: {image_root}")
+                    else:
+                        image_root = None
+                        logger.warning("Could not find user data directory for image resolution")
+                except Exception as e:
+                    logger.warning(f"Error determining user data directory: {e}")
+                    image_root = None
+
+            try:
+                # Convert markdown to PDF
+                pdf_file_path = pdf_service.convert_markdown_to_pdf(
+                    markdown_content=markdown_content,
+                    output_path=str(pdf_path),
+                    title=report_title,
+                    image_root=image_root,
+                    input_file_path=str(report.main_report_file.path) if report.main_report_file else None
+                )
+                
+                # Return the PDF file
+                return FileResponse(
+                    open(pdf_file_path, "rb"),
+                    as_attachment=True,
+                    filename=filename,
+                    content_type='application/pdf'
+                )
+                
+            except Exception as e:
+                logger.error(f"Error converting report to PDF for job {job_id}: {e}")
+                return Response(
+                    {"detail": f"PDF conversion failed: {str(e)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+        except Http404:
+            return Response(
+                {"detail": "Report not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error downloading PDF report for job {job_id}: {e}")
             return Response(
                 {"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
