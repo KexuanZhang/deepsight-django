@@ -73,7 +73,8 @@ const StudioPanel = ({
     retriever: 'searxng',
     prompt_type: 'general',
     include_image: true,
-    include_domains: false
+    include_domains: false,
+    time_range: 'ALL'
   });
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation state ======

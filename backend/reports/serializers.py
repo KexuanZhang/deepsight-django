@@ -170,8 +170,8 @@ class ReportCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_time_range(self, value):
-        """Convert empty string to None for time_range field."""
-        if value == "":
+        """Convert empty string or ALL to None for time_range field."""
+        if value == "" or value == "ALL":
             return None
         return value
 
@@ -290,8 +290,8 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
         return value
 
     def validate_time_range(self, value):
-        """Convert empty string to None for time_range field."""
-        if value == "":
+        """Convert empty string or ALL to None for time_range field."""
+        if value == "" or value == "ALL":
             return None
         return value
 
