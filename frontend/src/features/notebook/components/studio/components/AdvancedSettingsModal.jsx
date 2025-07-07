@@ -80,19 +80,21 @@ const AdvancedSettingsModal = ({
                   </label>
                 </div>
 
-                {/* White Domain Section */}
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="white-domain-checkbox"
-                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    checked={config.include_domains}
-                    onChange={(e) => onConfigChange({ include_domains: e.target.checked })}
-                  />
-                  <label htmlFor="white-domain-checkbox" className="text-sm font-medium text-gray-700 select-none">
-                    White Domain
-                  </label>
-                </div>
+                {/* White Domain Section - Only show for Tavily */}
+                {config.retriever === 'tavily' && (
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="white-domain-checkbox"
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      checked={config.include_domains}
+                      onChange={(e) => onConfigChange({ include_domains: e.target.checked })}
+                    />
+                    <label htmlFor="white-domain-checkbox" className="text-sm font-medium text-gray-700 select-none">
+                      Include Whitelist Domains
+                    </label>
+                  </div>
+                )}
               </div>
               
               <div className="space-y-2">
