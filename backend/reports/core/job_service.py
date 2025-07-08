@@ -6,14 +6,67 @@ import uuid
 import json
 import logging
 import os
+import re
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone, timedelta
 from django.core.cache import cache
 from django.conf import settings
 from ..models import Report
 from django.core.files.base import ContentFile
+from celery.result import AsyncResult
 
 logger = logging.getLogger(__name__)
+
+
+class CriticalErrorDetector:
+    """Detects critical error patterns that should cause task failure"""
+    
+    # Pattern to detect Celery ERROR messages from MainProcess only - these are critical
+    # Format: [yyyy-mm-dd hh:mm:ss,xxx: ERROR/MainProcess] ...
+    MAIN_PROCESS_ERROR_PATTERN = re.compile(
+        r'\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}: ERROR/MainProcess\]',
+        re.IGNORECASE
+    )
+    
+    # Pattern to detect any Celery ERROR message (for display purposes)
+    # Format: [yyyy-mm-dd hh:mm:ss,xxx: ERROR/ProcessName] ...
+    ANY_ERROR_PATTERN = re.compile(
+        r'\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}: ERROR/[^\]]+\]',
+        re.IGNORECASE
+    )
+    
+    def __init__(self, max_main_process_errors: int = 1):  # Only 1 MainProcess error should fail the task
+        self.max_main_process_errors = max_main_process_errors
+        self.main_process_error_counts = {}
+    
+    def should_fail_task(self, job_id: str, log_message: str) -> bool:
+        """Check if log message contains MainProcess critical errors and if task should fail"""
+        
+        # Check if this is a MainProcess ERROR message (critical)
+        if self.MAIN_PROCESS_ERROR_PATTERN.search(log_message):
+            # Initialize counter for this job if not exists
+            if job_id not in self.main_process_error_counts:
+                self.main_process_error_counts[job_id] = 0
+            
+            # Increment error count
+            self.main_process_error_counts[job_id] += 1
+            
+            logger.error(f"MainProcess ERROR detected for job {job_id} (count: {self.main_process_error_counts[job_id]}): {log_message[:200]}")
+            
+            # Check if we've exceeded the threshold
+            if self.main_process_error_counts[job_id] >= self.max_main_process_errors:
+                logger.error(f"Job {job_id} exceeded maximum MainProcess errors ({self.max_main_process_errors}), failing task")
+                return True
+        
+        return False
+    
+    def is_error_message(self, log_message: str) -> bool:
+        """Check if message is any Celery ERROR (for display in SSE without failing task)"""
+        return bool(self.ANY_ERROR_PATTERN.search(log_message))
+    
+    def reset_job_errors(self, job_id: str):
+        """Reset error count for a job"""
+        self.main_process_error_counts.pop(job_id, None)
 
 
 class JobService:
@@ -21,6 +74,7 @@ class JobService:
     
     def __init__(self):
         self.cache_timeout = getattr(settings, "REPORT_CACHE_TIMEOUT", 3600)  # 1 hour
+        self.error_detector = CriticalErrorDetector(max_main_process_errors=1)  # Only 1 MainProcess error should fail the task
     
     def create_job(self, report_data: Dict[str, Any], user=None, notebook=None) -> Report:
         """Create a new report generation job"""
@@ -91,6 +145,28 @@ class JobService:
             # First try to get from Django model
             try:
                 report = Report.objects.get(job_id=job_id)
+                
+                # Always try to synchronise the database status with the underlying Celery task
+                # so that errors such as `FAILURE`, `REVOKED`, or worker crashes are surfaced to
+                # API consumers immediately instead of waiting for the periodic 30-minute
+                # stale-check in `_check_worker_crash`.
+                self._sync_report_status_with_celery_state(report)
+                
+                # Check for worker crashes if job is running
+                if report.status == Report.STATUS_RUNNING:
+                    crash_info = self._check_worker_crash(report)
+                    if crash_info['crashed']:
+                        # Update report status to failed with actual error message
+                        error_msg = crash_info.get('error_message', 'Celery worker crashed (SIGSEGV or similar fatal error)')
+                        progress_msg = crash_info.get('progress_message', 'Worker crashed during report generation')
+                        
+                        report.update_status(
+                            Report.STATUS_FAILED,
+                            progress=progress_msg,
+                            error=error_msg
+                        )
+                        logger.error(f"Detected worker crash for job {job_id}: {error_msg}")
+                
                 job_data = {
                     "job_id": job_id,
                     "report_id": report.id,
@@ -120,6 +196,16 @@ class JobService:
     def update_job_progress(self, job_id: str, progress: str, status: Optional[str] = None):
         """Update job progress and optionally status"""
         try:
+            # Check if the progress message contains MainProcess critical errors that should fail the task
+            if self.error_detector.should_fail_task(job_id, progress):
+                # Force fail the task due to MainProcess critical errors
+                self.update_job_error(job_id, f"Task failed due to MainProcess critical error: {progress[:200]}")
+                return
+            
+            # For non-MainProcess ERROR messages, just log them but continue processing
+            if self.error_detector.is_error_message(progress):
+                logger.warning(f"Non-critical ERROR message for job {job_id}: {progress[:200]}")
+            
             # Update in database
             try:
                 report = Report.objects.get(job_id=job_id)
@@ -150,6 +236,9 @@ class JobService:
     def update_job_result(self, job_id: str, result: Dict[str, Any], status: str = Report.STATUS_COMPLETED):
         """Update job with final result"""
         try:
+            # Clean up error detector for this job since it's completing
+            self.error_detector.reset_job_errors(job_id)
+            
             report = Report.objects.get(job_id=job_id)
             
             # Store the main content (prefer processed content from result data)
@@ -231,12 +320,19 @@ class JobService:
     def update_job_error(self, job_id: str, error: str):
         """Update job with error information"""
         try:
+            # Clean up error detector for this job since it's failing
+            self.error_detector.reset_job_errors(job_id)
+            
             report = Report.objects.get(job_id=job_id)
             report.update_status(
                 Report.STATUS_FAILED, 
                 progress=f"Job failed: {error}", 
                 error=error
             )
+            
+            # Also terminate the celery task if it's still running
+            if report.celery_task_id:
+                self._terminate_celery_task(report.celery_task_id)
             
             # Update cache
             cache_key = f"report_job:{job_id}"
@@ -259,6 +355,9 @@ class JobService:
     def cancel_job(self, job_id: str) -> bool:
         """Dispatch a task to cancel a running or pending job."""
         try:
+            # Clean up error detector for this job since it's being cancelled
+            self.error_detector.reset_job_errors(job_id)
+            
             report = Report.objects.get(job_id=job_id)
 
             # Check if job is in a cancellable state
@@ -362,3 +461,197 @@ class JobService:
             result["report_content"] = report.result_content
         
         return result
+    
+    def _check_worker_crash(self, report: Report) -> Dict[str, Any]:
+        """Check if a Celery worker has crashed for a running job"""
+        try:
+            # Check if job has been running for too long without updates
+            if report.updated_at:
+                time_since_update = datetime.now(timezone.utc) - report.updated_at
+                # Consider job crashed if no updates for 60 minutes
+                if time_since_update > timedelta(minutes=60):
+                    logger.warning(f"Job {report.job_id} has not been updated for {time_since_update}")
+                    
+                    # If we have a celery_task_id, check the actual task state
+                    if report.celery_task_id:
+                        return self._check_celery_task_state(report.celery_task_id)
+                    else:
+                        # No celery_task_id, assume crashed if stale for too long
+                        return {
+                            'crashed': True,
+                            'error_message': f'Task timeout: No updates for {time_since_update}',
+                            'progress_message': 'Worker appears to have crashed or hung'
+                        }
+            
+            return {'crashed': False}
+            
+        except Exception as e:
+            logger.error(f"Error checking worker crash for job {report.job_id}: {e}")
+            return {'crashed': False}
+    
+    def _check_celery_task_state(self, celery_task_id: str) -> Dict[str, Any]:
+        """Check if a Celery task has failed or is in an unknown state"""
+        try:
+            task_result = AsyncResult(celery_task_id)
+            
+            # Check task state
+            if task_result.state == 'FAILURE':
+                # Extract actual error message from Celery
+                error_msg = "Celery task failed"
+                progress_msg = "Task failed during execution"
+                
+                if hasattr(task_result, 'info') and task_result.info:
+                    if isinstance(task_result.info, dict):
+                        error_msg = task_result.info.get('error', str(task_result.info))
+                    else:
+                        error_msg = str(task_result.info)
+                
+                if hasattr(task_result, 'traceback') and task_result.traceback:
+                    # Include traceback for debugging
+                    error_msg += f"\nTraceback: {task_result.traceback}"
+                
+                logger.warning(f"Celery task {celery_task_id} failed: {error_msg}")
+                return {
+                    'crashed': True,
+                    'error_message': error_msg,
+                    'progress_message': progress_msg
+                }
+                
+            elif task_result.state == 'REVOKED':
+                logger.warning(f"Celery task {celery_task_id} was revoked")
+                return {
+                    'crashed': True,
+                    'error_message': 'Task was revoked/cancelled',
+                    'progress_message': 'Task was cancelled by system or user'
+                }
+                
+            elif task_result.state in ['PENDING', 'RETRY', 'STARTED']:
+                # Task is in a valid running state
+                return {'crashed': False}
+                
+            else:
+                # Unknown state, could indicate a problem
+                logger.warning(f"Celery task {celery_task_id} in unknown state: {task_result.state}")
+                return {
+                    'crashed': True,
+                    'error_message': f'Task in unknown state: {task_result.state}',
+                    'progress_message': 'Task is in an unexpected state'
+                }
+                
+        except Exception as e:
+            logger.error(f"Error checking Celery task state {celery_task_id}: {e}")
+            # If we can't check task state, assume it might be crashed
+            return {
+                'crashed': True,
+                'error_message': f'Unable to check task state: {str(e)}',
+                'progress_message': 'Worker may have crashed or be unreachable'
+            }
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _sync_report_status_with_celery_state(self, report: "Report") -> None:
+        """Synchronise the Report object's status/progress with the actual Celery task state.
+
+        This method checks the task state unconditionally (if ``report.celery_task_id`` is set)
+        and updates the report (and the associated cache entry) if the task has **already**
+        failed or been revoked.  By doing this check every time a client polls the
+        ``/report-jobs/{job_id}`` endpoint we can surface errors as soon as they happen instead
+        of waiting for the 30-minute stale check performed by ``_check_worker_crash``.
+        """
+
+        if not report.celery_task_id:
+            return  # Nothing to synchronise
+
+        try:
+            task_result = AsyncResult(report.celery_task_id)
+
+            # Map Celery states to our Report status constants where appropriate
+            if task_result.state == "FAILURE":
+                # Extract a meaningful error message if available
+                error_msg = "Celery task failed"
+                if hasattr(task_result, "info") and task_result.info:
+                    error_msg = str(task_result.info)
+
+                if hasattr(task_result, "traceback") and task_result.traceback:
+                    error_msg += f"\nTraceback: {task_result.traceback}"
+
+                # Update the report only if we have not already marked it as FAILED
+                if report.status not in [Report.STATUS_FAILED, Report.STATUS_COMPLETED, Report.STATUS_CANCELLED]:
+                    report.update_status(
+                        Report.STATUS_FAILED,
+                        progress="Task failed during execution",
+                        error=error_msg,
+                    )
+
+                    # Best-effort attempt to stop any lingering task processes.
+                    self._terminate_celery_task(report.celery_task_id)
+
+                    # Reflect same update in cache so that subsequent queries are consistent
+                    cache_key = f"report_job:{report.job_id}"
+                    job_data = cache.get(cache_key, {})
+                    job_data.update(
+                        {
+                            "status": Report.STATUS_FAILED,
+                            "progress": "Task failed during execution",
+                            "error": error_msg,
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                    cache.set(cache_key, job_data, timeout=self.cache_timeout)
+
+            elif task_result.state == "REVOKED":
+                if report.status not in [Report.STATUS_CANCELLED, Report.STATUS_COMPLETED]:
+                    report.update_status(
+                        Report.STATUS_CANCELLED,
+                        progress="Task was cancelled by system or user",
+                        error="Task was revoked/cancelled",
+                    )
+
+                    # Ensure the task is fully terminated on the worker side.
+                    self._terminate_celery_task(report.celery_task_id)
+
+                    cache_key = f"report_job:{report.job_id}"
+                    job_data = cache.get(cache_key, {})
+                    job_data.update(
+                        {
+                            "status": Report.STATUS_CANCELLED,
+                            "progress": "Task was cancelled by system or user",
+                            "error": "Task was revoked/cancelled",
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                    cache.set(cache_key, job_data, timeout=self.cache_timeout)
+
+            # We purposefully ignore SUCCESS here because successful completion will be handled
+            # by the report generation pipeline via ``update_job_result`` which persists the
+            # generated content and metadata.  Other running-states (PENDING, RETRY, STARTED)
+            # do not require immediate action.
+
+        except Exception as e:
+            # Failure to synchronise should not blow up the polling endpoint; just log.
+            logger.error(
+                f"Error synchronising Celery task state for report {report.job_id}: {e}"
+            )
+
+    def _terminate_celery_task(self, celery_task_id: str):
+        """Send a revoke/terminate signal to the given Celery task.
+
+        This is a defensive measure to make sure that, once a fatal condition has been
+        detected, the worker process is not left running expensive computation that will
+        eventually be discarded.  Using ``terminate=True`` ensures the underlying OS
+        process gets a ``SIGTERM`` (default) or the provided signal.
+        """
+        try:
+            if not celery_task_id:
+                return
+
+            task_result = AsyncResult(celery_task_id)
+
+            # Only attempt termination if the task is still deemed active by Celery.
+            if task_result.state in ["PENDING", "STARTED", "RETRY"]:
+                task_result.revoke(terminate=True, signal="SIGTERM")
+                logger.info(f"Sent terminate signal to Celery task {celery_task_id}")
+        except Exception as e:
+            logger.error(f"Error terminating Celery task {celery_task_id}: {e}")
