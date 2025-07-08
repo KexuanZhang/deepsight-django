@@ -470,8 +470,9 @@ class UploadProcessor:
                 processing_result_for_storage['content_filename'] = processing_result['transcript_filename']
 
             # Run synchronous file storage in executor
+            # Use thread_sensitive=False to run in thread pool where sync ORM calls are allowed
             from asgiref.sync import sync_to_async
-            store_file_sync = sync_to_async(self.file_storage.store_processed_file)
+            store_file_sync = sync_to_async(self.file_storage.store_processed_file, thread_sensitive=False)
             file_id = await store_file_sync(
                 content=processing_result["content"],
                 metadata=file_metadata,
@@ -482,7 +483,7 @@ class UploadProcessor:
             )
 
             # Run synchronous content indexing in executor
-            index_content_sync = sync_to_async(self.content_indexing.index_content)
+            index_content_sync = sync_to_async(self.content_indexing.index_content, thread_sensitive=False)
             await index_content_sync(
                 file_id=file_id,
                 content=processing_result["content"],
@@ -492,7 +493,7 @@ class UploadProcessor:
             
             # Handle marker extraction post-processing if needed
             if 'marker_extraction_result' in processing_result:
-                post_process_sync = sync_to_async(self._post_process_marker_extraction)
+                post_process_sync = sync_to_async(self._post_process_marker_extraction, thread_sensitive=False)
                 await post_process_sync(file_id, processing_result['marker_extraction_result'])
             
             # Update final status
@@ -892,12 +893,21 @@ class UploadProcessor:
                 "encoding": "utf-8",
             }
 
-            return {
+            # Check if this is a pasted text file
+            is_pasted_text = file_metadata.get('source_type') == 'pasted_text' or file_metadata.get('original_filename') == 'pasted_text.md'
+            
+            result = {
                 "content": content,
                 "metadata": text_metadata,
                 "features_available": ["content_analysis", "summarization"],
                 "processing_time": "immediate",
             }
+
+            # For pasted text, use specific filename to store in content folder
+            if is_pasted_text:
+                result["content_filename"] = "pasted_text.md"
+
+            return result
 
         except UnicodeDecodeError:
             # Try different encodings

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback, useMemo } from "react";
-import { Trash2, Plus, ChevronLeft, RefreshCw, CheckCircle, AlertCircle, Clock, X, Upload, Link2, FileText, Globe, Youtube, Group, File, Music, Video, Presentation, Loader2, Eye, Database } from "lucide-react";
+import { Trash2, Plus, ChevronLeft, RefreshCw, CheckCircle, AlertCircle, Clock, X, Upload, Link2, FileText, Globe, Youtube, Group, File as FileIcon, Music, Video, Presentation, Loader2, Eye, Database } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/common/components/ui/button";
 import { Alert, AlertDescription } from "@/common/components/ui/alert";
@@ -9,7 +9,7 @@ import FilePreview from "@/features/notebook/components/shared/FilePreview";
 import { supportsPreview } from "@/features/notebook/utils/filePreview";
 
 const fileIcons = {
-  pdf: File,
+  pdf: FileIcon,
   txt: FileText,
   md: FileText, 
   ppt: Presentation,
@@ -48,7 +48,7 @@ const getPrincipleFileIcon = (source) => {
   }
   
   // For regular files, use the file extension
-  return fileIcons[source.ext] || File;
+  return fileIcons[source.ext] || FileIcon;
 };
 
 const statusConfig = {
@@ -74,7 +74,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
   const [linkUrl, setLinkUrl] = useState('');
   const [pasteText, setPasteText] = useState('');
   const [activeTab, setActiveTab] = useState('file'); // 'file', 'link', 'text', 'knowledge'
-  const [urlProcessingType, setUrlProcessingType] = useState('website'); // 'website' or 'media'
+  const [urlProcessingType, setUrlProcessingType] = useState('website'); // 'website', 'media', or 'document'
   
   // Knowledge base management state
   const [knowledgeBaseItems, setKnowledgeBaseItems] = useState([]);
@@ -790,15 +790,16 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       return;
     }
 
+    // Generate upload file ID for tracking
+    const uploadFileId = `link_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
     try {
       setError(null);
       setShowUploadModal(false);
       
-      // Generate upload file ID for tracking
-      const uploadFileId = `link_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
       // Determine processing type label
-      const processingTypeLabel = urlProcessingType === 'media' ? 'Media' : 'Website';
+      const processingTypeLabel = urlProcessingType === 'media' ? 'Media' : 
+                                  urlProcessingType === 'document' ? 'Document' : 'Website';
       
       // Add link to sources with initial status - showing principle URL info
       const urlTitle = getDomainFromUrl(linkUrl) || linkUrl;
@@ -836,9 +837,15 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       // Call appropriate API method based on processing type
       setUploadProgress(prev => ({ ...prev, [uploadFileId]: 20 }));
       
-      const response = urlProcessingType === 'media' 
-        ? await apiService.parseUrlWithMedia(linkUrl, notebookId, 'cosine', uploadFileId)
-        : await apiService.parseUrl(linkUrl, notebookId, 'cosine', uploadFileId);
+      let response;
+      if (urlProcessingType === 'media') {
+        response = await apiService.parseUrlWithMedia(linkUrl, notebookId, 'cosine', uploadFileId);
+      } else if (urlProcessingType === 'document') {
+        // Download and validate document content on server side
+        response = await apiService.parseDocumentUrl(linkUrl, notebookId, 'cosine', uploadFileId);
+      } else {
+        response = await apiService.parseUrl(linkUrl, notebookId, 'cosine', uploadFileId);
+      }
       
       if (response.success) {
         // Update source with response data while preserving original display information
@@ -904,6 +911,22 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     }
   };
 
+  // Helper function to generate filename from text content
+  const generateTextFilename = (text) => {
+    // Get first 5 words, clean them, and join with underscores
+    const words = text.trim()
+      .split(/\s+/)
+      .slice(0, 5)
+      .map(word => word.replace(/[^a-zA-Z0-9]/g, '')) // Remove special characters
+      .filter(word => word.length > 0); // Remove empty strings
+    
+    if (words.length === 0) {
+      return 'pasted_text.md';
+    }
+    
+    return `${words.join('_').toLowerCase()}.md`;
+  };
+
   // Handle text upload
   const handleTextUpload = async () => {
     if (!pasteText.trim()) {
@@ -911,72 +934,71 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       return;
     }
 
+    // Generate upload file ID for tracking
+    const uploadFileId = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Generate filename from first 5 words
+    const filename = generateTextFilename(pasteText);
+    const filenameWithoutExt = filename.replace('.md', '');
+    
+    // Create title from filename (capitalize first letter of each word)
+    const textTitle = filenameWithoutExt
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+    
+    const textSizeKB = (pasteText.length / 1000).toFixed(1);
+    const sourceId = Date.now();
+
     try {
       setError(null);
       setShowUploadModal(false);
       
-      // Generate upload file ID for tracking
-      const uploadFileId = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // Create a virtual file from the text as markdown
+      const blob = new Blob([pasteText], { type: 'text/markdown' });
+      const file = new File([blob], filename, { type: 'text/markdown' });
       
-      // Add text to sources with initial status - showing principle text info
-      const textTitle = `Text Content (${pasteText.slice(0, 50)}...)`;
-      const textSizeKB = (pasteText.length / 1000).toFixed(1);
-      const newSource = {
-        id: Date.now(),
-        upload_file_id: uploadFileId,
-        title: textTitle, // Show descriptive title
-        authors: `TXT • ${textSizeKB}k chars`,
-        ext: 'txt',
-        selected: false,
-        type: "uploading",
-        parsing_status: "pending",
-        metadata: {
-          original_filename: 'pasted_text.txt',
-          file_extension: '.txt',
-          content_length: pasteText.length,
-          source_type: 'text',
-          upload_timestamp: new Date().toISOString()
-        },
-        // Store principle text info
-        originalFile: {
-          filename: 'pasted_text.txt',
-          extension: '.txt',
-          size: pasteText.length, // Text length in characters
-          uploadTimestamp: new Date().toISOString(),
-          contentLength: pasteText.length
-        }
-      };
-      
-      setSources((prev) => [...prev, newSource]);
-      setUploadProgress(prev => ({ ...prev, [uploadFileId]: 0 }));
-
-      // Create a virtual file from the text
-      const blob = new Blob([pasteText], { type: 'text/plain' });
-      const file = new File([blob], 'pasted_text.txt', { type: 'text/plain' });
-      
-      setUploadProgress(prev => ({ ...prev, [uploadFileId]: 20 }));
-      
-      // Use existing file upload logic
+      // Upload the file and get the file_id
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
-        setSources((prev) => prev.map(source => 
-          source.id === newSource.id ? {
-            ...source,
-            file_id: response.file_id,
-            type: "parsing",
-            parsing_status: response.status || 'completed',
-            // Preserve original display information, don't change authors/title
-            metadata: {
-              ...source.metadata,
-              file_size: response.file_size,
-              file_extension: response.file_extension,
-              processing_completed: true
-            }
-          } : source
-        ));
+        // Create the source with complete metadata for immediate preview
+        const newSource = {
+          id: sourceId,
+          upload_file_id: uploadFileId,
+          file_id: response.file_id, // Set file_id immediately
+          title: textTitle, // Use consistent title from filename
+          authors: `MD • ${textSizeKB}k chars`,
+          ext: 'md',
+          selected: false,
+          type: "parsed",
+          parsing_status: "completed", // Mark as completed immediately
+          metadata: {
+            original_filename: filename, // Use generated filename consistently
+            file_extension: '.md',
+            file_size: pasteText.length,
+            content_length: pasteText.length,
+            source_type: 'pasted_text',
+            upload_timestamp: new Date().toISOString(),
+            processing_completed: true
+          },
+          // Store the text content directly for immediate preview access
+          textContent: pasteText,
+          // Store principle text info
+          originalFile: {
+            filename: filename, // Use generated filename consistently
+            extension: '.md',
+            size: pasteText.length,
+            uploadTimestamp: new Date().toISOString(),
+            contentLength: pasteText.length
+          }
+        };
         
-        startStatusMonitoring(uploadFileId, newSource.id);
+        setSources((prev) => [...prev, newSource]);
+        
+        // Clear the paste text area after successful upload
+        setPasteText('');
+        setActiveTab('file');
         
       } else {
         throw new Error(response.error || 'Text upload failed');
@@ -984,22 +1006,6 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       
     } catch (error) {
       console.error('Error processing text:', error);
-      
-      setSources((prev) => prev.map(source => 
-        source.id === newSource.id ? {
-          ...source,
-          parsing_status: "error",
-          // Preserve original display information, don't change authors/title
-          error_message: error.message
-        } : source
-      ));
-      
-      setUploadProgress(prev => {
-        const newProgress = { ...prev };
-        delete newProgress[uploadFileId];
-        return newProgress;
-      });
-      
       setError(`Failed to upload text: ${error.message}`);
     }
   };
@@ -1489,7 +1495,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   <div className="px-4 py-2 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 sticky top-0">
                     <div className="flex items-center space-x-2">
                       <div className="w-5 h-5 bg-gray-200 rounded-md flex items-center justify-center">
-                        {React.createElement(fileIcons[type] || File, {
+                        {React.createElement(fileIcons[type] || FileIcon, {
                           className: "h-3 w-3 text-gray-600"
                         })}
                       </div>
@@ -1662,7 +1668,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
               {/* Main Upload Area - Only show when not in knowledge base mode */}
               {activeTab !== 'knowledge' && (
                 <div
-                  className={`border-2 border-dashed rounded-xl p-12 mb-8 text-center transition-all duration-200 ${
+                  className={`border-2 border-dashed rounded-xl p-6 mb-6 text-center transition-all duration-200 ${
                     isDragOver 
                       ? 'border-blue-400 bg-blue-900/20' 
                       : 'border-gray-600 bg-gray-800/50'
@@ -1672,13 +1678,13 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   onDragOver={handleDragOver}
                   onDrop={handleDrop}
                 >
-                  <div className="flex flex-col items-center space-y-4">
-                    <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
-                      <Upload className="h-8 w-8 text-white" />
+                  <div className="flex flex-col items-center space-y-2">
+                    <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
+                      <Upload className="h-6 w-6 text-white" />
                     </div>
                     <div>
-                      <h3 className="text-xl font-semibold text-white mb-2">Upload sources</h3>
-                      <p className="text-gray-400">
+                      <h3 className="text-base font-semibold text-white mb-1">Upload sources</h3>
+                      <p className="text-sm text-gray-400">
                         Drag & drop or{' '}
                         <button
                           onClick={(e) => {
@@ -1693,15 +1699,15 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                       </p>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-500 mt-6">
-                    Supported file types: PDF, .txt, Markdown, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
+                  <p className="text-xs text-gray-500 mt-3">
+                    Supported file types: PDF, .txt, Markdown, PPT/PPTX, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
                   </p>
                 </div>
               )}
 
               {/* Upload Options */}
               {activeTab !== 'knowledge' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-6">
                 {/* Link Section */}
                 <div className="bg-gray-800 rounded-xl p-6">
                   <div className="flex items-center space-x-3 mb-4">
@@ -1712,7 +1718,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   </div>
                   
                   <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-3 gap-3">
                       <button 
                         className={`flex items-center space-x-2 p-3 rounded-lg transition-colors ${
                           urlProcessingType === 'website' 
@@ -1735,6 +1741,26 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                       </button>
                       <button 
                         className={`flex items-center space-x-2 p-3 rounded-lg transition-colors ${
+                          urlProcessingType === 'document' 
+                            ? 'bg-orange-600 hover:bg-orange-700' 
+                            : 'bg-gray-700 hover:bg-gray-600'
+                        }`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setActiveTab('link');
+                          setUrlProcessingType('document');
+                        }}
+                      >
+                        <FileText className={`h-4 w-4 ${
+                          urlProcessingType === 'document' ? 'text-white' : 'text-orange-400'
+                        }`} />
+                        <span className={`text-sm ${
+                          urlProcessingType === 'document' ? 'text-white' : 'text-gray-300'
+                        }`}>Document</span>
+                      </button>
+                      <button 
+                        className={`flex items-center space-x-2 p-3 rounded-lg transition-colors ${
                           urlProcessingType === 'media' 
                             ? 'bg-red-600 hover:bg-red-700' 
                             : 'bg-gray-700 hover:bg-gray-600'
@@ -1751,7 +1777,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                         }`} />
                         <span className={`text-sm ${
                           urlProcessingType === 'media' ? 'text-white' : 'text-gray-300'
-                        }`}>Video/Audio</span>
+                        }`}>Video</span>
                       </button>
                     </div>
                     
@@ -1761,23 +1787,34 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                           type="url"
                           placeholder={
                             urlProcessingType === 'media' 
-                              ? "Enter URL (YouTube, audio/video links)" 
+                              ? "Enter URL (YouTube, video links)" 
+                              : urlProcessingType === 'document'
+                              ? "Enter direct PDF/PowerPoint link"
                               : "Enter URL (website or blog)"
                           }
                           value={linkUrl}
                           onChange={(e) => setLinkUrl(e.target.value)}
                           className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
+                        {urlProcessingType === 'document' && (
+                          <p className="text-xs text-gray-400">
+                            📄 Only PDF and PowerPoint files are supported. Use the "Website" option for HTML pages.
+                          </p>
+                        )}
                         <Button
                           onClick={handleLinkUpload}
                           disabled={!linkUrl.trim()}
                           className={`w-full text-white ${
                             urlProcessingType === 'media' 
                               ? 'bg-red-600 hover:bg-red-700' 
+                              : urlProcessingType === 'document'
+                              ? 'bg-orange-600 hover:bg-orange-700'
                               : 'bg-blue-600 hover:bg-blue-700'
                           }`}
                         >
-                          {urlProcessingType === 'media' ? 'Process Media' : 'Process Website'}
+                          {urlProcessingType === 'media' ? 'Process Media' : 
+                           urlProcessingType === 'document' ? 'Download Document' : 
+                           'Process Website'}
                         </Button>
                       </div>
                     )}
@@ -1812,12 +1849,13 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                           placeholder="Paste your text content here..."
                           value={pasteText}
                           onChange={(e) => setPasteText(e.target.value)}
+                          maxLength={10000}
                           rows={6}
                           className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                         />
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <span>{pasteText.length} characters</span>
-                          <span>1 / 50</span>
+                          <span>{pasteText.length} / 10000</span>
                         </div>
                         <Button
                           onClick={handleTextUpload}
@@ -1837,12 +1875,14 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
               {activeTab === 'knowledge' && (
                 <div className="space-y-6">
                   {/* Knowledge Base Header */}
-                  <div className="text-center py-6">
-                    <div className="w-16 h-16 bg-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <File className="h-8 w-8 text-white" />
+                  <div className="py-3">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center">
+                        <FileIcon className="h-5 w-5 text-white" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-white">知识库管理</h3>
                     </div>
-                    <h3 className="text-xl font-semibold text-white mb-2">知识库管理</h3>
-                    <p className="text-gray-400">
+                    <p className="text-gray-400 text-sm ml-13">
                       管理您的知识库项目 • 链接到当前笔记本或永久删除
                     </p>
                   </div>
@@ -1880,7 +1920,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                         </div>
                       ) : knowledgeBaseItems.length === 0 ? (
                         <div className="text-center py-8 text-gray-400">
-                          <File className="h-12 w-12 mx-auto mb-2 text-gray-500" />
+                          <FileIcon className="h-12 w-12 mx-auto mb-2 text-gray-500" />
                           <p>No items in knowledge base</p>
                         </div>
                       ) : (

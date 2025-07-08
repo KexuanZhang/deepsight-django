@@ -9,6 +9,7 @@ from .views import (
     FileUploadView,
     URLParseView,
     URLParseWithMediaView,
+    URLParseDocumentView,
     FileStatusView,
     FileStatusStreamView,
     FileDeleteView,
@@ -72,6 +73,13 @@ urlpatterns = [
         '<int:notebook_id>/files/parse_url_media/',
         URLParseWithMediaView.as_view(),
         name='url-parse-media'
+    ),
+
+    # 4.1) parse document URL with format validation
+    path(
+        '<int:notebook_id>/files/parse_document_url/',
+        URLParseDocumentView.as_view(),
+        name='url-parse-document'
     ),
 
     # 5) get one‐time status snapshot for an in‐flight upload
