@@ -39,6 +39,12 @@ class ApiService {
             } else {
               msg = err.detail;
             }
+          } else if (err.error) {
+            // Handle StandardAPIView error responses (notebooks app)
+            msg = err.error;
+          } else if (err.message) {
+            // Handle other possible error message fields
+            msg = err.message;
           }
         } catch {}
         throw new Error(msg);
@@ -374,6 +380,41 @@ class ApiService {
     if (uploadFileId) body.upload_url_id = uploadFileId;
 
     const response = await this.request(`/notebooks/${notebookId}/files/parse_url_media/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: JSON.stringify(body),
+    });
+    
+    // Return response with batch indicator
+    return {
+      ...response,
+      is_batch: isBatch,
+      total_items: isBatch ? urls.length : 1
+    };
+  }
+
+  async parseDocumentUrl(url, notebookId, searchMethod = 'cosine', uploadFileId = null) {
+    // Support both single URL (string) and multiple URLs (array)
+    const urls = Array.isArray(url) ? url : [url];
+    const isBatch = Array.isArray(url);
+    
+    const body = {
+      search_method: searchMethod,
+      document_processing: true
+    };
+    
+    if (isBatch) {
+      body.urls = urls;
+    } else {
+      body.url = url;
+    }
+    
+    if (uploadFileId) body.upload_url_id = uploadFileId;
+
+    const response = await this.request(`/notebooks/${notebookId}/files/parse_document_url/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

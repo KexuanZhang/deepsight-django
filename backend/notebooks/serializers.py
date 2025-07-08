@@ -46,6 +46,18 @@ class URLParseWithMediaSerializer(serializers.Serializer):
     )
 
 
+class URLParseDocumentSerializer(serializers.Serializer):
+    """Serializer for document URL parsing requests."""
+    url = serializers.URLField(
+        help_text="URL to download and validate document from"
+    )
+    upload_url_id = serializers.CharField(
+        max_length=64,
+        required=False,
+        help_text="Custom upload ID for tracking"
+    )
+
+
 class VideoImageExtractionSerializer(serializers.Serializer):
     """Serializer for video image extraction requests."""
     video_file_id = serializers.CharField(

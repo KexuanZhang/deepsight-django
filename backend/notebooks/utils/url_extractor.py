@@ -14,7 +14,8 @@ from datetime import datetime, timedelta
 import re
 
 from django.core.files.base import ContentFile
-from django.core.files.uploadedfile import UploadedFile
+from django.core.files.uploadedfile import UploadedFile, InMemoryUploadedFile
+import io
 
 from .file_storage import FileStorageService
 from .content_index import ContentIndexingService
@@ -593,6 +594,204 @@ class URLExtractor:
             self.log_operation("process_url_media_only_error", f"Error processing URL media only {url}: {e}", "error")
             raise
     
+    async def process_url_document_only(self, url: str, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
+        """Process URL as document download - validates format and only saves PDF/PPTX files."""
+        temp_file_path = None
+        try:
+            if not self._validate_url(url):
+                raise ValueError(f"Invalid URL: {url}")
+            
+            self.log_operation("document_download_start", f"Starting document download from {url}")
+            
+            # Download file to temporary location
+            temp_file_path = await self._download_document_to_temp(url)
+            
+            # Validate file format
+            file_info = await self._validate_document_format(temp_file_path)
+            
+            if not file_info["is_valid"]:
+                raise ValueError(f"Invalid document format. Expected PDF or PPTX, got: {file_info['detected_type']}")
+            
+            # Process the document using upload processor
+            processed_result = await self._process_document_file(temp_file_path, file_info, url, upload_url_id, user_id, notebook_id)
+            
+            # processed_result should have the structure from upload processor
+            return {
+                "file_id": processed_result.get("file_id"),
+                "url": url, 
+                "status": processed_result.get("status", "completed"),
+                "content_preview": processed_result.get("content_preview", ""),
+                "title": file_info.get("filename", url),
+                "processing_type": "document",
+                "file_extension": file_info["extension"],
+                "file_size": file_info["size"]
+            }
+            
+        except Exception as e:
+            self.log_operation("process_url_document_error", f"Error processing document URL {url}: {e}", "error")
+            raise
+        finally:
+            # Clean up temporary file
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                    self.log_operation("temp_cleanup", f"Cleaned up temporary file: {temp_file_path}")
+                except Exception as cleanup_error:
+                    self.log_operation("temp_cleanup_error", f"Error cleaning up {temp_file_path}: {cleanup_error}", "warning")
+    
+    async def _download_document_to_temp(self, url: str) -> str:
+        """Download document from URL to temporary file."""
+        import aiohttp
+        import aiofiles
+        
+        try:
+            temp_dir = tempfile.mkdtemp()
+            # Generate filename from URL or use generic name
+            parsed_url = urlparse(url)
+            filename = os.path.basename(parsed_url.path) or "document"
+            if not filename or '.' not in filename:
+                filename = "document.tmp"
+            
+            temp_file_path = os.path.join(temp_dir, filename)
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        raise Exception(f"Failed to download document: HTTP {response.status}")
+                    
+                    # Check content type if available
+                    content_type = response.headers.get('content-type', '').lower()
+                    self.log_operation("download_info", f"Content-Type: {content_type}, URL: {url}")
+                    
+                    async with aiofiles.open(temp_file_path, 'wb') as temp_file:
+                        async for chunk in response.content.iter_chunked(8192):
+                            await temp_file.write(chunk)
+            
+            # Fix file extension based on detected content type or magic detection
+            corrected_path = await self._fix_file_extension(temp_file_path, content_type)
+            
+            self.log_operation("document_downloaded", f"Downloaded {os.path.getsize(corrected_path)} bytes to {corrected_path}")
+            return corrected_path
+            
+        except Exception as e:
+            self.log_operation("download_error", f"Error downloading document from {url}: {e}", "error")
+            raise
+    
+    async def _fix_file_extension(self, file_path: str, content_type: str) -> str:
+        """Fix file extension based on content type or magic detection."""
+        import magic
+        import shutil
+        
+        try:
+            # Detect actual file type using magic
+            mime_type = magic.from_file(file_path, mime=True)
+            
+            # Determine correct extension
+            correct_extension = None
+            if mime_type == 'application/pdf' or 'application/pdf' in content_type:
+                correct_extension = '.pdf'
+            elif mime_type in ['application/vnd.openxmlformats-officedocument.presentationml.presentation'] or 'powerpoint' in content_type.lower():
+                correct_extension = '.pptx'
+            elif mime_type == 'application/vnd.ms-powerpoint':
+                correct_extension = '.ppt'
+            
+            # If we need to fix the extension
+            if correct_extension:
+                current_path = Path(file_path)
+                current_extension = current_path.suffix.lower()
+                
+                # Only rename if extension is missing or incorrect
+                if not current_extension or current_extension != correct_extension:
+                    new_path = current_path.with_suffix(correct_extension)
+                    shutil.move(str(current_path), str(new_path))
+                    self.log_operation("extension_fixed", f"Fixed extension from {current_extension} to {correct_extension}")
+                    return str(new_path)
+            
+            return file_path
+            
+        except Exception as e:
+            self.log_operation("extension_fix_error", f"Error fixing extension: {e}", "warning")
+            return file_path
+    
+    async def _validate_document_format(self, file_path: str) -> Dict[str, Any]:
+        """Validate that the downloaded file is a PDF or PPTX."""
+        import magic
+        
+        try:
+            # Get file info
+            file_size = os.path.getsize(file_path)
+            filename = os.path.basename(file_path)
+            
+            # Detect file type using python-magic
+            mime_type = magic.from_file(file_path, mime=True)
+            file_type = magic.from_file(file_path)
+            
+            self.log_operation("file_validation", f"File: {filename}, MIME: {mime_type}, Type: {file_type}")
+            
+            # Check if it's a valid document format
+            is_pdf = mime_type == 'application/pdf' or 'PDF' in file_type
+            is_pptx = (mime_type in ['application/vnd.openxmlformats-officedocument.presentationml.presentation'] or 
+                      'PowerPoint' in file_type or 'Microsoft Office' in file_type)
+            
+            is_valid = is_pdf or is_pptx
+            
+            if is_pdf:
+                extension = '.pdf'
+                detected_type = 'PDF'
+            elif is_pptx:
+                extension = '.pptx'
+                detected_type = 'PowerPoint'
+            else:
+                extension = '.unknown'
+                detected_type = f'Unknown ({mime_type})'
+            
+            return {
+                "is_valid": is_valid,
+                "extension": extension,
+                "detected_type": detected_type,
+                "mime_type": mime_type,
+                "size": file_size,
+                "filename": filename
+            }
+            
+        except Exception as e:
+            self.log_operation("validation_error", f"Error validating file format: {e}", "error")
+            raise
+    
+    async def _process_document_file(self, file_path: str, file_info: Dict, url: str, upload_url_id: Optional[str], user_id: int, notebook_id: int) -> Dict[str, Any]:
+        """Process the validated document file using upload processor."""
+        try:
+            # Create a Django UploadedFile object from the temporary file
+            with open(file_path, 'rb') as temp_file:
+                file_content = temp_file.read()
+            
+            # Create an InMemoryUploadedFile that acts like an uploaded file
+            django_file = InMemoryUploadedFile(
+                file=io.BytesIO(file_content),
+                field_name='file',
+                name=file_info["filename"],
+                content_type=file_info["mime_type"],
+                size=file_info["size"],
+                charset=None
+            )
+            
+            # Use upload processor to handle the file
+            result = await self.upload_processor.process_upload(
+                file=django_file,
+                upload_file_id=upload_url_id,
+                user_pk=user_id,
+                notebook_id=notebook_id
+            )
+            
+            # Log the result structure for debugging
+            self.log_operation("upload_result", f"Upload processor returned: {result}")
+            
+            return result
+            
+        except Exception as e:
+            self.log_operation("document_processing_error", f"Error processing document file: {e}", "error")
+            raise
+    
     async def _store_processed_content(self, url: str, content: str, features: Dict[str, Any], upload_url_id: Optional[str], processing_type: str, transcript_filename: Optional[str] = None, original_file_path: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> str:
         """Store processed URL content."""
         try:
@@ -640,8 +839,9 @@ class URLExtractor:
                 }
             
             # Use sync_to_async to call the synchronous storage method
+            # Use thread_sensitive=False to run in thread pool where sync ORM calls are allowed
             from asgiref.sync import sync_to_async
-            store_file_sync = sync_to_async(self.file_storage.store_processed_file)
+            store_file_sync = sync_to_async(self.file_storage.store_processed_file, thread_sensitive=False)
             
             # Store the processed content with original file if available
             processing_result_data = {

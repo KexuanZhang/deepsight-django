@@ -74,7 +74,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
   const [linkUrl, setLinkUrl] = useState('');
   const [pasteText, setPasteText] = useState('');
   const [activeTab, setActiveTab] = useState('file'); // 'file', 'link', 'text', 'knowledge'
-  const [urlProcessingType, setUrlProcessingType] = useState('website'); // 'website' or 'media'
+  const [urlProcessingType, setUrlProcessingType] = useState('website'); // 'website', 'media', or 'document'
   
   // Knowledge base management state
   const [knowledgeBaseItems, setKnowledgeBaseItems] = useState([]);
@@ -790,15 +790,16 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       return;
     }
 
+    // Generate upload file ID for tracking
+    const uploadFileId = `link_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
     try {
       setError(null);
       setShowUploadModal(false);
       
-      // Generate upload file ID for tracking
-      const uploadFileId = `link_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
       // Determine processing type label
-      const processingTypeLabel = urlProcessingType === 'media' ? 'Media' : 'Website';
+      const processingTypeLabel = urlProcessingType === 'media' ? 'Media' : 
+                                  urlProcessingType === 'document' ? 'Document' : 'Website';
       
       // Add link to sources with initial status - showing principle URL info
       const urlTitle = getDomainFromUrl(linkUrl) || linkUrl;
@@ -836,9 +837,15 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       // Call appropriate API method based on processing type
       setUploadProgress(prev => ({ ...prev, [uploadFileId]: 20 }));
       
-      const response = urlProcessingType === 'media' 
-        ? await apiService.parseUrlWithMedia(linkUrl, notebookId, 'cosine', uploadFileId)
-        : await apiService.parseUrl(linkUrl, notebookId, 'cosine', uploadFileId);
+      let response;
+      if (urlProcessingType === 'media') {
+        response = await apiService.parseUrlWithMedia(linkUrl, notebookId, 'cosine', uploadFileId);
+      } else if (urlProcessingType === 'document') {
+        // Download and validate document content on server side
+        response = await apiService.parseDocumentUrl(linkUrl, notebookId, 'cosine', uploadFileId);
+      } else {
+        response = await apiService.parseUrl(linkUrl, notebookId, 'cosine', uploadFileId);
+      }
       
       if (response.success) {
         // Update source with response data while preserving original display information
@@ -1694,7 +1701,9 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                     </div>
                   </div>
                   <p className="text-sm text-gray-500 mt-6">
-                    Supported file types: PDF, .txt, Markdown, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
+                    Supported file types: PDF, .txt, Markdown, PPT/PPTX, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
+                    <br />
+                    <span className="text-orange-400">Document URLs: Downloads and validates PDF/PPTX files</span>
                   </p>
                 </div>
               )}
@@ -1712,7 +1721,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   </div>
                   
                   <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-3 gap-3">
                       <button 
                         className={`flex items-center space-x-2 p-3 rounded-lg transition-colors ${
                           urlProcessingType === 'website' 
@@ -1735,6 +1744,26 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                       </button>
                       <button 
                         className={`flex items-center space-x-2 p-3 rounded-lg transition-colors ${
+                          urlProcessingType === 'document' 
+                            ? 'bg-orange-600 hover:bg-orange-700' 
+                            : 'bg-gray-700 hover:bg-gray-600'
+                        }`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setActiveTab('link');
+                          setUrlProcessingType('document');
+                        }}
+                      >
+                        <FileText className={`h-4 w-4 ${
+                          urlProcessingType === 'document' ? 'text-white' : 'text-orange-400'
+                        }`} />
+                        <span className={`text-sm ${
+                          urlProcessingType === 'document' ? 'text-white' : 'text-gray-300'
+                        }`}>Document</span>
+                      </button>
+                      <button 
+                        className={`flex items-center space-x-2 p-3 rounded-lg transition-colors ${
                           urlProcessingType === 'media' 
                             ? 'bg-red-600 hover:bg-red-700' 
                             : 'bg-gray-700 hover:bg-gray-600'
@@ -1751,7 +1780,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                         }`} />
                         <span className={`text-sm ${
                           urlProcessingType === 'media' ? 'text-white' : 'text-gray-300'
-                        }`}>Video/Audio</span>
+                        }`}>Video</span>
                       </button>
                     </div>
                     
@@ -1761,23 +1790,34 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                           type="url"
                           placeholder={
                             urlProcessingType === 'media' 
-                              ? "Enter URL (YouTube, audio/video links)" 
+                              ? "Enter URL (YouTube, video links)" 
+                              : urlProcessingType === 'document'
+                              ? "Enter direct PDF/PowerPoint link"
                               : "Enter URL (website or blog)"
                           }
                           value={linkUrl}
                           onChange={(e) => setLinkUrl(e.target.value)}
                           className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
+                        {urlProcessingType === 'document' && (
+                          <p className="text-xs text-gray-400">
+                            📄 Only PDF and PowerPoint files are supported. Use the "Website" option for HTML pages.
+                          </p>
+                        )}
                         <Button
                           onClick={handleLinkUpload}
                           disabled={!linkUrl.trim()}
                           className={`w-full text-white ${
                             urlProcessingType === 'media' 
                               ? 'bg-red-600 hover:bg-red-700' 
+                              : urlProcessingType === 'document'
+                              ? 'bg-orange-600 hover:bg-orange-700'
                               : 'bg-blue-600 hover:bg-blue-700'
                           }`}
                         >
-                          {urlProcessingType === 'media' ? 'Process Media' : 'Process Website'}
+                          {urlProcessingType === 'media' ? 'Process Media' : 
+                           urlProcessingType === 'document' ? 'Download Document' : 
+                           'Process Website'}
                         </Button>
                       </div>
                     )}
