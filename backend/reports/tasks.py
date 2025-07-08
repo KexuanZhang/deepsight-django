@@ -168,6 +168,10 @@ class ReportProgressLogHandler(logging.Handler):
     """Intercept specific Celery worker INFO messages and push them to the
     report orchestrator so that the frontend progress-bar can update in real
     time. We only care about five well-defined stages of report generation.
+    
+    Additionally, forward all ERROR messages to the orchestrator so they can be
+    displayed in the SSE progress bar. Only MainProcess ERROR messages will cause
+    task failure, while other ERROR messages are displayed without stopping the task.
 
     The handler is lightweight and attaches only for the lifetime of the
     `process_report_generation` task – see usage below.
@@ -183,27 +187,37 @@ class ReportProgressLogHandler(logging.Handler):
     ]
 
     def __init__(self, job_id: str, orchestrator):
-        super().__init__(level=logging.INFO)
+        super().__init__(level=logging.INFO)  # Monitor both INFO and ERROR levels
         self.job_id = job_id
         self.orchestrator = orchestrator
 
     def emit(self, record: logging.LogRecord):
         try:
             msg = record.getMessage()
-            # Only process INFO messages that match our patterns
-            if record.levelno != logging.INFO:
+            
+            # Handle ERROR messages - forward all ERROR messages to orchestrator
+            # The orchestrator will decide whether to fail the task (MainProcess) or just display (others)
+            if record.levelno == logging.ERROR:
+                try:
+                    self.orchestrator.update_job_progress(self.job_id, msg)
+                except Exception as e:  # pragma: no cover – never crash handler
+                    logging.getLogger(__name__).warning(
+                        f"Failed to process error message for {self.job_id}: {e}"
+                    )
                 return
-
-            for pattern in self._PATTERNS:
-                if pattern.search(msg):
-                    # Push raw log line to progress – keeps message identical to log
-                    try:
-                        self.orchestrator.update_job_progress(self.job_id, msg)
-                    except Exception as e:  # pragma: no cover – never crash handler
-                        logging.getLogger(__name__).warning(
-                            f"Failed to update progress for {self.job_id}: {e}"
-                        )
-                    break  # Stop after first match
+            
+            # Handle INFO messages that match our progress patterns
+            if record.levelno == logging.INFO:
+                for pattern in self._PATTERNS:
+                    if pattern.search(msg):
+                        # Push raw log line to progress – keeps message identical to log
+                        try:
+                            self.orchestrator.update_job_progress(self.job_id, msg)
+                        except Exception as e:  # pragma: no cover – never crash handler
+                            logging.getLogger(__name__).warning(
+                                f"Failed to update progress for {self.job_id}: {e}"
+                            )
+                        break  # Stop after first match
         except Exception:
             # Never raise from a logging handler – swallow any errors gracefully
             pass
