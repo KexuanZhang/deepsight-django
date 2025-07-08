@@ -893,12 +893,21 @@ class UploadProcessor:
                 "encoding": "utf-8",
             }
 
-            return {
+            # Check if this is a pasted text file
+            is_pasted_text = file_metadata.get('source_type') == 'pasted_text' or file_metadata.get('original_filename') == 'pasted_text.md'
+            
+            result = {
                 "content": content,
                 "metadata": text_metadata,
                 "features_available": ["content_analysis", "summarization"],
                 "processing_time": "immediate",
             }
+
+            # For pasted text, use specific filename to store in content folder
+            if is_pasted_text:
+                result["content_filename"] = "pasted_text.md"
+
+            return result
 
         except UnicodeDecodeError:
             # Try different encodings

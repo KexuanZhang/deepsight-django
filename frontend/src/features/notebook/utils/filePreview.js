@@ -105,7 +105,8 @@ export function getAudioMimeType(format) {
  * Check if a file type supports preview
  */
 export function supportsPreview(fileExtension, metadata = {}) {
-  const ext = fileExtension.toLowerCase().replace('.', '');
+  // Ensure we have a safe string to operate on
+  const ext = (fileExtension || '').toString().toLowerCase().replace('.', '');
   const allSupportedTypes = [
     ...FILE_CATEGORIES.TEXT,
     ...FILE_CATEGORIES.PDF,
@@ -128,10 +129,10 @@ export async function generatePreview(source, notebookId = null) {
     
     switch (previewType) {
       case PREVIEW_TYPES.TEXT_CONTENT:
-        return await generateTextPreview(file_id, metadata);
+        return await generateTextPreview(file_id, metadata, source);
       
       case PREVIEW_TYPES.PDF_VIEWER:
-        return await generatePdfPreview(file_id, metadata, notebookId);
+        return await generatePdfPreview(file_id, metadata, notebookId, source);
       
       case PREVIEW_TYPES.URL_INFO:
         return await generateUrlPreview(metadata);
@@ -160,14 +161,21 @@ export async function generatePreview(source, notebookId = null) {
 /**
  * Generate text content preview
  */
-async function generateTextPreview(fileId, metadata) {
+async function generateTextPreview(fileId, metadata, source = null) {
   try {
-    const response = await apiService.getParsedFile(fileId);
-    if (!response.success) {
-      throw new Error('Failed to fetch file content');
-    }
+    let content = '';
     
-    const content = response.data.content || '';
+    // Check if text content is stored directly in the source (for pasted text)
+    if (source && source.textContent) {
+      content = source.textContent;
+    } else {
+      // Fetch from API for regular files
+      const response = await apiService.getParsedFile(fileId);
+      if (!response.success) {
+        throw new Error('Failed to fetch file content');
+      }
+      content = response.data.content || '';
+    }
     
     return {
       type: PREVIEW_TYPES.TEXT_CONTENT,
@@ -383,7 +391,7 @@ async function generateVideoPreview(fileId, metadata, notebookId = null) {
 /**
  * Generate PDF file preview
  */
-async function generatePdfPreview(fileId, metadata, notebookId = null) {
+async function generatePdfPreview(fileId, metadata, notebookId = null, source = null) {
   // Use the raw endpoint to serve the actual PDF binary file - prefer notebook-specific if available
   const pdfUrl = notebookId ? 
     `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
@@ -396,11 +404,18 @@ async function generatePdfPreview(fileId, metadata, notebookId = null) {
   let error = null;
   
   try {
-    const response = await apiService.getParsedFile(fileId);
-    if (response.success && response.data.content) {
-      pdfContent = response.data.content;
+    // Check if content is stored directly in the source (for consistency)
+    if (source && source.textContent) {
+      pdfContent = source.textContent;
       hasParsedContent = pdfContent.trim().length > 0;
       wordCount = pdfContent.split(/\s+/).filter(word => word.length > 0).length;
+    } else {
+      const response = await apiService.getParsedFile(fileId);
+      if (response.success && response.data.content) {
+        pdfContent = response.data.content;
+        hasParsedContent = pdfContent.trim().length > 0;
+        wordCount = pdfContent.split(/\s+/).filter(word => word.length > 0).length;
+      }
     }
   } catch (err) {
     console.log('No parsed content available for PDF file:', err);

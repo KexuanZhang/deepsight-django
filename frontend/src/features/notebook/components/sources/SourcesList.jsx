@@ -1,5 +1,5 @@
 import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback, useMemo } from "react";
-import { Trash2, Plus, ChevronLeft, RefreshCw, CheckCircle, AlertCircle, Clock, X, Upload, Link2, FileText, Globe, Youtube, Group, File, Music, Video, Presentation, Loader2, Eye, Database } from "lucide-react";
+import { Trash2, Plus, ChevronLeft, RefreshCw, CheckCircle, AlertCircle, Clock, X, Upload, Link2, FileText, Globe, Youtube, Group, File as FileIcon, Music, Video, Presentation, Loader2, Eye, Database } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/common/components/ui/button";
 import { Alert, AlertDescription } from "@/common/components/ui/alert";
@@ -9,7 +9,7 @@ import FilePreview from "@/features/notebook/components/shared/FilePreview";
 import { supportsPreview } from "@/features/notebook/utils/filePreview";
 
 const fileIcons = {
-  pdf: File,
+  pdf: FileIcon,
   txt: FileText,
   md: FileText, 
   ppt: Presentation,
@@ -48,7 +48,7 @@ const getPrincipleFileIcon = (source) => {
   }
   
   // For regular files, use the file extension
-  return fileIcons[source.ext] || File;
+  return fileIcons[source.ext] || FileIcon;
 };
 
 const statusConfig = {
@@ -911,6 +911,22 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     }
   };
 
+  // Helper function to generate filename from text content
+  const generateTextFilename = (text) => {
+    // Get first 5 words, clean them, and join with underscores
+    const words = text.trim()
+      .split(/\s+/)
+      .slice(0, 5)
+      .map(word => word.replace(/[^a-zA-Z0-9]/g, '')) // Remove special characters
+      .filter(word => word.length > 0); // Remove empty strings
+    
+    if (words.length === 0) {
+      return 'pasted_text.md';
+    }
+    
+    return `${words.join('_').toLowerCase()}.md`;
+  };
+
   // Handle text upload
   const handleTextUpload = async () => {
     if (!pasteText.trim()) {
@@ -918,72 +934,71 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       return;
     }
 
+    // Generate upload file ID for tracking
+    const uploadFileId = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Generate filename from first 5 words
+    const filename = generateTextFilename(pasteText);
+    const filenameWithoutExt = filename.replace('.md', '');
+    
+    // Create title from filename (capitalize first letter of each word)
+    const textTitle = filenameWithoutExt
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+    
+    const textSizeKB = (pasteText.length / 1000).toFixed(1);
+    const sourceId = Date.now();
+
     try {
       setError(null);
       setShowUploadModal(false);
       
-      // Generate upload file ID for tracking
-      const uploadFileId = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // Create a virtual file from the text as markdown
+      const blob = new Blob([pasteText], { type: 'text/markdown' });
+      const file = new File([blob], filename, { type: 'text/markdown' });
       
-      // Add text to sources with initial status - showing principle text info
-      const textTitle = `Text Content (${pasteText.slice(0, 50)}...)`;
-      const textSizeKB = (pasteText.length / 1000).toFixed(1);
-      const newSource = {
-        id: Date.now(),
-        upload_file_id: uploadFileId,
-        title: textTitle, // Show descriptive title
-        authors: `TXT • ${textSizeKB}k chars`,
-        ext: 'txt',
-        selected: false,
-        type: "uploading",
-        parsing_status: "pending",
-        metadata: {
-          original_filename: 'pasted_text.txt',
-          file_extension: '.txt',
-          content_length: pasteText.length,
-          source_type: 'text',
-          upload_timestamp: new Date().toISOString()
-        },
-        // Store principle text info
-        originalFile: {
-          filename: 'pasted_text.txt',
-          extension: '.txt',
-          size: pasteText.length, // Text length in characters
-          uploadTimestamp: new Date().toISOString(),
-          contentLength: pasteText.length
-        }
-      };
-      
-      setSources((prev) => [...prev, newSource]);
-      setUploadProgress(prev => ({ ...prev, [uploadFileId]: 0 }));
-
-      // Create a virtual file from the text
-      const blob = new Blob([pasteText], { type: 'text/plain' });
-      const file = new File([blob], 'pasted_text.txt', { type: 'text/plain' });
-      
-      setUploadProgress(prev => ({ ...prev, [uploadFileId]: 20 }));
-      
-      // Use existing file upload logic
+      // Upload the file and get the file_id
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
-        setSources((prev) => prev.map(source => 
-          source.id === newSource.id ? {
-            ...source,
-            file_id: response.file_id,
-            type: "parsing",
-            parsing_status: response.status || 'completed',
-            // Preserve original display information, don't change authors/title
-            metadata: {
-              ...source.metadata,
-              file_size: response.file_size,
-              file_extension: response.file_extension,
-              processing_completed: true
-            }
-          } : source
-        ));
+        // Create the source with complete metadata for immediate preview
+        const newSource = {
+          id: sourceId,
+          upload_file_id: uploadFileId,
+          file_id: response.file_id, // Set file_id immediately
+          title: textTitle, // Use consistent title from filename
+          authors: `MD • ${textSizeKB}k chars`,
+          ext: 'md',
+          selected: false,
+          type: "parsed",
+          parsing_status: "completed", // Mark as completed immediately
+          metadata: {
+            original_filename: filename, // Use generated filename consistently
+            file_extension: '.md',
+            file_size: pasteText.length,
+            content_length: pasteText.length,
+            source_type: 'pasted_text',
+            upload_timestamp: new Date().toISOString(),
+            processing_completed: true
+          },
+          // Store the text content directly for immediate preview access
+          textContent: pasteText,
+          // Store principle text info
+          originalFile: {
+            filename: filename, // Use generated filename consistently
+            extension: '.md',
+            size: pasteText.length,
+            uploadTimestamp: new Date().toISOString(),
+            contentLength: pasteText.length
+          }
+        };
         
-        startStatusMonitoring(uploadFileId, newSource.id);
+        setSources((prev) => [...prev, newSource]);
+        
+        // Clear the paste text area after successful upload
+        setPasteText('');
+        setActiveTab('file');
         
       } else {
         throw new Error(response.error || 'Text upload failed');
@@ -991,22 +1006,6 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       
     } catch (error) {
       console.error('Error processing text:', error);
-      
-      setSources((prev) => prev.map(source => 
-        source.id === newSource.id ? {
-          ...source,
-          parsing_status: "error",
-          // Preserve original display information, don't change authors/title
-          error_message: error.message
-        } : source
-      ));
-      
-      setUploadProgress(prev => {
-        const newProgress = { ...prev };
-        delete newProgress[uploadFileId];
-        return newProgress;
-      });
-      
       setError(`Failed to upload text: ${error.message}`);
     }
   };
@@ -1496,7 +1495,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   <div className="px-4 py-2 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 sticky top-0">
                     <div className="flex items-center space-x-2">
                       <div className="w-5 h-5 bg-gray-200 rounded-md flex items-center justify-center">
-                        {React.createElement(fileIcons[type] || File, {
+                        {React.createElement(fileIcons[type] || FileIcon, {
                           className: "h-3 w-3 text-gray-600"
                         })}
                       </div>
@@ -1880,7 +1879,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   {/* Knowledge Base Header */}
                   <div className="text-center py-6">
                     <div className="w-16 h-16 bg-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <File className="h-8 w-8 text-white" />
+                      <FileIcon className="h-8 w-8 text-white" />
                     </div>
                     <h3 className="text-xl font-semibold text-white mb-2">知识库管理</h3>
                     <p className="text-gray-400">
@@ -1921,7 +1920,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                         </div>
                       ) : knowledgeBaseItems.length === 0 ? (
                         <div className="text-center py-8 text-gray-400">
-                          <File className="h-12 w-12 mx-auto mb-2 text-gray-500" />
+                          <FileIcon className="h-12 w-12 mx-auto mb-2 text-gray-500" />
                           <p>No items in knowledge base</p>
                         </div>
                       ) : (
