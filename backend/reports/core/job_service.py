@@ -468,8 +468,8 @@ class JobService:
             # Check if job has been running for too long without updates
             if report.updated_at:
                 time_since_update = datetime.now(timezone.utc) - report.updated_at
-                # Consider job crashed if no updates for 30 minutes
-                if time_since_update > timedelta(minutes=30):
+                # Consider job crashed if no updates for 60 minutes
+                if time_since_update > timedelta(minutes=60):
                     logger.warning(f"Job {report.job_id} has not been updated for {time_since_update}")
                     
                     # If we have a celery_task_id, check the actual task state
