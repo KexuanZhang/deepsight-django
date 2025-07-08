@@ -1701,8 +1701,6 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   </div>
                   <p className="text-xs text-gray-500 mt-3">
                     Supported file types: PDF, .txt, Markdown, PPT/PPTX, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
-                    <br />
-                    <span className="text-orange-400">Document URLs: Downloads and validates PDF/PPTX files</span>
                   </p>
                 </div>
               )}
@@ -1877,12 +1875,14 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
               {activeTab === 'knowledge' && (
                 <div className="space-y-6">
                   {/* Knowledge Base Header */}
-                  <div className="text-center py-6">
-                    <div className="w-16 h-16 bg-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <FileIcon className="h-8 w-8 text-white" />
+                  <div className="py-3">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center">
+                        <FileIcon className="h-5 w-5 text-white" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-white">知识库管理</h3>
                     </div>
-                    <h3 className="text-xl font-semibold text-white mb-2">知识库管理</h3>
-                    <p className="text-gray-400">
+                    <p className="text-gray-400 text-sm ml-13">
                       管理您的知识库项目 • 链接到当前笔记本或永久删除
                     </p>
                   </div>
