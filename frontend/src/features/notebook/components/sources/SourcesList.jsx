@@ -1669,7 +1669,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
               {/* Main Upload Area - Only show when not in knowledge base mode */}
               {activeTab !== 'knowledge' && (
                 <div
-                  className={`border-2 border-dashed rounded-xl p-12 mb-8 text-center transition-all duration-200 ${
+                  className={`border-2 border-dashed rounded-xl p-6 mb-6 text-center transition-all duration-200 ${
                     isDragOver 
                       ? 'border-blue-400 bg-blue-900/20' 
                       : 'border-gray-600 bg-gray-800/50'
@@ -1679,13 +1679,13 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   onDragOver={handleDragOver}
                   onDrop={handleDrop}
                 >
-                  <div className="flex flex-col items-center space-y-4">
-                    <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
-                      <Upload className="h-8 w-8 text-white" />
+                  <div className="flex flex-col items-center space-y-2">
+                    <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
+                      <Upload className="h-6 w-6 text-white" />
                     </div>
                     <div>
-                      <h3 className="text-xl font-semibold text-white mb-2">Upload sources</h3>
-                      <p className="text-gray-400">
+                      <h3 className="text-base font-semibold text-white mb-1">Upload sources</h3>
+                      <p className="text-sm text-gray-400">
                         Drag & drop or{' '}
                         <button
                           onClick={(e) => {
@@ -1700,7 +1700,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                       </p>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-500 mt-6">
+                  <p className="text-xs text-gray-500 mt-3">
                     Supported file types: PDF, .txt, Markdown, PPT/PPTX, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
                     <br />
                     <span className="text-orange-400">Document URLs: Downloads and validates PDF/PPTX files</span>
@@ -1710,7 +1710,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
 
               {/* Upload Options */}
               {activeTab !== 'knowledge' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-6">
                 {/* Link Section */}
                 <div className="bg-gray-800 rounded-xl p-6">
                   <div className="flex items-center space-x-3 mb-4">
@@ -1852,12 +1852,13 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                           placeholder="Paste your text content here..."
                           value={pasteText}
                           onChange={(e) => setPasteText(e.target.value)}
+                          maxLength={10000}
                           rows={6}
                           className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                         />
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <span>{pasteText.length} characters</span>
-                          <span>1 / 50</span>
+                          <span>{pasteText.length} / 10000</span>
                         </div>
                         <Button
                           onClick={handleTextUpload}
