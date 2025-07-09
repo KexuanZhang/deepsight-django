@@ -326,11 +326,11 @@ class DeepReportGenerator:
             )
 
         # Model names for Google/Gemini
-        conversation_model_name = "models/gemini-2.0-flash"
-        outline_gen_model_name = "models/gemini-1.5-pro"
-        generation_model_name = "models/gemini-1.5-pro"
-        polish_model_name = "models/gemini-1.5-pro"
-        topic_improver_model_name = "models/gemini-1.5-pro"
+        conversation_model_name = "models/gemini-2.5-flash-lite-preview-06-17"
+        outline_gen_model_name = "models/gemini-2.5-flash"
+        generation_model_name = "models/gemini-2.5-flash"
+        polish_model_name = "gemini-2.5-pro"
+        topic_improver_model_name = "gemini-2.5-pro"
 
         # Configure Google Gemini-based language models
         conv_simulator_lm = GoogleModel(
