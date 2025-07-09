@@ -1,0 +1,27 @@
+# Dockerfile
+FROM python:3.11-slim
+
+# don’t write .pyc files, and ensure logs print straight to console
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# install system deps (if you need libpq-dev, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        gettext \
+    && rm -rf /var/lib/apt/lists/*
+
+# install Python deps
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# copy the rest of your Django code
+COPY . .
+
+# collect static files if you’re serving them from S3/MinIO
+RUN python manage.py collectstatic --noinput
+
+# default command: run gunicorn (for production)…
+CMD ["gunicorn", "your_project_name.wsgi:application", "--bind", "0.0.0.0:8000"]

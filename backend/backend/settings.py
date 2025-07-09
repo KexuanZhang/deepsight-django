@@ -15,11 +15,13 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()  # loads .env from project root
+# load_dotenv()  # loads .env from project root
 
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# # Build paths inside the project like this: BASE_DIR / 'subdir'.
+# BASE_DIR = Path(__file__).resolve().parent.parent
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -78,6 +80,8 @@ INSTALLED_APPS = [
     "podcast",
     "tags",
     "drf_yasg",
+    "storages",
+    "blogs",
 ]
 
 MIDDLEWARE = [
@@ -90,6 +94,18 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+
+AWS_LOCATION = "media"
+DEFAULT_FILE_STORAGE = "backend.storage_backends.S3MediaStorage"
+
+
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
+
+AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_URL")
+MINIO_ACCESS_URL = os.getenv("MINIO_ACCESS_URL")
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -142,19 +158,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "backend.wsgi.application"
 
-
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql_psycopg2',
-#         'NAME': os.getenv('PGDATABASE'),
-#         'USER': os.getenv('PGUSER'),
-#         'PASSWORD': os.getenv('PGPASSWORD'),
-#         'HOST': os.getenv('PGHOST', 'localhost'),
-#         'PORT': os.getenv('PGPORT', '5432'),
-#     }
-# }
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -275,3 +278,10 @@ LOGGING = {
 # Create logs directory if it doesn't exist
 LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
+
+
+MILVUS_HOST               = os.getenv("MILVUS_HOST", "localhost")
+MILVUS_PORT               = os.getenv("MILVUS_PORT", "19530")
+MILVUS_COLLECTION_NAME    = os.getenv("MILVUS_LOCAL_COLLECTION", "user_vectors")
+
+

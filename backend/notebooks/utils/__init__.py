@@ -31,7 +31,7 @@ except ImportError:
     URLExtractor = None
 
 try:
-    from .rag_engine import RAGChatbot
+    from rag.rag import RAGChatbot
 except ImportError:
     RAGChatbot = None
 
