@@ -696,6 +696,28 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     
     setSources((prev) => prev.filter((source) => !successfullyDeleted.includes(source.id)));
     
+    // Update knowledge base items to show they are no longer linked to the notebook
+    const deletedSources = deletionResults
+      .filter(result => result.success)
+      .map(result => result.source);
+    
+    setKnowledgeBaseItems((prev) => prev.map(item => {
+      // Check if this knowledge base item corresponds to any of the deleted sources
+      const isDeleted = deletedSources.some(source => 
+        // Match by knowledge_item_id (most reliable)
+        source.metadata?.knowledge_item_id === item.id ||
+        // Match by file_id (also reliable)
+        source.file_id === item.id ||
+        // Match by original filename as fallback
+        source.metadata?.original_filename === item.original_filename
+      );
+      
+      if (isDeleted) {
+        return { ...item, linked_to_notebook: false };
+      }
+      return item;
+    }));
+    
     // Show error for failed deletions
     const failedDeletions = deletionResults.filter(result => !result.success);
     if (failedDeletions.length > 0) {
