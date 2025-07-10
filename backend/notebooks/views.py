@@ -8,7 +8,8 @@ import logging
 from asgiref.sync import sync_to_async, async_to_sync
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.decorators import action
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+import tempfile
+import logging
 
 from .models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook, BatchJob, BatchJobItem, NotebookChatMessage
 from .serializers import (
@@ -55,18 +58,22 @@ from .utils.view_mixins import (
     PaginationMixin,
     FileListResponseMixin,
 )
-from .utils.rag_engine import (
+from rag.rag import (
     RAGChatbot, 
     SuggestionRAGAgent, 
     add_user_files, 
-    MILVUS_HOST, 
-    MILVUS_PORT, 
-    LOCAL_COLLECTION
+    add_user_content_documents,
+    user_collection,
+    ensure_user_collection,
 )
 from langchain_milvus import Milvus
 from langchain_openai import OpenAIEmbeddings
-from pymilvus.orm.collection import Collection
-from pymilvus.exceptions import SchemaNotReadyException
+from langchain.schema import Document
+from pymilvus import Collection
+from pymilvus.exceptions import SchemaNotReadyException, CollectionNotExistException
+from backend.settings import MILVUS_COLLECTION_NAME
+from .tasks import process_file_upload_task  # your Celery task
+from PyPDF2 import PdfReader
 
 
 upload_processor = UploadProcessor()
@@ -74,42 +81,195 @@ file_storage = FileStorageService()
 url_extractor = URLExtractor()
 media_extractor = MediaFeatureExtractor()
 
-class FileUploadView(StandardAPIView, NotebookPermissionMixin):
-    """Handle file uploads to notebooks - supports both single and batch uploads."""
+logger = logging.getLogger(__name__)
 
+# class FileUploadView(NotebookPermissionMixin, APIView):
+#     """Handle file uploads to notebooks - supports both single and batch uploads."""
+#     parser_classes = [MultiPartParser]
+
+#     def post(self, request, notebook_id):
+#         try:
+#             notebook = self.get_user_notebook(notebook_id, request.user)
+
+#             batch_serializer = BatchFileUploadSerializer(data=request.data)
+#             if batch_serializer.is_valid():
+#                 validated = batch_serializer.validated_data
+#                 if 'files' in validated:
+#                     return self._handle_batch_file_upload(
+#                         validated['files'], notebook, request.user
+#                     )
+
+#             serializer = FileUploadSerializer(data=request.data)
+#             serializer.is_valid(raise_exception=True)
+#             file_obj  = serializer.validated_data['file']
+#             upload_id = serializer.validated_data.get('upload_file_id') or uuid4().hex
+
+#             return self._handle_single_file_upload(
+#                 file_obj, upload_id, notebook, request.user
+#             )
+
+#         except ValidationError as e:
+#             return self.error_response(
+#                 "File validation failed",
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 details={"error": str(e)},
+#             )
+#         except Exception as e:
+#             logger.exception("File upload failed for notebook %s user %s", notebook_id, request.user.pk)
+#             return Response(
+#                 {"error": "File upload failed", "details": str(e)},
+#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             )
+
+#     def _handle_single_file_upload(self, inbound_file, upload_id, notebook, user):
+#         logger.info(f"Starting single file upload: user={user.pk}, notebook={notebook.id}, name={inbound_file.name}")
+#         # 1) process & save to KnowledgeBaseItem
+#         result = async_to_sync(upload_processor.process_upload)(
+#             inbound_file, upload_id, user_pk=user.pk, notebook_id=notebook.id
+#         )
+#         kb_item = get_object_or_404(
+#             KnowledgeBaseItem, id=result["file_id"], user=user
+#         )
+
+#         # 2) link in KnowledgeItem
+#         source = Source.objects.create(
+#             notebook=notebook,
+#             source_type="file",
+#             title=inbound_file.name,
+#             needs_processing=False,
+#             processing_status="done",
+#         )
+#         ki, created = KnowledgeItem.objects.get_or_create(
+#             notebook=notebook,
+#             knowledge_base_item=kb_item,
+#             defaults={"source": source, "notes": f"Processed {inbound_file.name}"},
+#         )
+#         if not created and not ki.source:
+#             ki.source = source
+#             ki.save(update_fields=["source"])
+
+#         # 3) embed into Milvus
+#         coll_name = user_collection(user.pk)
+#         from pymilvus import utility
+#         first_time = not utility.has_collection(coll_name, using="default")
+#         ensure_user_collection(coll_name)
+
+#         # Build Document(s) depending on available content
+#         docs = []
+#         # 3a) Processed content file (md/txt)
+#         if kb_item.file:
+#             logger.debug("Reading processed file from S3: %s", kb_item.file.name)
+#             # Read binary and decode since FileField.open() doesn't accept encoding
+#             f = kb_item.file.open('rb')
+#             raw = f.read()
+#             text = raw.decode('utf-8')
+#             docs.append(Document(
+#                 page_content=text,
+#                 metadata={"user_id": user.pk, "source": kb_item.file.name},
+#             ))
+#         # 3b) Inline text
+#         elif kb_item.content:
+#             logger.debug("Using inline content for KB item %s", kb_item.id)
+#             docs.append(Document(
+#                 page_content=kb_item.content,
+#                 metadata={"user_id": user.pk, "source": "inline_content"},
+#             ))
+#         # 3c) Original PDF extraction
+#         elif kb_item.original_file:
+#             logger.debug("Downloading original file from S3: %s", kb_item.original_file.name)
+#             tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+#             with kb_item.original_file.open('rb') as src:
+#                 tmp.write(src.read())
+#             tmp.flush()
+#             tmp_path = tmp.name
+#             tmp.close()
+
+#             reader = PdfReader(tmp_path)
+#             text = "\n".join(page.extract_text() or "" for page in reader.pages)
+#             docs.append(Document(
+#                 page_content=text,
+#                 metadata={"user_id": user.pk, "source": kb_item.original_file.name},
+#             ))
+#         else:
+#             logger.warning("No content found for KB item %s; skipping ingestion", kb_item.id)
+
+#         # Ingest into Milvus if any docs
+#         if docs:
+#             add_user_content_documents(user.pk, docs)
+#         else:
+#             logger.info("Skipping Milvus ingestion for KB item %s (no docs)", kb_item.id)
+
+#         return Response(
+#             {
+#                 "success": True,
+#                 "file_id": kb_item.id,
+#                 "knowledge_item_id": ki.id,
+#                 "first_time": first_time,
+#             },
+#             status=status.HTTP_201_CREATED,
+#         )
+
+#     def _handle_batch_file_upload(self, files, notebook, user):
+#         batch_job = BatchJob.objects.create(
+#             notebook=notebook,
+#             job_type='file_upload',
+#             total_items=len(files),
+#             status='processing',
+#         )
+
+#         for file_obj in files:
+#             upload_id = uuid4().hex
+#             data = file_obj.read()
+#             file_obj.seek(0)
+
+#             batch_item = BatchJobItem.objects.create(
+#                 batch_job=batch_job,
+#                 item_data={'filename': file_obj.name, 'size': len(data)},
+#                 upload_id=upload_id,
+#                 status='pending',
+#             )
+
+#             process_file_upload_task.delay(
+#                 file_data=data,
+#                 filename=file_obj.name,
+#                 notebook_id=notebook.id,
+#                 user_id=user.pk,
+#                 upload_file_id=upload_id,
+#                 batch_job_id=batch_job.id,
+#                 batch_item_id=batch_item.id,
+#             )
+
+#         return Response(
+#             {
+#                 'success': True,
+#                 'batch_job_id': batch_job.id,
+#                 'total_items': len(files),
+#                 'message': f'Batch upload started for {len(files)} files',
+#             },
+#             status=status.HTTP_202_ACCEPTED,
+#         )
+    
+
+class FileUploadView(NotebookPermissionMixin, APIView):
+    """Handle file uploads to notebooks - supports both single and batch uploads."""
     parser_classes = [MultiPartParser]
 
     def post(self, request, notebook_id):
-        """Handle file upload to notebook - supports single file or multiple files."""
         try:
-            # Verify notebook access
             notebook = self.get_user_notebook(notebook_id, request.user)
-            
-            # Try batch serializer first
+
             batch_serializer = BatchFileUploadSerializer(data=request.data)
             if batch_serializer.is_valid():
-                validated_data = batch_serializer.validated_data
-                
-                # Check if this is a batch request (multiple files)
-                if 'files' in validated_data:
-                    return self._handle_batch_file_upload(validated_data, notebook, request.user)
-                else:
-                    # Single file - convert to single file format for backward compatibility
-                    file = validated_data.get('file')
-                    upload_file_id = validated_data.get('upload_file_id', uuid4().hex)
-                    return self._handle_single_file_upload(file, upload_file_id, notebook, request.user)
-            
-            # Fallback to original serializer for backward compatibility
-            serializer = FileUploadSerializer(data=request.data)
-            if not serializer.is_valid():
-                return self.error_response(
-                    "Invalid request data", details=serializer.errors
-                )
+                validated = batch_serializer.validated_data
+                if 'files' in validated:
+                    return self._handle_batch_file_upload(validated['files'], notebook, request.user)
+                # else fall‐through to single
 
-            # Handle single file with original logic
-            inbound_file = serializer.validated_data["file"]
-            upload_id = serializer.validated_data.get("upload_file_id") or uuid4().hex
-            return self._handle_single_file_upload(inbound_file, upload_id, notebook, request.user)
+            serializer = FileUploadSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            file_obj     = serializer.validated_data['file']
+            upload_id    = serializer.validated_data.get('upload_file_id') or uuid4().hex
+            return self._handle_single_file_upload(file_obj, upload_id, notebook, request.user)
 
         except ValidationError as e:
             return self.error_response(
@@ -118,27 +278,30 @@ class FileUploadView(StandardAPIView, NotebookPermissionMixin):
                 details={"error": str(e)},
             )
         except Exception as e:
-            return self.error_response(
-                "File upload failed",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                details={"error": str(e)},
+            logger.exception(
+                "Unhandled exception in FileUploadView POST for notebook %s: %s",
+                notebook_id, e
             )
-    
+            # Optionally, also log the raw traceback
+            logger.error("Traceback:\n%s", traceback.format_exc())
+
+            return Response(
+                {
+                    "error": "File upload failed",
+                    "details": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
     def _handle_single_file_upload(self, inbound_file, upload_id, notebook, user):
-        """Handle single file upload (original behavior)."""
-        # Process the upload using async function
-        async def process_upload_async():
-            return await upload_processor.process_upload(
-                inbound_file,
-                upload_id,
-                user_pk=user.pk,
-                notebook_id=notebook.id,
-            )
+        # 1) process & save to KnowledgeBaseItem
+        result = async_to_sync(upload_processor.process_upload)(
+            inbound_file, upload_id, user_pk=user.pk, notebook_id=notebook.id
+        )
+        kb_item = get_object_or_404(KnowledgeBaseItem, id=result["file_id"], user=user)
 
-        # Run async processing using async_to_sync
-        result = async_to_sync(process_upload_async)()
-
-        # Create source record
+        # 2) create or update the link in KnowledgeItem
         source = Source.objects.create(
             notebook=notebook,
             source_type="file",
@@ -146,85 +309,71 @@ class FileUploadView(StandardAPIView, NotebookPermissionMixin):
             needs_processing=False,
             processing_status="done",
         )
-
-        # Link to knowledge base
-        kb_item_id = result["file_id"]
-        kb_item = get_object_or_404(
-            KnowledgeBaseItem, id=kb_item_id, user=user
-        )
-
         ki, created = KnowledgeItem.objects.get_or_create(
             notebook=notebook,
             knowledge_base_item=kb_item,
-            defaults={
-                "source": source,
-                "notes": f"Processed from {inbound_file.name}",
-            },
+            defaults={"source": source, "notes": f"Processed {inbound_file.name}"}
         )
-
-        # Update source if needed
         if not created and not ki.source:
             ki.source = source
             ki.save(update_fields=["source"])
+        
+        print("!!!kb item", kb_item)
+        
+        add_user_files(
+            user_id=user.pk,
+            kb_items=[kb_item],
+        )
 
-        return Response(
-            {
-                "success": True,
-                "file_id": kb_item_id,
-                "knowledge_item_id": ki.id,
-            },
-            status=status.HTTP_201_CREATED,
-        )
-    
-    def _handle_batch_file_upload(self, validated_data, notebook, user):
-        """Handle batch file upload using Celery."""
-        from .tasks import process_file_upload_task
-        
-        files = validated_data['files']
-        
-        # Create batch job
+        return Response({
+            "success": True,
+            "file_id": kb_item.id,
+            "knowledge_item_id": ki.id,
+            # "first_time": existing == 0,
+        }, status=status.HTTP_201_CREATED)
+
+    def _handle_batch_file_upload(self, files, notebook, user):
+        # create batch job
         batch_job = BatchJob.objects.create(
-            notebook=notebook,
-            job_type='file_upload',
-            total_items=len(files),
-            status='processing'
+            notebook=notebook, job_type='file_upload',
+            total_items=len(files), status='processing'
         )
-        
-        # Create batch items and queue Celery tasks
-        batch_items = []
-        for file in files:
-            upload_file_id = uuid4().hex
-            
-            # Read file data for Celery task
-            file_data = file.read()
-            file.seek(0)  # Reset file pointer
-            
-            # Create batch item
+
+        for file_obj in files:
+            upload_id = uuid4().hex
+            data = file_obj.read()
+            file_obj.seek(0)
+
             batch_item = BatchJobItem.objects.create(
                 batch_job=batch_job,
-                item_data={'filename': file.name, 'size': len(file_data)},
-                upload_id=upload_file_id,
+                item_data={'filename': file_obj.name, 'size': len(data)},
+                upload_id=upload_id,
                 status='pending'
             )
-            batch_items.append(batch_item)
-            
-            # Queue Celery task
+
+            # enqueue a Celery task that will:
+            # 1) call upload_processor.process_upload
+            # 2) link the KB item (like above)
+            # 3) call add_user_files(user.pk, [new_file_path])
             process_file_upload_task.delay(
-                file_data=file_data,
-                filename=file.name,
+                file_data=data,
+                filename=file_obj.name,
                 notebook_id=notebook.id,
                 user_id=user.pk,
-                upload_file_id=upload_file_id,
+                upload_file_id=upload_id,
                 batch_job_id=batch_job.id,
                 batch_item_id=batch_item.id
             )
-        
-        return Response({
-            'success': True,
-            'batch_job_id': batch_job.id,
-            'total_items': len(files),
-            'message': f'Batch upload started for {len(files)} files'
-        }, status=status.HTTP_202_ACCEPTED)
+
+        return Response(
+            {
+                'success': True,
+                'batch_job_id': batch_job.id,
+                'total_items': len(files),
+                'message': f'Batch upload started for {len(files)} files'
+            },
+            status=status.HTTP_202_ACCEPTED
+        )
 
 
 class URLParseView(StandardAPIView, NotebookPermissionMixin):
@@ -644,168 +793,115 @@ class FileListView(StandardAPIView, NotebookPermissionMixin, FileListResponseMix
             )
 
 
-class RAGChatFromKBView(StandardAPIView, NotebookPermissionMixin, APIView):
+class RAGChatFromKBView(NotebookPermissionMixin, APIView):
     """
     POST /api/rag/chat/
     {
-      "notebook_id": 123,
-      "question":    "Explain quantum tunneling"
+      "notebook_id":    123,
+      "question":       "Explain quantum tunneling",
+      "mode":           "local"|"global"|"hybrid",
+      "filter_sources": ["paper1.pdf","notes.md"]
     }
     """
     def post(self, request):
-        notebook_id = request.data.get("notebook_id")
-        question    = request.data.get("question")
+        notebook_id    = request.data.get("notebook_id")
+        question       = request.data.get("question")
+        mode           = request.data.get("mode", "hybrid")
+        filter_sources = request.data.get("filter_sources", None)
 
+        # 1) validate inputs
         if not notebook_id or not question:
             return Response(
                 {"error": "Both notebook_id and question are required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        if mode not in ("local", "global", "hybrid"):
+            return Response(
+                {"error": f"Invalid mode '{mode}'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # 1) authorize & fetch notebook
+        # 2) fetch & authorize
         try:
             notebook = self.get_user_notebook(notebook_id, request.user)
         except:
             return Response({"error": "Notebook not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        # 2) gather KB items
-        kb_qs = KnowledgeBaseItem.objects.filter(
-            notebook_links__notebook=notebook,
-            user=request.user,
-            file__isnull=False
-        ).exclude(file="").distinct()
+        # 3) ensure there are files
+        # kb_qs = KnowledgeBaseItem.objects.filter(
+        #     notebook_links__notebook=notebook,
+        #     user=request.user,
+        #     file__isnull=False
+        # ).exclude(file="").distinct()
+        # if not kb_qs.exists():
+        #     return Response({"error": "No valid documents in this notebook."},
+        #                     status=status.HTTP_404_NOT_FOUND)
 
-        if not kb_qs.exists():
-            return Response(
-                {"error": "No valid documents in this notebook."},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        # file_paths = [item.file.path for item in kb_qs if hasattr(item.file, "path")]
+        # if not file_paths:
+        #     return Response({"error": "No file paths available."},
+        #                     status=status.HTTP_404_NOT_FOUND)
 
-        # 3) collect file paths
-        file_paths: List[str] = [
-            item.file.path
-            for item in kb_qs
-            if hasattr(item.file, "path")
-        ]
-        if not file_paths:
-            return Response(
-                {"error": "No file paths available."},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        user_id = request.user.pk
-
-        # ─── Check whether any vectors exist for this user ───────────────────────
-        existing = 0
+        # 4) verify user's Milvus collection exists & has data
+        user_id  = request.user.pk
+        coll_name = user_collection(user_id)
         try:
-            coll = Collection(LOCAL_COLLECTION)  # will raise if no schema
-            user_vectors = coll.query(
-                expr=f"user_id=={user_id}",
-                output_fields=["user_id"]
-            )
-            existing = len(user_vectors)
-        except SchemaNotReadyException:
-            # collection doesn’t exist yet
+            coll     = Collection(coll_name)
+            existing = coll.num_entities
+        except (CollectionNotExistException, SchemaNotReadyException):
             existing = 0
 
         if existing == 0:
-            # first‐time or no prior ingest for this user
-            add_user_files(user_id, file_paths)
+            return Response(
+                {"error": "Your knowledge base is empty. Please upload files first."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # 4) load chat history
-        history: List[Tuple[str, str]] = list(
+        # 5) load chat history and record user question
+        history = list(
             NotebookChatMessage.objects
                 .filter(notebook=notebook)
                 .order_by("timestamp")
                 .values_list("sender", "message")
         )
-
-        # 5) record user question
         NotebookChatMessage.objects.create(
             notebook=notebook, sender="user", message=question
         )
 
-        # 6) instantiate chatbot (no re‐ingestion here)
-        bot = RAGChatbot(
-            user_id=request.user.pk,
-            chat_history=history
+        # 6) get the chatbot singleton
+        bot = RAGChatbot(user_id=user_id)
+
+        # 7) wrap the SSE stream to capture assistant tokens
+        raw_stream = bot.stream(
+            question=question,
+            history=history,
+            mode=mode,
+            filter_sources=filter_sources
         )
+
+        def wrapped_stream():
+            buffer = []
+            for chunk in raw_stream:
+                yield chunk
+                # parse only token events
+                if chunk.startswith("data: "):
+                    payload = json.loads(chunk[len("data: "):])
+                    if payload.get("type") == "token":
+                        buffer.append(payload.get("text", ""))
+                # ignore metadata and done
+            # once stream finishes, save the full assistant response
+            full_response = "".join(buffer).strip()
+            if full_response:
+                NotebookChatMessage.objects.create(
+                    notebook=notebook,
+                    sender="assistant",
+                    message=full_response
+                )
 
         return StreamingHttpResponse(
-            bot.stream(question),
+            wrapped_stream(),
             content_type="text/event-stream",
         )
-# class RAGChatFromKBView(StandardAPIView, NotebookPermissionMixin):
-#     def post(self, request):
-#         # file_ids = request.data.get("file_ids", [])
-#         question = request.data.get("question")
-#         notebook_id = request.data.get("notebook_id")
-
-#         # if not file_ids or not question or not notebook_id:
-#         #     return Response({"error": "file_ids, question, and notebook_id are required"}, status=400)
-
-#         try:
-#             notebook = self.get_user_notebook(notebook_id, request.user)
-#         except Exception as e:
-#             return Response({"error": "Notebook not found"}, status=404)
-
-#         # Filter valid KB items
-#         # kb_items = KnowledgeBaseItem.objects.filter(
-#         #     id__in=file_ids,
-#         #     user=request.user,
-#         #     file__isnull=False
-#         # ).exclude(file="")
-#         kb_items = KnowledgeBaseItem.objects.filter(
-#             notebook_links__notebook=notebook,
-#             user=request.user,
-#             file__isnull=False
-#         ).exclude(file="").distinct()
-
-#         if not kb_items.exists():
-#             return Response({"error": "No valid text files found for this notebook"}, status=404)
-
-
-#         if not kb_items.exists():
-#             return Response(
-#                 {
-#                     "error": "No valid knowledge items found."
-#                 },
-#                 status=404,
-#             )
-
-#         # Load file content
-#         docs = []
-#         for item in kb_items:
-#             if item.file and item.file.name:
-#                 with item.file.open("rb") as f:
-#                     content = f.read().decode("utf-8")
-#                     docs.append({"content": content, "name": item.title})
-
-#         # Load previous chat history
-#         history = list(
-#             NotebookChatMessage.objects.filter(notebook=notebook)
-#             .order_by("timestamp")
-#             .values_list("sender", "message")
-#         )
-
-#         # Add new user message to DBAdd commentMore actions
-#         NotebookChatMessage.objects.create(
-#             notebook=notebook,
-#             sender="user",
-#             message=question
-#         )
-
-#         # Run RAG with chat history
-#         bot = RAGChatbot(docs, history)
-#         answer = bot.ask(question)
-
-#         # Add assistant message to DB
-#         NotebookChatMessage.objects.create(
-#             notebook=notebook,
-#             sender="assistant",
-#             message=answer
-#         )
-#         return Response({"answer": answer, "notebook_id": notebook_id, "history": history + [("user", question), ("assistant", answer)]})
 
 
 class ChatHistoryView(StandardAPIView, NotebookPermissionMixin):

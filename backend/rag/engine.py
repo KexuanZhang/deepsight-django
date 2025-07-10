@@ -32,7 +32,9 @@ _vectorstore = Milvus(
 )
 
 # ─── Pre-build BM25 retriever once at import ─────────────────────────────────
-_papers = json.load(open("papers_summaries.json", "r", encoding="utf-8"))
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+_PAPERS_JSON = os.path.join(_MODULE_DIR, "demo_paper_summaries.json")
+_papers = json.load(open(_PAPERS_JSON, "r", encoding="utf-8"))
 _bm25_docs = [Document(page_content=p["summary"], metadata=p) for p in _papers]
 _bm25_retriever = TFIDFRetriever.from_texts(
     texts     = [d.page_content for d in _bm25_docs],

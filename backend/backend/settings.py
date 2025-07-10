@@ -15,11 +15,13 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()  # loads .env from project root
+# load_dotenv()  # loads .env from project root
 
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# # Build paths inside the project like this: BASE_DIR / 'subdir'.
+# BASE_DIR = Path(__file__).resolve().parent.parent
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -31,7 +33,8 @@ SECRET_KEY = os.getenv(
 )
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+# DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+DEBUG = True
 
 # Host Configuration - Set HOST_IP environment variable for server deployment
 HOST_IP = os.getenv("HOST_IP", "localhost")
@@ -78,6 +81,8 @@ INSTALLED_APPS = [
     "podcast",
     "tags",
     "drf_yasg",
+    "storages",
+    "blogs",
 ]
 
 MIDDLEWARE = [
@@ -90,6 +95,18 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+
+DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME')
+AWS_S3_ENDPOINT_URL = os.getenv('AWS_S3_ENDPOINT_URL')
+AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME')
+AWS_S3_USE_SSL = os.getenv('AWS_S3_USE_SSL', 'False') == 'True'
+AWS_S3_VERIFY = os.getenv('AWS_S3_VERIFY', 'False') == 'True'
+
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -142,19 +159,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "backend.wsgi.application"
 
-
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql_psycopg2',
-#         'NAME': os.getenv('PGDATABASE'),
-#         'USER': os.getenv('PGUSER'),
-#         'PASSWORD': os.getenv('PGPASSWORD'),
-#         'HOST': os.getenv('PGHOST', 'localhost'),
-#         'PORT': os.getenv('PGPORT', '5432'),
-#     }
-# }
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -200,7 +204,7 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 # Media files (uploaded content) - Updated to use new DeepSight data storage path
-DEEPSIGHT_DATA_ROOT = Path("/Users/huangruizhe/Library/CloudStorage/OneDrive-UniversityofToronto/RAY/Huawei/data00/Deepsight")
+DEEPSIGHT_DATA_ROOT = Path("/Users/zhang/Desktop/huawei/ds-django-2/deepsight-django/backend/backend/data00")
 # DEEPSIGHT_DATA_ROOT = Path("/Users/eason/Downloads/data00/Deepsight")
 # DEEPSIGHT_DATA_ROOT = Path("C:/Users/zhang/my_app_data/data00/Deepsight")
 MEDIA_ROOT = DEEPSIGHT_DATA_ROOT
@@ -281,3 +285,10 @@ LOGGING = {
 # Create logs directory if it doesn't exist
 LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
+
+
+MILVUS_HOST               = os.getenv("MILVUS_HOST", "localhost")
+MILVUS_PORT               = os.getenv("MILVUS_PORT", "19530")
+MILVUS_COLLECTION_NAME    = os.getenv("MILVUS_LOCAL_COLLECTION", "user_vectors")
+
+
