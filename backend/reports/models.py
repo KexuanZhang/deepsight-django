@@ -1,6 +1,7 @@
 # reports/models.py
 from django.db import models
 from django.conf import settings
+from storages.backends.s3boto3 import S3Boto3Storage
 import json
 
 
@@ -209,7 +210,7 @@ class Report(models.Model):
     error_message = models.TextField(blank=True)
 
     # File storage following new storage structure
-    main_report_file = models.FileField(upload_to=user_report_path, blank=True)
+    main_report_file = models.FileField(upload_to=user_report_path, blank=True, storage=S3Boto3Storage(),)
     generated_files = models.JSONField(
         default=list, blank=True, help_text="List of generated file paths"
     )

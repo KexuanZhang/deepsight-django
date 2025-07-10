@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
+from storages.backends.s3boto3 import S3Boto3Storage
 
 
 class Notebook(models.Model):
@@ -163,6 +164,7 @@ class URLProcessingResult(models.Model):
         blank=True,
         null=True,
         help_text="Media file downloaded from the URL, if any",
+        storage=S3Boto3Storage(),
     )
     error_message = models.TextField(
         blank=True,
@@ -205,6 +207,7 @@ class ProcessingJob(models.Model):
         blank=True,
         null=True,
         help_text="Generated .md or other output file",
+        storage=S3Boto3Storage(),
     )
     error_message = models.TextField(
         blank=True,
@@ -248,11 +251,13 @@ class KnowledgeBaseItem(models.Model):
         null=True,
         validators=[FileExtensionValidator(allowed_extensions=["md", "txt"])],
         help_text="Processed content file in the user's knowledge base",
+        storage=S3Boto3Storage(),
     )
     original_file = models.FileField(
         upload_to=user_knowledge_base_path,
         blank=True,
         null=True,
+        storage=S3Boto3Storage(),
         help_text="Original binary file (PDF, audio, video, etc.) in the user's knowledge base",
     )
     content = models.TextField(

@@ -16,14 +16,49 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 # Import your engine's HybridRetriever and global chain
 from rag.engine import get_rag_chain, HybridRetriever
-from pymilvus import Collection
+from pymilvus import connections, utility, CollectionSchema, FieldSchema, DataType, Collection
+import logging
 
+logger = logging.getLogger(__name__)
 # ─── Configuration ─────────────────────────────────────────────────────────
 MILVUS_HOST      = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT      = os.getenv("MILVUS_PORT", "19530")
 # Base name for per-user collections; each user will get its own suffix
 BASE_COLLECTION  = os.getenv("MILVUS_LOCAL_COLLECTION", "user_files")
 OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY")
+
+connections.connect(
+    alias="default",
+    host=MILVUS_HOST,
+    port=MILVUS_PORT,
+)
+
+def ensure_user_collection(coll_name: str):
+    """Ensure the Milvus collection exists; create and index via Collection constructor if missing."""
+    exists = utility.has_collection(coll_name, using="default")
+    logger.debug("Checking Milvus collection %r exists? %s", coll_name, exists)
+    if not exists:
+        logger.info("Creating Milvus collection %r via Collection constructor", coll_name)
+        # Define schema fields
+        fields = [
+            FieldSchema(name="pk",        dtype=DataType.INT64,        is_primary=True, auto_id=True),
+            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=1536),
+            FieldSchema(name="user_id",   dtype=DataType.INT64),
+            FieldSchema(name="source",    dtype=DataType.VARCHAR,     max_length=512),
+        ]
+        schema = CollectionSchema(fields, description="Per-user file embeddings")
+        # Create collection using the ORM Collection constructor
+        coll = Collection(name=coll_name, schema=schema, using="default")
+        # Create index on the embedding field for efficient similarity search
+        index_params = {
+            "index_type": "IVF_FLAT",
+            "metric_type": "L2",
+            "params": {"nlist": 128}
+        }
+        coll.create_index(field_name="embedding", index_params=index_params, using="default")
+        # Load the collection into memory
+        coll.load()
+        logger.info("Collection %r created, indexed, and loaded", coll_name)
 
 # Helper to derive a user-specific collection name
 def user_collection(user_id: int) -> str:
@@ -63,7 +98,33 @@ class SSEStreamer(BaseCallbackHandler):
         yield None
 
 # Ingest helper (called on file upload, kept here if needed)
-def add_user_files(user_id: int, md_paths: List[str]) -> None:
+def add_user_content_documents(user_id: int, docs: List[Document]) -> None:
+    coll_name = user_collection(user_id)
+    ensure_user_collection(coll_name)
+
+    # split into chunks
+    chunks = RecursiveCharacterTextSplitter(
+        chunk_size=1000, chunk_overlap=100
+    ).split_documents(docs)
+
+    store = Milvus(
+        embedding_function=OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY),
+        collection_name=coll_name,
+        connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
+        drop_old=False,
+    )
+    store.add_documents(chunks)
+
+    # flush + load
+    coll = Collection(coll_name, using="default")
+    coll.flush()
+    coll.load()
+
+def add_user_files(
+    user_id: int,
+    kb_items: List,  # now take model instances, not paths
+) -> None:
+    print("!!!Add")
     coll_name = user_collection(user_id)
     store = Milvus(
         embedding_function=OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY),
@@ -73,18 +134,31 @@ def add_user_files(user_id: int, md_paths: List[str]) -> None:
     )
 
     docs = []
-    for path in md_paths:
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            text = f.read()
+    for item in kb_items:
+        # open in binary, then decode
+        with item.file.open(mode="rb") as f:
+            raw_bytes = f.read()
+        text = raw_bytes.decode("utf-8", errors="ignore")
+
         docs.append(Document(
             page_content=text,
-            metadata={"user_id": user_id, "source": os.path.basename(path)}
+            metadata={
+                "user_id": user_id,
+                "source": item.file.name.rsplit("/", 1)[-1],
+                "kb_item_id": item.id,
+            }
         ))
 
-    chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100).split_documents(docs)
+    print("!!!docs", docs)
+    # split into chunks and add
+    chunks = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=100
+    ).split_documents(docs)
+
     store.add_documents(chunks)
 
-    # Flush the memtable so `num_entities` and queries see the new vectors
+    # make sure Milvus is up to date
     coll = Collection(coll_name)
     coll.flush()
     coll.load()
@@ -241,7 +315,6 @@ class RAGChatbot:
             filter_sources=filter_sources,
         )
         docs = combined.get_relevant_documents(question)
-        print("!!!docs!!!", docs)
 
         # emit metadata
         meta = {"type": "metadata", "docs": [

@@ -8,6 +8,7 @@ from asgiref.sync import sync_to_async, async_to_sync
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
+import traceback
 
 from django.db import transaction
 from django.http import StreamingHttpResponse, Http404, FileResponse
@@ -23,6 +24,8 @@ from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.decorators import action
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+import tempfile
+import logging
 
 from .models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook, BatchJob, BatchJobItem, NotebookChatMessage
 from .serializers import (
@@ -54,14 +57,18 @@ from rag.rag import (
     RAGChatbot, 
     SuggestionRAGAgent, 
     add_user_files, 
+    add_user_content_documents,
     user_collection,
+    ensure_user_collection,
 )
 from langchain_milvus import Milvus
 from langchain_openai import OpenAIEmbeddings
+from langchain.schema import Document
 from pymilvus import Collection
 from pymilvus.exceptions import SchemaNotReadyException, CollectionNotExistException
 from backend.settings import MILVUS_COLLECTION_NAME
 from .tasks import process_file_upload_task  # your Celery task
+from PyPDF2 import PdfReader
 
 
 upload_processor = UploadProcessor()
@@ -69,6 +76,174 @@ file_storage = FileStorageService()
 url_extractor = URLExtractor()
 media_extractor = MediaFeatureExtractor()
 
+logger = logging.getLogger(__name__)
+
+# class FileUploadView(NotebookPermissionMixin, APIView):
+#     """Handle file uploads to notebooks - supports both single and batch uploads."""
+#     parser_classes = [MultiPartParser]
+
+#     def post(self, request, notebook_id):
+#         try:
+#             notebook = self.get_user_notebook(notebook_id, request.user)
+
+#             batch_serializer = BatchFileUploadSerializer(data=request.data)
+#             if batch_serializer.is_valid():
+#                 validated = batch_serializer.validated_data
+#                 if 'files' in validated:
+#                     return self._handle_batch_file_upload(
+#                         validated['files'], notebook, request.user
+#                     )
+
+#             serializer = FileUploadSerializer(data=request.data)
+#             serializer.is_valid(raise_exception=True)
+#             file_obj  = serializer.validated_data['file']
+#             upload_id = serializer.validated_data.get('upload_file_id') or uuid4().hex
+
+#             return self._handle_single_file_upload(
+#                 file_obj, upload_id, notebook, request.user
+#             )
+
+#         except ValidationError as e:
+#             return self.error_response(
+#                 "File validation failed",
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 details={"error": str(e)},
+#             )
+#         except Exception as e:
+#             logger.exception("File upload failed for notebook %s user %s", notebook_id, request.user.pk)
+#             return Response(
+#                 {"error": "File upload failed", "details": str(e)},
+#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             )
+
+#     def _handle_single_file_upload(self, inbound_file, upload_id, notebook, user):
+#         logger.info(f"Starting single file upload: user={user.pk}, notebook={notebook.id}, name={inbound_file.name}")
+#         # 1) process & save to KnowledgeBaseItem
+#         result = async_to_sync(upload_processor.process_upload)(
+#             inbound_file, upload_id, user_pk=user.pk, notebook_id=notebook.id
+#         )
+#         kb_item = get_object_or_404(
+#             KnowledgeBaseItem, id=result["file_id"], user=user
+#         )
+
+#         # 2) link in KnowledgeItem
+#         source = Source.objects.create(
+#             notebook=notebook,
+#             source_type="file",
+#             title=inbound_file.name,
+#             needs_processing=False,
+#             processing_status="done",
+#         )
+#         ki, created = KnowledgeItem.objects.get_or_create(
+#             notebook=notebook,
+#             knowledge_base_item=kb_item,
+#             defaults={"source": source, "notes": f"Processed {inbound_file.name}"},
+#         )
+#         if not created and not ki.source:
+#             ki.source = source
+#             ki.save(update_fields=["source"])
+
+#         # 3) embed into Milvus
+#         coll_name = user_collection(user.pk)
+#         from pymilvus import utility
+#         first_time = not utility.has_collection(coll_name, using="default")
+#         ensure_user_collection(coll_name)
+
+#         # Build Document(s) depending on available content
+#         docs = []
+#         # 3a) Processed content file (md/txt)
+#         if kb_item.file:
+#             logger.debug("Reading processed file from S3: %s", kb_item.file.name)
+#             # Read binary and decode since FileField.open() doesn't accept encoding
+#             f = kb_item.file.open('rb')
+#             raw = f.read()
+#             text = raw.decode('utf-8')
+#             docs.append(Document(
+#                 page_content=text,
+#                 metadata={"user_id": user.pk, "source": kb_item.file.name},
+#             ))
+#         # 3b) Inline text
+#         elif kb_item.content:
+#             logger.debug("Using inline content for KB item %s", kb_item.id)
+#             docs.append(Document(
+#                 page_content=kb_item.content,
+#                 metadata={"user_id": user.pk, "source": "inline_content"},
+#             ))
+#         # 3c) Original PDF extraction
+#         elif kb_item.original_file:
+#             logger.debug("Downloading original file from S3: %s", kb_item.original_file.name)
+#             tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+#             with kb_item.original_file.open('rb') as src:
+#                 tmp.write(src.read())
+#             tmp.flush()
+#             tmp_path = tmp.name
+#             tmp.close()
+
+#             reader = PdfReader(tmp_path)
+#             text = "\n".join(page.extract_text() or "" for page in reader.pages)
+#             docs.append(Document(
+#                 page_content=text,
+#                 metadata={"user_id": user.pk, "source": kb_item.original_file.name},
+#             ))
+#         else:
+#             logger.warning("No content found for KB item %s; skipping ingestion", kb_item.id)
+
+#         # Ingest into Milvus if any docs
+#         if docs:
+#             add_user_content_documents(user.pk, docs)
+#         else:
+#             logger.info("Skipping Milvus ingestion for KB item %s (no docs)", kb_item.id)
+
+#         return Response(
+#             {
+#                 "success": True,
+#                 "file_id": kb_item.id,
+#                 "knowledge_item_id": ki.id,
+#                 "first_time": first_time,
+#             },
+#             status=status.HTTP_201_CREATED,
+#         )
+
+#     def _handle_batch_file_upload(self, files, notebook, user):
+#         batch_job = BatchJob.objects.create(
+#             notebook=notebook,
+#             job_type='file_upload',
+#             total_items=len(files),
+#             status='processing',
+#         )
+
+#         for file_obj in files:
+#             upload_id = uuid4().hex
+#             data = file_obj.read()
+#             file_obj.seek(0)
+
+#             batch_item = BatchJobItem.objects.create(
+#                 batch_job=batch_job,
+#                 item_data={'filename': file_obj.name, 'size': len(data)},
+#                 upload_id=upload_id,
+#                 status='pending',
+#             )
+
+#             process_file_upload_task.delay(
+#                 file_data=data,
+#                 filename=file_obj.name,
+#                 notebook_id=notebook.id,
+#                 user_id=user.pk,
+#                 upload_file_id=upload_id,
+#                 batch_job_id=batch_job.id,
+#                 batch_item_id=batch_item.id,
+#             )
+
+#         return Response(
+#             {
+#                 'success': True,
+#                 'batch_job_id': batch_job.id,
+#                 'total_items': len(files),
+#                 'message': f'Batch upload started for {len(files)} files',
+#             },
+#             status=status.HTTP_202_ACCEPTED,
+#         )
+    
 
 class FileUploadView(NotebookPermissionMixin, APIView):
     """Handle file uploads to notebooks - supports both single and batch uploads."""
@@ -98,10 +273,21 @@ class FileUploadView(NotebookPermissionMixin, APIView):
                 details={"error": str(e)},
             )
         except Exception as e:
+            logger.exception(
+                "Unhandled exception in FileUploadView POST for notebook %s: %s",
+                notebook_id, e
+            )
+            # Optionally, also log the raw traceback
+            logger.error("Traceback:\n%s", traceback.format_exc())
+
             return Response(
-                {"error": "File upload failed", "details": str(e)},
+                {
+                    "error": "File upload failed",
+                    "details": str(e),
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
 
     def _handle_single_file_upload(self, inbound_file, upload_id, notebook, user):
         # 1) process & save to KnowledgeBaseItem
@@ -126,25 +312,19 @@ class FileUploadView(NotebookPermissionMixin, APIView):
         if not created and not ki.source:
             ki.source = source
             ki.save(update_fields=["source"])
-
-        # 3) embed into Milvus
-        #    - first‐time: will create the collection and embed this file
-        #    - subsequent: will simply add this file’s vectors
-        coll_name = user_collection(user.pk)
-        try:
-            coll     = Collection(coll_name)
-            existing = coll.num_entities
-        except (CollectionNotExistException, SchemaNotReadyException):
-            existing = 0
-
-        # always ingest this new file's vectors
-        add_user_files(user.pk, [kb_item.file.path])
+        
+        print("!!!kb item", kb_item)
+        
+        add_user_files(
+            user_id=user.pk,
+            kb_items=[kb_item],
+        )
 
         return Response({
             "success": True,
             "file_id": kb_item.id,
             "knowledge_item_id": ki.id,
-            "first_time": existing == 0,
+            # "first_time": existing == 0,
         }, status=status.HTTP_201_CREATED)
 
     def _handle_batch_file_upload(self, files, notebook, user):
@@ -553,19 +733,19 @@ class RAGChatFromKBView(NotebookPermissionMixin, APIView):
             return Response({"error": "Notebook not found."}, status=status.HTTP_404_NOT_FOUND)
 
         # 3) ensure there are files
-        kb_qs = KnowledgeBaseItem.objects.filter(
-            notebook_links__notebook=notebook,
-            user=request.user,
-            file__isnull=False
-        ).exclude(file="").distinct()
-        if not kb_qs.exists():
-            return Response({"error": "No valid documents in this notebook."},
-                            status=status.HTTP_404_NOT_FOUND)
+        # kb_qs = KnowledgeBaseItem.objects.filter(
+        #     notebook_links__notebook=notebook,
+        #     user=request.user,
+        #     file__isnull=False
+        # ).exclude(file="").distinct()
+        # if not kb_qs.exists():
+        #     return Response({"error": "No valid documents in this notebook."},
+        #                     status=status.HTTP_404_NOT_FOUND)
 
-        file_paths = [item.file.path for item in kb_qs if hasattr(item.file, "path")]
-        if not file_paths:
-            return Response({"error": "No file paths available."},
-                            status=status.HTTP_404_NOT_FOUND)
+        # file_paths = [item.file.path for item in kb_qs if hasattr(item.file, "path")]
+        # if not file_paths:
+        #     return Response({"error": "No file paths available."},
+        #                     status=status.HTTP_404_NOT_FOUND)
 
         # 4) verify user's Milvus collection exists & has data
         user_id  = request.user.pk

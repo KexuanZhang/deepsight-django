@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 import uuid
+from storages.backends.s3boto3 import S3Boto3Storage
 import json
 
 User = get_user_model()
@@ -44,7 +45,7 @@ class PodcastJob(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     # Results
-    audio_file = models.FileField(null=True, blank=True)
+    audio_file = models.FileField(null=True, blank=True, storage=S3Boto3Storage(),)
     conversation_text = models.TextField(blank=True, default="")
     error_message = models.TextField(blank=True, default="")
 

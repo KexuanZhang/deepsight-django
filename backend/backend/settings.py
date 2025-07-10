@@ -33,7 +33,8 @@ SECRET_KEY = os.getenv(
 )
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+# DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+DEBUG = True
 
 # Host Configuration - Set HOST_IP environment variable for server deployment
 HOST_IP = os.getenv("HOST_IP", "localhost")
@@ -96,16 +97,16 @@ MIDDLEWARE = [
 ]
 
 
-AWS_LOCATION = "media"
-DEFAULT_FILE_STORAGE = "backend.storage_backends.S3MediaStorage"
+DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
 
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME')
+AWS_S3_ENDPOINT_URL = os.getenv('AWS_S3_ENDPOINT_URL')
+AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME')
+AWS_S3_USE_SSL = os.getenv('AWS_S3_USE_SSL', 'False') == 'True'
+AWS_S3_VERIFY = os.getenv('AWS_S3_VERIFY', 'False') == 'True'
 
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
-
-AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_URL")
-MINIO_ACCESS_URL = os.getenv("MINIO_ACCESS_URL")
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -203,7 +204,7 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 # Media files (uploaded content) - Updated to use new DeepSight data storage path
-DEEPSIGHT_DATA_ROOT = Path("/Users/huangruizhe/Library/CloudStorage/OneDrive-UniversityofToronto/RAY/Huawei/data00/Deepsight")
+DEEPSIGHT_DATA_ROOT = Path("/Users/zhang/Desktop/huawei/ds-django-2/deepsight-django/backend/backend/data00")
 # DEEPSIGHT_DATA_ROOT = Path("/Users/eason/Downloads/data00/Deepsight")
 MEDIA_ROOT = DEEPSIGHT_DATA_ROOT
 MEDIA_URL = "/media/"
