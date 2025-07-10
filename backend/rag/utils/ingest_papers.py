@@ -112,7 +112,7 @@ def ingest_papers(
          "summary":    d.page_content}
         for d in raw_docs
     ]
-    with open("papers_summaries.json", "w", encoding="utf-8") as f:
+    with open("demo_papers_summaries.json", "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)
     print("[Output] Written papers_summaries.json")
 
