@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Eye, FileText, Globe, Music, Video, File, HardDrive, Calendar, ExternalLink, Loader2, AlertCircle, RefreshCw, Trash2, Plus, ChevronLeft, CheckCircle, Clock, Upload, Link2, Youtube, Group, Presentation } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
@@ -187,9 +187,9 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
   });
 
   // Helper function to update state
-  const updateState = (updates) => {
+  const updateState = useCallback((updates) => {
     setState(prevState => ({ ...prevState, ...updates }));
-  };
+  }, []);
 
   // Helper function to get raw file URL
   const getRawFileUrl = (fileId) => {
@@ -214,7 +214,7 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
     };
   }, [isOpen, source, notebookId]);
 
-  const loadPreview = async () => {
+  const loadPreview = useCallback(async () => {
     if (!source) return;
     
     console.log('FilePreview: Loading preview for source:', source);
@@ -237,7 +237,44 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
       console.error('FilePreview: Error loading preview:', err);
       updateState({ error: err.message, isLoading: false });
     }
-  };
+  }, [source, notebookId, updateState]);
+
+  // Subscribe to transcript ready SSE when placeholder is detected
+  useEffect(() => {
+    if (!isOpen || !source || !state.preview) return;
+
+    const placeholderText = 'Audio transcription will be processed asynchronously';
+    if (!state.preview.content || !state.preview.content.includes(placeholderText)) return;
+
+    // Build SSE URL – matches new backend endpoint
+    const sseUrl = `${API_BASE_URL}/notebooks/${notebookId}/files/${source.file_id}/transcript/stream`;
+
+    const es = new EventSource(sseUrl, { withCredentials: true });
+
+    es.onmessage = async (event) => {
+      if (event.data === 'ready') {
+        // Transcript finished → reload preview once and close
+        console.log('SSE: Transcript ready event received for file:', source.file_id);
+        try {
+          // Add a small delay to ensure backend has fully updated the database
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          console.log('SSE: Reloading preview after transcript completion');
+          await loadPreview();
+          console.log('SSE: Preview reloaded successfully');
+        } catch (error) {
+          console.error('SSE: Error reloading preview:', error);
+        } finally {
+          es.close();
+        }
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+    };
+
+    return () => es.close();
+  }, [isOpen, source, state.preview, notebookId, loadPreview]);
 
   const getPreviewIcon = (type) => {
     switch (type) {

@@ -1228,11 +1228,17 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     const isProcessing = ['pending', 'parsing', 'uploading'].includes(source.parsing_status);
     
     if (isProcessing) {
+      // Check if this is a video URL in pending status
+      const isVideoUrl = source.metadata?.processing_type === 'media' && 
+                        source.metadata?.source_type === 'url' && 
+                        source.parsing_status === 'pending';
+      
       return (
         <div className="mt-1 flex items-center space-x-2">
           <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
           <span className="text-xs text-gray-500">
             {source.parsing_status === 'uploading' ? 'Uploading...' : 
+             isVideoUrl ? 'Downloading...' :
              source.parsing_status === 'pending' ? 'Processing...' : 
              'Parsing...'}
           </span>

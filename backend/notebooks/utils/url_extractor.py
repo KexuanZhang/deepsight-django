@@ -862,6 +862,14 @@ class URLExtractor:
                 notebook_id=notebook_id,
                 original_file_path=original_file_path  # Pass the original file to be stored
             )
+
+            # If transcript generation is required, enqueue Celery task
+            if processing_type == "media" and transcript_filename:
+                try:
+                    from notebooks.tasks import generate_transcript_task
+                    generate_transcript_task.delay(file_id)
+                except Exception as e:
+                    self.log_operation("queue_transcript_error", str(e), "error")
             
             # Store mapping if upload_url_id is provided
             if upload_url_id:

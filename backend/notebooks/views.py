@@ -8,12 +8,13 @@ import logging
 from asgiref.sync import sync_to_async, async_to_sync
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 
 logger = logging.getLogger(__name__)
 
 from django.db import transaction
-from django.http import StreamingHttpResponse, Http404, FileResponse
+from django.http import StreamingHttpResponse, Http404, FileResponse, HttpResponse
+from django.views import View
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.views.decorators.csrf import csrf_exempt
@@ -1704,3 +1705,55 @@ class BatchJobStatusView(StandardAPIView, NotebookPermissionMixin):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details={"error": str(e)},
             )
+
+# =======================================================================
+# New: SSE endpoint for transcript completion notifications
+# =======================================================================
+
+from django.views.decorators.csrf import csrf_exempt
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TranscriptStreamView(View):
+    """Server-Sent Events endpoint. Emits one `ready` message when the
+    asynchronous transcript generation for the given file_id is finished.
+    Closes automatically afterwards (or after timeout).
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        # Check authentication manually since we're using Django's View instead of DRF's APIView
+        if not request.user.is_authenticated:
+            return HttpResponse('Unauthorized', status=401)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, notebook_id, file_id):
+        # Basic ownership/permission check – notebook must belong to user
+        if not Notebook.objects.filter(id=notebook_id, user=request.user).exists():
+            return HttpResponse('Not found', status=404)
+
+        def event_stream():
+            import redis, os
+            from django.conf import settings
+            redis_conn = redis.Redis.from_url(settings.CELERY_BROKER_URL)
+            pubsub = redis_conn.pubsub()
+            channel = "transcript_ready"
+            pubsub.subscribe(channel)
+
+            timeout_seconds = 900  # 15 minutes
+            start = time.time()
+
+            for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+                if message["data"].decode() == str(file_id):
+                    yield "data: ready\n\n"
+                    break
+                if time.time() - start > timeout_seconds:
+                    break
+
+            pubsub.unsubscribe(channel)
+
+        response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+        response["Cache-Control"] = "no-cache"
+        response["X-Accel-Buffering"] = "no"  # Disable nginx buffering for SSE
+        return response

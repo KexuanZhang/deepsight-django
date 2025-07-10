@@ -507,6 +507,16 @@ class UploadProcessor:
                     metadata=file_metadata,
                 )
 
+            # ------------------------------------------------------
+            # Queue asynchronous transcript generation if requested
+            # ------------------------------------------------------
+            if processing_result.get("needs_async_transcript"):
+                try:
+                    from notebooks.tasks import generate_transcript_task
+                    generate_transcript_task.delay(file_id)
+                except Exception as e:
+                    self.log_operation("queue_transcript_error", str(e), "error")
+
             # Clean up temp file
             if temp_path and os.path.exists(temp_path):
                 os.unlink(temp_path)
@@ -827,44 +837,37 @@ class UploadProcessor:
             # Initialize content parts
             content_parts = []
 
-            # Process audio transcription if available
-            transcript_filename = None
-            has_transcript = False
+            # -----------------------------------------------
+            # Asynchronous transcription placeholder
+            # -----------------------------------------------
 
-            # Always generate a transcript filename based on the video name
             base_title = Path(file_metadata['filename']).stem
             cleaned_title = self._clean_title(base_title)
             transcript_filename = f"{cleaned_title}_transcript.md"
 
-            if result.returncode == 0 and self.whisper_model and os.path.exists(audio_path):
-                try:
-                    transcript_content, _ = await self.transcribe_audio_video(
-                        audio_path, file_metadata['filename']
-                    )
-                    content_parts.append(f"# Transcription\n\n{transcript_content}")
-                    has_transcript = True
-                except Exception as e:
-                    self.log_operation("video_transcription_error", f"Transcription failed: {e}", "warning")
-                finally:
-                    # Clean up extracted audio
-                    if os.path.exists(audio_path):
-                        os.unlink(audio_path)
-            else:
-                # If no audio or transcription failed
-                if result.returncode != 0:
-                    content_parts.append(f"# Video: {file_metadata['filename']}\n\nNo audio track found or audio extraction failed.")
-                else:
-                    content_parts.append(f"# Video: {file_metadata['filename']}\n\nAudio transcription requires faster-whisper installation.")
+            # Always include a placeholder; real transcript will be added by Celery task
+            placeholder = (
+                "Audio transcription will be processed asynchronously. "
+                "Wait until the transcript appears here …"
+            )
 
-            # Get video metadata and add transcript info
+            content_parts.append(f"# Video: {file_metadata['filename']}\n\n{placeholder}")
+
+            # Video metadata – mark that transcript is pending
             video_metadata = self._get_video_metadata(file_path)
             video_metadata.update({
                 'transcript_filename': transcript_filename,
-                'has_transcript': has_transcript,
+                'has_transcript': False,
                 'has_audio': result.returncode == 0,
             })
 
-            # Combine content
+            # Clean up extracted audio file to save disk space
+            try:
+                if os.path.exists(audio_path):
+                    os.unlink(audio_path)
+            except Exception:
+                pass
+
             final_content = "\n\n".join(content_parts)
 
             return {
@@ -872,7 +875,8 @@ class UploadProcessor:
                 'metadata': video_metadata,
                 'features_available': ['frame_extraction', 'scene_analysis', 'speaker_diarization', 'video_analysis'],
                 'processing_time': 'immediate',
-                'transcript_filename': transcript_filename if has_transcript else None
+                'transcript_filename': transcript_filename,
+                'needs_async_transcript': True
             }
 
         except Exception as e:

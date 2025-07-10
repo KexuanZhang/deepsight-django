@@ -24,6 +24,7 @@ from .views import (
     ChatHistoryView,
     ClearChatHistoryView,
     SuggestedQuestionsView,
+    TranscriptStreamView,
 )
 
 # Import views from podcast and reports apps
@@ -94,6 +95,13 @@ urlpatterns = [
         "<int:notebook_id>/files/<str:upload_file_id>/status/stream",
         FileStatusStreamView.as_view(),
         name="file-status-stream",
+    ),
+
+    # SSE notification for transcript completion
+    path(
+        "<int:notebook_id>/files/<str:file_id>/transcript/stream",
+        TranscriptStreamView.as_view(),
+        name="transcript-stream",
     ),
 
     # 6) delete either an in‐flight upload or a completed file

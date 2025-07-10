@@ -275,7 +275,9 @@ async function generateAudioPreview(fileId, metadata, notebookId = null) {
   let wordCount = 0;
   
   try {
-    const response = await apiService.getParsedFile(fileId);
+    // Add cache-busting parameter to ensure fresh data
+    const cacheBuster = Date.now();
+    const response = await apiService.request(`/notebooks/files/${fileId}/content/?cb=${cacheBuster}`);
     if (response.success && response.data.content) {
       transcriptContent = response.data.content;
       hasTranscript = transcriptContent.trim().length > 0;
@@ -355,12 +357,17 @@ async function generateVideoPreview(fileId, metadata, notebookId = null) {
   let wordCount = 0;
   
   try {
-    const response = await apiService.getParsedFile(fileId);
+    console.log('generateVideoPreview: Fetching parsed content for file:', fileId);
+    // Add cache-busting parameter to ensure fresh data
+    const cacheBuster = Date.now();
+    const response = await apiService.request(`/notebooks/files/${fileId}/content/?cb=${cacheBuster}`);
+    console.log('generateVideoPreview: API response:', response);
     if (response.success && response.data.content) {
       transcriptContent = response.data.content;
       hasTranscript = transcriptContent.trim().length > 0;
       wordCount = transcriptContent.split(/\s+/).filter(word => word.length > 0).length;
       console.log('Video transcript loaded successfully, word count:', wordCount);
+      console.log('Transcript content preview:', transcriptContent.substring(0, 200) + '...');
     } else {
       console.log('No transcript content in response:', response);
     }

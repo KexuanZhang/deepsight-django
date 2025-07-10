@@ -7,6 +7,7 @@ from celery import shared_task
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from asgiref.sync import async_to_sync
 from uuid import uuid4
+import os
 
 from .models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook, BatchJob, BatchJobItem
 from .utils.url_extractor import URLExtractor
@@ -346,3 +347,64 @@ def _check_batch_completion(batch_job_id):
         
     except ObjectDoesNotExist:
         pass 
+
+# === NEW: asynchronous transcription task ===
+@shared_task(bind=True, queue="notebook_processing")
+def generate_transcript_task(self, file_id: str):
+    """Generate transcript for a previously stored media file.
+
+    Args:
+        file_id: KnowledgeBaseItem primary key (string).
+    Workflow:
+        1. Locate the KnowledgeBaseItem and its original binary file path.
+        2. Run Whisper transcription via UploadProcessor.
+        3. Save the markdown transcript into the same KB directory
+           using FileStorageService._save_organized_content_file().
+        4. Update metadata (has_transcript, transcript_filename).
+        5. Publish a Redis pub/sub event so clients can refresh.
+    """
+    from .utils.upload_processor import UploadProcessor
+    from .utils.file_storage import FileStorageService
+    from .models import KnowledgeBaseItem
+    import redis
+    from django.conf import settings
+
+    try:
+        kb_item = KnowledgeBaseItem.objects.get(id=file_id)
+        user_id = kb_item.user_id
+
+        file_storage = FileStorageService()
+        upload_processor = UploadProcessor()
+
+        # Get original binary file path (video/audio)
+        original_path = file_storage.get_original_file_path(file_id, user_id)
+        if not original_path or not os.path.exists(original_path):
+            raise FileNotFoundError(f"Original file for {file_id} not found: {original_path}")
+
+        # Run transcription (sync call inside Celery – already offloaded)
+        transcript_content, transcript_filename = async_to_sync(
+            upload_processor.transcribe_audio_video
+        )(original_path, os.path.basename(original_path))
+
+        # Persist transcript markdown next to existing KB item
+        paths = file_storage._generate_knowledge_base_paths(user_id, transcript_filename, kb_item.id)
+        file_storage._save_organized_content_file(kb_item, transcript_content, paths, content_filename=transcript_filename)
+
+        # Update metadata
+        metadata = kb_item.metadata or {}
+        metadata.update({
+            "has_transcript": True,
+            "transcript_filename": transcript_filename,
+        })
+        kb_item.metadata = metadata
+        kb_item.save(update_fields=["metadata"])
+
+        # Notify listeners via Redis pub/sub
+        redis_conn = redis.Redis.from_url(settings.CELERY_BROKER_URL)
+        redis_conn.publish("transcript_ready", str(file_id))
+
+        return {"success": True, "file_id": file_id}
+
+    except Exception as e:
+        logger.error(f"generate_transcript_task error for {file_id}: {e}")
+        raise 
