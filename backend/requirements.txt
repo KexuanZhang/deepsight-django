@@ -4,6 +4,8 @@ backoff
 diskcache
 Django
 django-cors-headers
+django-storages
+boto3
 djangorestframework
 drf_yasg
 dspy_ai==2.4.9
