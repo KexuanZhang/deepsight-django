@@ -1,0 +1,131 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${PGDATABASE}
+      POSTGRES_USER: ${PGUSER}
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 -U ${PGUSER} -d ${PGDATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend-common: &backend-common
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        http_proxy: ${HTTP_PROXY:-}
+        https_proxy: ${HTTPS_PROXY:-}
+        no_proxy: ${NO_PROXY:-}
+    image: deepsight-backend-common:${VERSION}
+    gpus: all
+    environment:
+      DEBUG: ${DEBUG}
+      SECRET_KEY: ${SECRET_KEY}
+      HOST_IP: ${HOST_IP:-}
+      BACKEND_PORT: ${BACKEND_PORT:-8000}
+      FRONTEND_PORT: ${FRONTEND_PORT:-8888}
+      PGDATABASE: ${PGDATABASE}
+      PGUSER: ${PGUSER}
+      PGPASSWORD: ${PGPASSWORD}
+      PGHOST: db
+      PGPORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/host-ca.crt
+      http_proxy: ${HTTP_PROXY:-}
+      https_proxy: ${HTTPS_PROXY:-}
+      no_proxy: ${NO_PROXY:-}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./backend/media:/app/media
+      - ./backend/staticfiles:/app/staticfiles
+      - /data00/deepsight_${VERSION}:/data00/deepsight_${VERSION}:rw
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/host-ca.crt:ro
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/.cache/datalab/:/root/.cache/datalab
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend:
+    <<: *backend-common
+    image: deepsight-backend:${VERSION}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://${HOST_IP}:8000/admin/login/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    command: >
+      sh -c "
+        python manage.py migrate &&
+        python manage.py collectstatic --noinput &&
+        gunicorn --bind 0.0.0.0:8000 --workers 4 --timeout 1000 backend.wsgi:application
+      "
+
+  celery:
+    <<: *backend-common
+    image: deepsight-celery:${VERSION}
+    command: >
+      celery -A backend worker
+        --loglevel=info
+        --concurrency=4
+        --queues=notebook_processing,podcast,reports,maintenance,validation
+
+  celery-beat:
+    <<: *backend-common
+    image: deepsight-celery-beat:${VERSION}
+    command: >
+      celery -A backend beat
+        --loglevel=info
+        --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        http_proxy: ${HTTP_PROXY:-}
+        https_proxy: ${HTTPS_PROXY:-}
+        no_proxy: ${NO_PROXY:-}
+    image: deepsight-frontend:${VERSION}
+    ports:
+      - "8888:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
