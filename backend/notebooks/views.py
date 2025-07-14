@@ -1387,12 +1387,12 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
             )
 
             # Try to serve original file first
-            if kb_item.original_file:
-                return self._serve_file(kb_item.original_file, kb_item.title)
+            if kb_item.original_file_object_key:
+                return self._serve_minio_file(kb_item.original_file_object_key, kb_item.title)
 
             # Fallback to processed file
-            if kb_item.file:
-                return self._serve_file(kb_item.file, kb_item.title)
+            if kb_item.file_object_key:
+                return self._serve_minio_file(kb_item.file_object_key, kb_item.title)
 
             raise Http404("Raw file not found")
 
@@ -1407,15 +1407,25 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
                 details={"error": str(e)},
             )
 
-    def _serve_file(self, file_field, title):
-        """Serve a file through Django's FileResponse."""
+    def _serve_minio_file(self, object_key, title):
+        """Serve a file from MinIO through Django's FileResponse."""
         try:
-            content_type, _ = mimetypes.guess_type(file_field.name)
+            from .utils.minio_backend import get_minio_backend
+            from io import BytesIO
+            
+            minio_backend = get_minio_backend()
+            file_content = minio_backend.get_file_content(object_key)
+            
+            # Guess content type from the title/filename
+            content_type, _ = mimetypes.guess_type(title)
             if not content_type:
                 content_type = "application/octet-stream"
 
+            # Create a BytesIO stream from the content
+            file_stream = BytesIO(file_content)
+            
             response = FileResponse(
-                file_field.open("rb"), content_type=content_type, as_attachment=False
+                file_stream, content_type=content_type, as_attachment=False
             )
             response["Content-Disposition"] = f'inline; filename="{title}"'
             response["X-Content-Type-Options"] = "nosniff"
@@ -1454,19 +1464,32 @@ class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
                 details={"error": str(e)},
             )
 
-    def _serve_file(self, file_field, title):
-        """Helper to serve a file with proper headers."""
-        content_type, _ = mimetypes.guess_type(file_field.name)
-        if not content_type:
-            content_type = "application/octet-stream"
+    def _serve_minio_file(self, object_key, title):
+        """Helper to serve a file from MinIO with proper headers."""
+        try:
+            from .utils.minio_backend import get_minio_backend
+            from io import BytesIO
+            
+            minio_backend = get_minio_backend()
+            file_content = minio_backend.get_file_content(object_key)
+            
+            # Guess content type from the title/filename
+            content_type, _ = mimetypes.guess_type(title)
+            if not content_type:
+                content_type = "application/octet-stream"
 
-        response = FileResponse(
-            file_field.open("rb"), content_type=content_type, as_attachment=False
-        )
-        response["Content-Disposition"] = f'inline; filename="{title}"'
-        response["X-Content-Type-Options"] = "nosniff"
-        response["X-Frame-Options"] = "DENY"
-        return response
+            # Create a BytesIO stream from the content
+            file_stream = BytesIO(file_content)
+            
+            response = FileResponse(
+                file_stream, content_type=content_type, as_attachment=False
+            )
+            response["Content-Disposition"] = f'inline; filename="{title}"'
+            response["X-Content-Type-Options"] = "nosniff"
+            response["X-Frame-Options"] = "DENY"
+            return response
+        except Exception as e:
+            raise Http404(f"File not accessible: {str(e)}")
 
 
 class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):

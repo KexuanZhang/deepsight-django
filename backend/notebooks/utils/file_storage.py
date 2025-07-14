@@ -483,25 +483,8 @@ class FileStorageService:
                         "error",
                     )
 
-            # Legacy fallback: try to read from file field if it exists
-            if kb_item.file:
-                try:
-                    # Use Django's file field to read content
-                    with kb_item.file.open("r") as f:
-                        content = f.read()
-                        
-                    self.log_operation(
-                        "get_content_legacy_success",
-                        f"Retrieved content from legacy file field: {kb_item.file.name}",
-                        "warning"
-                    )
-                    return content
-                except (FileNotFoundError, OSError) as e:
-                    self.log_operation(
-                        "get_content_legacy_error",
-                        f"kb_item_id={file_id}, legacy_file={kb_item.file.name}, error={str(e)}",
-                        "error",
-                    )
+            # Note: Legacy Django FileField support has been removed after MinIO migration
+            # All files should now be stored in MinIO with object keys
 
             return None
             
@@ -691,9 +674,9 @@ class FileStorageService:
                         "tags": item.tags,
                         "created_at": item.created_at.isoformat(),
                         "updated_at": item.updated_at.isoformat(),
-                        "has_file": bool(item.file_object_key or item.file),
+                        "has_file": bool(item.file_object_key),
                         "has_content": bool(item.content),
-                        "has_original_file": bool(item.original_file_object_key or item.original_file),
+                        "has_original_file": bool(item.original_file_object_key),
                         "metadata": item.metadata or {},
                         "file_metadata": item.file_metadata or {},
                         "minio_storage": bool(item.file_object_key or item.original_file_object_key),

@@ -57,12 +57,14 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
                             kb_item = KnowledgeBaseItem.objects.get(id=file_id)
                             filename = kb_item.title or f"file_{file_id}"
                             content_type = getattr(kb_item, 'content_type', 'unknown')
-                            # Get original file extension and MIME type
+                            # Get original file extension and MIME type from MinIO metadata
                             raw_extension = None
                             raw_mime = None
-                            if kb_item.original_file and kb_item.original_file.name:
-                                raw_extension = os.path.splitext(kb_item.original_file.name)[1].lower()
-                                raw_mime, _ = mimetypes.guess_type(kb_item.original_file.name)
+                            if kb_item.original_file_object_key:
+                                # Extract filename from metadata or use the title
+                                original_filename = kb_item.file_metadata.get('original_filename') or kb_item.title
+                                raw_extension = os.path.splitext(original_filename)[1].lower()
+                                raw_mime, _ = mimetypes.guess_type(original_filename)
                             file_data = {
                                 "content": content,
                                 "filename": filename,
