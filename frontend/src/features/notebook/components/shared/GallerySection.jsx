@@ -33,29 +33,24 @@ const GallerySection = ({ videoFileId, notebookId }) => {
 
   const loadImages = async () => {
     try {
-      // Try to fetch captions / manifest JSON to get ordered list of images
-      const possibleFiles = ['figure_data.json', 'captions.json', 'manifest.json'];
-      
-      // Add cache-busting timestamp to ensure fresh data
+      // Try to fetch figure_data.json which contains the image list and captions
+      // This is the only JSON file actually created by the video extraction process
       const cacheBuster = Date.now();
-
+      const url = `${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/figure_data.json?t=${cacheBuster}`;
+      
       let imageList = [];
-      for (const filename of possibleFiles) {
-        const url = `${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/${filename}?t=${cacheBuster}`;
-        try {
-          const res = await fetch(url, { 
-            credentials: 'include',
-            cache: 'no-cache' // Ensure fresh data from server
-          });
-          if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
-            const data = await res.json();
-            // data could be an array or object with images key
-            imageList = Array.isArray(data) ? data : data.images || [];
-            if (imageList.length) break;
-          }
-        } catch (err) {
-          // continue trying next filename
+      try {
+        const res = await fetch(url, { 
+          credentials: 'include',
+          cache: 'no-cache' // Ensure fresh data from server
+        });
+        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+          const data = await res.json();
+          // data should be an array from figure_data.json
+          imageList = Array.isArray(data) ? data : [];
         }
+      } catch (err) {
+        console.log('figure_data.json not found or not accessible, gallery will be empty');
       }
 
       // Build filenames list only (blob fetched lazily)

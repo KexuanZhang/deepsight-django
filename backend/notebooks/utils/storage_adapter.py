@@ -30,6 +30,11 @@ class StorageAdapter:
         self.storage_service = FileStorageService()
         self.logger.info("Initialized MinIO storage backend")
     
+    @property
+    def file_storage(self):
+        """Compatibility property for legacy code that expects file_storage instead of storage_service."""
+        return self.storage_service
+    
     def is_minio_backend(self) -> bool:
         """Check if currently using MinIO backend."""
         return True  # Always MinIO now
@@ -112,37 +117,7 @@ class StorageAdapter:
         
         return info
     
-    def _generate_knowledge_base_paths(
-        self, user_id: int, original_filename: str, kb_item_id: str
-    ) -> Dict[str, str]:
-        """
-        Generate organized file paths for knowledge base storage.
-        Delegates to the underlying storage service.
-        """
-        if hasattr(self.storage_service, '_generate_knowledge_base_paths'):
-            return self.storage_service._generate_knowledge_base_paths(
-                user_id, original_filename, kb_item_id
-            )
-        else:
-            # Fallback implementation for MinIO storage
-            from datetime import datetime
-            current_date = datetime.now()
-            year_month = current_date.strftime("%Y-%m")
-            
-            # Clean the filename
-            cleaned_filename = original_filename.replace(" ", "_").replace("/", "_")
-            
-            base_dir = f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{kb_item_id}"
-            content_dir = f"{base_dir}/content"
-            images_dir = f"{base_dir}/images"
-            
-            return {
-                'base_dir': base_dir,
-                'original_file_path': f"{base_dir}/{cleaned_filename}",
-                'content_dir': content_dir,
-                'content_file_path': f"{content_dir}/extracted_content.md",
-                'images_dir': images_dir,
-            }
+
 
 
 # Global singleton instance

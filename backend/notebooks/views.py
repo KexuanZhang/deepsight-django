@@ -1563,91 +1563,146 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
             else:
                 actual_file_id = video_file_id
 
-            # Get the original video file path from the knowledge base
-            video_file_path = storage_adapter.get_original_file_url(actual_file_id, request.user.pk)
-            if not video_file_path:
+            # Get the knowledge base item for metadata
+            kb_item = get_object_or_404(
+                KnowledgeBaseItem, id=actual_file_id, user=request.user
+            )
+
+            # Get the original video file from MinIO and download to temp location
+            import tempfile
+            import requests
+            
+            # Get pre-signed URL for the video file
+            video_file_url = storage_adapter.get_original_file_url(actual_file_id, request.user.pk)
+            if not video_file_url:
                 return self.error_response(
                     f"Video file not found for ID: {video_file_id}",
                     status_code=status.HTTP_404_NOT_FOUND
                 )
 
+            # Download the video file to a temporary location
+            try:
+                response = requests.get(video_file_url, stream=True)
+                response.raise_for_status()
+                
+                # Create temporary file with appropriate extension
+                original_filename = kb_item.metadata.get('original_filename', 'video.mp4') if kb_item.metadata else 'video.mp4'
+                file_extension = os.path.splitext(original_filename)[1] or '.mp4'
+                
+                temp_video_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_extension)
+                for chunk in response.iter_content(chunk_size=8192):
+                    temp_video_file.write(chunk)
+                temp_video_file.close()
+                
+                video_file_path = temp_video_file.name
+                
+            except Exception as e:
+                return self.error_response(
+                    f"Failed to download video file: {str(e)}",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
             # Validate that the file is a video
             if not self._is_video_file(video_file_path):
+                # Clean up temp file
+                os.unlink(video_file_path)
                 return self.error_response(
-                    f"File is not a video: {video_file_path}",
+                    f"File is not a video: {original_filename}",
                     status_code=status.HTTP_400_BAD_REQUEST
                 )
 
             # Build extraction options
             extraction_options = self._build_extraction_options(serializer.validated_data)
 
-            # Get the knowledge base item for metadata
-            kb_item = get_object_or_404(
-                KnowledgeBaseItem, id=actual_file_id, user=request.user
-            )
-
             # Generate clean title from filename
-            original_filename = kb_item.metadata.get('original_filename') if kb_item.metadata else 'video'
             video_title = clean_title(Path(original_filename).stem)
 
-            # Set up output directory within the knowledge base item structure
-            paths = storage_adapter._generate_knowledge_base_paths(
-                request.user.pk, original_filename, actual_file_id
-            )
-            
-            # Set base directory for extraction - the media extractor will create the images subfolder
-            base_file_dir = paths['base_dir']
-            os.makedirs(base_file_dir, exist_ok=True)
+            # Use temporary directory for processing instead of local user directory
+            temp_base_dir = tempfile.mkdtemp(prefix=f"video_extraction_{actual_file_id}_")
+            base_file_dir = temp_base_dir
 
-            # Process the video for image extraction
-            async def process_video_async():
-                return await media_extractor.process_video_for_images(
-                    file_path=video_file_path,
-                    output_dir=base_file_dir,  # Pass base directory, not images directory
-                    video_title=video_title,
-                    extraction_options=extraction_options,
-                    final_images_dir_name="images"  # This will create images/ folder in base_file_dir
-                )
+            try:
+                # Process the video for image extraction
+                async def process_video_async():
+                    return await media_extractor.process_video_for_images(
+                        file_path=video_file_path,
+                        output_dir=base_file_dir,  # Pass base directory, not images directory
+                        video_title=video_title,
+                        extraction_options=extraction_options,
+                        final_images_dir_name="images"  # This will create images/ folder in base_file_dir
+                    )
 
-            # Run async processing
-            result = async_to_sync(process_video_async)()
+                # Run async processing
+                result = async_to_sync(process_video_async)()
 
-            # Calculate final output paths
-            final_images_dir = os.path.join(base_file_dir, 'images')  # This will be f_{file_id}/images/
-            caption_file = os.path.join(final_images_dir, f"{video_title}_caption.json")  # Inside images folder
+                # Calculate final output paths
+                final_images_dir = os.path.join(base_file_dir, 'images')  # This will be f_{file_id}/images/
+                caption_file = os.path.join(final_images_dir, f"{video_title}_caption.json")  # Inside images folder
+                
+                # Upload extracted images to MinIO
+                if result.get('success') and os.path.exists(final_images_dir):
+                    self._upload_extracted_images_to_minio(final_images_dir, kb_item)
+                    
+                    # Process caption data if available
+                    self._process_uploaded_caption_data(kb_item)
+                    
+                    # Clean up temporary processing directory after upload
+                    import shutil
+                    try:
+                        shutil.rmtree(base_file_dir)
+                        logger.info(f"Cleaned up temporary directory: {base_file_dir}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up temporary directory {base_file_dir}: {str(e)}")
 
-            # Update knowledge base item metadata with extraction info
-            if kb_item.metadata is None:
-                kb_item.metadata = {}
-            
-            kb_item.metadata.update({
-                'video_image_extraction': {
-                    'completed': result.get('success', False),
-                    'timestamp': datetime.now().isoformat(),
-                    'extraction_options': extraction_options,
-                    'output_paths': {
-                        'dedup_images_directory': final_images_dir,
-                        'caption_file': caption_file,
-                        'extractions_directory': final_images_dir
-                    },
-                    'statistics': result.get('statistics', {})
-                }
-            })
-            kb_item.save(update_fields=['metadata'])
+                # Update knowledge base item metadata with extraction info
+                if kb_item.metadata is None:
+                    kb_item.metadata = {}
+                
+                kb_item.metadata.update({
+                    'video_image_extraction': {
+                        'completed': result.get('success', False),
+                        'timestamp': datetime.now().isoformat(),
+                        'extraction_options': extraction_options,
+                        'processing_info': {
+                            'processing_type': 'temporary_directory',
+                            'images_stored_in_minio': True,
+                            'temp_processing_completed': True
+                        },
+                        'statistics': result.get('statistics', {})
+                    }
+                })
+                kb_item.save(update_fields=['metadata'])
 
-            return Response({
-                "success": True,
-                "message": "Video image extraction completed successfully",
-                "file_id": f"f_{actual_file_id}",
-                "notebook_id": notebook_id,
-                "result": result,
-                "output_paths": {
-                    "dedup_images_directory": final_images_dir,
-                    "caption_file": caption_file,
-                    "extractions_directory": final_images_dir,
-                    "knowledge_base_path": f"{paths['base_dir']}/images/"
-                }
-            }, status=status.HTTP_200_OK)
+                return Response({
+                    "success": True,
+                    "message": "Video image extraction completed successfully",
+                    "file_id": f"f_{actual_file_id}",
+                    "notebook_id": notebook_id,
+                    "result": result,
+                    "output_paths": {
+                        "images_uploaded_to_minio": True,
+                        "temp_processing_directory": base_file_dir,
+                        "processing_type": "temporary_directory"
+                    }
+                }, status=status.HTTP_200_OK)
+                
+            finally:
+                # Clean up temporary video file
+                if 'video_file_path' in locals() and os.path.exists(video_file_path):
+                    try:
+                        os.unlink(video_file_path)
+                        logger.info(f"Cleaned up temporary video file: {video_file_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up temporary video file: {e}")
+                
+                # Clean up temporary processing directory if it still exists
+                if 'temp_base_dir' in locals() and os.path.exists(temp_base_dir):
+                    try:
+                        import shutil
+                        shutil.rmtree(temp_base_dir)
+                        logger.info(f"Final cleanup of temporary directory: {temp_base_dir}")
+                    except Exception as e:
+                        logger.warning(f"Failed final cleanup of temporary directory: {e}")
 
         except Exception as e:
             return self.error_response(
@@ -1683,6 +1738,151 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
         
         return options
 
+    def _upload_extracted_images_to_minio(self, local_images_dir: str, kb_item):
+        """Upload extracted images from local directory to MinIO with proper structure."""
+        try:
+            import glob
+            from .models import KnowledgeBaseImage
+            
+            # Find all image files in the local directory
+            image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.gif', '*.svg']
+            image_files = []
+            for ext in image_extensions:
+                image_files.extend(glob.glob(os.path.join(local_images_dir, ext)))
+            
+            # Also look for JSON files (captions, figure data, etc.)
+            json_files = glob.glob(os.path.join(local_images_dir, '*.json'))
+            all_files = image_files + json_files
+            
+            if not all_files:
+                logger.info(f"No images or data files found in {local_images_dir}")
+                return
+            
+            logger.info(f"Uploading {len(all_files)} files from {local_images_dir} to MinIO")
+            
+            # Upload each file to MinIO
+            image_id = 1
+            for file_path in all_files:
+                try:
+                    filename = os.path.basename(file_path)
+                    
+                    # Read file content
+                    with open(file_path, 'rb') as f:
+                        file_content = f.read()
+                    
+                    # Determine content type
+                    import mimetypes
+                    content_type, _ = mimetypes.guess_type(filename)
+                    content_type = content_type or 'application/octet-stream'
+                    
+                    # Store in MinIO using file ID structure with images subfolder
+                    object_key = storage_adapter.storage_service.minio_backend.save_file_with_auto_key(
+                        content=file_content,
+                        filename=filename,
+                        prefix="kb",
+                        content_type=content_type,
+                        metadata={
+                            'kb_item_id': str(kb_item.id),
+                            'user_id': str(kb_item.user_id),
+                            'file_type': 'video_extracted_image' if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')) else 'video_extracted_data',
+                            'extracted_from': 'video_processing',
+                        },
+                        user_id=str(kb_item.user_id),
+                        file_id=str(kb_item.id),
+                        subfolder="images"
+                    )
+                    
+                    # Create KnowledgeBaseImage record for image files
+                    if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')):
+                        KnowledgeBaseImage.objects.create(
+                            knowledge_base_item=kb_item,
+                            image_file=filename,
+                            image_caption="",  # Will be populated from figure_data.json if available
+                            image_id=image_id,
+                            figure_name=f"Figure {image_id}",
+                            minio_object_key=object_key,
+                            content_type=content_type,
+                            file_size=len(file_content),
+                            image_metadata={
+                                'original_filename': filename,
+                                'file_size': len(file_content),
+                                'content_type': content_type,
+                                'kb_item_id': str(kb_item.id),
+                                'extracted_from': 'video_processing',
+                            }
+                        )
+                        image_id += 1
+                    
+                    logger.info(f"Uploaded {filename} to MinIO: {object_key}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to upload {filename} to MinIO: {str(e)}")
+                    continue
+            
+            logger.info(f"Successfully uploaded {len(all_files)} files to MinIO for kb_item {kb_item.id}")
+            
+        except Exception as e:
+            logger.error(f"Error uploading extracted images to MinIO: {str(e)}")
+
+    def _process_uploaded_caption_data(self, kb_item):
+        """Process uploaded caption data from figure_data.json and update image records."""
+        try:
+            import json
+            from .utils.minio_backend import get_minio_backend
+            from .models import KnowledgeBaseImage
+            
+            backend = get_minio_backend()
+            
+            # Try to find and download figure_data.json
+            prefix = f"{kb_item.user_id}/kb/{kb_item.id}/images/"
+            
+            try:
+                objects = backend.client.list_objects(backend.bucket_name, prefix=prefix)
+                figure_data_key = None
+                
+                for obj in objects:
+                    if obj.object_name.endswith('figure_data.json'):
+                        figure_data_key = obj.object_name
+                        break
+                
+                if not figure_data_key:
+                    logger.info(f"No figure_data.json found for kb_item {kb_item.id}")
+                    return
+                
+                # Download and parse the JSON data
+                content = backend.get_file_content(figure_data_key)
+                caption_data = json.loads(content.decode('utf-8'))
+                
+                # Update KnowledgeBaseImage records with captions
+                if isinstance(caption_data, list):
+                    for item in caption_data:
+                        if isinstance(item, dict) and 'figure_name' in item and 'caption' in item:
+                            # Try to find matching image record
+                            # The figure_name might be like 'img_0007' while image_file is 'img_0007.png'
+                            figure_name = item['figure_name']
+                            caption = item['caption']
+                            
+                            # Try exact match first
+                            image_record = KnowledgeBaseImage.objects.filter(
+                                knowledge_base_item=kb_item,
+                                image_file__icontains=figure_name
+                            ).first()
+                            
+                            if image_record:
+                                image_record.image_caption = caption
+                                image_record.save()
+                                logger.info(f"Updated caption for {figure_name}: {caption[:50]}...")
+                            else:
+                                logger.warning(f"No image record found for figure: {figure_name}")
+                
+                logger.info(f"Processed caption data for kb_item {kb_item.id}")
+                
+            except Exception as e:
+                logger.error(f"Error processing caption data for kb_item {kb_item.id}: {e}")
+                
+        except Exception as e:
+            logger.error(f"Error in _process_uploaded_caption_data: {e}")
+
 
 @method_decorator(csrf_exempt, name="dispatch")
 class FileImageView(StandardAPIView, FileAccessValidatorMixin):
@@ -1707,6 +1907,13 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             if image_record:
                 # Serve from MinIO using the database record
                 return self._serve_image_from_minio(image_record)
+            
+            # For JSON files and other video extraction files, try to find them in MinIO directly
+            if image_file.endswith(('.json', '.txt', '.md')):
+                try:
+                    return self._serve_file_from_minio_by_filename(kb_item, image_file)
+                except Http404:
+                    pass  # Fall through to filesystem fallback
             
             # Fallback: try to serve from legacy filesystem approach
             # This maintains backward compatibility during migration
@@ -1739,6 +1946,59 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
         except Exception as e:
             logger.error(f"Error serving image from MinIO: {e}")
             raise Http404("Image file not accessible")
+    
+    def _serve_file_from_minio_by_filename(self, kb_item, filename):
+        """Serve file from MinIO by searching for object keys that contain the filename."""
+        try:
+            from .utils.minio_backend import get_minio_backend
+            from django.http import HttpResponseRedirect
+            
+            backend = get_minio_backend()
+            
+            # Search for objects that match the knowledge base item and filename pattern
+            # The object key pattern is: user_id/kb/file_id/subfolder/filename (for video extraction files)
+            prefix = f"{kb_item.user_id}/kb/{kb_item.id}/images/"
+            
+            try:
+                # List objects with the prefix for this knowledge base item
+                objects = backend.client.list_objects(backend.bucket_name, prefix=prefix)
+                
+                # Find the object that ends with our filename
+                for obj in objects:
+                    if obj.object_name.endswith(filename):
+                        # Generate pre-signed URL
+                        file_url = backend.get_file_url(obj.object_name, expires=3600)
+                        
+                        # Return redirect to pre-signed URL
+                        return HttpResponseRedirect(file_url)
+                
+                # If no object found, try alternative prefix patterns
+                # For backward compatibility with different object key structures
+                alternative_prefixes = [
+                    f"{kb_item.user_id}/kb/{kb_item.id}/",  # Files in root kb folder (no subfolder)
+                    f"kb/{kb_item.user_id}/{kb_item.id}/images/",  # Alternative structure 1
+                    f"kb/images/{kb_item.user_id}/{kb_item.id}/",  # Alternative structure 2
+                ]
+                
+                for alt_prefix in alternative_prefixes:
+                    try:
+                        objects = backend.client.list_objects(backend.bucket_name, prefix=alt_prefix)
+                        for obj in objects:
+                            if obj.object_name.endswith(filename):
+                                file_url = backend.get_file_url(obj.object_name, expires=3600)
+                                return HttpResponseRedirect(file_url)
+                    except Exception:
+                        continue
+                
+                raise Http404(f"File not found in MinIO: {filename}")
+                
+            except Exception as e:
+                logger.error(f"Error searching for file in MinIO: {filename} - {e}")
+                raise Http404(f"File not accessible: {filename}")
+            
+        except Exception as e:
+            logger.error(f"Error serving file from MinIO: {filename} - {e}")
+            raise Http404(f"File not accessible: {filename}")
     
     def _serve_image_from_filesystem(self, kb_item, image_file):
         """Fallback method to serve image from filesystem (legacy support)."""
