@@ -143,44 +143,26 @@ class FigureDataService:
                 else:
                     logger.info(f"Images path doesn't exist at {images_path}, trying fallback")
             
-            # Fallback: try different month combinations if the exact date doesn't work
-            # This handles cases where there might be slight date mismatches
-            data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
-            base_pattern = f"Users/u_{user_id}/knowledge_base_item/*/f_{file_id}/images"
-            full_pattern = os.path.join(data_root, base_pattern)
+            # With MinIO storage, we can't use local file paths for images
+            logger.info(f"Using MinIO storage - cannot resolve local image paths for file {file_id}")
+            return None
             
-            matching_paths = glob.glob(full_pattern)
-            if matching_paths:
-                # Use the first matching path found
-                fallback_path = matching_paths[0]
-                logger.info(f"Found images folder via fallback: {fallback_path}")
-                return fallback_path
-            
-            # Final fallback: use current date (original behavior)
-            current_date = datetime.now()
-            year_month = current_date.strftime("%Y-%m")
-            fallback_path = os.path.join(
-                data_root,
-                f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/images"
-            )
-            logger.warning(f"No images folder found, using current date fallback: {fallback_path}")
-            return fallback_path
+            # With MinIO storage, we can't use local file paths for images
+            logger.warning(f"Using MinIO storage - cannot resolve local image paths for file {file_id}")
+            return None
             
         except Exception as e:
             logger.error(f"Error in _get_knowledge_base_images_path: {e}")
-            # Final fallback: use current date
-            data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
-            current_date = datetime.now()
-            year_month = current_date.strftime("%Y-%m")
-            return os.path.join(
-                data_root,
-                f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/images"
-            )
+            # With MinIO storage, we can't use local file paths for images
+            logger.warning(f"Using MinIO storage - cannot resolve local image paths for file {file_id}")
+            return None
     
     @staticmethod
     def _get_report_figure_data_path(report) -> str:
         """Generate absolute path for combined report figure_data.json."""
-        data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
+        # With MinIO storage, we can't use local file paths
+        logger.warning(f"Using MinIO storage - cannot resolve local figure data path for report {report.id}")
+        return None
         
         user_id = report.user.pk
         current_date = datetime.now()
@@ -190,29 +172,15 @@ class FigureDataService:
         notebook_id = None
         if hasattr(report, 'notebooks') and report.notebooks:
             notebook_id = report.notebooks.pk
-        
-        if notebook_id:
-            relative_path = f"Users/u_{user_id}/n_{notebook_id}/report/{year_month}/r_{report_id}/figure_data.json"
-        else:
-            relative_path = f"Users/u_{user_id}/report/{year_month}/r_{report_id}/figure_data.json"
-        
-        return os.path.join(data_root, relative_path)
+        # This method is disabled for MinIO storage
+        return None
     
     @staticmethod
     def _load_knowledge_base_figure_data(user_id: int, file_id: str) -> List[Dict]:
         """Load individual figure_data.json from knowledge base item."""
-        images_folder_path = FigureDataService._get_knowledge_base_images_path(user_id, file_id)
-        figure_data_path = os.path.join(images_folder_path, "figure_data.json")
-        
-        if not os.path.exists(figure_data_path):
-            return []
-        
-        try:
-            with open(figure_data_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading figure data from {figure_data_path}: {e}")
-            return []
+        # With MinIO storage, we can't load figure data from local files
+        logger.info(f"Using MinIO storage - cannot load figure data for file {file_id}")
+        return []
     
     @staticmethod
     def _validate_and_clean_figure_data(figure_data: List[Dict]) -> List[Dict]:
@@ -360,35 +328,12 @@ class FigureDataService:
                 else:
                     logger.info(f"Content path doesn't exist at {content_path}, trying fallback")
             
-            # Fallback: try different month combinations if the exact date doesn't work
-            data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
-            base_pattern = f"Users/u_{user_id}/knowledge_base_item/*/f_{file_id}/content"
-            full_pattern = os.path.join(data_root, base_pattern)
-            
-            matching_paths = glob.glob(full_pattern)
-            if matching_paths:
-                # Use the first matching path found
-                fallback_path = matching_paths[0]
-                logger.info(f"Found content folder via fallback: {fallback_path}")
-                return fallback_path
-            
-            # Final fallback: use current date (original behavior)
-            current_date = datetime.now()
-            year_month = current_date.strftime("%Y-%m")
-            fallback_path = os.path.join(
-                data_root,
-                f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/content"
-            )
-            logger.warning(f"No content folder found, using current date fallback: {fallback_path}")
-            return fallback_path
+            # With MinIO storage, we can't use local file paths for content
+            logger.info(f"Using MinIO storage - cannot resolve local content paths for file {file_id}")
+            return None
             
         except Exception as e:
             logger.error(f"Error in _get_knowledge_base_content_path: {e}")
-            # Final fallback: use current date
-            data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
-            current_date = datetime.now()
-            year_month = current_date.strftime("%Y-%m")
-            return os.path.join(
-                data_root,
-                f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/content"
-            )
+            # With MinIO storage, we can't use local file paths for content
+            logger.warning(f"Using MinIO storage - cannot resolve local content paths for file {file_id}")
+            return None

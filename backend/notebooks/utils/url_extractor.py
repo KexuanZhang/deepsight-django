@@ -17,7 +17,7 @@ from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import UploadedFile, InMemoryUploadedFile
 import io
 
-from .file_storage import FileStorageService
+from .storage_adapter import get_storage_adapter
 from .content_index import ContentIndexingService
 from .upload_processor import UploadProcessor
 from .config import config as settings
@@ -33,7 +33,7 @@ class URLExtractor:
         self.logger = logging.getLogger(f"{__name__}.url_extractor")
         
         # Initialize storage services
-        self.file_storage = FileStorageService()
+        self.storage_adapter = get_storage_adapter()
         self.content_indexing = ContentIndexingService()
         
         # Track ongoing processing tasks
@@ -841,7 +841,7 @@ class URLExtractor:
             # Use sync_to_async to call the synchronous storage method
             # Use thread_sensitive=False to run in thread pool where sync ORM calls are allowed
             from asgiref.sync import sync_to_async
-            store_file_sync = sync_to_async(self.file_storage.store_processed_file, thread_sensitive=False)
+            store_file_sync = sync_to_async(self.storage_adapter.store_processed_file, thread_sensitive=False)
             
             # Store the processed content with original file if available
             processing_result_data = {

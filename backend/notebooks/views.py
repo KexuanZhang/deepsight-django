@@ -45,7 +45,7 @@ from .serializers import (
     BatchJobItemSerializer
 )
 from .utils.upload_processor import UploadProcessor
-from .utils.file_storage import FileStorageService
+from .utils.storage_adapter import get_storage_adapter
 from .utils.url_extractor import URLExtractor
 from .utils.media_extractor import MediaFeatureExtractor
 from .utils.image_processing import clean_title
@@ -76,7 +76,7 @@ from PyPDF2 import PdfReader
 
 
 upload_processor = UploadProcessor()
-file_storage = FileStorageService()
+storage_adapter = get_storage_adapter()
 url_extractor = URLExtractor()
 media_extractor = MediaFeatureExtractor()
 
@@ -960,7 +960,7 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
             limit, offset = self.get_pagination_params(request)
 
             # Get knowledge base items
-            knowledge_base = file_storage.get_user_knowledge_base(
+            knowledge_base = storage_adapter.get_user_knowledge_base(
                 user_id=request.user.pk,
                 content_type=content_type,
                 limit=limit,
@@ -1007,7 +1007,7 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
                 return self.error_response("knowledge_base_item_id is required")
 
             # Link the item
-            success = file_storage.link_knowledge_item_to_notebook(
+            success = storage_adapter.link_knowledge_item_to_notebook(
                 kb_item_id=kb_item_id,
                 notebook_id=notebook_id,
                 user_id=request.user.pk,
@@ -1038,7 +1038,7 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
                 return self.error_response("knowledge_base_item_id is required")
 
             # Delete the knowledge base item entirely
-            success = file_storage.delete_knowledge_base_item(
+            success = storage_adapter.delete_knowledge_base_item(
                 kb_item_id, request.user.pk
             )
 
@@ -1186,7 +1186,7 @@ class FileDeleteView(APIView):
                 if ki:
                     if force_delete:
                         # Delete the knowledge base item entirely
-                        success = file_storage.delete_knowledge_base_item(
+                        success = storage_adapter.delete_knowledge_base_item(
                             str(ki.knowledge_base_item.id), request.user.pk
                         )
                         if success:
@@ -1210,14 +1210,14 @@ class FileDeleteView(APIView):
                 if ki:
                     if force_delete:
                         # Delete the knowledge base item entirely
-                        success = file_storage.delete_knowledge_base_item(
+                        success = storage_adapter.delete_knowledge_base_item(
                             str(kb_item_id), request.user.pk
                         )
                         if success:
                             deleted = True
                     else:
                         # Just unlink from this notebook
-                        success = file_storage.unlink_knowledge_item_from_notebook(
+                        success = storage_adapter.unlink_knowledge_item_from_notebook(
                             str(kb_item_id), notebook_id, request.user.pk
                         )
                         if success:
@@ -1255,7 +1255,7 @@ class FileDeleteView(APIView):
                     if upload_id_match:
                         if force_delete:
                             # Delete the knowledge base item entirely
-                            success = file_storage.delete_knowledge_base_item(
+                            success = storage_adapter.delete_knowledge_base_item(
                                 str(kb_item.id), request.user.pk
                             )
                             if success:
@@ -1281,7 +1281,7 @@ class FileDeleteView(APIView):
                 if ki:
                     if force_delete:
                         # Delete the knowledge base item entirely
-                        success = file_storage.delete_knowledge_base_item(
+                        success = storage_adapter.delete_knowledge_base_item(
                             str(ki.knowledge_base_item.id), request.user.pk
                         )
                         if success:
@@ -1349,7 +1349,7 @@ class FileContentView(StandardAPIView, KnowledgeBasePermissionMixin):
             kb_item = self.get_user_kb_item(file_id, request.user)
 
             # Get content from storage service
-            content = file_storage.get_file_content(file_id, user_id=request.user.pk)
+            content = storage_adapter.get_file_content(file_id, user_id=request.user.pk)
 
             if content is None:
                 return self.error_response(
@@ -1541,7 +1541,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                 actual_file_id = video_file_id
 
             # Get the original video file path from the knowledge base
-            video_file_path = file_storage.get_original_file_path(actual_file_id, request.user.pk)
+            video_file_path = storage_adapter.get_original_file_url(actual_file_id, request.user.pk)
             if not video_file_path:
                 return self.error_response(
                     f"Video file not found for ID: {video_file_id}",
@@ -1568,12 +1568,12 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
             video_title = clean_title(Path(original_filename).stem)
 
             # Set up output directory within the knowledge base item structure
-            paths = file_storage._generate_knowledge_base_paths(
+            paths = storage_adapter._generate_knowledge_base_paths(
                 request.user.pk, original_filename, actual_file_id
             )
             
             # Set base directory for extraction - the media extractor will create the images subfolder
-            base_file_dir = os.path.join(file_storage.base_data_root, paths['base_dir'])
+            base_file_dir = paths['base_dir']
             os.makedirs(base_file_dir, exist_ok=True)
 
             # Process the video for image extraction

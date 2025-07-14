@@ -24,10 +24,10 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
         input_data = {"text_files": [], "selected_file_ids": []}
         
         try:
-            from notebooks.utils.file_storage import FileStorageService
+            from notebooks.utils.storage_adapter import get_storage_adapter
             from notebooks.models import KnowledgeBaseItem
             
-            file_storage = FileStorageService()
+            storage_adapter = get_storage_adapter()
             
             for file_id in file_paths:
                 try:
@@ -49,7 +49,7 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
                     input_data["selected_file_ids"].append(f"f_{file_id}")
                     
                     # Get file content using the file storage service
-                    content = file_storage.get_file_content(file_id)
+                    content = storage_adapter.get_file_content(file_id)
                     
                     if content:
                         # Get metadata from knowledge base item

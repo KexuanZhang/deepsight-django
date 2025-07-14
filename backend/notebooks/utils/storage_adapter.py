@@ -1,6 +1,6 @@
 """
-Storage adapter that provides backward compatibility between local file storage and MinIO.
-Automatically routes operations to the appropriate storage backend based on configuration.
+Storage adapter for MinIO file storage.
+Provides a simplified interface for MinIO operations only.
 """
 
 import logging
@@ -8,12 +8,7 @@ from typing import Dict, Any, Optional, List
 
 from django.conf import settings
 
-# Import both storage services
-try:
-    from .file_storage import FileStorageService
-except ImportError:
-    FileStorageService = None
-
+# Import MinIO storage service only
 try:
     from .minio_file_storage import MinIOFileStorageService
 except ImportError:
@@ -22,35 +17,22 @@ except ImportError:
 
 class StorageAdapter:
     """
-    Adapter that routes storage operations to the appropriate backend.
-    Provides seamless transition from local file storage to MinIO.
+    Adapter that provides MinIO storage operations only.
     """
     
     def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.storage_adapter")
         
-        # Determine storage backend from settings
-        self.storage_backend = getattr(settings, 'STORAGE_BACKEND', 'local')
-        
-        # Initialize the appropriate storage service
-        if self.storage_backend == 'minio':
-            if MinIOFileStorageService is None:
-                self.logger.error("MinIO storage backend requested but MinIOFileStorageService not available")
-                raise ImportError("MinIO storage backend not available")
-            self.storage_service = MinIOFileStorageService()
-            self.logger.info("Initialized MinIO storage backend")
-        else:
-            if FileStorageService is None:
-                self.logger.error("Local storage backend requested but FileStorageService not available")
-                raise ImportError("Local storage backend not available")
-            # Use the singleton instance from file_storage.py
-            from .file_storage import file_storage_service
-            self.storage_service = file_storage_service
-            self.logger.info("Initialized local file storage backend")
+        # Initialize MinIO storage service
+        if MinIOFileStorageService is None:
+            self.logger.error("MinIOFileStorageService not available")
+            raise ImportError("MinIO storage backend not available")
+        self.storage_service = MinIOFileStorageService()
+        self.logger.info("Initialized MinIO storage backend")
     
     def is_minio_backend(self) -> bool:
         """Check if currently using MinIO backend."""
-        return self.storage_backend == 'minio'
+        return True  # Always MinIO now
     
     def store_processed_file(
         self,
@@ -79,21 +61,11 @@ class StorageAdapter:
     
     def get_file_url(self, file_id: str, user_id: int = None, expires: int = 3600) -> Optional[str]:
         """Get URL for file access."""
-        if self.is_minio_backend():
-            return self.storage_service.get_file_url(file_id, user_id, expires)
-        else:
-            # For local storage, we don't have URL generation
-            return None
+        return self.storage_service.get_file_url(file_id, user_id, expires)
     
     def get_original_file_url(self, file_id: str, user_id: int = None, expires: int = 3600) -> Optional[str]:
         """Get URL for original file access."""
-        if self.is_minio_backend():
-            return self.storage_service.get_original_file_url(file_id, user_id, expires)
-        else:
-            # For local storage, try to get the path
-            if hasattr(self.storage_service, 'get_original_file_path'):
-                return self.storage_service.get_original_file_path(file_id, user_id)
-            return None
+        return self.storage_service.get_original_file_url(file_id, user_id, expires)
     
     def get_user_knowledge_base(
         self, user_id: int, content_type: str = None, limit: int = 50, offset: int = 0
@@ -124,25 +96,19 @@ class StorageAdapter:
     def get_storage_info(self) -> Dict[str, Any]:
         """Get information about the current storage backend."""
         info = {
-            'backend': self.storage_backend,
+            'backend': 'minio',
             'service_class': self.storage_service.__class__.__name__,
-            'is_minio': self.is_minio_backend(),
+            'is_minio': True,
         }
         
-        # Add backend-specific information
-        if self.is_minio_backend():
-            try:
-                minio_config = getattr(settings, 'MINIO_SETTINGS', {})
-                info['minio_endpoint'] = minio_config.get('ENDPOINT', 'not configured')
-                info['minio_bucket'] = minio_config.get('BUCKET_NAME', 'not configured')
-                info['minio_secure'] = minio_config.get('SECURE', False)
-            except Exception as e:
-                info['minio_error'] = str(e)
-        else:
-            try:
-                info['local_media_root'] = str(getattr(settings, 'MEDIA_ROOT', 'not configured'))
-            except Exception as e:
-                info['local_error'] = str(e)
+        # Add MinIO-specific information
+        try:
+            minio_config = getattr(settings, 'MINIO_SETTINGS', {})
+            info['minio_endpoint'] = minio_config.get('ENDPOINT', 'not configured')
+            info['minio_bucket'] = minio_config.get('BUCKET_NAME', 'not configured')
+            info['minio_secure'] = minio_config.get('SECURE', False)
+        except Exception as e:
+            info['minio_error'] = str(e)
         
         return info
     
@@ -177,62 +143,6 @@ class StorageAdapter:
                 'content_file_path': f"{content_dir}/extracted_content.md",
                 'images_dir': images_dir,
             }
-
-    def migrate_to_minio(self, user_id: int = None, dry_run: bool = True) -> Dict[str, Any]:
-        """
-        Migrate existing local files to MinIO storage.
-        
-        Args:
-            user_id: Specific user to migrate (None for all users)
-            dry_run: If True, only analyze what would be migrated
-            
-        Returns:
-            Migration report
-        """
-        if self.is_minio_backend():
-            return {"error": "Already using MinIO backend"}
-        
-        if not MinIOFileStorageService:
-            return {"error": "MinIO storage service not available"}
-        
-        # Import here to avoid circular imports
-        from ..models import KnowledgeBaseItem
-        
-        # Query knowledge base items
-        query = KnowledgeBaseItem.objects.all()
-        if user_id:
-            query = query.filter(user_id=user_id)
-        
-        items = query.filter(
-            models.Q(file__isnull=False) | models.Q(original_file__isnull=False)
-        )
-        
-        migration_report = {
-            'dry_run': dry_run,
-            'total_items': items.count(),
-            'migrated_items': 0,
-            'failed_items': 0,
-            'errors': [],
-            'storage_backend': self.storage_backend,
-        }
-        
-        if dry_run:
-            migration_report['would_migrate'] = []
-            for item in items:
-                item_info = {
-                    'id': item.id,
-                    'title': item.title,
-                    'user_id': item.user_id,
-                    'has_file': bool(item.file),
-                    'has_original_file': bool(item.original_file),
-                    'created_at': item.created_at.isoformat(),
-                }
-                migration_report['would_migrate'].append(item_info)
-        else:
-            # Actual migration would be implemented here
-            migration_report['error'] = 'Actual migration not implemented in this version'
-        
-        return migration_report
 
 
 # Global singleton instance

@@ -215,9 +215,14 @@ class NotebookReportDetailView(APIView):
             # Also update the main report file if it exists
             if report.main_report_file:
                 try:
-                    # Use the file path directly for text operations
-                    file_path = Path(report.main_report_file.path)
-                    file_path.write_text(content, encoding='utf-8')
+                    # Write content to the file using Django's file storage
+                    from django.core.files.base import ContentFile
+                    report.main_report_file.save(
+                        report.main_report_file.name,
+                        ContentFile(content.encode('utf-8')),
+                        save=False
+                    )
+                    report.save(update_fields=['main_report_file'])
                     logger.info(f"Updated report file for job {job_id}")
                 except Exception as e:
                     logger.warning(f"Could not update report file for {job_id}: {e}")
@@ -262,15 +267,13 @@ class NotebookReportDetailView(APIView):
             # Delete generated files if they exist
             if report.main_report_file:
                 try:
-                    # Get the directory containing the report files
-                    report_dir = Path(report.main_report_file.path).parent
-                    if report_dir.exists():
-                        deleted_files = len(list(report_dir.rglob("*")))
-                        shutil.rmtree(report_dir)
-                        logger.info(f"Deleted report directory: {report_dir}")
+                    # With MinIO storage, just delete the file reference
+                    report.main_report_file.delete(save=False)
+                    deleted_files = 1
+                    logger.info(f"Deleted report file from MinIO storage")
                 except Exception as e:
                     logger.warning(
-                        f"Could not delete report files for {report.id}: {e}"
+                        f"Could not delete report file for {report.id}: {e}"
                     )
 
             # Remove job metadata if exists
@@ -390,14 +393,12 @@ class NotebookReportDownloadView(APIView):
 
             # If filename is specified, return that specific file
             if filename:
-                if report.main_report_file:
-                    report_dir = Path(report.main_report_file.path).parent
-                    file_path = report_dir / filename
-
-                    if file_path.exists() and file_path.is_file():
-                        return FileResponse(
-                            open(file_path, "rb"), as_attachment=True, filename=filename
-                        )
+                # With MinIO storage, we can't browse directories
+                # Only main report file is available
+                if report.main_report_file and filename == report.main_report_file.name:
+                    response = HttpResponse(report.main_report_file.read(), content_type='application/octet-stream')
+                    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                    return response
 
                 return Response(
                     {"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND
@@ -481,40 +482,15 @@ class NotebookReportPdfDownloadView(APIView):
             report_title = report.article_title or "Research Report"
             filename = f"{report_title.replace(' ', '_')}.pdf"
             
-            # Create PDF in the same directory as the markdown file if available,
-            # otherwise use a temporary location
-            if report.main_report_file:
-                report_dir = Path(report.main_report_file.path).parent
-                pdf_path = report_dir / filename
-                
-                # Use intelligent image root detection based on the report structure
-                # The report directory is like: Users/u_{user_id}/n_{notebook_id}/report/{year_month}/r_{report_id}/
-                # But images are in: Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/images/
-                # So we need to go up to the Users/u_{user_id}/ level
-                user_data_dir = report_dir.parent.parent.parent  # Go up 3 levels to get to Users/u_{user_id}/
-                image_root = str(user_data_dir)
-                logger.info(f"Using user data directory as image root: {image_root}")
-            else:
-                # Use a temp directory if no main file exists, but still try to find user data directory
-                from django.core.files.storage import default_storage
-                import tempfile
-                temp_dir = Path(tempfile.mkdtemp())
-                pdf_path = temp_dir / filename
-                
-                # Try to determine the user data directory from Django settings
-                try:
-                    from django.conf import settings
-                    data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
-                    user_data_dir = Path(data_root) / f"Users/u_{report.user.pk}"
-                    if user_data_dir.exists():
-                        image_root = str(user_data_dir)
-                        logger.info(f"Using user data directory from settings: {image_root}")
-                    else:
-                        image_root = None
-                        logger.warning("Could not find user data directory for image resolution")
-                except Exception as e:
-                    logger.warning(f"Error determining user data directory: {e}")
-                    image_root = None
+            # Create PDF in temporary directory since we're using MinIO storage
+            import tempfile
+            temp_dir = Path(tempfile.mkdtemp())
+            pdf_path = temp_dir / filename
+            
+            # With MinIO storage, we can't use local file paths for images
+            # PDF generation will need to work without local image directory
+            image_root = None
+            logger.info("Using MinIO storage - PDF will be generated in temporary location")
 
             try:
                 # Convert markdown to PDF
@@ -523,7 +499,7 @@ class NotebookReportPdfDownloadView(APIView):
                     output_path=str(pdf_path),
                     title=report_title,
                     image_root=image_root,
-                    input_file_path=str(report.main_report_file.path) if report.main_report_file else None
+                    input_file_path=None  # MinIO files don't have local paths
                 )
                 
                 # Return the PDF file
@@ -577,20 +553,15 @@ class NotebookReportFilesView(APIView):
 
             if report.main_report_file:
                 try:
-                    report_dir = Path(report.main_report_file.path).parent
-
-                    if report_dir.exists():
-                        for file_path in report_dir.rglob("*"):
-                            if file_path.is_file():
-                                relative_path = file_path.relative_to(report_dir)
-                                files.append(
-                                    {
-                                        "filename": str(relative_path),
-                                        "size": file_path.stat().st_size,
-                                        "type": file_path.suffix.lower(),
-                                        "download_url": f"/api/notebooks/{notebook_id}/reports/{job_id}/download?filename={relative_path}",
-                                    }
-                                )
+                    # With MinIO storage, we can only return the main report file
+                    files.append(
+                        {
+                            "filename": report.main_report_file.name,
+                            "size": report.main_report_file.size,
+                            "type": Path(report.main_report_file.name).suffix.lower(),
+                            "download_url": f"/api/notebooks/{notebook_id}/reports/{job_id}/download?filename={report.main_report_file.name}",
+                        }
+                    )
                 except Exception as e:
                     logger.warning(f"Error listing files for job {job_id}: {e}")
 
