@@ -77,10 +77,10 @@ class FigureDataService:
                 user_id=report.user.pk
             )
             
-        if not combined_figure_data:
+            if not combined_figure_data:
                 logger.info("No figure data found in database for selected files")
-            return None
-        
+                return None
+            
             # Store the figure data directly in the report instance for immediate use
             # This avoids the need to create temporary files
             report._cached_figure_data = combined_figure_data

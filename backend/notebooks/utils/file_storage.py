@@ -288,7 +288,7 @@ class FileStorageService:
             with open(original_file_path, "rb") as f:
                 file_content = f.read()
 
-            # Store in MinIO with 'kb' prefix
+            # Store in MinIO with 'kb' prefix using file ID structure
             object_key = self.minio_backend.save_file_with_auto_key(
                 content=file_content,
                 filename=original_filename,
@@ -298,7 +298,8 @@ class FileStorageService:
                     'user_id': str(kb_item.user_id),
                     'file_type': 'original',
                 },
-                user_id=str(kb_item.user_id)
+                user_id=str(kb_item.user_id),
+                file_id=str(kb_item.id)
             )
 
             self.log_operation(
@@ -321,7 +322,7 @@ class FileStorageService:
             # Convert content to bytes
             content_bytes = content.encode('utf-8')
 
-            # Store in MinIO with 'kb' prefix
+            # Store in MinIO with 'kb' prefix using file ID structure
             object_key = self.minio_backend.save_file_with_auto_key(
                 content=content_bytes,
                 filename=content_filename,
@@ -332,7 +333,8 @@ class FileStorageService:
                     'user_id': str(kb_item.user_id),
                     'file_type': 'content',
                 },
-                user_id=str(kb_item.user_id)
+                user_id=str(kb_item.user_id),
+                file_id=str(kb_item.id)
             )
 
             self.log_operation(
@@ -378,18 +380,20 @@ class FileStorageService:
                     content_type, _ = mimetypes.guess_type(image_file)
                     content_type = content_type or 'application/octet-stream'
                     
-                    # Store in MinIO with 'kb-images' prefix
+                    # Store in MinIO with 'kb' prefix using file ID structure with images subfolder
                     object_key = self.minio_backend.save_file_with_auto_key(
                         content=image_data,
                         filename=image_file,
-                        prefix="kb-images",
+                        prefix="kb",
                         content_type=content_type,
                         metadata={
                             'kb_item_id': str(kb_item.id),
                             'user_id': str(kb_item.user_id),
                             'file_type': 'image',
                         },
-                        user_id=str(kb_item.user_id)
+                        user_id=str(kb_item.user_id),
+                        file_id=str(kb_item.id),
+                        subfolder="images"
                     )
                     
                     # Create KnowledgeBaseImage record

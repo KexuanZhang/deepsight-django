@@ -74,19 +74,63 @@ class MinIOBackend:
             self.logger.error(f"Failed to ensure bucket exists: {e}")
             raise
     
-    def _generate_object_key(self, prefix: str, filename: str, content_hash: str = None, user_id: str = None) -> str:
+    def _sanitize_metadata_value(self, value: str) -> str:
         """
-        Generate MinIO object key using the pattern: {user_id}/{prefix}/{timestamp}_{content_hash}_{uuid}{extension}
+        Sanitize metadata value to ensure it's ASCII-compatible.
+        MinIO metadata values must be US-ASCII encoded only.
+        """
+        if not isinstance(value, str):
+            value = str(value)
+        
+        try:
+            # Try to encode as ASCII
+            value.encode('ascii')
+            return value
+        except UnicodeEncodeError:
+            # If it contains non-ASCII characters, encode to base64
+            import base64
+            encoded_bytes = value.encode('utf-8')
+            base64_str = base64.b64encode(encoded_bytes).decode('ascii')
+            return f"base64:{base64_str}"
+    
+    def _sanitize_metadata(self, metadata: Dict[str, str]) -> Dict[str, str]:
+        """Sanitize all metadata values to be ASCII-compatible."""
+        if not metadata:
+            return {}
+        
+        sanitized = {}
+        for key, value in metadata.items():
+            sanitized[key] = self._sanitize_metadata_value(value)
+        
+        return sanitized
+    
+    def _generate_object_key(self, prefix: str, filename: str, content_hash: str = None, user_id: str = None, file_id: str = None, subfolder: str = None) -> str:
+        """
+        Generate MinIO object key using the pattern: {user_id}/{prefix}/{file_id}/{subfolder}/{filename}
+        For kb files: {user_id}/kb/{file_id}/{filename} or {user_id}/kb/{file_id}/images/{filename}
+        For other files: {user_id}/{prefix}/{timestamp}_{content_hash}_{uuid}{extension}
         
         Args:
-            prefix: Object prefix (kb, reports, podcasts, kb-images, temp)
+            prefix: Object prefix (kb, reports, podcasts, temp)
             filename: Original filename
             content_hash: First 16 chars of content SHA256 hash (optional)
             user_id: User ID for folder organization (optional)
+            file_id: File ID for kb files organization (optional)
+            subfolder: Subfolder name (e.g., 'images') for kb files (optional)
             
         Returns:
             Generated object key
         """
+        # For kb files with file_id, use structured folder approach
+        if prefix == "kb" and file_id:
+            if subfolder:
+                object_key = f"{user_id}/kb/{file_id}/{subfolder}/{filename}"
+            else:
+                object_key = f"{user_id}/kb/{file_id}/{filename}"
+            self.logger.debug(f"Generated structured object key: {object_key}")
+            return object_key
+        
+        # For other files or legacy kb files, use timestamp-based approach
         # Extract extension
         if '.' in filename:
             _, extension = filename.rsplit('.', 1)
@@ -122,7 +166,9 @@ class MinIOBackend:
         prefix: str, 
         content_type: str = None,
         metadata: Dict[str, str] = None,
-        user_id: str = None
+        user_id: str = None,
+        file_id: str = None,
+        subfolder: str = None
     ) -> str:
         """
         Save file to MinIO with auto-generated object key.
@@ -134,6 +180,8 @@ class MinIOBackend:
             content_type: MIME content type
             metadata: Additional metadata
             user_id: User ID for folder organization
+            file_id: File ID for kb files organization (optional)
+            subfolder: Subfolder name for kb files (optional)
             
         Returns:
             Generated object key
@@ -143,7 +191,7 @@ class MinIOBackend:
             content_hash = hashlib.sha256(content).hexdigest()
             
             # Generate object key
-            object_key = self._generate_object_key(prefix, filename, content_hash, user_id)
+            object_key = self._generate_object_key(prefix, filename, content_hash, user_id, file_id, subfolder)
             
             # Prepare metadata
             object_metadata = {
@@ -153,6 +201,9 @@ class MinIOBackend:
             }
             if metadata:
                 object_metadata.update(metadata)
+            
+            # Sanitize metadata to ensure ASCII compatibility
+            object_metadata = self._sanitize_metadata(object_metadata)
             
             # Determine content type
             if not content_type:
@@ -387,7 +438,7 @@ class MinIOBackend:
         """
         try:
             # Count objects by prefix
-            prefixes = ['kb', 'reports', 'podcasts', 'kb-images', 'temp']
+            prefixes = ['kb', 'reports', 'podcasts', 'temp']
             stats = {
                 'bucket_name': self.bucket_name,
                 'total_objects': 0,

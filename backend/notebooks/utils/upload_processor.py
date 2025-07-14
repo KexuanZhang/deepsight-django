@@ -1093,7 +1093,7 @@ class UploadProcessor:
                             else:
                                 target_filename = file
                             
-                            # Store in MinIO
+                            # Store in MinIO using file ID structure
                             object_key = self.file_storage.minio_backend.save_file_with_auto_key(
                                 content=file_content,
                                 filename=target_filename,
@@ -1105,7 +1105,8 @@ class UploadProcessor:
                                     'file_type': 'marker_content',
                                     'marker_original_file': file,
                                 },
-                                user_id=str(kb_item.user_id)
+                                user_id=str(kb_item.user_id),
+                                file_id=str(kb_item.id)
                             )
                             
                             content_files.append({
@@ -1121,7 +1122,7 @@ class UploadProcessor:
                                 kb_item.content = file_content.decode('utf-8', errors='ignore')
                                 
                         elif file.endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')):
-                            # Image files go to 'kb-images' prefix
+                            # Image files go to kb folder with file ID structure in images subfolder
                             target_filename = file
                             
                             # Determine content type
@@ -1129,11 +1130,11 @@ class UploadProcessor:
                             content_type, _ = mimetypes.guess_type(target_filename)
                             content_type = content_type or 'application/octet-stream'
                             
-                            # Store in MinIO
+                            # Store in MinIO using file ID structure with images subfolder
                             object_key = self.file_storage.minio_backend.save_file_with_auto_key(
                                 content=file_content,
                                 filename=target_filename,
-                                prefix="kb-images",
+                                prefix="kb",
                                 content_type=content_type,
                                 metadata={
                                     'kb_item_id': str(kb_item.id),
@@ -1141,7 +1142,9 @@ class UploadProcessor:
                                     'file_type': 'marker_image',
                                     'marker_original_file': file,
                                 },
-                                user_id=str(kb_item.user_id)
+                                user_id=str(kb_item.user_id),
+                                file_id=str(kb_item.id),
+                                subfolder="images"
                             )
                             
                             # Create KnowledgeBaseImage record
@@ -1195,7 +1198,7 @@ class UploadProcessor:
                             # Other files go to 'kb' prefix as content
                             target_filename = file
                             
-                            # Store in MinIO
+                            # Store in MinIO using file ID structure
                             object_key = self.file_storage.minio_backend.save_file_with_auto_key(
                                 content=file_content,
                                 filename=target_filename,
@@ -1206,7 +1209,8 @@ class UploadProcessor:
                                     'file_type': 'marker_other',
                                     'marker_original_file': file,
                                 },
-                                user_id=str(kb_item.user_id)
+                                user_id=str(kb_item.user_id),
+                                file_id=str(kb_item.id)
                             )
                             
                             content_files.append({
