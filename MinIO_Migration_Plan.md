@@ -27,7 +27,7 @@ This plan outlines the complete migration from local file storage to MinIO objec
 ### **MinIO-Native Bucket Strategy**
 
 ```
-deepsight-storage/
+deepsight-users/
 ├── kb/                                           # Knowledge base files
 │   ├── 20250711_143022_a1b2c3d4e5f6789a_8f4e2a1b.pdf
 │   ├── 20250711_143025_b2c3d4e5f6789abc_9g5f3b2c.md
@@ -59,7 +59,7 @@ MINIO_SETTINGS = {
     'ENDPOINT': 'localhost:9000',  # or cloud endpoint
     'ACCESS_KEY': 'minioadmin',
     'SECRET_KEY': 'minioadmin',
-    'BUCKET_NAME': 'deepsight-storage',
+    'BUCKET_NAME': 'deepsight-users',
     'SECURE': False,  # True for HTTPS
     'REGION': 'us-east-1',
 }
@@ -213,7 +213,7 @@ The database stores **MinIO-generated object keys** directly - no path functions
 # "kb-images/20250711_143040_e5f6789abcdef012_cj8i6e5f.png"     # Extracted images
 
 # MinIO handles the complete object storage:
-# s3://deepsight-storage/kb/20250711_143022_a1b2c3d4e5f6789a_8f4e2a1b.pdf
+# s3://deepsight-users/kb/20250711_143022_a1b2c3d4e5f6789a_8f4e2a1b.pdf
 ```
 
 #### **No Upload Path Functions Needed**
@@ -882,7 +882,7 @@ class PodcastJob(models.Model):
 
 ```python
 # MinIO bucket structure (flat with prefixes)
-deepsight-storage/
+deepsight-users/
 ├── kb/
 │   ├── 550e8400-e29b-41d4-a716-446655440000/
 │   │   ├── document.pdf
@@ -1425,7 +1425,7 @@ def get_file_url(request, file_id):
 
 # Response:
 {
-    "file_url": "https://minio:9000/deepsight-storage/kb/20250711_143022_a1b2c3d4e5f6789a_8f4e2a1b.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...",
+    "file_url": "https://minio:9000/deepsight-users/kb/20250711_143022_a1b2c3d4e5f6789a_8f4e2a1b.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...",
     "filename": "research_paper.pdf",
     "size": 2621440,
     "expires_in": 3600
@@ -1483,8 +1483,8 @@ services:
     entrypoint: >
       /bin/sh -c "
       /usr/bin/mc config host add minio http://minio:9000 minioadmin minioadmin;
-      /usr/bin/mc mb minio/deepsight-storage;
-      /usr/bin/mc policy set public minio/deepsight-storage;
+      /usr/bin/mc mb minio/deepsight-users;
+      /usr/bin/mc policy set public minio/deepsight-users;
       exit 0;
       "
 
@@ -1986,7 +1986,7 @@ MINIO_SETTINGS = {
     'ENDPOINT': os.getenv('MINIO_ENDPOINT', 'localhost:9000'),
     'ACCESS_KEY': os.getenv('MINIO_ACCESS_KEY', 'minioadmin'),
     'SECRET_KEY': os.getenv('MINIO_SECRET_KEY', 'minioadmin'),
-    'BUCKET_NAME': os.getenv('MINIO_BUCKET_NAME', 'deepsight-storage'),
+    'BUCKET_NAME': os.getenv('MINIO_BUCKET_NAME', 'deepsight-users'),
     'SECURE': os.getenv('MINIO_SECURE', 'false').lower() == 'true',
     'REGION': os.getenv('MINIO_REGION', 'us-east-1'),
 }
@@ -2013,7 +2013,7 @@ STORAGE_BACKEND=minio
 MINIO_ENDPOINT=minio:9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET_NAME=deepsight-storage
+MINIO_BUCKET_NAME=deepsight-users
 MINIO_SECURE=false
 MINIO_REGION=us-east-1
 

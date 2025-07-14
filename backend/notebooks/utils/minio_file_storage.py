@@ -202,7 +202,8 @@ class MinIOFileStorageService:
                     'kb_item_id': str(kb_item.id),
                     'user_id': str(kb_item.user_id),
                     'file_type': 'original',
-                }
+                },
+                user_id=str(kb_item.user_id)
             )
 
             self.log_operation(
@@ -235,7 +236,8 @@ class MinIOFileStorageService:
                     'kb_item_id': str(kb_item.id),
                     'user_id': str(kb_item.user_id),
                     'file_type': 'content',
-                }
+                },
+                user_id=str(kb_item.user_id)
             )
 
             self.log_operation(
@@ -280,7 +282,8 @@ class MinIOFileStorageService:
                             'kb_item_id': str(kb_item.id),
                             'user_id': str(kb_item.user_id),
                             'file_type': 'image',
-                        }
+                        },
+                        user_id=str(kb_item.user_id)
                     )
                     
                     image_mapping[image_name] = object_key

@@ -1108,7 +1108,8 @@ class MinIOUploadProcessor:
                                     'user_id': str(kb_item.user_id),
                                     'file_type': 'marker_content',
                                     'marker_original_file': file,
-                                }
+                                },
+                                user_id=str(kb_item.user_id)
                             )
                             
                             content_files.append({
@@ -1135,7 +1136,8 @@ class MinIOUploadProcessor:
                                     'user_id': str(kb_item.user_id),
                                     'file_type': 'marker_image',
                                     'marker_original_file': file,
-                                }
+                                },
+                                user_id=str(kb_item.user_id)
                             )
                             
                             image_files.append({
@@ -1158,7 +1160,8 @@ class MinIOUploadProcessor:
                                     'user_id': str(kb_item.user_id),
                                     'file_type': 'marker_other',
                                     'marker_original_file': file,
-                                }
+                                },
+                                user_id=str(kb_item.user_id)
                             )
                             
                             content_files.append({

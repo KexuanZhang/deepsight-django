@@ -74,21 +74,22 @@ class MinIOBackend:
             self.logger.error(f"Failed to ensure bucket exists: {e}")
             raise
     
-    def _generate_object_key(self, prefix: str, filename: str, content_hash: str = None) -> str:
+    def _generate_object_key(self, prefix: str, filename: str, content_hash: str = None, user_id: str = None) -> str:
         """
-        Generate MinIO object key using the pattern: {prefix}/{timestamp}_{content_hash}_{uuid}{extension}
+        Generate MinIO object key using the pattern: {user_id}/{prefix}/{timestamp}_{content_hash}_{uuid}{extension}
         
         Args:
             prefix: Object prefix (kb, reports, podcasts, kb-images, temp)
             filename: Original filename
             content_hash: First 16 chars of content SHA256 hash (optional)
+            user_id: User ID for folder organization (optional)
             
         Returns:
             Generated object key
         """
         # Extract extension
         if '.' in filename:
-            name, extension = filename.rsplit('.', 1)
+            _, extension = filename.rsplit('.', 1)
             extension = f".{extension}"
         else:
             extension = ""
@@ -105,8 +106,11 @@ class MinIOBackend:
         else:
             hash_part = hashlib.sha256(f"{timestamp}_{short_uuid}".encode()).hexdigest()[:16]
         
-        # Generate object key
-        object_key = f"{prefix}/{timestamp}_{hash_part}_{short_uuid}{extension}"
+        # Generate object key with user_id prefix if provided
+        if user_id:
+            object_key = f"{user_id}/{prefix}/{timestamp}_{hash_part}_{short_uuid}{extension}"
+        else:
+            object_key = f"{prefix}/{timestamp}_{hash_part}_{short_uuid}{extension}"
         
         self.logger.debug(f"Generated object key: {object_key}")
         return object_key
@@ -117,7 +121,8 @@ class MinIOBackend:
         filename: str, 
         prefix: str, 
         content_type: str = None,
-        metadata: Dict[str, str] = None
+        metadata: Dict[str, str] = None,
+        user_id: str = None
     ) -> str:
         """
         Save file to MinIO with auto-generated object key.
@@ -128,6 +133,7 @@ class MinIOBackend:
             prefix: Storage prefix (kb, reports, podcasts, etc.)
             content_type: MIME content type
             metadata: Additional metadata
+            user_id: User ID for folder organization
             
         Returns:
             Generated object key
@@ -137,7 +143,7 @@ class MinIOBackend:
             content_hash = hashlib.sha256(content).hexdigest()
             
             # Generate object key
-            object_key = self._generate_object_key(prefix, filename, content_hash)
+            object_key = self._generate_object_key(prefix, filename, content_hash, user_id)
             
             # Prepare metadata
             object_metadata = {

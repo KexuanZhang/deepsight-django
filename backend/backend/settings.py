@@ -205,7 +205,7 @@ STATIC_URL = "static/"
 
 # Media files (uploaded content) - Updated to use new DeepSight data storage path
 # For local storage backend compatibility
-DEEPSIGHT_DATA_ROOT = Path("/Users/zhang/Desktop/huawei/ds-django-2/deepsight-django/backend/backend/data00")
+DEEPSIGHT_DATA_ROOT = Path("/Users/huangruizhe/Library/CloudStorage/OneDrive-UniversityofToronto/RAY/Huawei/deepsight-django/backend/data00")
 # DEEPSIGHT_DATA_ROOT = Path("/Users/eason/Downloads/data00/Deepsight")
 # DEEPSIGHT_DATA_ROOT = Path("C:/Users/zhang/my_app_data/data00/Deepsight")
 MEDIA_ROOT = DEEPSIGHT_DATA_ROOT
@@ -300,7 +300,7 @@ MINIO_SETTINGS = {
     'ENDPOINT': os.getenv('MINIO_ENDPOINT', 'localhost:9000'),
     'ACCESS_KEY': os.getenv('MINIO_ACCESS_KEY', 'minioadmin'),
     'SECRET_KEY': os.getenv('MINIO_SECRET_KEY', 'minioadmin'),
-    'BUCKET_NAME': os.getenv('MINIO_BUCKET_NAME', 'deepsight-storage'),
+    'BUCKET_NAME': os.getenv('MINIO_BUCKET_NAME', 'deepsight-users'),
     'SECURE': os.getenv('MINIO_SECURE', 'False').lower() == 'true',
     'REGION': os.getenv('MINIO_REGION', 'us-east-1'),
 }

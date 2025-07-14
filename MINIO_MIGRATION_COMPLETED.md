@@ -77,7 +77,7 @@ Add these environment variables to enable MinIO:
 MINIO_ENDPOINT=localhost:9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET_NAME=deepsight-storage
+MINIO_BUCKET_NAME=deepsight-users
 MINIO_SECURE=false
 MINIO_REGION=us-east-1
 
@@ -128,7 +128,7 @@ STORAGE_BACKEND = 'local'    # Use local file storage
 The MinIO implementation uses organized prefixes:
 
 ```
-deepsight-storage/
+deepsight-users/
 ├── kb/                          # Knowledge base files
 │   ├── 20250714_143022_a1b2c3d4e5f6789a_8f4e2a1b.pdf
 │   └── 20250714_143025_b2c3d4e5f6789abc_9g5f3b2c.md

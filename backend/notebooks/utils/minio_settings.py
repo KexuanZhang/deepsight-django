@@ -8,7 +8,7 @@ MINIO_SETTINGS = {
     'ENDPOINT': 'localhost:9000',  # MinIO server endpoint
     'ACCESS_KEY': 'minioadmin',     # MinIO access key
     'SECRET_KEY': 'minioadmin',     # MinIO secret key  
-    'BUCKET_NAME': 'deepsight-storage',  # Bucket name for file storage
+    'BUCKET_NAME': 'deepsight-users',  # Bucket name for file storage
     'SECURE': False,                # Use HTTPS (set to True for production)
     'REGION': 'us-east-1',         # AWS region (for compatibility)
 }
@@ -24,7 +24,7 @@ MINIO_SETTINGS = {
     'ENDPOINT': os.getenv('MINIO_ENDPOINT', 'localhost:9000'),
     'ACCESS_KEY': os.getenv('MINIO_ACCESS_KEY', 'minioadmin'),
     'SECRET_KEY': os.getenv('MINIO_SECRET_KEY', 'minioadmin'),
-    'BUCKET_NAME': os.getenv('MINIO_BUCKET_NAME', 'deepsight-storage'),
+    'BUCKET_NAME': os.getenv('MINIO_BUCKET_NAME', 'deepsight-users'),
     'SECURE': os.getenv('MINIO_SECURE', 'False').lower() == 'true',
     'REGION': os.getenv('MINIO_REGION', 'us-east-1'),
 }
@@ -38,7 +38,7 @@ environment:
   - MINIO_ENDPOINT=minio:9000
   - MINIO_ACCESS_KEY=deepsight_access_key
   - MINIO_SECRET_KEY=deepsight_secret_key_123
-  - MINIO_BUCKET_NAME=deepsight-storage
+  - MINIO_BUCKET_NAME=deepsight-users
   - MINIO_SECURE=false
   - MINIO_REGION=us-east-1
   - STORAGE_BACKEND=minio
