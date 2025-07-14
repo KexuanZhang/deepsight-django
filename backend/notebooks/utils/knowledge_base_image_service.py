@@ -6,6 +6,7 @@ Replaces the figure_data.json file-based approach with database storage.
 import json
 import logging
 import os
+import tempfile
 from typing import Dict, List, Optional, Any
 from django.db import transaction
 
@@ -358,4 +359,97 @@ class KnowledgeBaseImageService:
             
         except Exception as e:
             self.logger.error(f"Error getting stats for kb_item {kb_item_id}: {e}")
-            return {} 
+            return {}
+    
+    def auto_populate_captions_from_content(self, kb_item_id: int, user_id: int = None) -> bool:
+        """
+        Automatically populate image captions by extracting figure data from the knowledge base item's content.
+        This method uses the extract_figure_data function from paper_processing.py.
+        
+        Args:
+            kb_item_id: Knowledge base item ID
+            user_id: User ID for security check
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            from ..models import KnowledgeBaseItem, KnowledgeBaseImage
+            from agents.report_agent.utils.paper_processing import extract_figure_data
+            
+            # Validate access to knowledge base item
+            kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
+            if user_id:
+                kb_item_query = kb_item_query.filter(user_id=user_id)
+            
+            kb_item = kb_item_query.first()
+            if not kb_item:
+                self.logger.warning(f"Knowledge base item {kb_item_id} not found or access denied")
+                return False
+            
+            # Get markdown content from the knowledge base item
+            markdown_content = self._get_markdown_content(kb_item)
+            if not markdown_content:
+                self.logger.info(f"No markdown content found for KB item {kb_item_id}")
+                return False
+            
+            # Extract figure data from markdown content
+            figure_data = self._extract_figure_data_from_content(markdown_content)
+            if not figure_data:
+                self.logger.info(f"No figure data extracted from KB item {kb_item_id}")
+                return False
+            
+            # Update images with extracted captions
+            success = self.update_images_from_figure_data(kb_item_id, figure_data, user_id)
+            
+            if success:
+                self.logger.info(f"Auto-populated captions for KB item {kb_item_id} from content")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"Error auto-populating captions for KB item {kb_item_id}: {e}")
+            return False
+    
+    def _get_markdown_content(self, kb_item):
+        """Get markdown content from knowledge base item."""
+        try:
+            # First try to get content from the content field
+            if kb_item.content:
+                return kb_item.content
+            
+            # If no inline content, try to get from MinIO file
+            if kb_item.file_object_key:
+                content = kb_item.get_file_content()
+                if content:
+                    return content
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error getting markdown content for KB item {kb_item.id}: {e}")
+            return None
+
+    def _extract_figure_data_from_content(self, content):
+        """Extract figure data from markdown content using a temporary file."""
+        try:
+            # Import here to avoid circular imports
+            from agents.report_agent.utils.paper_processing import extract_figure_data
+            
+            # Create a temporary markdown file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as temp_file:
+                temp_file.write(content)
+                temp_file_path = temp_file.name
+            
+            try:
+                # Extract figure data using the paper processing function
+                figure_data = extract_figure_data(temp_file_path)
+                return figure_data or []
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+                    
+        except Exception as e:
+            self.logger.error(f"Error extracting figure data from content: {e}")
+            return [] 

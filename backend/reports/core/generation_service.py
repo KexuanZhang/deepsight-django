@@ -80,7 +80,7 @@ class GenerationService:
                     figure_data = report._cached_figure_data
                 else:
                     # Load from database or fallback to file
-                figure_data = FigureDataService.load_combined_figure_data(report.figure_data_path)
+                    figure_data = FigureDataService.load_combined_figure_data(report.figure_data_path)
 
             # Create configuration for report generation
             config_dict = report.get_configuration_dict()

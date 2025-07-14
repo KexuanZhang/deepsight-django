@@ -1236,6 +1236,18 @@ class UploadProcessor:
                 
                 kb_item.save()
                 
+                # Auto-populate image captions if images were created
+                if image_files:
+                    try:
+                        from .knowledge_base_image_service import KnowledgeBaseImageService
+                        caption_service = KnowledgeBaseImageService()
+                        caption_service.auto_populate_captions_from_content(kb_item.id, kb_item.user_id)
+                        self.log_operation("marker_caption_generation", 
+                            f"Auto-populated captions for {len(image_files)} images in file_id {file_id}")
+                    except Exception as caption_error:
+                        self.log_operation("marker_caption_generation_error", 
+                            f"Failed to auto-populate captions for file_id {file_id}: {str(caption_error)}", "error")
+                
                 # Log summary
                 total_files = len(content_files) + len(image_files)
                 self.log_operation("marker_extraction_minio_summary", 
