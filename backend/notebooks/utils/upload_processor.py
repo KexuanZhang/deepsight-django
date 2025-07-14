@@ -25,13 +25,13 @@ from django.http import Http404
 from django.core.exceptions import ValidationError
 
 try:
-    from .minio_file_storage import MinIOFileStorageService
+    from .file_storage import FileStorageService
     from .content_index import ContentIndexingService
     from .file_validator import FileValidator
     from .config import config as settings
 except ImportError:
     # Fallback classes to prevent import errors
-    MinIOFileStorageService = None
+    FileStorageService = None
     ContentIndexingService = None
     FileValidator = None
     settings = None
@@ -71,7 +71,7 @@ class UploadProcessor:
         self.logger = logging.getLogger(f"{__name__}.upload_processor")
 
         # Initialize services with fallbacks
-        self.file_storage = MinIOFileStorageService() if MinIOFileStorageService else None
+        self.file_storage = FileStorageService() if FileStorageService else None
         self.content_indexing = (
             ContentIndexingService() if ContentIndexingService else None
         )

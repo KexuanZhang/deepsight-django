@@ -8,11 +8,11 @@ from typing import Dict, Any, Optional, List
 
 from django.conf import settings
 
-# Import MinIO storage service only
+# Import unified storage service only
 try:
-    from .minio_file_storage import MinIOFileStorageService
+    from .file_storage import FileStorageService
 except ImportError:
-    MinIOFileStorageService = None
+    FileStorageService = None
 
 
 class StorageAdapter:
@@ -23,11 +23,11 @@ class StorageAdapter:
     def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.storage_adapter")
         
-        # Initialize MinIO storage service
-        if MinIOFileStorageService is None:
-            self.logger.error("MinIOFileStorageService not available")
-            raise ImportError("MinIO storage backend not available")
-        self.storage_service = MinIOFileStorageService()
+        # Initialize unified storage service
+        if FileStorageService is None:
+            self.logger.error("FileStorageService not available")
+            raise ImportError("Storage backend not available")
+        self.storage_service = FileStorageService()
         self.logger.info("Initialized MinIO storage backend")
     
     def is_minio_backend(self) -> bool:

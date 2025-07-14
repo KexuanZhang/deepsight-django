@@ -1,42 +1,41 @@
 """
-File storage service for managing processed files and knowledge base.
+MinIO-based file storage service for managing processed files and knowledge base.
+Unified implementation that replaces both local filesystem and MinIO storage services.
 """
 
-import json
-import shutil
-import os
 import hashlib
-import re
+import json
 import logging
+import os
+import re
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-from datetime import datetime, UTC
-from django.conf import settings
-from django.core.files.base import ContentFile
 
-try:
-    from .config import config as config_settings, storage_config
-except ImportError:
-    config_settings = None
-    storage_config = None
+from django.conf import settings
+from django.core.exceptions import ValidationError
+
+from .minio_backend import get_minio_backend
 
 
 class FileStorageService:
-    """Service for storing and managing processed files in user knowledge base."""
+    """MinIO-based service for storing and managing processed files in user knowledge base."""
 
     def __init__(self):
         self.service_name = "file_storage"
         self.logger = logging.getLogger(f"{__name__}.file_storage")
-
-        # Use the new DeepSight data storage path
-        self.base_data_root = Path(settings.MEDIA_ROOT)
-
-        # Create base directory structure if it doesn't exist
-        self.base_data_root.mkdir(parents=True, exist_ok=True)
-
-        self.logger.info(
-            f"File storage service initialized with base path: {self.base_data_root}"
-        )
+        
+        # Initialize MinIO backend lazily
+        self._minio_backend = None
+        
+        self.logger.info("MinIO-based file storage service initialized")
+    
+    @property
+    def minio_backend(self):
+        """Lazy initialization of MinIO backend."""
+        if self._minio_backend is None:
+            self._minio_backend = get_minio_backend()
+        return self._minio_backend
 
     def log_operation(self, operation: str, details: str = "", level: str = "info"):
         """Log service operations with consistent formatting."""
@@ -89,28 +88,9 @@ class FileStorageService:
 
         # Check against Windows reserved names
         windows_reserved = {
-            "CON",
-            "PRN",
-            "AUX",
-            "NUL",
-            "COM1",
-            "COM2",
-            "COM3",
-            "COM4",
-            "COM5",
-            "COM6",
-            "COM7",
-            "COM8",
-            "COM9",
-            "LPT1",
-            "LPT2",
-            "LPT3",
-            "LPT4",
-            "LPT5",
-            "LPT6",
-            "LPT7",
-            "LPT8",
-            "LPT9",
+            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", 
+            "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", 
+            "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
         }
 
         if basename_cleaned.upper() in windows_reserved:
@@ -151,46 +131,6 @@ class FileStorageService:
 
         return final_filename
 
-    def _generate_knowledge_base_paths(
-        self, user_id: int, original_filename: str, kb_item_id: str
-    ) -> Dict[str, str]:
-        """
-        Generate organized file paths for knowledge base storage.
-        New structure: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/title.pdf
-        Content: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/content/extracted_content.md
-        Images: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/images/
-        
-        Returns:
-            {
-                'base_dir': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/',
-                'original_file_path': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/title.pdf',
-                'content_dir': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/content/',
-                'content_file_path': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/content/extracted_content.md',
-                'images_dir': 'Users/u_user_X/knowledge_base_item/2025-06/f_file_id/images/',
-            }
-        """
-        # Clean the filename
-        cleaned_filename = self._clean_filename(original_filename)
-
-        # Get current year-month for organization
-        current_date = datetime.now()
-        year_month = current_date.strftime("%Y-%m")
-
-        # Build paths according to new structure with prefixed IDs
-        base_dir = f"Users/u_{user_id}/knowledge_base_item/{year_month}/f_{kb_item_id}"
-        content_dir = f"{base_dir}/content"
-        images_dir = f"{base_dir}/images"
-        
-        return {
-            'base_dir': base_dir,
-            'original_file_path': f"{base_dir}/{cleaned_filename}",
-            'content_dir': content_dir,
-            'content_file_path': f"{content_dir}/extracted_content.md",
-            'images_dir': images_dir,
-            'cleaned_filename': cleaned_filename,
-            'year_month': year_month
-        }
-
     def _calculate_content_hash(self, content: str, metadata: Dict[str, Any] = None) -> str:
         """
         Calculate SHA-256 hash of content for deduplication.
@@ -198,8 +138,7 @@ class FileStorageService:
         For files with minimal or empty content (like marker-processed PDFs),
         include file metadata to prevent false duplicates.
         """
-        # If content is empty
-        # include metadata to create a unique hash
+        # If content is empty, include metadata to create a unique hash
         if not content.strip():
             if metadata:
                 # Create a more unique identifier using file metadata
@@ -219,7 +158,7 @@ class FileStorageService:
         source_id: Optional[int] = None,
         original_file_path: Optional[str] = None,
     ) -> str:
-        """Store processed file content in user's knowledge base with organized structure."""
+        """Store processed file content in user's knowledge base using MinIO storage."""
         try:
             # Import here to avoid circular imports
             from ..models import KnowledgeBaseItem, KnowledgeItem, Notebook, Source
@@ -256,65 +195,66 @@ class FileStorageService:
                 )
                 return str(existing_item.id)
 
-            # Create new knowledge base item (without files initially)
+            # Create new knowledge base item
             title = self._generate_title_from_metadata(metadata)
             content_type = self._determine_content_type(metadata)
 
-            # Create the knowledge base item
+            # Create the knowledge base item with MinIO fields
             kb_item = KnowledgeBaseItem.objects.create(
                 user_id=user_id,
                 title=title,
                 content_type=content_type,
-                content="",  # We'll store in organized file structure
+                content="",  # We'll store in MinIO
                 metadata=metadata,
                 source_hash=content_hash,
                 tags=self._extract_tags_from_metadata(metadata),
             )
 
-            # Generate organized file paths
+            # Store files in MinIO
             original_filename = metadata.get('original_filename', metadata.get('filename', 'unknown_file'))
-            paths = self._generate_knowledge_base_paths(user_id, original_filename, str(kb_item.id))
             
-            # Create specific directories for this file (only knowledge base directories)
-            base_dir = self.base_data_root / paths['base_dir']
-            content_dir = self.base_data_root / paths['content_dir']
+            # Store original file in MinIO if provided
+            if original_file_path and self._file_exists(original_file_path):
+                original_object_key = self._store_original_file_minio(kb_item, original_file_path, original_filename)
+                # Update the knowledge base item with MinIO object key
+                kb_item.original_file_object_key = original_object_key
             
-            base_dir.mkdir(parents=True, exist_ok=True)
-            content_dir.mkdir(parents=True, exist_ok=True)
-
-            # Store original file with cleaned name if provided
-            if original_file_path and os.path.exists(original_file_path):
-                self._save_organized_original_file(kb_item, original_file_path, paths)
-            
-            # Save extracted images if they exist in the processing result
-            final_content = content
-            if 'images' in processing_result and processing_result['images']:
-                # Create images directory
-                images_dir = self.base_data_root / paths['images_dir']
-                images_dir.mkdir(parents=True, exist_ok=True)
-                
-                # Save images and get mapping of saved paths
-                saved_images = self._save_organized_images(kb_item, processing_result['images'], paths)
-                
-                # Update image links in markdown content if images were saved
-                if saved_images:
-                    # We need to import the upload processor's method
-                    # For now, we'll do a simple regex replacement here
-                    final_content = self._update_image_links_in_content(content, saved_images)
-            
-            # Store extracted content in organized structure (with updated image links)
-            # Skip creating extracted_content.md if processing_result indicates marker processing
+            # Store processed content in MinIO
             if not processing_result.get('skip_content_file', False):
-                # Check if there's a specific content filename in the processing result or metadata
-                content_filename = None
-                if 'content_filename' in processing_result:
-                    content_filename = processing_result['content_filename']
-                elif 'processed_filename' in metadata:
-                    content_filename = metadata['processed_filename']
+                content_filename = processing_result.get('content_filename', 'extracted_content.md')
+                content_object_key = self._store_content_file_minio(kb_item, content, content_filename)
+                # Update the knowledge base item with MinIO object key
+                kb_item.file_object_key = content_object_key
+            
+            # Store extracted images in MinIO if they exist
+            if 'images' in processing_result and processing_result['images']:
+                image_mapping = self._store_images_minio(kb_item, processing_result['images'])
                 
-                self._save_organized_content_file(kb_item, final_content, paths, content_filename)
-            else:
-                self.log_operation("skip_content_file", f"Skipped creating extracted_content.md for marker-processed file: {kb_item.id}")
+                # Update image links in content if images were saved
+                if image_mapping and content:
+                    content = self._update_image_links_in_content(content, image_mapping)
+                    # Re-store the updated content
+                    if kb_item.file_object_key:
+                        content_filename = processing_result.get('content_filename', 'extracted_content.md')
+                        content_object_key = self._store_content_file_minio(kb_item, content, content_filename)
+                        kb_item.file_object_key = content_object_key
+
+            # Store comprehensive file metadata in the database
+            file_metadata = {
+                'original_filename': original_filename,
+                'content_filename': processing_result.get('content_filename', 'extracted_content.md'),
+                'file_size': metadata.get('file_size', 0),
+                'content_type': metadata.get('content_type', ''),
+                'upload_timestamp': metadata.get('upload_timestamp', datetime.now(timezone.utc).isoformat()),
+                'processing_metadata': processing_result,
+                'minio_metadata': {
+                    'has_original_file': bool(kb_item.original_file_object_key),
+                    'has_content_file': bool(kb_item.file_object_key),
+                    'has_images': bool('images' in processing_result and processing_result['images']),
+                }
+            }
+            kb_item.file_metadata = file_metadata
+            kb_item.save()
             
             # Link to current notebook
             notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
@@ -333,7 +273,7 @@ class FileStorageService:
 
             self.log_operation(
                 "store_knowledge_item",
-                f"kb_item_id={kb_item.id}, user_id={user_id}, organized_structure=True",
+                f"kb_item_id={kb_item.id}, user_id={user_id}, minio_storage=True",
             )
             return str(kb_item.id)
 
@@ -341,162 +281,132 @@ class FileStorageService:
             self.log_operation("store_file_error", str(e), "error")
             raise
 
-    def _save_organized_original_file(
-        self,
-        kb_item: "KnowledgeBaseItem",
-        original_file_path: str,
-        paths: Dict[str, str],
-    ):
-        """Save the original binary file in organized structure."""
+    def _store_original_file_minio(self, kb_item, original_file_path: str, original_filename: str) -> str:
+        """Store the original binary file in MinIO."""
         try:
-            # Read the original file and save it with cleaned filename
+            # Read the original file
             with open(original_file_path, "rb") as f:
-                content_file = ContentFile(f.read())
-                kb_item.original_file.save(
-                    paths["original_file_path"], content_file, save=True
-                )
+                file_content = f.read()
+
+            # Store in MinIO with 'kb' prefix
+            object_key = self.minio_backend.save_file_with_auto_key(
+                content=file_content,
+                filename=original_filename,
+                prefix="kb",
+                metadata={
+                    'kb_item_id': str(kb_item.id),
+                    'user_id': str(kb_item.user_id),
+                    'file_type': 'original',
+                },
+                user_id=str(kb_item.user_id)
+            )
 
             self.log_operation(
-                "save_organized_original_file",
-                f"Saved original file: {paths['original_file_path']}",
+                "store_original_file_minio",
+                f"Stored original file in MinIO: {object_key}",
             )
+            return object_key
 
         except Exception as e:
             self.log_operation(
-                "save_organized_original_file_error",
+                "store_original_file_minio_error",
                 f"kb_item_id={kb_item.id}, error={str(e)}",
                 "error",
             )
+            raise
 
-    def _save_organized_content_file(
-        self, kb_item: "KnowledgeBaseItem", content: str, paths: Dict[str, str], content_filename: str = None
-    ):
-        """Save the extracted content in organized structure."""
+    def _store_content_file_minio(self, kb_item, content: str, content_filename: str) -> str:
+        """Store the extracted content in MinIO."""
         try:
-            # Determine the content filename - use provided filename or fall back to default
-            if content_filename:
-                # For transcript files, be more careful to preserve the _transcript suffix
-                if '_transcript' in content_filename and content_filename.endswith('.md'):
-                    # Clean the filename with a higher max_length to preserve transcript suffix
-                    cleaned_filename = self._clean_filename(content_filename, max_length=150)
-                else:
-                    # Clean the provided filename normally
-                    cleaned_filename = self._clean_filename(content_filename)
-                    if not cleaned_filename.endswith('.md'):
-                        cleaned_filename += '.md'
-                content_file_path = f"{paths['content_dir']}/{cleaned_filename}"
-            else:
-                # Use the default path from paths dict
-                content_file_path = paths["content_file_path"]
-            
-            # Save content in the content subdirectory
-            content_file = ContentFile(content.encode("utf-8"))
-            
-            # For transcript files, ensure filename fits Django's constraints
-            if content_filename and '_transcript' in content_filename:
-                self.log_operation("transcript_debug", 
-                    f"Before Django save - content_file_path: '{content_file_path}', filename: '{os.path.basename(content_file_path)}'")
-                
-                # Extract just the filename from the path for transcript files
-                transcript_filename = os.path.basename(content_file_path)
-                
-                # Django typically has issues with long filenames in deep paths
-                # Shorten the base name to ensure transcript suffix is preserved
-                # Target: filename should be max 35 chars to account for path depth
-                max_filename_length = 35
-                if len(transcript_filename) > max_filename_length:
-                    # Extract the base name without _transcript.md (14 chars)
-                    base_name = transcript_filename[:-14]  # Remove '_transcript.md'
-                    # Shorten to fit in target length minus suffix
-                    max_base_length = max_filename_length - 14
-                    shortened_base = base_name[:max_base_length].rstrip('_')
-                    transcript_filename = f"{shortened_base}_transcript.md"
-                    # Update the path with the shortened filename
-                    content_file_path = f"{paths['content_dir']}/{transcript_filename}"
-                    self.log_operation("transcript_debug", 
-                        f"Shortened for Django - content_file_path: '{content_file_path}', filename: '{transcript_filename}'")
-            
-            # Save the file and capture what Django actually saves it as
-            kb_item.file.save(content_file_path, content_file, save=True)
-            actual_saved_path = kb_item.file.name
-            
-            # Debug logging to see what Django actually saved
-            if content_filename and '_transcript' in content_filename:
-                actual_filename = os.path.basename(actual_saved_path)
-                self.log_operation("transcript_debug", 
-                    f"Django saved as - path: '{actual_saved_path}', filename: '{actual_filename}'")
-                if '_transcript' not in actual_filename:
-                    self.log_operation("transcript_debug_issue", 
-                        f"ISSUE: Django truncated transcript filename from '{os.path.basename(content_file_path)}' to '{actual_filename}'", "warning")
+            # Convert content to bytes
+            content_bytes = content.encode('utf-8')
 
-            self.log_operation(
-                "save_organized_content_file",
-                f"Saved content file: {content_file_path}",
+            # Store in MinIO with 'kb' prefix
+            object_key = self.minio_backend.save_file_with_auto_key(
+                content=content_bytes,
+                filename=content_filename,
+                prefix="kb",
+                content_type="text/markdown",
+                metadata={
+                    'kb_item_id': str(kb_item.id),
+                    'user_id': str(kb_item.user_id),
+                    'file_type': 'content',
+                },
+                user_id=str(kb_item.user_id)
             )
 
+            self.log_operation(
+                "store_content_file_minio",
+                f"Stored content file in MinIO: {object_key}",
+            )
+            return object_key
+
         except Exception as e:
-            self.log_operation("save_organized_content_file_error", f"kb_item_id={kb_item.id}, error={str(e)}", "error")
-    
-    def _save_organized_images(self, kb_item: 'KnowledgeBaseItem', images: Dict[str, bytes], paths: Dict[str, str]) -> Dict[str, str]:
+            self.log_operation(
+                "store_content_file_minio_error",
+                f"kb_item_id={kb_item.id}, error={str(e)}",
+                "error",
+            )
+            raise
+
+    def _store_images_minio(self, kb_item, images: Dict[str, bytes]) -> Dict[str, str]:
         """
-        Save extracted images in organized structure.
+        Store extracted images in MinIO.
         
         Args:
             kb_item: Knowledge base item instance
             images: Dictionary of {image_name: image_bytes}
-            paths: Path structure dict containing 'images_dir'
             
         Returns:
-            Dictionary mapping original image names to saved image paths
+            Dictionary mapping original image names to MinIO object keys
         """
-        saved_images = {}
+        image_mapping = {}
         
         if not images:
-            return saved_images
+            return image_mapping
             
         try:
-            images_dir = paths['images_dir']
-            
             for image_name, image_data in images.items():
                 try:
-                    # Clean image filename
-                    clean_image_name = self._clean_filename(image_name)
-                    image_path = f"{images_dir}/{clean_image_name}"
+                    # Store in MinIO with 'kb-images' prefix
+                    object_key = self.minio_backend.save_file_with_auto_key(
+                        content=image_data,
+                        filename=image_name,
+                        prefix="kb-images",
+                        metadata={
+                            'kb_item_id': str(kb_item.id),
+                            'user_id': str(kb_item.user_id),
+                            'file_type': 'image',
+                        },
+                        user_id=str(kb_item.user_id)
+                    )
                     
-                    # Save image data
-                    image_file = ContentFile(image_data)
+                    image_mapping[image_name] = object_key
                     
-                    # We'll use Django's default file storage to save the image
-                    # Since we don't have a specific image field, we'll save it using the default storage
-                    from django.core.files.storage import default_storage
-                    saved_path = default_storage.save(image_path, image_file)
-                    
-                    saved_images[image_name] = saved_path
-                    
-                    self.log_operation("save_organized_image", f"Saved image: {saved_path}")
+                    self.log_operation("store_image_minio", f"Stored image in MinIO: {object_key}")
                     
                 except Exception as e:
-                    self.log_operation("save_organized_image_error", f"Failed to save image {image_name}: {str(e)}", "error")
+                    self.log_operation("store_image_minio_error", f"Failed to store image {image_name}: {str(e)}", "error")
                     continue
             
-            if saved_images:
-                self.log_operation("save_organized_images", f"Saved {len(saved_images)} images to {images_dir}")
+            if image_mapping:
+                self.log_operation("store_images_minio", f"Stored {len(image_mapping)} images in MinIO")
                 
         except Exception as e:
-            self.log_operation("save_organized_images_error", f"kb_item_id={kb_item.id}, error={str(e)}", "error")
+            self.log_operation("store_images_minio_error", f"kb_item_id={kb_item.id}, error={str(e)}", "error")
             
-        return saved_images
-    
+        return image_mapping
+
     def _update_image_links_in_content(self, content: str, image_mapping: Dict[str, str]) -> str:
         """
-        Update image links in markdown content to point to relative paths.
+        Update image links in markdown content to point to MinIO pre-signed URLs.
         
         Args:
             content: Original markdown content
-            image_mapping: Dictionary mapping original image names to saved paths
+            image_mapping: Dictionary mapping original image names to MinIO object keys
             
         Returns:
-            Updated content with corrected image links
+            Updated content with MinIO-based image links
         """
         if not image_mapping:
             return content
@@ -515,9 +425,15 @@ class FileStorageService:
             
             # Check if we have a saved version of this image
             if original_filename in image_mapping:
-                # Use relative path for markdown (just the filename since images are in images/ subdirectory)
-                new_path = f"../images/{os.path.basename(image_mapping[original_filename])}"
-                return f"![{alt_text}]({new_path})"
+                # Generate pre-signed URL for the image (valid for 24 hours)
+                try:
+                    object_key = image_mapping[original_filename]
+                    presigned_url = self.minio_backend.get_file_url(object_key, expires=86400)  # 24 hours
+                    return f"![{alt_text}]({presigned_url})"
+                except Exception as e:
+                    self.log_operation("update_image_link_error", f"Failed to generate presigned URL for {object_key}: {e}", "error")
+                    # Fall back to original link
+                    return match.group(0)
             
             # If no mapping found, return original
             return match.group(0)
@@ -525,76 +441,206 @@ class FileStorageService:
         updated_content = re.sub(image_pattern, replace_image_link, updated_content)
         
         if image_mapping:
-            self.log_operation("update_image_links", f"Updated {len(image_mapping)} image links in content")
+            self.log_operation("update_image_links", f"Updated {len(image_mapping)} image links to MinIO URLs")
         
         return updated_content
-    
-    def _delete_organized_structure(self, kb_item: 'KnowledgeBaseItem', user_id: int):
-        """Delete the entire organized directory structure for a knowledge base item."""
+
+    def get_file_content(self, file_id: str, user_id: int = None) -> Optional[str]:
+        """Retrieve file content by knowledge base item ID from MinIO."""
         try:
-            # Try to determine the organized directory from the file paths
-            if kb_item.original_file or kb_item.file:
-                # Get the directory path from either original_file or file
-                file_path = None
-                if kb_item.original_file:
-                    file_path = kb_item.original_file.name
-                elif kb_item.file:
-                    file_path = kb_item.file.name
+            # Import here to avoid circular imports
+            from ..models import KnowledgeBaseItem
 
-                if file_path:
-                    # Extract the base directory (should be like Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/
-                    path_parts = Path(file_path).parts
+            # Query the database for the knowledge base item
+            kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
+            if user_id:
+                kb_query = kb_query.filter(user_id=user_id)
 
-                    # Look for pattern: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/
-                    if (
-                        len(path_parts) >= 5
-                        and path_parts[0] == "Users"
-                        and path_parts[2] == "knowledge_base_item"
-                        and f"u_{user_id}" in path_parts[1]
-                    ):
-                        base_dir = (
-                            self.base_data_root
-                            / path_parts[0]
-                            / path_parts[1]
-                            / path_parts[2]
-                            / path_parts[3]
-                            / path_parts[4]
-                        )
+            kb_item = kb_query.first()
+            if not kb_item:
+                return None
 
-                        if base_dir.exists() and base_dir.is_dir():
-                            # Safety check: ensure it's the right user and contains our kb_item_id
-                            if f"u_{user_id}" in str(
-                                base_dir
-                            ) and f"f_{kb_item.id}" in str(base_dir):
-                                shutil.rmtree(base_dir)
-                                self.log_operation(
-                                    "delete_organized_structure",
-                                    f"Deleted directory: {base_dir}",
-                                )
-                            else:
-                                self.log_operation(
-                                    "delete_organized_structure_skip",
-                                    f"Safety check failed for: {base_dir}",
-                                )
+            # Return inline content if available
+            if kb_item.content:
+                return kb_item.content
+
+            # Try to read from MinIO using the object key
+            if kb_item.file_object_key:
+                try:
+                    content_bytes = self.minio_backend.get_file_content(kb_item.file_object_key)
+                    content = content_bytes.decode('utf-8')
+                    
+                    self.log_operation(
+                        "get_content_minio_success",
+                        f"Retrieved content from MinIO: {kb_item.file_object_key}",
+                    )
+                    return content
+                    
+                except Exception as e:
+                    self.log_operation(
+                        "get_content_minio_error",
+                        f"kb_item_id={file_id}, object_key={kb_item.file_object_key}, error={str(e)}",
+                        "error",
+                    )
+
+            # Legacy fallback: try to read from file field if it exists
+            if kb_item.file:
+                try:
+                    # Use Django's file field to read content
+                    with kb_item.file.open("r") as f:
+                        content = f.read()
+                        
+                    self.log_operation(
+                        "get_content_legacy_success",
+                        f"Retrieved content from legacy file field: {kb_item.file.name}",
+                        "warning"
+                    )
+                    return content
+                except (FileNotFoundError, OSError) as e:
+                    self.log_operation(
+                        "get_content_legacy_error",
+                        f"kb_item_id={file_id}, legacy_file={kb_item.file.name}, error={str(e)}",
+                        "error",
+                    )
+
+            return None
+            
+        except Exception as e:
+            self.log_operation(
+                "get_content_error",
+                f"file_id={file_id}, user_id={user_id}, error={str(e)}",
+                "error",
+            )
+            return None
+
+    def get_file_url(self, file_id: str, user_id: int = None, expires: int = 3600) -> Optional[str]:
+        """Get pre-signed URL for file access."""
+        try:
+            from ..models import KnowledgeBaseItem
+
+            kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
+            if user_id:
+                kb_query = kb_query.filter(user_id=user_id)
+
+            kb_item = kb_query.first()
+            if not kb_item or not kb_item.file_object_key:
+                return None
+
+            url = self.minio_backend.get_file_url(kb_item.file_object_key, expires)
+            
+            self.log_operation(
+                "get_file_url_success",
+                f"Generated presigned URL for: {kb_item.file_object_key}",
+            )
+            return url
+            
+        except Exception as e:
+            self.log_operation(
+                "get_file_url_error",
+                f"file_id={file_id}, user_id={user_id}, error={str(e)}",
+                "error",
+            )
+            return None
+
+    def get_original_file_url(self, file_id: str, user_id: int = None, expires: int = 3600) -> Optional[str]:
+        """Get pre-signed URL for original file access."""
+        try:
+            from ..models import KnowledgeBaseItem
+
+            kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
+            if user_id:
+                kb_query = kb_query.filter(user_id=user_id)
+
+            kb_item = kb_query.first()
+            if not kb_item or not kb_item.original_file_object_key:
+                return None
+
+            url = self.minio_backend.get_file_url(kb_item.original_file_object_key, expires)
+            
+            self.log_operation(
+                "get_original_file_url_success",
+                f"Generated presigned URL for original file: {kb_item.original_file_object_key}",
+            )
+            return url
+            
+        except Exception as e:
+            self.log_operation(
+                "get_original_file_url_error",
+                f"file_id={file_id}, user_id={user_id}, error={str(e)}",
+                "error",
+            )
+            return None
+
+    def get_original_file_path(self, file_id: str, user_id: int = None) -> Optional[str]:
+        """
+        Get the original file URL (MinIO pre-signed URL) instead of local path.
+        This method is kept for backward compatibility but now returns MinIO URLs.
+        """
+        self.log_operation(
+            "get_original_file_path_deprecated", 
+            f"get_original_file_path is deprecated, use get_original_file_url instead for file_id={file_id}",
+            "warning"
+        )
+        return self.get_original_file_url(file_id, user_id, expires=3600)
+
+    def delete_knowledge_base_item(self, kb_item_id: str, user_id: int) -> bool:
+        """Delete a knowledge base item and its MinIO objects."""
+        try:
+            from ..models import KnowledgeBaseItem
+
+            kb_item = KnowledgeBaseItem.objects.filter(
+                id=kb_item_id, user_id=user_id
+            ).first()
+            if not kb_item:
+                return False
+
+            # Delete files from MinIO
+            deleted_files = []
+            
+            if kb_item.file_object_key:
+                if self.minio_backend.delete_file(kb_item.file_object_key):
+                    deleted_files.append(kb_item.file_object_key)
+            
+            if kb_item.original_file_object_key:
+                if self.minio_backend.delete_file(kb_item.original_file_object_key):
+                    deleted_files.append(kb_item.original_file_object_key)
+
+            # Delete associated images if they exist in metadata
+            if kb_item.file_metadata and 'processing_metadata' in kb_item.file_metadata:
+                processing_result = kb_item.file_metadata['processing_metadata']
+                if 'images' in processing_result:
+                    # Find and delete image objects
+                    # Note: This would require tracking image object keys in metadata
+                    pass
+
+            # Delete the knowledge base item (this will cascade delete notebook links)
+            kb_item.delete()
+
+            self.log_operation(
+                "delete_knowledge_item",
+                f"kb_item_id={kb_item_id}, user_id={user_id}, deleted_minio_files={len(deleted_files)}",
+            )
+            return True
 
         except Exception as e:
             self.log_operation(
-                "delete_organized_structure_error",
-                f"kb_item_id={kb_item.id}, error={str(e)}",
+                "delete_knowledge_item_error",
+                f"kb_item_id={kb_item_id}, user_id={user_id}, error={str(e)}",
                 "error",
             )
+            return False
 
+    # Utility methods from original implementation
     def _generate_title_from_metadata(self, metadata: Dict[str, Any]) -> str:
         """Generate a meaningful title from metadata."""
         if "original_filename" in metadata:
             return os.path.splitext(metadata["original_filename"])[0]
         elif "source_url" in metadata:
             from urllib.parse import urlparse
-
             parsed = urlparse(metadata["source_url"])
             return parsed.hostname or "Web Content"
         else:
-            return f"Content {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+            return f"Content {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
 
     def _determine_content_type(self, metadata: Dict[str, Any]) -> str:
         """Determine content type from metadata."""
@@ -617,96 +663,15 @@ class FileStorageService:
             tags.append(metadata["content_type"].split("/")[0])
         return tags
 
-    def get_file_content(self, file_id: str, user_id: int = None) -> Optional[str]:
-        """Retrieve file content by knowledge base item ID."""
-        try:
-            # Import here to avoid circular imports
-            from ..models import KnowledgeBaseItem
+    def _file_exists(self, file_path: str) -> bool:
+        """Check if local file exists."""
+        return os.path.exists(file_path)
 
-            # Query the database for the knowledge base item
-            kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
-            if user_id:
-                kb_query = kb_query.filter(user_id=user_id)
-
-            kb_item = kb_query.first()
-            if not kb_item:
-                return None
-
-            # Return inline content if available
-            if kb_item.content:
-                return kb_item.content
-
-            # Try to read from file field if it exists
-            content_from_file = None
-            if kb_item.file:
-                try:
-                    # Use Django's file field to read content
-                    with kb_item.file.open("r") as f:
-                        content_from_file = f.read()
-                        return content_from_file
-                except (FileNotFoundError, OSError) as e:
-                    self.log_operation(
-                        "get_content_file_error",
-                        f"kb_item_id={file_id}, error={str(e)}",
-                        "error",
-                    )
-                    # File field exists but file not found - continue to fallback
-
-            # If no file field or file reading failed, try to find any .md file in the content directory
-            self.log_operation(
-                "get_content_file_fallback",
-                f"Attempting to find alternative content file for kb_item_id={file_id}",
-                "info",
-            )
-            
-            try:
-                # Generate the expected paths
-                original_filename = kb_item.metadata.get('original_filename', 'unknown_file') if kb_item.metadata else 'unknown_file'
-                paths = self._generate_knowledge_base_paths(user_id or kb_item.user_id, original_filename, str(kb_item.id))
-                
-                # Look for any markdown files in the content directory
-                from pathlib import Path
-                content_dir = self.base_data_root / paths['content_dir']
-                
-                if content_dir.exists():
-                    md_files = list(content_dir.glob('*.md'))
-                    if md_files:
-                        # Use the first markdown file found
-                        with open(md_files[0], 'r', encoding='utf-8') as f:
-                            content = f.read()
-                        
-                        # Update the database record to point to the correct file
-                        relative_path = str(Path(paths['content_dir']) / md_files[0].name)
-                        kb_item.file.name = relative_path
-                        kb_item.save()
-                        
-                        self.log_operation(
-                            "get_content_file_fallback_success",
-                            f"Found and updated file path to: {relative_path}",
-                            "info",
-                        )
-                        
-                        return content
-            except Exception as fallback_error:
-                self.log_operation(
-                    "get_content_file_fallback_error",
-                    f"kb_item_id={file_id}, fallback_error={str(fallback_error)}",
-                    "error",
-                )
-
-            return None
-        except Exception as e:
-            self.log_operation(
-                "get_content_error",
-                f"file_id={file_id}, user_id={user_id}, error={str(e)}",
-                "error",
-            )
-            return None
-
+    # Methods for backward compatibility and additional functionality
     def get_user_knowledge_base(
         self, user_id: int, content_type: str = None, limit: int = 50, offset: int = 0
     ) -> List[Dict[str, Any]]:
-        """Get all knowledge base items for a user."""
+        """Get all knowledge base items for a user with MinIO metadata."""
         try:
             from ..models import KnowledgeBaseItem
 
@@ -726,10 +691,12 @@ class FileStorageService:
                         "tags": item.tags,
                         "created_at": item.created_at.isoformat(),
                         "updated_at": item.updated_at.isoformat(),
-                        "has_file": bool(item.file),
+                        "has_file": bool(item.file_object_key or item.file),
                         "has_content": bool(item.content),
-                        "has_original_file": bool(item.original_file),
+                        "has_original_file": bool(item.original_file_object_key or item.original_file),
                         "metadata": item.metadata or {},
+                        "file_metadata": item.file_metadata or {},
+                        "minio_storage": bool(item.file_object_key or item.original_file_object_key),
                     }
                 )
 
@@ -781,42 +748,10 @@ class FileStorageService:
             )
             return False
 
-    def delete_knowledge_base_item(self, kb_item_id: str, user_id: int) -> bool:
-        """Delete a knowledge base item and its organized directory structure."""
-        try:
-            from ..models import KnowledgeBaseItem
-
-            kb_item = KnowledgeBaseItem.objects.filter(
-                id=kb_item_id, user_id=user_id
-            ).first()
-            if not kb_item:
-                return False
-
-            # Delete the entire organized directory structure
-            # This will remove both the original file and content files
-            self._delete_organized_structure(kb_item, user_id)
-
-            # Delete the knowledge base item (this will cascade delete notebook links)
-            kb_item.delete()
-
-            self.log_operation(
-                "delete_knowledge_item",
-                f"kb_item_id={kb_item_id}, user_id={user_id}, organized_structure_deleted=True",
-            )
-            return True
-
-        except Exception as e:
-            self.log_operation(
-                "delete_knowledge_item_error",
-                f"kb_item_id={kb_item_id}, user_id={user_id}, error={str(e)}",
-                "error",
-            )
-            return False
-
     def unlink_knowledge_item_from_notebook(
         self, kb_item_id: str, notebook_id: int, user_id: int
     ) -> bool:
-        """Remove a knowledge item link from a specific notebook without deleting the knowledge base item."""
+        """Remove a knowledge item link from a specific notebook."""
         try:
             from ..models import KnowledgeItem, Notebook
 
@@ -845,77 +780,6 @@ class FileStorageService:
             )
             return False
 
-    def get_original_file_path(self, file_id: str, user_id: int = None) -> Optional[str]:
-        """Get the path to the original file (video, audio, PDF, etc.) from the knowledge base item ID."""
-        try:
-            # Import here to avoid circular imports
-            from ..models import KnowledgeBaseItem
-
-            # Query the database for the knowledge base item
-            kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
-            if user_id:
-                kb_query = kb_query.filter(user_id=user_id)
-
-            kb_item = kb_query.first()
-            if not kb_item:
-                self.log_operation(
-                    "get_original_file_path_not_found",
-                    f"Knowledge base item not found: file_id={file_id}, user_id={user_id}",
-                    "warning"
-                )
-                return None
-
-            # Check if original_file field exists and has a path
-            if kb_item.original_file and hasattr(kb_item.original_file, 'path'):
-                file_path = kb_item.original_file.path
-                if os.path.exists(file_path):
-                    self.log_operation(
-                        "get_original_file_path_success",
-                        f"Found original file: {file_path}",
-                        "info"
-                    )
-                    return file_path
-                else:
-                    self.log_operation(
-                        "get_original_file_path_missing",
-                        f"Original file path exists in DB but file not found: {file_path}",
-                        "warning"
-                    )
-            
-            # If no original_file, check metadata for alternative paths
-            if kb_item.metadata:
-                original_filename = kb_item.metadata.get('original_filename')
-                if original_filename:
-                    # Try to construct the expected path
-                    paths = self._generate_knowledge_base_paths(
-                        user_id or kb_item.user_id, 
-                        original_filename, 
-                        str(kb_item.id)
-                    )
-                    potential_path = os.path.join(self.base_data_root, paths['original_file_path'])
-                    if os.path.exists(potential_path):
-                        self.log_operation(
-                            "get_original_file_path_found_via_metadata",
-                            f"Found original file via metadata: {potential_path}",
-                            "info"
-                        )
-                        return potential_path
-
-            self.log_operation(
-                "get_original_file_path_not_found",
-                f"Original file not found for file_id={file_id}",
-                "warning"
-            )
-            return None
-
-        except Exception as e:
-            self.log_operation(
-                "get_original_file_path_error",
-                f"file_id={file_id}, user_id={user_id}, error={str(e)}",
-                "error"
-            )
-            return None
-
 
 # Global singleton instance to prevent repeated initialization
-file_storage_service = FileStorageService()
+file_storage_service = FileStorageService() 
