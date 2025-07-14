@@ -204,11 +204,15 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 # Media files (uploaded content) - Updated to use new DeepSight data storage path
+# For local storage backend compatibility
 DEEPSIGHT_DATA_ROOT = Path("/Users/zhang/Desktop/huawei/ds-django-2/deepsight-django/backend/backend/data00")
 # DEEPSIGHT_DATA_ROOT = Path("/Users/eason/Downloads/data00/Deepsight")
 # DEEPSIGHT_DATA_ROOT = Path("C:/Users/zhang/my_app_data/data00/Deepsight")
 MEDIA_ROOT = DEEPSIGHT_DATA_ROOT
 MEDIA_URL = "/media/"
+
+# Note: When using MinIO backend (STORAGE_BACKEND='minio'), 
+# files are stored in MinIO object storage instead of local MEDIA_ROOT
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -290,5 +294,18 @@ LOGS_DIR.mkdir(exist_ok=True)
 MILVUS_HOST               = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT               = os.getenv("MILVUS_PORT", "19530")
 MILVUS_COLLECTION_NAME    = os.getenv("MILVUS_LOCAL_COLLECTION", "user_vectors")
+
+# MinIO Configuration
+MINIO_SETTINGS = {
+    'ENDPOINT': os.getenv('MINIO_ENDPOINT', 'localhost:9000'),
+    'ACCESS_KEY': os.getenv('MINIO_ACCESS_KEY', 'minioadmin'),
+    'SECRET_KEY': os.getenv('MINIO_SECRET_KEY', 'minioadmin'),
+    'BUCKET_NAME': os.getenv('MINIO_BUCKET_NAME', 'deepsight-storage'),
+    'SECURE': os.getenv('MINIO_SECURE', 'False').lower() == 'true',
+    'REGION': os.getenv('MINIO_REGION', 'us-east-1'),
+}
+
+# Storage Backend Selection
+STORAGE_BACKEND = os.getenv('STORAGE_BACKEND', 'minio')  # 'minio' or 'local'
 
 

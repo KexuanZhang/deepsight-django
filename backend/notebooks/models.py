@@ -1,5 +1,6 @@
 import os
 import mimetypes
+import uuid
 from datetime import datetime
 
 from django.conf import settings
@@ -279,6 +280,33 @@ class KnowledgeBaseItem(models.Model):
         default=list,
         help_text="Tags for categorization and search",
     )
+    
+    # MinIO-native storage fields
+    storage_uuid = models.UUIDField(
+        default=uuid.uuid4, 
+        unique=True, 
+        db_index=True,
+        help_text="Unique identifier for MinIO storage operations"
+    )
+    file_object_key = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        db_index=True,
+        help_text="MinIO object key for processed content file"
+    )
+    original_file_object_key = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        db_index=True,
+        help_text="MinIO object key for original file"
+    )
+    file_metadata = models.JSONField(
+        default=dict,
+        help_text="File metadata stored in database (replaces file system metadata)"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -288,10 +316,70 @@ class KnowledgeBaseItem(models.Model):
             models.Index(fields=["user", "-created_at"]),
             models.Index(fields=["user", "source_hash"]),
             models.Index(fields=["user", "content_type"]),
+            # MinIO-specific indexes
+            models.Index(fields=["storage_uuid"]),
+            models.Index(fields=["file_object_key"]),
+            models.Index(fields=["original_file_object_key"]),
         ]
 
     def __str__(self):
         return f"{self.title} ({self.content_type})"
+    
+    def get_file_url(self, expires=3600):
+        """Get pre-signed URL for processed file"""
+        if self.file_object_key:
+            try:
+                from .utils.minio_backend import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_file_url(self.file_object_key, expires)
+            except Exception:
+                return None
+        return None
+    
+    def get_original_file_url(self, expires=3600):
+        """Get pre-signed URL for original file"""
+        if self.original_file_object_key:
+            try:
+                from .utils.minio_backend import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_file_url(self.original_file_object_key, expires)
+            except Exception:
+                return None
+        return None
+    
+    def get_file_content(self):
+        """Get file content from MinIO or fallback to inline content"""
+        if self.file_object_key:
+            try:
+                from .utils.minio_backend import get_minio_backend
+                backend = get_minio_backend()
+                content_bytes = backend.get_file_content(self.file_object_key)
+                return content_bytes.decode('utf-8')
+            except Exception:
+                pass
+        
+        # Fallback to inline content
+        return self.content
+    
+    def has_minio_storage(self):
+        """Check if this item uses MinIO storage"""
+        return bool(self.file_object_key or self.original_file_object_key)
+    
+    def get_storage_info(self):
+        """Get storage information for this item"""
+        info = {
+            'uses_minio': self.has_minio_storage(),
+            'has_processed_file': bool(self.file_object_key),
+            'has_original_file': bool(self.original_file_object_key),
+            'has_legacy_files': bool(self.file or self.original_file),
+            'has_inline_content': bool(self.content),
+            'storage_uuid': str(self.storage_uuid),
+        }
+        
+        if self.file_metadata:
+            info['file_metadata'] = self.file_metadata
+            
+        return info
 
 
 class KnowledgeItem(models.Model):
