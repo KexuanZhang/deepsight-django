@@ -1688,7 +1688,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
 class FileImageView(StandardAPIView, FileAccessValidatorMixin):
     """Serve image files from knowledge base items using database storage."""
 
-    def get(self, request, notebook_id, file_id, image_name):
+    def get(self, request, notebook_id, file_id, image_file):
         """Serve image file through notebook context from database/MinIO."""
         try:
             # Validate access through notebook
@@ -1701,8 +1701,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             
             image_record = KnowledgeBaseImage.objects.filter(
                 knowledge_base_item=kb_item,
-                image_name=image_name,
-                is_active=True
+                image_file=image_file
             ).first()
             
             if image_record:
@@ -1711,7 +1710,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             
             # Fallback: try to serve from legacy filesystem approach
             # This maintains backward compatibility during migration
-            return self._serve_image_from_filesystem(kb_item, image_name)
+            return self._serve_image_from_filesystem(kb_item, image_file)
 
         except PermissionDenied as e:
             return self.error_response(str(e), status_code=status.HTTP_403_FORBIDDEN)
@@ -1741,7 +1740,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             logger.error(f"Error serving image from MinIO: {e}")
             raise Http404("Image file not accessible")
     
-    def _serve_image_from_filesystem(self, kb_item, image_name):
+    def _serve_image_from_filesystem(self, kb_item, image_file):
         """Fallback method to serve image from filesystem (legacy support)."""
         try:
             # Import inside the method to avoid potential circular dependencies
@@ -1753,22 +1752,22 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             )
 
             if not images_dir:
-                raise Http404(f"Image not found: {image_name}")
+                raise Http404(f"Image not found: {image_file}")
             
-            image_path = Path(images_dir) / image_name
+            image_path = Path(images_dir) / image_file
             
             # Check if image exists
             if not image_path.exists():
-                raise Http404(f"Image not found: {image_name}")
+                raise Http404(f"Image not found: {image_file}")
             
             # Serve the image file
-            return self._serve_image(image_path, image_name)
+            return self._serve_image(image_path, image_file)
 
         except Exception as e:
             logger.error(f"Error serving image from filesystem: {e}")
-            raise Http404(f"Image not found: {image_name}")
+            raise Http404(f"Image not found: {image_file}")
 
-    def _serve_image(self, image_path: Path, image_name: str):
+    def _serve_image(self, image_path: Path, image_file: str):
         """Serve an image file through Django's FileResponse."""
         try:
             response = FileResponse(
@@ -1782,7 +1781,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
                 content_type = "application/octet-stream"
             
             response["Content-Type"] = content_type
-            response["Content-Disposition"] = f'inline; filename="{image_name}"'
+            response["Content-Disposition"] = f'inline; filename="{image_file}"'
             response["Cache-Control"] = "public, max-age=3600"  # Cache for 1 hour
             response["X-Content-Type-Options"] = "nosniff"
             

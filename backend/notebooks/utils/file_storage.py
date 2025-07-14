@@ -371,17 +371,17 @@ class FileStorageService:
             
             image_id = 1  # Start sequential numbering
             
-            for image_name, image_data in images.items():
+            for image_file, image_data in images.items():
                 try:
                     # Determine content type
                     import mimetypes
-                    content_type, _ = mimetypes.guess_type(image_name)
+                    content_type, _ = mimetypes.guess_type(image_file)
                     content_type = content_type or 'application/octet-stream'
                     
                     # Store in MinIO with 'kb-images' prefix
                     object_key = self.minio_backend.save_file_with_auto_key(
                         content=image_data,
-                        filename=image_name,
+                        filename=image_file,
                         prefix="kb-images",
                         content_type=content_type,
                         metadata={
@@ -395,23 +395,22 @@ class FileStorageService:
                     # Create KnowledgeBaseImage record
                     kb_image = KnowledgeBaseImage.objects.create(
                         knowledge_base_item=kb_item,
-                        image_name=image_name,
+                        image_file=image_file,
                         image_caption="",  # Will be filled later if caption data is available
                         image_id=image_id,
                         figure_name=f"Figure {image_id}",
                         minio_object_key=object_key,
                         content_type=content_type,
                         file_size=len(image_data),
-                        display_order=image_id,
                         image_metadata={
-                            'original_filename': image_name,
+                            'original_filename': image_file,
                             'file_size': len(image_data),
                             'content_type': content_type,
                             'kb_item_id': str(kb_item.id),
                         }
                     )
                     
-                    image_mapping[image_name] = object_key
+                    image_mapping[image_file] = object_key
                     
                     self.log_operation(
                         "store_image_minio", 
@@ -421,7 +420,7 @@ class FileStorageService:
                     image_id += 1  # Increment for next image
                     
                 except Exception as e:
-                    self.log_operation("store_image_minio_error", f"Failed to store image {image_name}: {str(e)}", "error")
+                    self.log_operation("store_image_minio_error", f"Failed to store image {image_file}: {str(e)}", "error")
                     continue
             
             if image_mapping:

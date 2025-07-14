@@ -1156,14 +1156,13 @@ class UploadProcessor:
                                 
                                 kb_image = KnowledgeBaseImage.objects.create(
                                     knowledge_base_item=kb_item,
-                                    image_name=target_filename,
+                                    image_file=target_filename,
                                     image_caption="",  # Will be filled later if caption data is available
                                     image_id=image_id,
                                     figure_name=f"Figure {image_id}",
                                     minio_object_key=object_key,
                                     content_type=content_type,
                                     file_size=len(file_content),
-                                    display_order=image_id,
                                     image_metadata={
                                         'original_filename': target_filename,
                                         'file_size': len(file_content),

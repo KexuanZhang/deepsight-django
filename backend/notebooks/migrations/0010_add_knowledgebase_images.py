@@ -16,7 +16,7 @@ class Migration(migrations.Migration):
             name='KnowledgeBaseImage',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('image_name', models.CharField(help_text='Original filename or display name for the image', max_length=255)),
+                ('image_file', models.CharField(help_text='Original filename or display name for the image', max_length=255)),
                 ('image_caption', models.TextField(blank=True, help_text='Description or caption for the image')),
                 ('image_id', models.PositiveIntegerField(help_text='Sequential ID within the knowledge base item (Figure 1, Figure 2, etc.)')),
                 ('figure_name', models.CharField(blank=True, help_text="Display name like 'Figure 1', 'Figure 2', etc.", max_length=100)),
@@ -25,8 +25,6 @@ class Migration(migrations.Migration):
                 ('image_metadata', models.JSONField(default=dict, help_text='Image metadata including dimensions, format, size, etc.')),
                 ('content_type', models.CharField(blank=True, help_text='MIME type of the image (image/png, image/jpeg, etc.)', max_length=100)),
                 ('file_size', models.PositiveIntegerField(default=0, help_text='File size in bytes')),
-                ('display_order', models.PositiveIntegerField(default=1, help_text='Display order within the knowledge base item')),
-                ('is_active', models.BooleanField(default=True, help_text='Whether this image is active and should be displayed')),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
                 ('knowledge_base_item', models.ForeignKey(help_text='Knowledge base item this image belongs to', on_delete=django.db.models.deletion.CASCADE, related_name='images', to='notebooks.knowledgebaseitem')),
@@ -34,8 +32,8 @@ class Migration(migrations.Migration):
             options={
                 'verbose_name': 'Knowledge Base Image',
                 'verbose_name_plural': 'Knowledge Base Images',
-                'ordering': ['knowledge_base_item', 'display_order', 'image_id'],
-                'indexes': [models.Index(fields=['knowledge_base_item', 'display_order'], name='notebooks_k_knowled_19816a_idx'), models.Index(fields=['knowledge_base_item', 'image_id'], name='notebooks_k_knowled_04b9a4_idx'), models.Index(fields=['minio_object_key'], name='notebooks_k_minio_o_bcbe25_idx'), models.Index(fields=['storage_uuid'], name='notebooks_k_storage_9f2364_idx'), models.Index(fields=['is_active'], name='notebooks_k_is_acti_e663ca_idx')],
+                'ordering': ['knowledge_base_item', 'image_id'],
+                'indexes': [models.Index(fields=['knowledge_base_item', 'image_id'], name='notebooks_k_knowled_04b9a4_idx'), models.Index(fields=['minio_object_key'], name='notebooks_k_minio_o_bcbe25_idx'), models.Index(fields=['storage_uuid'], name='notebooks_k_storage_9f2364_idx')],
                 'unique_together': {('knowledge_base_item', 'image_id')},
             },
         ),

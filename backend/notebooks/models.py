@@ -495,7 +495,7 @@ class KnowledgeBaseImage(models.Model):
     )
     
     # Image identification and metadata
-    image_name = models.CharField(
+    image_file = models.CharField(
         max_length=255,
         help_text="Original filename or display name for the image"
     )
@@ -540,37 +540,26 @@ class KnowledgeBaseImage(models.Model):
         help_text="File size in bytes"
     )
     
-    # Order and display properties
-    display_order = models.PositiveIntegerField(
-        default=1,
-        help_text="Display order within the knowledge base item"
-    )
-    is_active = models.BooleanField(
-        default=True,
-        help_text="Whether this image is active and should be displayed"
-    )
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        ordering = ["knowledge_base_item", "display_order", "image_id"]
+        ordering = ["knowledge_base_item", "image_id"]
         verbose_name = "Knowledge Base Image"
         verbose_name_plural = "Knowledge Base Images"
         indexes = [
-            models.Index(fields=["knowledge_base_item", "display_order"]),
             models.Index(fields=["knowledge_base_item", "image_id"]),
             models.Index(fields=["minio_object_key"]),
             models.Index(fields=["storage_uuid"]),
-            models.Index(fields=["is_active"]),
         ]
         unique_together = [
             ["knowledge_base_item", "image_id"],  # Unique image_id per knowledge base item
         ]
     
     def __str__(self):
-        return f"{self.figure_name or self.image_name} - {self.knowledge_base_item.title}"
+        return f"{self.figure_name or self.image_file} - {self.knowledge_base_item.title}"
     
     def get_image_url(self, expires=3600):
         """Get pre-signed URL for image access"""
@@ -603,7 +592,7 @@ class KnowledgeBaseImage(models.Model):
             'image_path': self.get_image_url() or '',
             'figure_name': self.figure_name or f"Figure {self.image_id}",
             'caption': self.image_caption,
-            'image_name': self.image_name,
+            'image_file': self.image_file,
             'image_id': self.image_id,
             'content_type': self.content_type,
             'file_size': self.file_size,
@@ -626,15 +615,15 @@ class KnowledgeBaseImage(models.Model):
             if match:
                 image_id = int(match.group(1))
         
-        # Extract image name from image_path if not provided
-        image_name = figure_data_dict.get('image_name', '')
-        if not image_name and 'image_path' in figure_data_dict:
+        # Extract image file name from figure data
+        image_file = figure_data_dict.get('image_file', '')
+        if not image_file and 'image_path' in figure_data_dict:
             import os
-            image_name = os.path.basename(figure_data_dict['image_path'])
+            image_file = os.path.basename(figure_data_dict['image_path'])
         
         return cls.objects.create(
             knowledge_base_item=knowledge_base_item,
-            image_name=image_name,
+            image_file=image_file,
             image_caption=figure_data_dict.get('caption', ''),
             image_id=image_id,
             figure_name=figure_name,

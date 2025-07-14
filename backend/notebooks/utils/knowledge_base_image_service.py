@@ -44,11 +44,10 @@ class KnowledgeBaseImageService:
                 self.logger.warning(f"Knowledge base item {kb_item_id} not found or access denied")
                 return []
             
-            # Get all active images for this knowledge base item
+            # Get all images for this knowledge base item
             images = KnowledgeBaseImage.objects.filter(
-                knowledge_base_item=kb_item,
-                is_active=True
-            ).order_by('display_order', 'image_id')
+                knowledge_base_item=kb_item
+            ).order_by('image_id')
             
             # Convert to figure_data.json compatible format
             figure_data = [image.to_figure_data_dict() for image in images]
@@ -158,20 +157,20 @@ class KnowledgeBaseImageService:
             
             with transaction.atomic():
                 for figure in figure_data:
-                    # Try to match by image name or figure name
-                    image_name = figure.get('image_name', '')
+                    # Try to match by image file name or figure name
+                    image_file = figure.get('image_file', '')
                     figure_name = figure.get('figure_name', '')
                     caption = figure.get('caption', '')
                     
-                    if not image_name and 'image_path' in figure:
-                        image_name = os.path.basename(figure['image_path'])
+                    if not image_file and 'image_path' in figure:
+                        image_file = os.path.basename(figure['image_path'])
                     
                     # Find matching image in database
                     matching_image = None
-                    if image_name:
+                    if image_file:
                         matching_image = KnowledgeBaseImage.objects.filter(
                             knowledge_base_item=kb_item,
-                            image_name=image_name
+                            image_file=image_file
                         ).first()
                     
                     if not matching_image and figure_name:
@@ -349,7 +348,6 @@ class KnowledgeBaseImageService:
             
             stats = {
                 'total_images': images.count(),
-                'active_images': images.filter(is_active=True).count(),
                 'images_with_captions': images.exclude(image_caption='').count(),
                 'total_file_size': sum(img.file_size for img in images),
                 'content_types': list(images.values_list('content_type', flat=True).distinct()),

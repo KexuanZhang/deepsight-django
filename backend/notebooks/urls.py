@@ -129,7 +129,7 @@ urlpatterns = [
 
     # 11) image serving for knowledge base items
     path(
-        "<int:notebook_id>/files/<str:file_id>/images/<str:image_name>",
+        "<int:notebook_id>/files/<str:file_id>/images/<str:image_file>",
         FileImageView.as_view(),
         name="file-image",
     ),

@@ -179,8 +179,8 @@ class Command(BaseCommand):
                         return figure.get('caption', '')
             
             # Try to match by image name
-            if image.image_name:
-                image_basename = image.image_name.lower()
+            if image.image_file:
+                image_basename = image.image_file.lower()
                 for figure in figure_data:
                     figure_image_path = figure.get('image_path', '')
                     if figure_image_path:

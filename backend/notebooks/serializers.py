@@ -202,7 +202,7 @@ class KnowledgeBaseImageSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "knowledge_base_item",
-            "image_name",
+            "image_file",
             "image_caption",
             "image_id",
             "figure_name",
@@ -210,8 +210,6 @@ class KnowledgeBaseImageSerializer(serializers.ModelSerializer):
             "image_url",
             "content_type",
             "file_size",
-            "display_order",
-            "is_active",
             "image_metadata",
             "storage_uuid",
             "figure_data_dict",
@@ -243,12 +241,10 @@ class KnowledgeBaseImageCreateUpdateSerializer(serializers.ModelSerializer):
         model = KnowledgeBaseImage
         fields = [
             "knowledge_base_item",
-            "image_name",
+            "image_file",
             "image_caption",
             "image_id",
             "figure_name",
-            "display_order",
-            "is_active",
         ]
     
     def validate_image_id(self, value):
