@@ -479,3 +479,173 @@ class NotebookChatMessage(models.Model):
 
     def __str__(self):
         return f"{self.sender}: {self.message[:50]}..."
+
+
+class KnowledgeBaseImage(models.Model):
+    """
+    Store image metadata for knowledge base items, replacing figure_data.json files.
+    Each image is linked to a knowledge base item and stored in MinIO.
+    """
+    
+    knowledge_base_item = models.ForeignKey(
+        KnowledgeBaseItem,
+        on_delete=models.CASCADE,
+        related_name="images",
+        help_text="Knowledge base item this image belongs to"
+    )
+    
+    # Image identification and metadata
+    image_name = models.CharField(
+        max_length=255,
+        help_text="Original filename or display name for the image"
+    )
+    image_caption = models.TextField(
+        blank=True,
+        help_text="Description or caption for the image"
+    )
+    image_id = models.PositiveIntegerField(
+        help_text="Sequential ID within the knowledge base item (Figure 1, Figure 2, etc.)"
+    )
+    figure_name = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Display name like 'Figure 1', 'Figure 2', etc."
+    )
+    
+    # MinIO storage fields
+    storage_uuid = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        help_text="Unique identifier for MinIO storage operations"
+    )
+    minio_object_key = models.CharField(
+        max_length=255,
+        db_index=True,
+        help_text="MinIO object key for the image file"
+    )
+    
+    # Image metadata and properties
+    image_metadata = models.JSONField(
+        default=dict,
+        help_text="Image metadata including dimensions, format, size, etc."
+    )
+    content_type = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="MIME type of the image (image/png, image/jpeg, etc.)"
+    )
+    file_size = models.PositiveIntegerField(
+        default=0,
+        help_text="File size in bytes"
+    )
+    
+    # Order and display properties
+    display_order = models.PositiveIntegerField(
+        default=1,
+        help_text="Display order within the knowledge base item"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this image is active and should be displayed"
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ["knowledge_base_item", "display_order", "image_id"]
+        verbose_name = "Knowledge Base Image"
+        verbose_name_plural = "Knowledge Base Images"
+        indexes = [
+            models.Index(fields=["knowledge_base_item", "display_order"]),
+            models.Index(fields=["knowledge_base_item", "image_id"]),
+            models.Index(fields=["minio_object_key"]),
+            models.Index(fields=["storage_uuid"]),
+            models.Index(fields=["is_active"]),
+        ]
+        unique_together = [
+            ["knowledge_base_item", "image_id"],  # Unique image_id per knowledge base item
+        ]
+    
+    def __str__(self):
+        return f"{self.figure_name or self.image_name} - {self.knowledge_base_item.title}"
+    
+    def get_image_url(self, expires=3600):
+        """Get pre-signed URL for image access"""
+        if self.minio_object_key:
+            try:
+                from .utils.minio_backend import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_file_url(self.minio_object_key, expires)
+            except Exception:
+                return None
+        return None
+    
+    def get_image_content(self):
+        """Get image content as bytes from MinIO"""
+        if self.minio_object_key:
+            try:
+                from .utils.minio_backend import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_file_content(self.minio_object_key)
+            except Exception:
+                return None
+        return None
+    
+    def to_figure_data_dict(self):
+        """
+        Convert to figure_data.json compatible dictionary format.
+        This maintains compatibility with existing code that expects figure_data structure.
+        """
+        return {
+            'image_path': self.get_image_url() or '',
+            'figure_name': self.figure_name or f"Figure {self.image_id}",
+            'caption': self.image_caption,
+            'image_name': self.image_name,
+            'image_id': self.image_id,
+            'content_type': self.content_type,
+            'file_size': self.file_size,
+            'minio_object_key': self.minio_object_key,
+            'storage_uuid': str(self.storage_uuid),
+        }
+    
+    @classmethod
+    def create_from_figure_data(cls, knowledge_base_item, figure_data_dict, minio_object_key=None):
+        """
+        Create KnowledgeBaseImage instance from figure_data.json dictionary format.
+        This helps migrate from the old figure_data.json system.
+        """
+        # Extract image_id from figure_name if available
+        image_id = 1
+        figure_name = figure_data_dict.get('figure_name', '')
+        if figure_name:
+            import re
+            match = re.search(r'(\d+)', figure_name)
+            if match:
+                image_id = int(match.group(1))
+        
+        # Extract image name from image_path if not provided
+        image_name = figure_data_dict.get('image_name', '')
+        if not image_name and 'image_path' in figure_data_dict:
+            import os
+            image_name = os.path.basename(figure_data_dict['image_path'])
+        
+        return cls.objects.create(
+            knowledge_base_item=knowledge_base_item,
+            image_name=image_name,
+            image_caption=figure_data_dict.get('caption', ''),
+            image_id=image_id,
+            figure_name=figure_name,
+            minio_object_key=minio_object_key or '',
+            content_type=figure_data_dict.get('content_type', ''),
+            file_size=figure_data_dict.get('file_size', 0),
+            image_metadata=figure_data_dict,
+        )
+    
+    def save(self, *args, **kwargs):
+        """Override save to auto-generate figure_name if not provided"""
+        if not self.figure_name:
+            self.figure_name = f"Figure {self.image_id}"
+        super().save(*args, **kwargs)

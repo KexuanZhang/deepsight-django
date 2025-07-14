@@ -351,7 +351,7 @@ class FileStorageService:
 
     def _store_images_minio(self, kb_item, images: Dict[str, bytes]) -> Dict[str, str]:
         """
-        Store extracted images in MinIO.
+        Store extracted images in MinIO and create KnowledgeBaseImage records.
         
         Args:
             kb_item: Knowledge base item instance
@@ -366,13 +366,24 @@ class FileStorageService:
             return image_mapping
             
         try:
+            # Import here to avoid circular imports
+            from ..models import KnowledgeBaseImage
+            
+            image_id = 1  # Start sequential numbering
+            
             for image_name, image_data in images.items():
                 try:
+                    # Determine content type
+                    import mimetypes
+                    content_type, _ = mimetypes.guess_type(image_name)
+                    content_type = content_type or 'application/octet-stream'
+                    
                     # Store in MinIO with 'kb-images' prefix
                     object_key = self.minio_backend.save_file_with_auto_key(
                         content=image_data,
                         filename=image_name,
                         prefix="kb-images",
+                        content_type=content_type,
                         metadata={
                             'kb_item_id': str(kb_item.id),
                             'user_id': str(kb_item.user_id),
@@ -381,16 +392,40 @@ class FileStorageService:
                         user_id=str(kb_item.user_id)
                     )
                     
+                    # Create KnowledgeBaseImage record
+                    kb_image = KnowledgeBaseImage.objects.create(
+                        knowledge_base_item=kb_item,
+                        image_name=image_name,
+                        image_caption="",  # Will be filled later if caption data is available
+                        image_id=image_id,
+                        figure_name=f"Figure {image_id}",
+                        minio_object_key=object_key,
+                        content_type=content_type,
+                        file_size=len(image_data),
+                        display_order=image_id,
+                        image_metadata={
+                            'original_filename': image_name,
+                            'file_size': len(image_data),
+                            'content_type': content_type,
+                            'kb_item_id': str(kb_item.id),
+                        }
+                    )
+                    
                     image_mapping[image_name] = object_key
                     
-                    self.log_operation("store_image_minio", f"Stored image in MinIO: {object_key}")
+                    self.log_operation(
+                        "store_image_minio", 
+                        f"Stored image in MinIO and DB: {object_key}, kb_image_id={kb_image.id}"
+                    )
+                    
+                    image_id += 1  # Increment for next image
                     
                 except Exception as e:
                     self.log_operation("store_image_minio_error", f"Failed to store image {image_name}: {str(e)}", "error")
                     continue
             
             if image_mapping:
-                self.log_operation("store_images_minio", f"Stored {len(image_mapping)} images in MinIO")
+                self.log_operation("store_images_minio", f"Stored {len(image_mapping)} images in MinIO and database")
                 
         except Exception as e:
             self.log_operation("store_images_minio_error", f"kb_item_id={kb_item.id}, error={str(e)}", "error")

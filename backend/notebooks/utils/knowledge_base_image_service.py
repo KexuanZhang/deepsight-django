@@ -1,0 +1,361 @@
+"""
+KnowledgeBase Image Service for managing images stored in the database.
+Replaces the figure_data.json file-based approach with database storage.
+"""
+
+import json
+import logging
+import os
+from typing import Dict, List, Optional, Any
+from django.db import transaction
+
+from .minio_backend import get_minio_backend
+
+
+class KnowledgeBaseImageService:
+    """Service for managing knowledge base images stored in database instead of figure_data.json files."""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(f"{__name__}.knowledge_base_image_service")
+        self.minio_backend = get_minio_backend()
+    
+    def get_images_for_knowledge_base_item(self, kb_item_id: int, user_id: int = None) -> List[Dict[str, Any]]:
+        """
+        Get all images for a knowledge base item.
+        
+        Args:
+            kb_item_id: Knowledge base item ID
+            user_id: User ID for additional security check (optional)
+            
+        Returns:
+            List of image dictionaries in figure_data.json compatible format
+        """
+        try:
+            from ..models import KnowledgeBaseItem, KnowledgeBaseImage
+            
+            # Validate access to knowledge base item
+            kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
+            if user_id:
+                kb_item_query = kb_item_query.filter(user_id=user_id)
+            
+            kb_item = kb_item_query.first()
+            if not kb_item:
+                self.logger.warning(f"Knowledge base item {kb_item_id} not found or access denied")
+                return []
+            
+            # Get all active images for this knowledge base item
+            images = KnowledgeBaseImage.objects.filter(
+                knowledge_base_item=kb_item,
+                is_active=True
+            ).order_by('display_order', 'image_id')
+            
+            # Convert to figure_data.json compatible format
+            figure_data = [image.to_figure_data_dict() for image in images]
+            
+            self.logger.info(f"Retrieved {len(figure_data)} images for knowledge base item {kb_item_id}")
+            return figure_data
+            
+        except Exception as e:
+            self.logger.error(f"Error retrieving images for kb_item {kb_item_id}: {e}")
+            return []
+    
+    def get_combined_figure_data_for_files(self, file_ids: List[str], user_id: int = None) -> List[Dict[str, Any]]:
+        """
+        Get combined figure data for multiple knowledge base items.
+        This replaces the functionality of creating combined figure_data.json files.
+        
+        Args:
+            file_ids: List of knowledge base item IDs
+            user_id: User ID for security checks
+            
+        Returns:
+            Combined list of figure data dictionaries with renumbered figures
+        """
+        combined_figure_data = []
+        
+        try:
+            for file_id in file_ids:
+                # Remove 'f_' prefix if present
+                clean_file_id = file_id.replace('f_', '') if file_id.startswith('f_') else file_id
+                
+                # Get images for this file
+                file_images = self.get_images_for_knowledge_base_item(clean_file_id, user_id)
+                combined_figure_data.extend(file_images)
+            
+            # Renumber figures sequentially
+            if combined_figure_data:
+                combined_figure_data = self._renumber_figures(combined_figure_data)
+                
+            self.logger.info(f"Combined figure data from {len(file_ids)} files: {len(combined_figure_data)} total images")
+            return combined_figure_data
+            
+        except Exception as e:
+            self.logger.error(f"Error creating combined figure data: {e}")
+            return []
+    
+    def update_image_caption(self, image_id: int, caption: str, user_id: int = None) -> bool:
+        """
+        Update the caption for a specific image.
+        
+        Args:
+            image_id: KnowledgeBaseImage ID
+            caption: New caption text
+            user_id: User ID for security check
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            from ..models import KnowledgeBaseImage
+            
+            image_query = KnowledgeBaseImage.objects.filter(id=image_id)
+            if user_id:
+                image_query = image_query.filter(knowledge_base_item__user_id=user_id)
+            
+            image = image_query.first()
+            if not image:
+                self.logger.warning(f"Image {image_id} not found or access denied")
+                return False
+            
+            image.image_caption = caption
+            image.save(update_fields=['image_caption', 'updated_at'])
+            
+            self.logger.info(f"Updated caption for image {image_id}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error updating caption for image {image_id}: {e}")
+            return False
+    
+    def update_images_from_figure_data(self, kb_item_id: int, figure_data: List[Dict[str, Any]], user_id: int = None) -> bool:
+        """
+        Update image captions and metadata from figure_data format.
+        This helps migrate or update data from existing figure_data.json files.
+        
+        Args:
+            kb_item_id: Knowledge base item ID
+            figure_data: List of figure data dictionaries
+            user_id: User ID for security check
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            from ..models import KnowledgeBaseItem, KnowledgeBaseImage
+            
+            # Validate access to knowledge base item
+            kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
+            if user_id:
+                kb_item_query = kb_item_query.filter(user_id=user_id)
+            
+            kb_item = kb_item_query.first()
+            if not kb_item:
+                self.logger.warning(f"Knowledge base item {kb_item_id} not found or access denied")
+                return False
+            
+            updated_count = 0
+            
+            with transaction.atomic():
+                for figure in figure_data:
+                    # Try to match by image name or figure name
+                    image_name = figure.get('image_name', '')
+                    figure_name = figure.get('figure_name', '')
+                    caption = figure.get('caption', '')
+                    
+                    if not image_name and 'image_path' in figure:
+                        image_name = os.path.basename(figure['image_path'])
+                    
+                    # Find matching image in database
+                    matching_image = None
+                    if image_name:
+                        matching_image = KnowledgeBaseImage.objects.filter(
+                            knowledge_base_item=kb_item,
+                            image_name=image_name
+                        ).first()
+                    
+                    if not matching_image and figure_name:
+                        matching_image = KnowledgeBaseImage.objects.filter(
+                            knowledge_base_item=kb_item,
+                            figure_name=figure_name
+                        ).first()
+                    
+                    if matching_image:
+                        # Update existing image
+                        matching_image.image_caption = caption
+                        if figure_name and not matching_image.figure_name:
+                            matching_image.figure_name = figure_name
+                        
+                        # Update metadata
+                        matching_image.image_metadata.update({
+                            'updated_from_figure_data': True,
+                            'original_figure_data': figure
+                        })
+                        
+                        matching_image.save()
+                        updated_count += 1
+                        
+                        self.logger.debug(f"Updated image {matching_image.id} with caption from figure_data")
+            
+            self.logger.info(f"Updated {updated_count} images from figure_data for kb_item {kb_item_id}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error updating images from figure_data for kb_item {kb_item_id}: {e}")
+            return False
+    
+    def migrate_figure_data_json_to_database(self, kb_item_id: int, figure_data_path: str, user_id: int = None) -> bool:
+        """
+        Migrate from figure_data.json file to database records.
+        This method helps transition from the old file-based system.
+        
+        Args:
+            kb_item_id: Knowledge base item ID
+            figure_data_path: Path to existing figure_data.json file
+            user_id: User ID for security check
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not os.path.exists(figure_data_path):
+                self.logger.info(f"Figure data file doesn't exist: {figure_data_path}")
+                return False
+            
+            # Load figure data from JSON file
+            with open(figure_data_path, 'r', encoding='utf-8') as f:
+                figure_data = json.load(f)
+            
+            if not figure_data:
+                self.logger.info(f"No figure data found in {figure_data_path}")
+                return False
+            
+            # Update images using the figure data
+            success = self.update_images_from_figure_data(kb_item_id, figure_data, user_id)
+            
+            if success:
+                self.logger.info(f"Successfully migrated figure_data.json to database for kb_item {kb_item_id}")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"Error migrating figure_data.json to database: {e}")
+            return False
+    
+    def delete_image(self, image_id: int, user_id: int = None, delete_from_minio: bool = True) -> bool:
+        """
+        Delete an image record and optionally its file from MinIO.
+        
+        Args:
+            image_id: KnowledgeBaseImage ID
+            user_id: User ID for security check
+            delete_from_minio: Whether to also delete the file from MinIO
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            from ..models import KnowledgeBaseImage
+            
+            image_query = KnowledgeBaseImage.objects.filter(id=image_id)
+            if user_id:
+                image_query = image_query.filter(knowledge_base_item__user_id=user_id)
+            
+            image = image_query.first()
+            if not image:
+                self.logger.warning(f"Image {image_id} not found or access denied")
+                return False
+            
+            object_key = image.minio_object_key
+            
+            # Delete from database
+            image.delete()
+            
+            # Delete from MinIO if requested
+            if delete_from_minio and object_key:
+                try:
+                    self.minio_backend.delete_file(object_key)
+                    self.logger.info(f"Deleted image file from MinIO: {object_key}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to delete image file from MinIO {object_key}: {e}")
+            
+            self.logger.info(f"Deleted image record {image_id}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error deleting image {image_id}: {e}")
+            return False
+    
+    def _renumber_figures(self, figures: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Renumber all figures as Figure 1, Figure 2, etc."""
+        for i, figure in enumerate(figures, 1):
+            figure['figure_name'] = f"Figure {i}"
+            figure['image_id'] = i
+        return figures
+    
+    def get_image_url(self, image_id: int, user_id: int = None, expires: int = 3600) -> Optional[str]:
+        """
+        Get pre-signed URL for image access.
+        
+        Args:
+            image_id: KnowledgeBaseImage ID
+            user_id: User ID for security check
+            expires: URL expiration time in seconds
+            
+        Returns:
+            Pre-signed URL or None if not found
+        """
+        try:
+            from ..models import KnowledgeBaseImage
+            
+            image_query = KnowledgeBaseImage.objects.filter(id=image_id)
+            if user_id:
+                image_query = image_query.filter(knowledge_base_item__user_id=user_id)
+            
+            image = image_query.first()
+            if not image:
+                return None
+            
+            return image.get_image_url(expires)
+            
+        except Exception as e:
+            self.logger.error(f"Error getting image URL for {image_id}: {e}")
+            return None
+    
+    def get_stats_for_knowledge_base_item(self, kb_item_id: int, user_id: int = None) -> Dict[str, Any]:
+        """
+        Get statistics about images for a knowledge base item.
+        
+        Args:
+            kb_item_id: Knowledge base item ID
+            user_id: User ID for security check
+            
+        Returns:
+            Dictionary with image statistics
+        """
+        try:
+            from ..models import KnowledgeBaseItem, KnowledgeBaseImage
+            
+            # Validate access to knowledge base item
+            kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
+            if user_id:
+                kb_item_query = kb_item_query.filter(user_id=user_id)
+            
+            kb_item = kb_item_query.first()
+            if not kb_item:
+                return {}
+            
+            images = KnowledgeBaseImage.objects.filter(knowledge_base_item=kb_item)
+            
+            stats = {
+                'total_images': images.count(),
+                'active_images': images.filter(is_active=True).count(),
+                'images_with_captions': images.exclude(image_caption='').count(),
+                'total_file_size': sum(img.file_size for img in images),
+                'content_types': list(images.values_list('content_type', flat=True).distinct()),
+            }
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.error(f"Error getting stats for kb_item {kb_item_id}: {e}")
+            return {} 

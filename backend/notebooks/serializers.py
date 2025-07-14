@@ -5,6 +5,7 @@ from .models import (
     URLProcessingResult,
     ProcessingJob,
     KnowledgeBaseItem,
+    KnowledgeBaseImage,
     KnowledgeItem,
     BatchJob,
     BatchJobItem,
@@ -188,6 +189,85 @@ class KnowledgeBaseItemSerializer(serializers.ModelSerializer):
     def get_original_file_url(self, obj):
         """Get pre-signed URL for original file."""
         return obj.get_original_file_url() if obj.original_file_object_key else None
+
+
+class KnowledgeBaseImageSerializer(serializers.ModelSerializer):
+    """Serializer for knowledge base images with MinIO storage support."""
+    
+    image_url = serializers.SerializerMethodField()
+    figure_data_dict = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = KnowledgeBaseImage
+        fields = [
+            "id",
+            "knowledge_base_item",
+            "image_name",
+            "image_caption",
+            "image_id",
+            "figure_name",
+            "minio_object_key",
+            "image_url",
+            "content_type",
+            "file_size",
+            "display_order",
+            "is_active",
+            "image_metadata",
+            "storage_uuid",
+            "figure_data_dict",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id", 
+            "storage_uuid", 
+            "image_url", 
+            "figure_data_dict",
+            "created_at", 
+            "updated_at"
+        ]
+    
+    def get_image_url(self, obj):
+        """Get pre-signed URL for image access"""
+        return obj.get_image_url()
+    
+    def get_figure_data_dict(self, obj):
+        """Get figure_data.json compatible dictionary"""
+        return obj.to_figure_data_dict()
+
+
+class KnowledgeBaseImageCreateUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for creating/updating knowledge base images."""
+    
+    class Meta:
+        model = KnowledgeBaseImage
+        fields = [
+            "knowledge_base_item",
+            "image_name",
+            "image_caption",
+            "image_id",
+            "figure_name",
+            "display_order",
+            "is_active",
+        ]
+    
+    def validate_image_id(self, value):
+        """Ensure image_id is unique within the knowledge base item"""
+        knowledge_base_item = self.initial_data.get('knowledge_base_item')
+        if knowledge_base_item:
+            existing = KnowledgeBaseImage.objects.filter(
+                knowledge_base_item=knowledge_base_item,
+                image_id=value
+            )
+            # Exclude current instance if updating
+            if self.instance:
+                existing = existing.exclude(id=self.instance.id)
+            
+            if existing.exists():
+                raise serializers.ValidationError(
+                    f"Image ID {value} already exists for this knowledge base item"
+                )
+        return value
 
 
 class KnowledgeItemSerializer(serializers.ModelSerializer):

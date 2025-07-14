@@ -1686,34 +1686,32 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class FileImageView(StandardAPIView, FileAccessValidatorMixin):
-    """Serve image files from knowledge base items."""
+    """Serve image files from knowledge base items using database storage."""
 
     def get(self, request, notebook_id, file_id, image_name):
-        """Serve image file through notebook context."""
+        """Serve image file through notebook context from database/MinIO."""
         try:
             # Validate access through notebook
             notebook, kb_item, knowledge_item = self.validate_notebook_file_access(
                 notebook_id, file_id, request.user
             )
 
-            # Resolve images directory using FigureDataService helper which considers
-            # the actual creation date and performs fallback searches across months.
-            # Import inside the method to avoid potential circular dependencies.
-            from reports.core.figure_service import FigureDataService  # noqa: WPS433, E402
-
-            images_dir = FigureDataService._get_knowledge_base_images_path(
-                user_id=request.user.pk,
-                file_id=str(kb_item.id),
-            )
-
-            image_path = Path(images_dir) / image_name
+            # Try to find the image in the database first
+            from .models import KnowledgeBaseImage
             
-            # Check if image exists
-            if not image_path.exists():
-                raise Http404(f"Image not found: {image_name}")
+            image_record = KnowledgeBaseImage.objects.filter(
+                knowledge_base_item=kb_item,
+                image_name=image_name,
+                is_active=True
+            ).first()
             
-            # Serve the image file
-            return self._serve_image(image_path, image_name)
+            if image_record:
+                # Serve from MinIO using the database record
+                return self._serve_image_from_minio(image_record)
+            
+            # Fallback: try to serve from legacy filesystem approach
+            # This maintains backward compatibility during migration
+            return self._serve_image_from_filesystem(kb_item, image_name)
 
         except PermissionDenied as e:
             return self.error_response(str(e), status_code=status.HTTP_403_FORBIDDEN)
@@ -1725,6 +1723,50 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details={"error": str(e)},
             )
+    
+    def _serve_image_from_minio(self, image_record):
+        """Serve image from MinIO using database record."""
+        try:
+            # Get pre-signed URL for the image
+            image_url = image_record.get_image_url(expires=3600)  # 1 hour expiration
+            
+            if not image_url:
+                raise Http404("Image file not accessible in storage")
+            
+            # Return redirect to pre-signed URL
+            from django.http import HttpResponseRedirect
+            return HttpResponseRedirect(image_url)
+            
+        except Exception as e:
+            logger.error(f"Error serving image from MinIO: {e}")
+            raise Http404("Image file not accessible")
+    
+    def _serve_image_from_filesystem(self, kb_item, image_name):
+        """Fallback method to serve image from filesystem (legacy support)."""
+        try:
+            # Import inside the method to avoid potential circular dependencies
+            from reports.core.figure_service import FigureDataService
+
+            images_dir = FigureDataService._get_knowledge_base_images_path(
+                user_id=kb_item.user_id,
+                file_id=str(kb_item.id),
+            )
+
+            if not images_dir:
+                raise Http404(f"Image not found: {image_name}")
+            
+            image_path = Path(images_dir) / image_name
+            
+            # Check if image exists
+            if not image_path.exists():
+                raise Http404(f"Image not found: {image_name}")
+            
+            # Serve the image file
+            return self._serve_image(image_path, image_name)
+
+        except Exception as e:
+            logger.error(f"Error serving image from filesystem: {e}")
+            raise Http404(f"Image not found: {image_name}")
 
     def _serve_image(self, image_path: Path, image_name: str):
         """Serve an image file through Django's FileResponse."""

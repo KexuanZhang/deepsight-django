@@ -1124,11 +1124,17 @@ class UploadProcessor:
                             # Image files go to 'kb-images' prefix
                             target_filename = file
                             
+                            # Determine content type
+                            import mimetypes
+                            content_type, _ = mimetypes.guess_type(target_filename)
+                            content_type = content_type or 'application/octet-stream'
+                            
                             # Store in MinIO
                             object_key = self.file_storage.minio_backend.save_file_with_auto_key(
                                 content=file_content,
                                 filename=target_filename,
                                 prefix="kb-images",
+                                content_type=content_type,
                                 metadata={
                                     'kb_item_id': str(kb_item.id),
                                     'user_id': str(kb_item.user_id),
@@ -1136,6 +1142,48 @@ class UploadProcessor:
                                     'marker_original_file': file,
                                 },
                                 user_id=str(kb_item.user_id)
+                            )
+                            
+                            # Create KnowledgeBaseImage record
+                            try:
+                                from ..models import KnowledgeBaseImage
+                                
+                                # Calculate image_id based on existing images for this kb_item
+                                existing_count = KnowledgeBaseImage.objects.filter(
+                                    knowledge_base_item=kb_item
+                                ).count()
+                                image_id = existing_count + 1
+                                
+                                kb_image = KnowledgeBaseImage.objects.create(
+                                    knowledge_base_item=kb_item,
+                                    image_name=target_filename,
+                                    image_caption="",  # Will be filled later if caption data is available
+                                    image_id=image_id,
+                                    figure_name=f"Figure {image_id}",
+                                    minio_object_key=object_key,
+                                    content_type=content_type,
+                                    file_size=len(file_content),
+                                    display_order=image_id,
+                                    image_metadata={
+                                        'original_filename': target_filename,
+                                        'file_size': len(file_content),
+                                        'content_type': content_type,
+                                        'kb_item_id': str(kb_item.id),
+                                        'source': 'marker_extraction',
+                                        'marker_original_file': file,
+                                    }
+                                )
+                                
+                                self.log_operation(
+                                    "marker_image_db_created", 
+                                    f"Created KnowledgeBaseImage record: id={kb_image.id}, object_key={object_key}"
+                                )
+                                
+                            except Exception as e:
+                                self.log_operation(
+                                    "marker_image_db_error", 
+                                    f"Failed to create KnowledgeBaseImage record for {target_filename}: {str(e)}", 
+                                    "error"
                             )
                             
                             image_files.append({
