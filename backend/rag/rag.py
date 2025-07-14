@@ -112,6 +112,7 @@ def add_user_content_documents(user_id: int, docs: List[Document]) -> None:
         collection_name=coll_name,
         connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
         drop_old=False,
+        auto_id=True,
     )
     store.add_documents(chunks)
 
@@ -131,32 +132,58 @@ def add_user_files(
         collection_name=coll_name,
         connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
         drop_old=False,
+        auto_id=True,
     )
 
     docs = []
     for item in kb_items:
-        # open in binary, then decode
-        with item.file.open(mode="rb") as f:
-            raw_bytes = f.read()
-        text = raw_bytes.decode("utf-8", errors="ignore")
+        # Use the model's get_file_content method which handles both MinIO and local storage
+        text = item.get_file_content()
+        
+        # If no processed content, try to get from inline content field
+        if not text:
+            text = item.content
+            
+        if not text:
+            # Skip items without any content
+            print(f"!!!Skipping item {item.id} - no content available")
+            continue
+
+        # Get source name from metadata or title
+        source_name = item.title
+        if item.file_metadata and 'original_filename' in item.file_metadata:
+            source_name = item.file_metadata['original_filename']
+        elif item.file and hasattr(item.file, 'name'):
+            source_name = item.file.name.rsplit("/", 1)[-1]
 
         docs.append(Document(
             page_content=text,
             metadata={
                 "user_id": user_id,
-                "source": item.file.name.rsplit("/", 1)[-1],
+                "source": source_name,
                 "kb_item_id": item.id,
             }
         ))
 
     print("!!!docs", docs)
+    
+    # Only proceed if we have documents
+    if not docs:
+        print("!!!No documents to add to Milvus")
+        return
+    
     # split into chunks and add
     chunks = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=100
     ).split_documents(docs)
-
-    store.add_documents(chunks)
+    
+    # Only add to Milvus if we have chunks
+    if chunks:
+        store.add_documents(chunks)
+        print(f"!!!Added {len(chunks)} chunks to Milvus")
+    else:
+        print("!!!No chunks generated from documents")
 
     # make sure Milvus is up to date
     coll = Collection(coll_name)
@@ -172,6 +199,7 @@ def delete_user_file(user_id: int, source: str) -> None:
         collection_name=coll_name,
         connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
         drop_old=False,
+        auto_id=True,
     )
     expr = f'user_id=={user_id} && source=="{source}"'
     store.delete(expr=expr)

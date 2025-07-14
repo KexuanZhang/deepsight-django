@@ -472,7 +472,9 @@ class UploadProcessor:
             # Run synchronous file storage in executor
             # Use thread_sensitive=False to run in thread pool where sync ORM calls are allowed
             from asgiref.sync import sync_to_async
-            store_file_sync = sync_to_async(self.file_storage.store_processed_file, thread_sensitive=False)
+            from .storage_adapter import get_storage_adapter
+            storage_adapter = get_storage_adapter()
+            store_file_sync = sync_to_async(storage_adapter.store_processed_file, thread_sensitive=False)
             file_id = await store_file_sync(
                 content=processing_result["content"],
                 metadata=file_metadata,
@@ -1183,83 +1185,24 @@ class UploadProcessor:
                         return
                     
                     # Generate paths based on the knowledge base item
-                    paths = self.file_storage._generate_knowledge_base_paths(
+                    # Use storage adapter which handles both local and MinIO storage
+                    from .storage_adapter import get_storage_adapter
+                    storage_adapter = get_storage_adapter()
+                    paths = storage_adapter._generate_knowledge_base_paths(
                         user_id=kb_item.user_id,
                         original_filename=kb_item.title + '.pdf',  # Reconstruct filename
                         kb_item_id=str(kb_item.id)
                     )
                     
-                    # Create the directory structure
-                    base_dir_path = self.file_storage.base_data_root / paths['base_dir']
-                    content_dir = base_dir_path / "content"
-                    images_dir = base_dir_path / "images"
+                    # Process marker extraction results based on storage backend
+                    if storage_adapter.is_minio_backend():
+                        # MinIO-native approach: Store files directly to MinIO with object keys
+                        self._process_marker_extraction_minio(kb_item, temp_marker_dir, marker_extraction_result)
+                    else:
+                        # Local storage approach: Move files to organized directories
+                        self._process_marker_extraction_local(kb_item, temp_marker_dir, marker_extraction_result, paths)
                     
-                    # Ensure directories exist
-                    content_dir.mkdir(parents=True, exist_ok=True)
-                    images_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    # Get clean title for renaming
-                    clean_title = marker_extraction_result.get("clean_title", "document")
-                    
-                    # Move files to appropriate directories
-                    content_files = []
-                    image_files = []
-                    
-                    for root, dirs, files in os.walk(temp_marker_dir):
-                        for file in files:
-                            source_file = os.path.join(root, file)
-                            
-                            # Determine file type and target directory
-                            if file.endswith(('.md', '.json')):
-                                # Content files go to content/ directory
-                                if file == "markdown.md":
-                                    target_filename = f"{clean_title}_parsed.md"
-                                else:
-                                    target_filename = file
-                                
-                                target_file = content_dir / target_filename
-                                target_dir_name = "content"
-                                content_files.append(target_filename)
-                                
-                            elif file.endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')):
-                                # Image files go to images/ directory
-                                target_filename = file
-                                target_file = images_dir / target_filename
-                                target_dir_name = "images"
-                                image_files.append(target_filename)
-                                
-                            else:
-                                # Other files go to content/ directory by default
-                                target_filename = file
-                                target_file = content_dir / target_filename
-                                target_dir_name = "content"
-                                content_files.append(target_filename)
-                            
-                            # Handle file name conflicts by overwriting
-                            if target_file.exists():
-                                target_file.unlink()
-                            
-                            import shutil
-                            shutil.move(source_file, str(target_file))
-                            self.log_operation("marker_file_move", f"Moved {file} to {target_dir_name}/{target_filename}")
-                    
-                    # Log summary
-                    total_files = len(content_files) + len(image_files)
-                    self.log_operation("marker_extraction_summary", 
-                        f"Moved {total_files} files: {len(content_files)} to content/, {len(image_files)} to images/")
-                    
-                    if content_files:
-                        self.log_operation("marker_content_files", f"Content files: {content_files}")
-                    if image_files:
-                        self.log_operation("marker_image_files", f"Image files: {image_files}")
-                    
-                    # Update image paths in markdown files after moving files
-                    if image_files and content_files:
-                        for content_file in content_files:
-                            if content_file.endswith('.md'):
-                                self._update_markdown_image_paths(content_dir / content_file, image_files)
-                    
-                    # Clean up the now-empty temp directory
+                    # Clean up the temp directory
                     try:
                         import shutil
                         shutil.rmtree(temp_marker_dir)
@@ -1282,3 +1225,174 @@ class UploadProcessor:
                     shutil.rmtree(temp_marker_dir)
                 except Exception as cleanup_error:
                     self.log_operation("marker_cleanup_warning", f"Could not clean up temp marker directory: {cleanup_error}", "warning")
+
+    def _process_marker_extraction_minio(self, kb_item, temp_marker_dir, marker_extraction_result):
+        """
+        Process marker extraction results for MinIO storage.
+        Store files directly to MinIO with auto-generated object keys.
+        """
+        try:
+            from .minio_backend import get_minio_backend
+            
+            # Get MinIO backend
+            minio_backend = get_minio_backend()
+            
+            # Get clean title for naming
+            clean_title = marker_extraction_result.get("clean_title", "document")
+            
+            # Process each file in the temp directory
+            markdown_content = None
+            image_object_keys = []
+            
+            for root, dirs, files in os.walk(temp_marker_dir):
+                for file in files:
+                    source_file = os.path.join(root, file)
+                    
+                    # Read file content
+                    with open(source_file, 'rb') as f:
+                        file_content = f.read()
+                    
+                    # Determine file type and store to MinIO
+                    if file == "markdown.md":
+                        # Store processed markdown content
+                        object_key = minio_backend.save_file_with_auto_key(
+                            content=file_content,
+                            filename=f"{clean_title}_parsed.md",
+                            prefix="kb"
+                        )
+                        
+                        # Update KB item with processed content object key
+                        kb_item.file_object_key = object_key
+                        
+                        # Store markdown content for inline storage as well
+                        markdown_content = file_content.decode('utf-8', errors='ignore')
+                        kb_item.content = markdown_content
+                        
+                        self.log_operation("minio_store_markdown", f"Stored markdown to MinIO: {object_key}")
+                        
+                    elif file.endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')):
+                        # Store image files
+                        object_key = minio_backend.save_file_with_auto_key(
+                            content=file_content,
+                            filename=file,
+                            prefix="kb/images"
+                        )
+                        image_object_keys.append(object_key)
+                        self.log_operation("minio_store_image", f"Stored image to MinIO: {object_key}")
+                        
+                    elif file.endswith('.json'):
+                        # Store metadata files
+                        object_key = minio_backend.save_file_with_auto_key(
+                            content=file_content,
+                            filename=file,
+                            prefix="kb/metadata"
+                        )
+                        self.log_operation("minio_store_metadata", f"Stored metadata to MinIO: {object_key}")
+            
+            # Update KB item metadata with image object keys
+            if image_object_keys:
+                if not kb_item.file_metadata:
+                    kb_item.file_metadata = {}
+                kb_item.file_metadata['image_object_keys'] = image_object_keys
+                kb_item.file_metadata['image_count'] = len(image_object_keys)
+            
+            # Update processing metadata
+            kb_item.file_metadata.update({
+                'processing_method': 'marker_pdf',
+                'processed_at': marker_extraction_result.get('completed_at'),
+                'clean_title': clean_title,
+                'marker_version': marker_extraction_result.get('marker_version'),
+            })
+            
+            # Save the updated KB item
+            kb_item.save()
+            
+            self.log_operation("minio_marker_processing_complete", 
+                f"Processed marker results for KB item {kb_item.id}: "
+                f"1 markdown file, {len(image_object_keys)} images stored to MinIO")
+            
+        except Exception as e:
+            self.log_operation("minio_marker_processing_error", 
+                f"Error processing marker extraction for MinIO: {e}", "error")
+            raise
+    
+    def _process_marker_extraction_local(self, kb_item, temp_marker_dir, marker_extraction_result, paths):
+        """
+        Process marker extraction results for local storage.
+        Move files to organized directories.
+        """
+        try:
+            # Create the directory structure
+            base_dir_path = self.file_storage.base_data_root / paths['base_dir']
+            content_dir = base_dir_path / "content"
+            images_dir = base_dir_path / "images"
+            
+            # Ensure directories exist
+            content_dir.mkdir(parents=True, exist_ok=True)
+            images_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Get clean title for renaming
+            clean_title = marker_extraction_result.get("clean_title", "document")
+            
+            # Move files to appropriate directories
+            content_files = []
+            image_files = []
+            
+            for root, dirs, files in os.walk(temp_marker_dir):
+                for file in files:
+                    source_file = os.path.join(root, file)
+                    
+                    # Determine file type and target directory
+                    if file.endswith(('.md', '.json')):
+                        # Content files go to content/ directory
+                        if file == "markdown.md":
+                            target_filename = f"{clean_title}_parsed.md"
+                        else:
+                            target_filename = file
+                        
+                        target_file = content_dir / target_filename
+                        target_dir_name = "content"
+                        content_files.append(target_filename)
+                        
+                    elif file.endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')):
+                        # Image files go to images/ directory
+                        target_filename = file
+                        target_file = images_dir / target_filename
+                        target_dir_name = "images"
+                        image_files.append(target_filename)
+                        
+                    else:
+                        # Other files go to content/ directory by default
+                        target_filename = file
+                        target_file = content_dir / target_filename
+                        target_dir_name = "content"
+                        content_files.append(target_filename)
+                    
+                    # Handle file name conflicts by overwriting
+                    if target_file.exists():
+                        target_file.unlink()
+                    
+                    import shutil
+                    shutil.move(source_file, str(target_file))
+                    self.log_operation("marker_file_move", f"Moved {file} to {target_dir_name}/{target_filename}")
+            
+            # Log summary
+            total_files = len(content_files) + len(image_files)
+            self.log_operation("marker_extraction_summary", 
+                f"Moved {total_files} files: {len(content_files)} to content/, {len(image_files)} to images/")
+            
+            if content_files:
+                self.log_operation("marker_content_files", f"Content files: {content_files}")
+            if image_files:
+                self.log_operation("marker_image_files", f"Image files: {image_files}")
+            
+            # Update image paths in markdown files after moving files
+            if image_files and content_files:
+                for content_file in content_files:
+                    if content_file.endswith('.md'):
+                        self._update_markdown_image_paths(content_dir / content_file, image_files)
+            
+        except Exception as e:
+            self.log_operation("local_marker_processing_error", 
+                f"Error processing marker extraction for local storage: {e}", "error")
+            raise
