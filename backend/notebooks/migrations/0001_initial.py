@@ -2,7 +2,6 @@
 
 import django.core.validators
 import django.db.models.deletion
-import notebooks.models
 from django.conf import settings
 from django.db import migrations, models
 
@@ -53,7 +52,7 @@ class Migration(migrations.Migration):
                         blank=True,
                         help_text="Processed content file in the user's knowledge base",
                         null=True,
-                        upload_to=notebooks.models.user_knowledge_base_path,
+                        upload_to='knowledge_base/',
                         validators=[
                             django.core.validators.FileExtensionValidator(
                                 allowed_extensions=["md", "txt"]
@@ -67,7 +66,7 @@ class Migration(migrations.Migration):
                         blank=True,
                         help_text="Original binary file (PDF, audio, video, etc.) in the user's knowledge base",
                         null=True,
-                        upload_to=notebooks.models.user_knowledge_base_path,
+                        upload_to='knowledge_base/',
                     ),
                 ),
                 (
@@ -245,7 +244,7 @@ class Migration(migrations.Migration):
                         blank=True,
                         help_text="Generated .md or other output file",
                         null=True,
-                        upload_to=notebooks.models.user_knowledge_base_path,
+                        upload_to='knowledge_base/',
                     ),
                 ),
                 (
@@ -343,7 +342,7 @@ class Migration(migrations.Migration):
                         blank=True,
                         help_text="Media file downloaded from the URL, if any",
                         null=True,
-                        upload_to=notebooks.models.user_knowledge_base_path,
+                        upload_to='knowledge_base/',
                     ),
                 ),
                 (

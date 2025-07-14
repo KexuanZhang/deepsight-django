@@ -17,7 +17,7 @@ class URLProcessingResultInline(admin.StackedInline):
     model = URLProcessingResult
     readonly_fields = ("created_at",)
     extra = 0
-    fields = ("content_md", "downloaded_file", "error_message", "created_at")
+    fields = ("content_md", "downloaded_file_object_key", "error_message", "created_at")
 
 
 class ProcessingJobInline(admin.TabularInline):
@@ -26,7 +26,7 @@ class ProcessingJobInline(admin.TabularInline):
     model = ProcessingJob
     readonly_fields = (
         "status",
-        "result_file",
+        "result_file_object_key",
         "error_message",
         "created_at",
         "completed_at",
@@ -36,7 +36,7 @@ class ProcessingJobInline(admin.TabularInline):
         "status",
         "created_at",
         "completed_at",
-        "result_file",
+        "result_file_object_key",
         "error_message",
     )
     extra = 0

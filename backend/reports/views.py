@@ -213,16 +213,16 @@ class NotebookReportDetailView(APIView):
             report.save(update_fields=['result_content', 'updated_at'])
 
             # Also update the main report file if it exists
-            if report.main_report_file:
+            if report.main_report_object_key:
                 try:
-                    # Write content to the file using Django's file storage
-                    from django.core.files.base import ContentFile
-                    report.main_report_file.save(
-                        report.main_report_file.name,
-                        ContentFile(content.encode('utf-8')),
-                        save=False
+                    # Save content to MinIO using the file storage service
+                    from notebooks.utils.file_storage import FileStorageService
+                    storage_service = FileStorageService()
+                    storage_service.save_file_content(
+                        object_key=report.main_report_object_key,
+                        content=content.encode('utf-8'),
+                        content_type='text/markdown'
                     )
-                    report.save(update_fields=['main_report_file'])
                     logger.info(f"Updated report file for job {job_id}")
                 except Exception as e:
                     logger.warning(f"Could not update report file for {job_id}: {e}")
@@ -265,10 +265,12 @@ class NotebookReportDetailView(APIView):
             deleted_metadata = False
 
             # Delete generated files if they exist
-            if report.main_report_file:
+            if report.main_report_object_key:
                 try:
-                    # With MinIO storage, just delete the file reference
-                    report.main_report_file.delete(save=False)
+                    # Delete from MinIO storage
+                    from notebooks.utils.file_storage import FileStorageService
+                    storage_service = FileStorageService()
+                    storage_service.delete_file(report.main_report_object_key)
                     deleted_files = 1
                     logger.info(f"Deleted report file from MinIO storage")
                 except Exception as e:
@@ -391,26 +393,26 @@ class NotebookReportDownloadView(APIView):
 
             filename = request.query_params.get("filename")
 
-            # If filename is specified, return that specific file
+            # If filename is specified, check against stored metadata
             if filename:
-                # With MinIO storage, we can't browse directories
-                # Only main report file is available
-                if report.main_report_file and filename == report.main_report_file.name:
-                    response = HttpResponse(report.main_report_file.read(), content_type='application/octet-stream')
-                    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                    return response
-
+                # Check if filename matches the main report file
+                if (report.main_report_object_key and 
+                    report.file_metadata.get('main_report_filename') == filename):
+                    file_url = report.get_report_url(expires=300)  # 5 minute access
+                    if file_url:
+                        from django.http import HttpResponseRedirect
+                        return HttpResponseRedirect(file_url)
+                
                 return Response(
                     {"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND
                 )
 
             # Otherwise, return the main report file
-            if report.main_report_file:
-                return FileResponse(
-                    report.main_report_file.open("rb"),
-                    as_attachment=True,
-                    filename=Path(report.main_report_file.name).name,
-                )
+            if report.main_report_object_key:
+                file_url = report.get_report_url(expires=300)  # 5 minute access
+                if file_url:
+                    from django.http import HttpResponseRedirect
+                    return HttpResponseRedirect(file_url)
 
             return Response(
                 {"detail": "No downloadable report files found"},
@@ -464,11 +466,16 @@ class NotebookReportPdfDownloadView(APIView):
             # Try to get content from database first
             if report.result_content:
                 markdown_content = report.result_content
-            # Fallback: read from file
-            elif report.main_report_file:
+            # Fallback: read from MinIO storage
+            elif report.main_report_object_key:
                 try:
-                    with report.main_report_file.open("r", encoding="utf-8") as f:
-                        markdown_content = f.read()
+                    from notebooks.utils.file_storage import FileStorageService
+                    storage_service = FileStorageService()
+                    content_bytes = storage_service.get_file_content(report.main_report_object_key)
+                    if isinstance(content_bytes, bytes):
+                        markdown_content = content_bytes.decode('utf-8')
+                    else:
+                        markdown_content = content_bytes
                 except Exception as e:
                     logger.error(f"Error reading report file for {job_id}: {e}")
             
@@ -551,15 +558,20 @@ class NotebookReportFilesView(APIView):
 
             files = []
 
-            if report.main_report_file:
+            if report.main_report_object_key:
                 try:
-                    # With MinIO storage, we can only return the main report file
+                    # Return main report file info from metadata
+                    metadata = report.file_metadata or {}
+                    filename = metadata.get('main_report_filename', 'report.md')
+                    size = metadata.get('main_report_size', 0)
+                    file_type = Path(filename).suffix.lower() if filename else '.md'
+                    
                     files.append(
                         {
-                            "filename": report.main_report_file.name,
-                            "size": report.main_report_file.size,
-                            "type": Path(report.main_report_file.name).suffix.lower(),
-                            "download_url": f"/api/notebooks/{notebook_id}/reports/{job_id}/download?filename={report.main_report_file.name}",
+                            "filename": filename,
+                            "size": size,
+                            "type": file_type,
+                            "download_url": f"/api/notebooks/{notebook_id}/reports/{job_id}/download?filename={filename}",
                         }
                     )
                 except Exception as e:
@@ -620,11 +632,16 @@ class NotebookReportContentView(APIView):
                     }
                 )
 
-            # Fallback: read from file
-            if report.main_report_file:
+            # Fallback: read from MinIO storage
+            if report.main_report_object_key:
                 try:
-                    with report.main_report_file.open("r", encoding="utf-8") as f:
-                        content = f.read()
+                    from notebooks.utils.file_storage import FileStorageService
+                    storage_service = FileStorageService()
+                    content_bytes = storage_service.get_file_content(report.main_report_object_key)
+                    if isinstance(content_bytes, bytes):
+                        content = content_bytes.decode('utf-8')
+                    else:
+                        content = content_bytes
 
                     return Response(
                         {

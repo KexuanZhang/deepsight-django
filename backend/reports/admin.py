@@ -32,7 +32,7 @@ class ReportAdmin(admin.ModelAdmin):
         "result_metadata",
         "generated_files",
         "processing_logs",
-        "main_report_file",
+        "main_report_object_key",
     )
     raw_id_fields = ("user", "notebooks")
 
@@ -122,7 +122,7 @@ class ReportAdmin(admin.ModelAdmin):
                 "fields": (
                     "result_content",
                     "result_metadata",
-                    "main_report_file",
+                    "main_report_object_key",
                     "generated_files",
                     "processing_logs",
                     "error_message",
