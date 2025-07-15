@@ -597,7 +597,9 @@ class UploadProcessor:
             return await self._process_audio_immediate(file_path, file_metadata)
         elif file_extension in [".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".3gp", ".ogv", ".m4v"]:
             return await self._process_video_immediate(file_path, file_metadata)
-        elif file_extension in [".txt", ".md"]:
+        elif file_extension == ".md":
+            return self._process_markdown_direct(file_path, file_metadata)
+        elif file_extension == ".txt":
             return self._process_text_immediate(file_path, file_metadata)
         elif file_extension in [".ppt", ".pptx"]:
             return self._process_presentation_immediate(file_path, file_metadata)
@@ -883,6 +885,40 @@ class UploadProcessor:
 
         except Exception as e:
             raise Exception(f"Video processing failed: {str(e)}")
+
+    def _process_markdown_direct(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
+        """Process markdown files directly, skipping marker extraction."""
+        try:
+            self.log_operation("markdown_direct_processing", f"Processing markdown file directly: {file_path}")
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # For markdown files, we don't use the marker extraction logic.
+            # We just return the content and a placeholder metadata.
+            # The content will be indexed directly.
+            text_metadata = {
+                "word_count": len(content.split()),
+                "char_count": len(content),
+                "line_count": len(content.splitlines()),
+                "encoding": "utf-8",
+            }
+
+            # Clean the title for filename
+            base_title = Path(file_metadata['filename']).stem
+            clean_title = self._clean_title(base_title)
+            suggested_filename = f"{clean_title}_parsed.md"
+
+            return {
+                "content": content,
+                "metadata": text_metadata,
+                "features_available": ["content_analysis", "summarization"],
+                "processing_time": "immediate",
+                "content_filename": suggested_filename,
+                "skip_content_file": True # Indicate that content file should not be created
+            }
+        except Exception as e:
+            self.log_operation("markdown_direct_error", f"Error processing markdown file directly: {e}", "error")
+            raise Exception(f"Markdown processing failed: {str(e)}")
 
     def _process_text_immediate(
         self, file_path: str, file_metadata: Dict

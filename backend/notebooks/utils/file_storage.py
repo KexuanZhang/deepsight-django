@@ -625,7 +625,7 @@ class FileStorageService:
             if kb_item.content:
                 return kb_item.content
 
-            # Try to read from MinIO using the object key
+            # Try to read from MinIO using the processed content object key
             if kb_item.file_object_key:
                 try:
                     content_bytes = self.minio_backend.get_file_content(kb_item.file_object_key)
@@ -641,6 +641,25 @@ class FileStorageService:
                     self.log_operation(
                         "get_content_minio_error",
                         f"kb_item_id={file_id}, object_key={kb_item.file_object_key}, error={str(e)}",
+                        "error",
+                    )
+
+            # If no processed content, try the original file (useful for .md files)
+            if kb_item.original_file_object_key:
+                try:
+                    content_bytes = self.minio_backend.get_file_content(kb_item.original_file_object_key)
+                    content = content_bytes.decode('utf-8')
+                    
+                    self.log_operation(
+                        "get_original_content_minio_success",
+                        f"Retrieved original content from MinIO: {kb_item.original_file_object_key}",
+                    )
+                    return content
+                    
+                except Exception as e:
+                    self.log_operation(
+                        "get_original_content_minio_error",
+                        f"kb_item_id={file_id}, object_key={kb_item.original_file_object_key}, error={str(e)}",
                         "error",
                     )
 
@@ -728,7 +747,7 @@ class FileStorageService:
         return self.get_original_file_url(file_id, user_id, expires=3600)
 
     def delete_knowledge_base_item(self, kb_item_id: str, user_id: int) -> bool:
-        """Delete a knowledge base item and its MinIO objects."""
+        """Delete a knowledge base item and its entire UUID folder from MinIO."""
         try:
             from ..models import KnowledgeBaseItem
 
@@ -738,31 +757,71 @@ class FileStorageService:
             if not kb_item:
                 return False
 
-            # Delete files from MinIO
-            deleted_files = []
-            
-            if kb_item.file_object_key:
-                if self.minio_backend.delete_file(kb_item.file_object_key):
-                    deleted_files.append(kb_item.file_object_key)
-            
-            if kb_item.original_file_object_key:
-                if self.minio_backend.delete_file(kb_item.original_file_object_key):
-                    deleted_files.append(kb_item.original_file_object_key)
+            # Get the source name for vector deletion
+            source_name = kb_item.title
+            if kb_item.file_metadata and 'original_filename' in kb_item.file_metadata:
+                source_name = kb_item.file_metadata['original_filename']
+            elif kb_item.metadata and 'original_filename' in kb_item.metadata:
+                source_name = kb_item.metadata['original_filename']
+            elif kb_item.metadata and 'filename' in kb_item.metadata:
+                source_name = kb_item.metadata['filename']
 
-            # Delete associated images if they exist in metadata
-            if kb_item.file_metadata and 'processing_metadata' in kb_item.file_metadata:
-                processing_result = kb_item.file_metadata['processing_metadata']
-                if 'images' in processing_result:
-                    # Find and delete image objects
-                    # Note: This would require tracking image object keys in metadata
-                    pass
+            # Delete vectors from Milvus first
+            try:
+                from rag.rag import delete_user_file
+                delete_user_file(user_id, source_name)
+                self.log_operation(
+                    "delete_vectors_success",
+                    f"kb_item_id={kb_item_id}, user_id={user_id}, source={source_name}",
+                )
+            except Exception as e:
+                self.log_operation(
+                    "delete_vectors_error",
+                    f"kb_item_id={kb_item_id}, user_id={user_id}, source={source_name}, error={str(e)}",
+                    "warning",
+                )
+
+            # Delete the entire UUID folder from MinIO instead of individual files
+            # The folder structure is: {user_id}/kb/{file_id}/
+            folder_prefix = f"{user_id}/kb/{kb_item.id}/"
+            deleted_folder = self.minio_backend.delete_folder(folder_prefix)
+
+            # For backward compatibility, also try to delete individual files if folder deletion fails
+            if not deleted_folder:
+                deleted_files = []
+                
+                if kb_item.file_object_key:
+                    if self.minio_backend.delete_file(kb_item.file_object_key):
+                        deleted_files.append(kb_item.file_object_key)
+                
+                if kb_item.original_file_object_key:
+                    if self.minio_backend.delete_file(kb_item.original_file_object_key):
+                        deleted_files.append(kb_item.original_file_object_key)
+
+                # Delete associated images if they exist in metadata
+                if kb_item.file_metadata and 'processing_metadata' in kb_item.file_metadata:
+                    processing_result = kb_item.file_metadata['processing_metadata']
+                    if 'images' in processing_result:
+                        # Find and delete image objects
+                        # Note: This would require tracking image object keys in metadata
+                        pass
+
+                self.log_operation(
+                    "delete_knowledge_item_fallback",
+                    f"kb_item_id={kb_item_id}, user_id={user_id}, deleted_individual_files={len(deleted_files)}",
+                )
+            else:
+                self.log_operation(
+                    "delete_knowledge_item_folder",
+                    f"kb_item_id={kb_item_id}, user_id={user_id}, deleted_folder={folder_prefix}",
+                )
 
             # Delete the knowledge base item (this will cascade delete notebook links)
             kb_item.delete()
 
             self.log_operation(
                 "delete_knowledge_item",
-                f"kb_item_id={kb_item_id}, user_id={user_id}, deleted_minio_files={len(deleted_files)}",
+                f"kb_item_id={kb_item_id}, user_id={user_id}, folder_deletion_success={deleted_folder}",
             )
             return True
 

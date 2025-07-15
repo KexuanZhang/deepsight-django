@@ -306,7 +306,7 @@ class KnowledgeBaseItem(models.Model):
         return None
 
     def get_file_content(self):
-        """Get the content from either inline field or file"""
+        """Get the content from either inline field, processed file, or original file"""
         if self.content:
             return self.content
         elif self.file_object_key:
@@ -316,7 +316,18 @@ class KnowledgeBaseItem(models.Model):
                 content = backend.get_file_content(self.file_object_key)
                 return content.decode('utf-8') if isinstance(content, bytes) else content
             except Exception:
-                return ""
+                pass  # Fall through to try original file
+        
+        # If no processed content, try the original file (useful for .md files)
+        if self.original_file_object_key:
+            try:
+                from .utils.minio_backend import get_minio_backend
+                backend = get_minio_backend()
+                content = backend.get_file_content(self.original_file_object_key)
+                return content.decode('utf-8') if isinstance(content, bytes) else content
+            except Exception:
+                pass
+        
         return ""
 
     def has_minio_storage(self):

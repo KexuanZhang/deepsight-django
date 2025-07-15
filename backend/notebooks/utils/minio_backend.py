@@ -435,6 +435,61 @@ class MinIOBackend:
             self.logger.error(f"Unexpected error copying file in MinIO: {source_object_key} -> {dest_object_key} - {e}")
             return False
     
+    def delete_folder(self, folder_prefix: str) -> bool:
+        """
+        Delete all files in a folder (prefix) from MinIO.
+        
+        Args:
+            folder_prefix: Folder prefix to delete (e.g., "user_123/kb/uuid-folder/")
+            
+        Returns:
+            True if deletion was successful (or folder was empty)
+        """
+        try:
+            # List all objects with the given prefix
+            objects = self.client.list_objects(
+                self.bucket_name,
+                prefix=folder_prefix,
+                recursive=True
+            )
+            
+            # Collect object names to delete
+            object_names = [obj.object_name for obj in objects]
+            
+            if not object_names:
+                self.logger.info(f"No objects found to delete with prefix: {folder_prefix}")
+                return True
+            
+            # Delete objects in batches (MinIO supports batch deletion)
+            from minio.deleteobjects import DeleteObject
+            delete_objects = [DeleteObject(name) for name in object_names]
+            
+            # Perform batch deletion
+            delete_result = self.client.remove_objects(self.bucket_name, delete_objects)
+            
+            # Check for any errors in deletion
+            deleted_count = 0
+            errors = []
+            for delete_error in delete_result:
+                if hasattr(delete_error, 'error_message'):
+                    errors.append(f"{delete_error.object_name}: {delete_error.error_message}")
+                else:
+                    deleted_count += 1
+            
+            if errors:
+                self.logger.error(f"Errors deleting objects from folder {folder_prefix}: {errors}")
+                return False
+            else:
+                self.logger.info(f"Successfully deleted {deleted_count} objects from folder: {folder_prefix}")
+                return True
+            
+        except S3Error as e:
+            self.logger.error(f"Failed to delete folder {folder_prefix}: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Unexpected error deleting folder {folder_prefix}: {e}")
+            return False
+
     def get_bucket_stats(self) -> Dict[str, Any]:
         """
         Get basic bucket statistics.
