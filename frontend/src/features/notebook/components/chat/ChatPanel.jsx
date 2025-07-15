@@ -272,7 +272,7 @@ useEffect(() => {
     }
 
     try {
-      const response = await fetch(`${config.API_BASE_URL}/notebooks/chat/`, {
+      const response = await fetch(`${config.API_BASE_URL}/notebooks/${notebookId}/chat/`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -282,7 +282,6 @@ useEffect(() => {
         body: JSON.stringify({
           file_ids: selectedFileIds,
           question: messageToSend,
-          notebook_id: notebookId,
         }),
       });
       if (!response.ok) {

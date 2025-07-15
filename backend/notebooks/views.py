@@ -794,24 +794,22 @@ class FileListView(StandardAPIView, NotebookPermissionMixin, FileListResponseMix
 
 class RAGChatFromKBView(NotebookPermissionMixin, APIView):
     """
-    POST /api/rag/chat/
+    POST /api/v1/notebooks/{notebook_id}/chat/
     {
-      "notebook_id":    123,
       "question":       "Explain quantum tunneling",
       "mode":           "local"|"global"|"hybrid",
       "filter_sources": ["paper1.pdf","notes.md"]
     }
     """
-    def post(self, request):
-        notebook_id    = request.data.get("notebook_id")
+    def post(self, request, notebook_id):
         question       = request.data.get("question")
         mode           = request.data.get("mode", "hybrid")
         filter_sources = request.data.get("filter_sources", None)
 
         # 1) validate inputs
-        if not notebook_id or not question:
+        if not question:
             return Response(
-                {"error": "Both notebook_id and question are required."},
+                {"error": "Question is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
         if mode not in ("local", "global", "hybrid"):

@@ -54,7 +54,7 @@ urlpatterns = [
         SuggestedQuestionsView.as_view(),
         name="question-suggestions",
     ),
-    path("chat/", RAGChatFromKBView.as_view(), name="chat-rag"),
+    path("<str:notebook_id>/chat/", RAGChatFromKBView.as_view(), name="chat-rag"),
     # 2) upload & parse a new file
     path(
         "<str:notebook_id>/files/upload/", FileUploadView.as_view(), name="file-upload"
