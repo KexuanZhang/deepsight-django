@@ -189,7 +189,6 @@ class Report(models.Model):
     error_message = models.TextField(blank=True)
 
     # MinIO-native storage (replaces Django FileField)
-    storage_uuid = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
     main_report_object_key = models.CharField(
         max_length=255, 
         blank=True, 
@@ -240,7 +239,6 @@ class Report(models.Model):
             models.Index(fields=["user", "status"]),
             models.Index(fields=["job_id"]),
             # MinIO-specific indexes
-            models.Index(fields=["storage_uuid"]),
             models.Index(fields=["main_report_object_key"]),
         ]
 

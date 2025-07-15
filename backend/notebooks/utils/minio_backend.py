@@ -104,10 +104,10 @@ class MinIOBackend:
         
         return sanitized
     
-    def _generate_object_key(self, prefix: str, filename: str, content_hash: str = None, user_id: str = None, file_id: str = None, subfolder: str = None) -> str:
+    def _generate_object_key(self, prefix: str, filename: str, content_hash: str = None, user_id: str = None, file_id: str = None, subfolder: str = None, subfolder_uuid: str = None) -> str:
         """
-        Generate MinIO object key using the pattern: {user_id}/{prefix}/{file_id}/{subfolder}/{filename}
-        For kb files: {user_id}/kb/{file_id}/{filename} or {user_id}/kb/{file_id}/images/{filename}
+        Generate MinIO object key using the pattern: {user_id}/{prefix}/{file_id}/{subfolder}/{uuid}/{filename}
+        For kb files: {user_id}/kb/{file_id}/{filename} or {user_id}/kb/{file_id}/images/{uuid}/{filename}
         For other files: {user_id}/{prefix}/{timestamp}_{content_hash}_{uuid}{extension}
         
         Args:
@@ -117,6 +117,7 @@ class MinIOBackend:
             user_id: User ID for folder organization (optional)
             file_id: File ID for kb files organization (optional)
             subfolder: Subfolder name (e.g., 'images') for kb files (optional)
+            subfolder_uuid: UUID for subfolder organization (optional)
             
         Returns:
             Generated object key
@@ -124,7 +125,10 @@ class MinIOBackend:
         # For kb files with file_id, use structured folder approach
         if prefix == "kb" and file_id:
             if subfolder:
-                object_key = f"{user_id}/kb/{file_id}/{subfolder}/{filename}"
+                if subfolder_uuid:
+                    object_key = f"{user_id}/kb/{file_id}/{subfolder}/{subfolder_uuid}/{filename}"
+                else:
+                    object_key = f"{user_id}/kb/{file_id}/{subfolder}/{filename}"
             else:
                 object_key = f"{user_id}/kb/{file_id}/{filename}"
             self.logger.debug(f"Generated structured object key: {object_key}")
@@ -168,7 +172,8 @@ class MinIOBackend:
         metadata: Dict[str, str] = None,
         user_id: str = None,
         file_id: str = None,
-        subfolder: str = None
+        subfolder: str = None,
+        subfolder_uuid: str = None
     ) -> str:
         """
         Save file to MinIO with auto-generated object key.
@@ -182,6 +187,7 @@ class MinIOBackend:
             user_id: User ID for folder organization
             file_id: File ID for kb files organization (optional)
             subfolder: Subfolder name for kb files (optional)
+            subfolder_uuid: UUID for subfolder organization (optional)
             
         Returns:
             Generated object key
@@ -191,7 +197,7 @@ class MinIOBackend:
             content_hash = hashlib.sha256(content).hexdigest()
             
             # Generate object key
-            object_key = self._generate_object_key(prefix, filename, content_hash, user_id, file_id, subfolder)
+            object_key = self._generate_object_key(prefix, filename, content_hash, user_id, file_id, subfolder, subfolder_uuid)
             
             # Prepare metadata
             object_metadata = {

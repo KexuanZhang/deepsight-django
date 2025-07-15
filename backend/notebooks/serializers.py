@@ -114,10 +114,9 @@ class URLProcessingResultSerializer(serializers.ModelSerializer):
             "downloaded_file_url",
             "file_metadata", 
             "error_message", 
-            "storage_uuid",
             "created_at"
         ]
-        read_only_fields = ["id", "created_at", "storage_uuid"]
+        read_only_fields = ["id", "created_at"]
     
     def get_downloaded_file_url(self, obj):
         """Get pre-signed URL for downloaded file."""
@@ -139,15 +138,13 @@ class ProcessingJobSerializer(serializers.ModelSerializer):
             "result_file_url",
             "result_file_metadata",
             "error_message",
-            "storage_uuid",
             "created_at",
             "completed_at",
         ]
         read_only_fields = [
             "id",
             "created_at",
-            "completed_at",
-            "storage_uuid"
+            "completed_at"
         ]
     
     def get_result_file_url(self, obj):
@@ -175,12 +172,11 @@ class KnowledgeBaseItemSerializer(serializers.ModelSerializer):
             "file_metadata",
             "metadata",
             "tags",
-            "storage_uuid",
             "source_hash",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at", "source_hash", "storage_uuid"]
+        read_only_fields = ["id", "created_at", "updated_at", "source_hash"]
     
     def get_file_url(self, obj):
         """Get pre-signed URL for processed file."""
@@ -211,14 +207,12 @@ class KnowledgeBaseImageSerializer(serializers.ModelSerializer):
             "content_type",
             "file_size",
             "image_metadata",
-            "storage_uuid",
             "figure_data_dict",
             "created_at",
             "updated_at",
         ]
         read_only_fields = [
             "id", 
-            "storage_uuid", 
             "image_url", 
             "figure_data_dict",
             "created_at", 

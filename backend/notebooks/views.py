@@ -1827,32 +1827,15 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                     content_type, _ = mimetypes.guess_type(filename)
                     content_type = content_type or 'application/octet-stream'
                     
-                    # Store in MinIO using file ID structure with images subfolder
-                    object_key = storage_adapter.storage_service.minio_backend.save_file_with_auto_key(
-                        content=file_content,
-                        filename=filename,
-                        prefix="kb",
-                        content_type=content_type,
-                        metadata={
-                            'kb_item_id': str(kb_item.id),
-                            'user_id': str(kb_item.user.id),
-                            'file_type': 'video_extracted_image' if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')) else 'video_extracted_data',
-                            'extracted_from': 'video_processing',
-                        },
-                        user_id=str(kb_item.user.id),
-                        file_id=str(kb_item.id),
-                        subfolder="images"
-                    )
-                    
-                    # Create KnowledgeBaseImage record for image files
+                    # Handle images with UUID structure
                     if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')):
-                        KnowledgeBaseImage.objects.create(
+                        # Create KnowledgeBaseImage record first to get ID
+                        kb_image = KnowledgeBaseImage(
                             knowledge_base_item=kb_item,
                             image_file=filename,
                             image_caption="",  # Will be populated from figure_data.json if available
                             image_id=image_id,
                             figure_name=f"Figure {image_id}",
-                            minio_object_key=object_key,
                             content_type=content_type,
                             file_size=len(file_content),
                             image_metadata={
@@ -1860,10 +1843,51 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                                 'file_size': len(file_content),
                                 'content_type': content_type,
                                 'kb_item_id': str(kb_item.id),
+                                'source': 'video_extraction',
                                 'extracted_from': 'video_processing',
                             }
                         )
+                        
+                        # Store in MinIO using file ID structure with images subfolder and UUID
+                        object_key = storage_adapter.storage_service.minio_backend.save_file_with_auto_key(
+                            content=file_content,
+                            filename=filename,
+                            prefix="kb",
+                            content_type=content_type,
+                            metadata={
+                                'kb_item_id': str(kb_item.id),
+                                'user_id': str(kb_item.user.id),
+                                'file_type': 'video_extracted_image',
+                                'extracted_from': 'video_processing',
+                            },
+                            user_id=str(kb_item.user.id),
+                            file_id=str(kb_item.id),
+                            subfolder="images",
+                            subfolder_uuid=str(kb_image.id)
+                        )
+                        
+                        # Save the KnowledgeBaseImage record with the object key
+                        kb_image.minio_object_key = object_key
+                        kb_image.save()
+                        
                         image_id += 1
+                    else:
+                        # For non-image files (like JSON), store without UUID structure
+                        object_key = storage_adapter.storage_service.minio_backend.save_file_with_auto_key(
+                            content=file_content,
+                            filename=filename,
+                            prefix="kb",
+                            content_type=content_type,
+                            metadata={
+                                'kb_item_id': str(kb_item.id),
+                                'user_id': str(kb_item.user.id),
+                                'file_type': 'video_extracted_data',
+                                'extracted_from': 'video_processing',
+                            },
+                            user_id=str(kb_item.user.id),
+                            file_id=str(kb_item.id),
+                            subfolder="images"
+                        )
                     
                     logger.info(f"Uploaded {filename} to MinIO: {object_key}")
                     

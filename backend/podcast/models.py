@@ -44,7 +44,6 @@ class PodcastJob(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     # MinIO-native storage (replaces Django FileField)
-    storage_uuid = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
     audio_object_key = models.CharField(
         max_length=255, 
         blank=True, 
@@ -76,7 +75,6 @@ class PodcastJob(models.Model):
             models.Index(fields=["status"]),
             models.Index(fields=["user", "created_at"]),
             # MinIO-specific indexes
-            models.Index(fields=["storage_uuid"]),
             models.Index(fields=["audio_object_key"]),
         ]
 

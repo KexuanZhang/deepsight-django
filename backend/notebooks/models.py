@@ -104,7 +104,6 @@ class URLProcessingResult(models.Model):
     )
     
     # MinIO-native storage
-    storage_uuid = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
     downloaded_file_object_key = models.CharField(
         max_length=255, 
         blank=True, 
@@ -167,7 +166,6 @@ class ProcessingJob(models.Model):
     )
     
     # MinIO-native storage
-    storage_uuid = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
     result_file_object_key = models.CharField(
         max_length=255, 
         blank=True, 
@@ -249,12 +247,6 @@ class KnowledgeBaseItem(models.Model):
     )
     
     # MinIO-native storage fields (replaces Django FileFields)
-    storage_uuid = models.UUIDField(
-        default=uuid.uuid4, 
-        unique=True, 
-        db_index=True,
-        help_text="Unique identifier for MinIO storage operations"
-    )
     file_object_key = models.CharField(
         max_length=255, 
         blank=True, 
@@ -284,7 +276,6 @@ class KnowledgeBaseItem(models.Model):
             models.Index(fields=["user", "source_hash"]),
             models.Index(fields=["user", "content_type"]),
             # MinIO-specific indexes
-            models.Index(fields=["storage_uuid"]),
             models.Index(fields=["file_object_key"]),
             models.Index(fields=["original_file_object_key"]),
         ]
@@ -335,7 +326,6 @@ class KnowledgeBaseItem(models.Model):
     def get_storage_info(self):
         """Get storage information for this item"""
         return {
-            'storage_uuid': str(self.storage_uuid),
             'has_processed_file': bool(self.file_object_key),
             'has_original_file': bool(self.original_file_object_key),
             'file_metadata': self.file_metadata,
@@ -523,12 +513,6 @@ class KnowledgeBaseImage(models.Model):
     )
     
     # MinIO storage fields
-    storage_uuid = models.UUIDField(
-        default=uuid.uuid4,
-        unique=True,
-        db_index=True,
-        help_text="Unique identifier for MinIO storage operations"
-    )
     minio_object_key = models.CharField(
         max_length=255,
         db_index=True,
@@ -562,7 +546,6 @@ class KnowledgeBaseImage(models.Model):
         indexes = [
             models.Index(fields=["knowledge_base_item", "image_id"]),
             models.Index(fields=["minio_object_key"]),
-            models.Index(fields=["storage_uuid"]),
         ]
         unique_together = [
             ["knowledge_base_item", "image_id"],  # Unique image_id per knowledge base item
@@ -607,7 +590,6 @@ class KnowledgeBaseImage(models.Model):
             'content_type': self.content_type,
             'file_size': self.file_size,
             'minio_object_key': self.minio_object_key,
-            'storage_uuid': str(self.storage_uuid),
         }
     
     @classmethod

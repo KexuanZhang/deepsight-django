@@ -1130,7 +1130,36 @@ class UploadProcessor:
                             content_type, _ = mimetypes.guess_type(target_filename)
                             content_type = content_type or 'application/octet-stream'
                             
-                            # Store in MinIO using file ID structure with images subfolder
+                            # Create KnowledgeBaseImage record first to get ID
+                            from ..models import KnowledgeBaseImage
+                            import uuid
+                            
+                            # Calculate image_id based on existing images for this kb_item
+                            existing_count = KnowledgeBaseImage.objects.filter(
+                                knowledge_base_item=kb_item
+                            ).count()
+                            image_id = existing_count + 1
+                            
+                            # Create a temporary record to get the ID
+                            kb_image = KnowledgeBaseImage(
+                                knowledge_base_item=kb_item,
+                                image_file=target_filename,
+                                image_caption="",  # Will be filled later if caption data is available
+                                image_id=image_id,
+                                figure_name=f"Figure {image_id}",
+                                content_type=content_type,
+                                file_size=len(file_content),
+                                image_metadata={
+                                    'original_filename': target_filename,
+                                    'file_size': len(file_content),
+                                    'content_type': content_type,
+                                    'kb_item_id': str(kb_item.id),
+                                    'source': 'marker_extraction',
+                                    'marker_original_file': file,
+                                }
+                            )
+                            
+                            # Store in MinIO using file ID structure with images subfolder and UUID
                             object_key = self.file_storage.minio_backend.save_file_with_auto_key(
                                 content=file_content,
                                 filename=target_filename,
@@ -1144,37 +1173,14 @@ class UploadProcessor:
                                 },
                                 user_id=str(kb_item.user.id),
                                 file_id=str(kb_item.id),
-                                subfolder="images"
+                                subfolder="images",
+                                subfolder_uuid=str(kb_image.id)
                             )
                             
-                            # Create KnowledgeBaseImage record
+                            # Now set the object key and save the record
                             try:
-                                from ..models import KnowledgeBaseImage
-                                
-                                # Calculate image_id based on existing images for this kb_item
-                                existing_count = KnowledgeBaseImage.objects.filter(
-                                    knowledge_base_item=kb_item
-                                ).count()
-                                image_id = existing_count + 1
-                                
-                                kb_image = KnowledgeBaseImage.objects.create(
-                                    knowledge_base_item=kb_item,
-                                    image_file=target_filename,
-                                    image_caption="",  # Will be filled later if caption data is available
-                                    image_id=image_id,
-                                    figure_name=f"Figure {image_id}",
-                                    minio_object_key=object_key,
-                                    content_type=content_type,
-                                    file_size=len(file_content),
-                                    image_metadata={
-                                        'original_filename': target_filename,
-                                        'file_size': len(file_content),
-                                        'content_type': content_type,
-                                        'kb_item_id': str(kb_item.id),
-                                        'source': 'marker_extraction',
-                                        'marker_original_file': file,
-                                    }
-                                )
+                                kb_image.minio_object_key = object_key
+                                kb_image.save()
                                 
                                 self.log_operation(
                                     "marker_image_db_created", 
