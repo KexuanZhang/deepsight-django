@@ -178,9 +178,10 @@ class Command(BaseCommand):
                     if figure.get('figure_name') == image.figure_name:
                         return figure.get('caption', '')
             
-            # Try to match by image name
-            if image.image_file:
-                image_basename = image.image_file.lower()
+            # Try to match by image name from object key
+            if image.minio_object_key:
+                import os
+                image_basename = os.path.basename(image.minio_object_key).lower()
                 for figure in figure_data:
                     figure_image_path = figure.get('image_path', '')
                     if figure_image_path:
@@ -188,11 +189,11 @@ class Command(BaseCommand):
                         if figure_basename == image_basename:
                             return figure.get('caption', '')
             
-            # Try to match by image_id/figure number
-            if hasattr(image, 'image_id') and image.image_id:
+            # Try to match by figure_name/figure number  
+            if image.figure_name:
                 for figure in figure_data:
                     figure_name = figure.get('figure_name', '')
-                    if f"Figure {image.image_id}" in figure_name:
+                    if image.figure_name in figure_name or figure_name in image.figure_name:
                         return figure.get('caption', '')
             
             return None

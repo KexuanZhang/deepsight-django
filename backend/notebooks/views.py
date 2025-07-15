@@ -1812,8 +1812,38 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
             
             logger.info(f"Uploading {len(all_files)} files from {local_images_dir} to MinIO")
             
+            # Extract figure names from existing content if available
+            figure_names_dict = {}
+            if kb_item.content:
+                # Create a temporary file to use with extract_figure_data
+                import tempfile
+                import os
+                try:
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as temp_file:
+                        temp_file.write(kb_item.content)
+                        temp_file_path = temp_file.name
+                    
+                    # Use the existing extract_figure_data function
+                    from agents.report_agent.utils.paper_processing import extract_figure_data
+                    figures_data = extract_figure_data(temp_file_path)
+                    
+                    # Convert to figure_names_dict: figure_number -> figure_name
+                    for fig_data in figures_data:
+                        figure_name = fig_data.get('figure_name', '')
+                        # Extract number from figure_name
+                        import re
+                        match = re.search(r'(\d+)', figure_name)
+                        if match:
+                            figure_num = int(match.group(1))
+                            figure_names_dict[figure_num] = figure_name
+                    
+                    # Clean up temp file
+                    os.unlink(temp_file_path)
+                except Exception as e:
+                    logger.warning(f"Error extracting figure names: {e}")
+            
             # Upload each file to MinIO
-            image_id = 1
+            figure_sequence = 1
             for file_path in all_files:
                 try:
                     filename = os.path.basename(file_path)
@@ -1829,13 +1859,17 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                     
                     # Handle images with UUID structure
                     if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')):
+                        # Get figure name (extracted or auto-generated)
+                        if figure_sequence in figure_names_dict:
+                            figure_name = figure_names_dict[figure_sequence]
+                        else:
+                            figure_name = f"Figure {figure_sequence}"
+                        
                         # Create KnowledgeBaseImage record first to get ID
                         kb_image = KnowledgeBaseImage(
                             knowledge_base_item=kb_item,
-                            image_file=filename,
                             image_caption="",  # Will be populated from figure_data.json if available
-                            image_id=image_id,
-                            figure_name=f"Figure {image_id}",
+                            figure_name=figure_name,
                             content_type=content_type,
                             file_size=len(file_content),
                             image_metadata={
@@ -1870,7 +1904,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                         kb_image.minio_object_key = object_key
                         kb_image.save()
                         
-                        image_id += 1
+                        figure_sequence += 1
                     else:
                         # For non-image files (like JSON), store without UUID structure
                         object_key = storage_adapter.storage_service.minio_backend.save_file_with_auto_key(
@@ -1933,15 +1967,14 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                 if isinstance(caption_data, list):
                     for item in caption_data:
                         if isinstance(item, dict) and 'figure_name' in item and 'caption' in item:
-                            # Try to find matching image record
-                            # The figure_name might be like 'img_0007' while image_file is 'img_0007.png'
+                            # Match by exact figure_name from extraction
                             figure_name = item['figure_name']
                             caption = item['caption']
                             
-                            # Try exact match first
+                            # Find image by exact figure_name match
                             image_record = KnowledgeBaseImage.objects.filter(
                                 knowledge_base_item=kb_item,
-                                image_file__icontains=figure_name
+                                figure_name=figure_name
                             ).first()
                             
                             if image_record:
@@ -1949,7 +1982,26 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                                 image_record.save()
                                 logger.info(f"Updated caption for {figure_name}: {caption[:50]}...")
                             else:
-                                logger.warning(f"No image record found for figure: {figure_name}")
+                                # Fallback: try to extract number and match by auto-generated names
+                                import re
+                                match = re.search(r'(\d+)', figure_name)
+                                if match:
+                                    figure_num = int(match.group(1))
+                                    auto_generated_name = f"Figure {figure_num}"
+                                    
+                                    image_record = KnowledgeBaseImage.objects.filter(
+                                        knowledge_base_item=kb_item,
+                                        figure_name=auto_generated_name
+                                    ).first()
+                                    
+                                    if image_record:
+                                        image_record.image_caption = caption
+                                        image_record.save()
+                                        logger.info(f"Updated caption for {auto_generated_name}: {caption[:50]}...")
+                                    else:
+                                        logger.warning(f"No image record found for {figure_name} or {auto_generated_name}")
+                                else:
+                                    logger.warning(f"Could not match figure name: {figure_name}")
                 
                 logger.info(f"Processed caption data for kb_item {kb_item.id}")
                 
@@ -1972,12 +2024,12 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
                 notebook_id, file_id, request.user
             )
 
-            # Try to find the image in the database first
+            # Try to find the image in the database by filename in object key
             from .models import KnowledgeBaseImage
             
             image_record = KnowledgeBaseImage.objects.filter(
                 knowledge_base_item=kb_item,
-                image_file=image_file
+                minio_object_key__icontains=image_file
             ).first()
             
             if image_record:

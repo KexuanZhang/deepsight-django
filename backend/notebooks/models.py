@@ -495,21 +495,14 @@ class KnowledgeBaseImage(models.Model):
     )
     
     # Image identification and metadata
-    image_file = models.CharField(
-        max_length=255,
-        help_text="Original filename or display name for the image"
+    figure_name = models.CharField(
+        max_length=100,
+        default="Figure 1",
+        help_text="Figure name like 'Figure 1', 'Figure 2', extracted from PDF or auto-generated"
     )
     image_caption = models.TextField(
         blank=True,
         help_text="Description or caption for the image"
-    )
-    image_id = models.PositiveIntegerField(
-        help_text="Sequential ID within the knowledge base item (Figure 1, Figure 2, etc.)"
-    )
-    figure_name = models.CharField(
-        max_length=100,
-        blank=True,
-        help_text="Display name like 'Figure 1', 'Figure 2', etc."
     )
     
     # MinIO storage fields
@@ -540,19 +533,19 @@ class KnowledgeBaseImage(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        ordering = ["knowledge_base_item", "image_id"]
+        ordering = ["knowledge_base_item", "figure_name"]
         verbose_name = "Knowledge Base Image"
         verbose_name_plural = "Knowledge Base Images"
         indexes = [
-            models.Index(fields=["knowledge_base_item", "image_id"]),
+            models.Index(fields=["knowledge_base_item", "figure_name"]),
             models.Index(fields=["minio_object_key"]),
         ]
         unique_together = [
-            ["knowledge_base_item", "image_id"],  # Unique image_id per knowledge base item
+            ["knowledge_base_item", "figure_name"],  # Unique figure_name per knowledge base item
         ]
     
     def __str__(self):
-        return f"{self.figure_name or self.image_file} - {self.knowledge_base_item.title}"
+        return f"{self.figure_name} - {self.knowledge_base_item.title}"
     
     def get_image_url(self, expires=86400):
         """Get pre-signed URL for image access"""
@@ -583,10 +576,8 @@ class KnowledgeBaseImage(models.Model):
         """
         return {
             'image_path': self.get_image_url() or '',
-            'figure_name': self.figure_name or f"Figure {self.image_id}",
+            'figure_name': self.figure_name,
             'caption': self.image_caption,
-            'image_file': self.image_file,
-            'image_id': self.image_id,
             'content_type': self.content_type,
             'file_size': self.file_size,
             'minio_object_key': self.minio_object_key,
@@ -598,26 +589,12 @@ class KnowledgeBaseImage(models.Model):
         Create KnowledgeBaseImage instance from figure_data.json dictionary format.
         This helps migrate from the old figure_data.json system.
         """
-        # Extract image_id from figure_name if available
-        image_id = 1
-        figure_name = figure_data_dict.get('figure_name', '')
-        if figure_name:
-            import re
-            match = re.search(r'(\d+)', figure_name)
-            if match:
-                image_id = int(match.group(1))
-        
-        # Extract image file name from figure data
-        image_file = figure_data_dict.get('image_file', '')
-        if not image_file and 'image_path' in figure_data_dict:
-            import os
-            image_file = os.path.basename(figure_data_dict['image_path'])
+        # Extract figure_name from figure_data_dict
+        figure_name = figure_data_dict.get('figure_name', 'Figure 1')
         
         return cls.objects.create(
             knowledge_base_item=knowledge_base_item,
-            image_file=image_file,
             image_caption=figure_data_dict.get('caption', ''),
-            image_id=image_id,
             figure_name=figure_name,
             minio_object_key=minio_object_key or '',
             content_type=figure_data_dict.get('content_type', ''),
@@ -625,8 +602,3 @@ class KnowledgeBaseImage(models.Model):
             image_metadata=figure_data_dict,
         )
     
-    def save(self, *args, **kwargs):
-        """Override save to auto-generate figure_name if not provided"""
-        if not self.figure_name:
-            self.figure_name = f"Figure {self.image_id}"
-        super().save(*args, **kwargs)

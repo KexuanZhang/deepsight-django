@@ -198,9 +198,7 @@ class KnowledgeBaseImageSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "knowledge_base_item",
-            "image_file",
             "image_caption",
-            "image_id",
             "figure_name",
             "minio_object_key",
             "image_url",
@@ -235,19 +233,17 @@ class KnowledgeBaseImageCreateUpdateSerializer(serializers.ModelSerializer):
         model = KnowledgeBaseImage
         fields = [
             "knowledge_base_item",
-            "image_file",
             "image_caption",
-            "image_id",
             "figure_name",
         ]
     
-    def validate_image_id(self, value):
-        """Ensure image_id is unique within the knowledge base item"""
+    def validate_figure_name(self, value):
+        """Ensure figure_name is unique within the knowledge base item"""
         knowledge_base_item = self.initial_data.get('knowledge_base_item')
         if knowledge_base_item:
             existing = KnowledgeBaseImage.objects.filter(
                 knowledge_base_item=knowledge_base_item,
-                image_id=value
+                figure_name=value
             )
             # Exclude current instance if updating
             if self.instance:
@@ -255,7 +251,7 @@ class KnowledgeBaseImageCreateUpdateSerializer(serializers.ModelSerializer):
             
             if existing.exists():
                 raise serializers.ValidationError(
-                    f"Image ID {value} already exists for this knowledge base item"
+                    f"Figure name '{value}' already exists for this knowledge base item"
                 )
         return value
 

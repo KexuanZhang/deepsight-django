@@ -168,9 +168,10 @@ class KnowledgeBaseImageService:
                     # Find matching image in database
                     matching_image = None
                     if image_file:
+                        # Try to match by filename in object key
                         matching_image = KnowledgeBaseImage.objects.filter(
                             knowledge_base_item=kb_item,
-                            image_file=image_file
+                            minio_object_key__icontains=image_file
                         ).first()
                     
                     if not matching_image and figure_name:

@@ -1076,6 +1076,7 @@ class UploadProcessor:
                 # Process files from temp directory and store in MinIO
                 content_files = []
                 image_files = []
+                markdown_content = None  # Store markdown content for figure name extraction
                 
                 for root, dirs, files in os.walk(temp_marker_dir):
                     for file in files:
@@ -1119,7 +1120,8 @@ class UploadProcessor:
                             if file == "markdown.md":
                                 kb_item.file_object_key = object_key
                                 # Also store markdown content inline for RAG system compatibility
-                                kb_item.content = file_content.decode('utf-8', errors='ignore')
+                                markdown_content = file_content.decode('utf-8', errors='ignore')
+                                kb_item.content = markdown_content
                                 
                         elif file.endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')):
                             # Image files go to kb folder with file ID structure in images subfolder
@@ -1134,19 +1136,52 @@ class UploadProcessor:
                             from ..models import KnowledgeBaseImage
                             import uuid
                             
-                            # Calculate image_id based on existing images for this kb_item
+                            # Extract figure names from markdown content if available
+                            figure_names_dict = {}
+                            if markdown_content:
+                                # Create a temporary file to use with extract_figure_data
+                                import tempfile
+                                try:
+                                    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as temp_file:
+                                        temp_file.write(markdown_content)
+                                        temp_file_path = temp_file.name
+                                    
+                                    # Use the existing extract_figure_data function
+                                    from agents.report_agent.utils.paper_processing import extract_figure_data
+                                    figures_data = extract_figure_data(temp_file_path)
+                                    
+                                    # Convert to figure_names_dict: figure_number -> figure_name
+                                    for fig_data in figures_data:
+                                        figure_name = fig_data.get('figure_name', '')
+                                        # Extract number from figure_name
+                                        import re
+                                        match = re.search(r'(\d+)', figure_name)
+                                        if match:
+                                            figure_num = int(match.group(1))
+                                            figure_names_dict[figure_num] = figure_name
+                                    
+                                    # Clean up temp file
+                                    os.unlink(temp_file_path)
+                                except Exception as e:
+                                    self.log_operation("figure_extraction_error", f"Error extracting figure names: {e}", "warning")
+                            
+                            # Calculate figure sequence based on existing images for this kb_item
                             existing_count = KnowledgeBaseImage.objects.filter(
                                 knowledge_base_item=kb_item
                             ).count()
-                            image_id = existing_count + 1
+                            figure_sequence = existing_count + 1
+                            
+                            # Get figure name (extracted or auto-generated)
+                            if figure_sequence in figure_names_dict:
+                                figure_name = figure_names_dict[figure_sequence]
+                            else:
+                                figure_name = f"Figure {figure_sequence}"
                             
                             # Create a temporary record to get the ID
                             kb_image = KnowledgeBaseImage(
                                 knowledge_base_item=kb_item,
-                                image_file=target_filename,
                                 image_caption="",  # Will be filled later if caption data is available
-                                image_id=image_id,
-                                figure_name=f"Figure {image_id}",
+                                figure_name=figure_name,
                                 content_type=content_type,
                                 file_size=len(file_content),
                                 image_metadata={

@@ -405,9 +405,7 @@ class FileStorageService:
                     # Create KnowledgeBaseImage record
                     kb_image = KnowledgeBaseImage.objects.create(
                         knowledge_base_item=kb_item,
-                        image_file=image_file,
                         image_caption="",  # Will be filled later if caption data is available
-                        image_id=image_id,
                         figure_name=f"Figure {image_id}",
                         minio_object_key=object_key,
                         content_type=content_type,
@@ -541,11 +539,14 @@ class FileStorageService:
             for image in images:
                 try:
                     presigned_url = self.minio_backend.get_file_url(image.minio_object_key, expires)
-                    image_url_mapping[image.image_file] = presigned_url
+                    # Extract filename from object key or use figure_name as fallback
+                    import os
+                    filename = os.path.basename(image.minio_object_key) if image.minio_object_key else f"{image.figure_name}.jpg"
+                    image_url_mapping[filename] = presigned_url
                 except Exception as e:
                     self.log_operation(
                         "get_image_url_error",
-                        f"Failed to generate URL for image {image.image_file}: {e}",
+                        f"Failed to generate URL for image {image.figure_name}: {e}",
                         "error"
                     )
             
