@@ -398,7 +398,7 @@ class NotebookReportDownloadView(APIView):
                 # Check if filename matches the main report file
                 if (report.main_report_object_key and 
                     report.file_metadata.get('main_report_filename') == filename):
-                    file_url = report.get_report_url(expires=300)  # 5 minute access
+                    file_url = report.get_report_url(expires=86400)  # 1 day access
                     if file_url:
                         from django.http import HttpResponseRedirect
                         return HttpResponseRedirect(file_url)
@@ -409,7 +409,7 @@ class NotebookReportDownloadView(APIView):
 
             # Otherwise, return the main report file
             if report.main_report_object_key:
-                file_url = report.get_report_url(expires=300)  # 5 minute access
+                file_url = report.get_report_url(expires=86400)  # 1 day access
                 if file_url:
                     from django.http import HttpResponseRedirect
                     return HttpResponseRedirect(file_url)

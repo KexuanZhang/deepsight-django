@@ -126,7 +126,7 @@ class URLProcessingResult(models.Model):
     def __str__(self):
         return f"URLResult for Source {self.source_id}"
     
-    def get_downloaded_file_url(self, expires=3600):
+    def get_downloaded_file_url(self, expires=86400):
         """Get pre-signed URL for downloaded file"""
         if self.downloaded_file_object_key:
             try:
@@ -190,7 +190,7 @@ class ProcessingJob(models.Model):
     def __str__(self):
         return f"ProcessingJob {self.id} ({self.job_type}) for Source {self.source_id}"
     
-    def get_result_file_url(self, expires=3600):
+    def get_result_file_url(self, expires=86400):
         """Get pre-signed URL for result file"""
         if self.result_file_object_key:
             try:
@@ -292,7 +292,7 @@ class KnowledgeBaseItem(models.Model):
     def __str__(self):
         return f"{self.title} ({self.content_type})"
     
-    def get_file_url(self, expires=3600):
+    def get_file_url(self, expires=86400):
         """Get pre-signed URL for processed file"""
         if self.file_object_key:
             try:
@@ -303,7 +303,7 @@ class KnowledgeBaseItem(models.Model):
                 return None
         return None
     
-    def get_original_file_url(self, expires=3600):
+    def get_original_file_url(self, expires=86400):
         """Get pre-signed URL for original file"""
         if self.original_file_object_key:
             try:
@@ -571,7 +571,7 @@ class KnowledgeBaseImage(models.Model):
     def __str__(self):
         return f"{self.figure_name or self.image_file} - {self.knowledge_base_item.title}"
     
-    def get_image_url(self, expires=3600):
+    def get_image_url(self, expires=86400):
         """Get pre-signed URL for image access"""
         if self.minio_object_key:
             try:

@@ -247,7 +247,7 @@ class Report(models.Model):
     def __str__(self):
         return f"Report: {self.article_title} ({self.status})"
     
-    def get_report_url(self, expires=3600):
+    def get_report_url(self, expires=86400):
         """Get pre-signed URL for report access"""
         if self.main_report_object_key:
             try:
@@ -258,7 +258,7 @@ class Report(models.Model):
                 return None
         return None
     
-    def get_figure_data_url(self, expires=3600):
+    def get_figure_data_url(self, expires=86400):
         """Get pre-signed URL for figure data access"""
         if self.figure_data_object_key:
             try:

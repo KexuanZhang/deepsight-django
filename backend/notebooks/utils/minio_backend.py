@@ -258,13 +258,13 @@ class MinIOBackend:
             self.logger.error(f"Unexpected error retrieving file from MinIO: {object_key} - {e}")
             raise
     
-    def get_file_url(self, object_key: str, expires: int = 3600) -> str:
+    def get_file_url(self, object_key: str, expires: int = 86400) -> str:
         """
         Generate pre-signed URL for file access.
         
         Args:
             object_key: MinIO object key
-            expires: URL expiration time in seconds (default: 1 hour)
+            expires: URL expiration time in seconds (default: 1 day)
             
         Returns:
             Pre-signed URL

@@ -656,7 +656,7 @@ class FileStorageService:
             )
             return None
 
-    def get_file_url(self, file_id: str, user_id: int = None, expires: int = 3600) -> Optional[str]:
+    def get_file_url(self, file_id: str, user_id: int = None, expires: int = 86400) -> Optional[str]:
         """Get pre-signed URL for file access."""
         try:
             from ..models import KnowledgeBaseItem
@@ -685,7 +685,7 @@ class FileStorageService:
             )
             return None
 
-    def get_original_file_url(self, file_id: str, user_id: int = None, expires: int = 3600) -> Optional[str]:
+    def get_original_file_url(self, file_id: str, user_id: int = None, expires: int = 86400) -> Optional[str]:
         """Get pre-signed URL for original file access."""
         try:
             from ..models import KnowledgeBaseItem
