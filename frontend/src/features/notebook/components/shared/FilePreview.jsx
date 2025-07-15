@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Eye, FileText, Globe, Music, Video, File, HardDrive, Calendar, ExternalLink, Loader2, AlertCircle, RefreshCw, Trash2, Plus, ChevronLeft, CheckCircle, Clock, Upload, Link2, Youtube, Group, Presentation } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
 import { Badge } from '@/common/components/ui/badge';
-import { generatePreview, supportsPreview, PREVIEW_TYPES, formatDate, getVideoMimeType, getAudioMimeType } from '@/features/notebook/utils/filePreview';
+import { generatePreview, supportsPreview, PREVIEW_TYPES, formatDate, getVideoMimeType, getAudioMimeType, generateTextPreviewWithMinIOUrls } from '@/features/notebook/utils/filePreview';
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -113,11 +113,19 @@ const AuthenticatedImage = ({ src, alt, title }) => {
 };
 
 // Function to process markdown content and resolve image URLs
-const processMarkdownContent = (content, fileId, notebookId) => {
+const processMarkdownContent = (content, fileId, notebookId, useMinIOUrls = false) => {
   if (!content) return content;
   
-  console.log('processMarkdownContent called with:', { fileId, notebookId, contentLength: content.length });
+  console.log('processMarkdownContent called with:', { fileId, notebookId, contentLength: content.length, useMinIOUrls });
   
+  // If using MinIO URLs, the content should already have direct MinIO URLs
+  // No processing needed as backend already converted them
+  if (useMinIOUrls) {
+    console.log('Using MinIO URLs - no processing needed');
+    return content;
+  }
+  
+  // Legacy processing for API URLs
   // Pattern to match markdown image syntax: ![alt text](image_path)
   const imagePattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
   
@@ -174,7 +182,7 @@ const MarkdownContent = React.memo(({ content }) => (
 
 MarkdownContent.displayName = 'MarkdownContent';
 
-const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
+const FilePreview = ({ source, isOpen, onClose, notebookId, useMinIOUrls = false }) => {
   // Consolidate all state into a single object to avoid hook order issues
   const [state, setState] = useState({
     preview: null,
@@ -212,13 +220,13 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
         URL.revokeObjectURL(state.preview.videoUrl);
       }
     };
-  }, [isOpen, source, notebookId]);
+  }, [isOpen, source, notebookId, useMinIOUrls]);
 
   const loadPreview = async () => {
     if (!source) return;
     
     console.log('FilePreview: Loading preview for source:', source);
-    console.log('FilePreview: Notebook ID:', notebookId);
+    console.log('FilePreview: Notebook ID:', notebookId, 'Use MinIO URLs:', useMinIOUrls);
     
     updateState({
       isLoading: true,
@@ -230,7 +238,19 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
     });
     
     try {
-      const previewData = await generatePreview(source, notebookId);
+      let previewData;
+      
+      // Check if we should use MinIO URLs for text content (but NOT for PDFs)
+      if (useMinIOUrls && source.metadata?.file_extension && 
+          ['.md', '.txt'].includes(source.metadata.file_extension.toLowerCase())) {
+        console.log('FilePreview: Using MinIO URLs for text preview generation');
+        previewData = await generateTextPreviewWithMinIOUrls(source.file_id, source.metadata, source);
+      } else {
+        console.log('FilePreview: Using regular preview generation');
+        // Pass useMinIOUrls flag to generatePreview so PDFs can use MinIO URLs properly
+        previewData = await generatePreview(source, notebookId, useMinIOUrls);
+      }
+      
       console.log('FilePreview: Preview data loaded:', previewData);
       updateState({ preview: previewData, isLoading: false });
     } catch (err) {
@@ -309,7 +329,7 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
 
   const renderTextPreview = () => {
     // Debug: show processed content and image URLs
-    const processedContent = processMarkdownContent(state.preview.content, source.file_id, notebookId);
+    const processedContent = processMarkdownContent(state.preview.content, source.file_id, notebookId, useMinIOUrls);
     
     return (
       <div className="space-y-4">
@@ -827,11 +847,44 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
             <Button
               size="sm"
               variant="default"
-              onClick={() => window.open(state.preview.pdfUrl, '_blank')}
+              onClick={async () => {
+                try {
+                  console.log('Downloading PDF with URL:', state.preview.pdfUrl);
+                  
+                  // Download PDF similar to video downloads
+                  const response = await fetch(state.preview.pdfUrl, {
+                    credentials: 'include'
+                  });
+                  
+                  if (!response.ok) {
+                    throw new Error(`Failed to download PDF: ${response.status}`);
+                  }
+                  
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  
+                  // Use the title from preview or fallback to generic name
+                  const title = state.preview.title || 'document';
+                  const cleanTitle = title.replace(/\.[^/.]+$/, ''); // Remove any existing extension
+                  link.download = `${cleanTitle}.pdf`;
+                  
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                  window.URL.revokeObjectURL(url);
+                  
+                } catch (error) {
+                  console.error('PDF download failed:', error);
+                  // Fallback to opening in new tab
+                  window.open(state.preview.pdfUrl, '_blank');
+                }
+              }}
               className="text-xs font-medium"
             >
               <ExternalLink className="h-3 w-3 mr-1.5" />
-              Open PDF
+              Download
             </Button>
           </div>
         </div>
@@ -840,7 +893,7 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
       {/* Parsed Content Display */}
       <div className="bg-white rounded-lg border border-gray-200">
         <div className="p-6 max-h-[600px] overflow-y-auto">
-          <MarkdownContent content={processMarkdownContent(state.preview.content, source.file_id, notebookId)} />
+          <MarkdownContent content={processMarkdownContent(state.preview.content, source.file_id, notebookId, useMinIOUrls)} />
         </div>
       </div>
     </div>
@@ -863,17 +916,50 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
           <Button
             size="sm"
             variant="default"
-            onClick={() => window.open(state.preview.pdfUrl, '_blank')}
+            onClick={async () => {
+              try {
+                console.log('Downloading PDF with URL:', state.preview.pdfUrl);
+                
+                // Download PDF similar to video downloads
+                const response = await fetch(state.preview.pdfUrl, {
+                  credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                  throw new Error(`Failed to download PDF: ${response.status}`);
+                }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                
+                // Use the title from preview or fallback to generic name
+                const title = state.preview.title || 'document';
+                const cleanTitle = title.replace(/\.[^/.]+$/, ''); // Remove any existing extension
+                link.download = `${cleanTitle}.pdf`;
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+                
+              } catch (error) {
+                console.error('PDF download failed:', error);
+                // Fallback to opening in new tab
+                window.open(state.preview.pdfUrl, '_blank');
+              }
+            }}
             className="text-xs"
           >
             <ExternalLink className="h-3 w-3 mr-1" />
-            Open PDF
+            Download
           </Button>
         </div>
         
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
           <p className="text-sm text-yellow-800">
-            {state.preview.error || 'PDF content could not be extracted. Click "Open PDF" to view the original document.'}
+            {state.preview.error || 'PDF content could not be extracted. Click "Download" to view the original document.'}
           </p>
         </div>
       </div>

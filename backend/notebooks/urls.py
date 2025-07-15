@@ -15,6 +15,7 @@ from .views import (
     FileDeleteView,
     KnowledgeBaseView,
     FileContentView,
+    FileContentMinIOView,
     FileRawView,
     FileRawSimpleView,
     FileImageView,
@@ -113,6 +114,11 @@ urlpatterns = [
     # 8) file content serving (parsed content)
     path(
         "files/<str:file_id>/content/", FileContentView.as_view(), name="file-content"
+    ),
+
+    # 8.1) file content serving with direct MinIO URLs
+    path(
+        "files/<str:file_id>/content/minio/", FileContentMinIOView.as_view(), name="file-content-minio"
     ),
 
     # 9) raw file serving (PDFs, videos, audio, etc.)

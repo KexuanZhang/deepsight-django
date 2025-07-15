@@ -164,6 +164,11 @@ class ApiService {
     return this.request(`/notebooks/files/${fileId}/content/`);
   }
 
+  async getFileContentWithMinIOUrls(fileId, expires = 86400) {
+    // Get file content with direct MinIO pre-signed URLs for images
+    return this.request(`/notebooks/files/${fileId}/content/minio/?expires=${expires}`);
+  }
+
   async getFileRaw(fileId, notebookId) {
     // Serve raw file content (for PDFs, videos, audio, etc.)
     const url = `${this.baseUrl}/notebooks/${notebookId}/files/${fileId}/raw/`;

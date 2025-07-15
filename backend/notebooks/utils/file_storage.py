@@ -489,6 +489,122 @@ class FileStorageService:
         
         return updated_content
 
+    def get_content_with_minio_urls(self, file_id: str, user_id: int = None, expires: int = 86400) -> Optional[str]:
+        """
+        Retrieve file content with all image links converted to direct MinIO pre-signed URLs.
+        
+        Args:
+            file_id: Knowledge base item ID
+            user_id: User ID for access control
+            expires: URL expiration time in seconds (default: 24 hours)
+            
+        Returns:
+            Content with MinIO URLs for images
+        """
+        try:
+            # Import here to avoid circular imports
+            from ..models import KnowledgeBaseItem, KnowledgeBaseImage
+            
+            # Query the database for the knowledge base item
+            kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
+            if user_id:
+                kb_query = kb_query.filter(user=user_id)
+
+            kb_item = kb_query.first()
+            if not kb_item:
+                return None
+
+            # Get base content
+            content = None
+            if kb_item.content:
+                content = kb_item.content
+            elif kb_item.file_object_key:
+                try:
+                    content_bytes = self.minio_backend.get_file_content(kb_item.file_object_key)
+                    content = content_bytes.decode('utf-8')
+                except Exception as e:
+                    self.log_operation(
+                        "get_content_minio_error",
+                        f"kb_item_id={file_id}, object_key={kb_item.file_object_key}, error={str(e)}",
+                        "error",
+                    )
+                    return None
+            
+            if not content:
+                return None
+            
+            # Get all images for this knowledge base item
+            images = KnowledgeBaseImage.objects.filter(knowledge_base_item=kb_item)
+            
+            # Create mapping of filenames to MinIO URLs
+            image_url_mapping = {}
+            for image in images:
+                try:
+                    presigned_url = self.minio_backend.get_file_url(image.minio_object_key, expires)
+                    image_url_mapping[image.image_file] = presigned_url
+                except Exception as e:
+                    self.log_operation(
+                        "get_image_url_error",
+                        f"Failed to generate URL for image {image.image_file}: {e}",
+                        "error"
+                    )
+            
+            # Update content with MinIO URLs
+            if image_url_mapping:
+                content = self._update_image_links_to_minio_urls(content, image_url_mapping)
+                self.log_operation(
+                    "get_content_with_minio_urls_success",
+                    f"Retrieved content with {len(image_url_mapping)} MinIO image URLs",
+                )
+            
+            return content
+            
+        except Exception as e:
+            self.log_operation(
+                "get_content_with_minio_urls_error",
+                f"file_id={file_id}, user_id={user_id}, error={str(e)}",
+                "error",
+            )
+            return None
+
+    def _update_image_links_to_minio_urls(self, content: str, image_url_mapping: Dict[str, str]) -> str:
+        """
+        Update image links in markdown content to direct MinIO pre-signed URLs.
+        
+        Args:
+            content: Original markdown content
+            image_url_mapping: Dictionary mapping image filenames to MinIO pre-signed URLs
+            
+        Returns:
+            Updated content with direct MinIO URLs
+        """
+        if not image_url_mapping:
+            return content
+        
+        updated_content = content
+        
+        # Pattern to match markdown image syntax: ![alt text](image_path)
+        image_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+        
+        def replace_image_link(match):
+            alt_text = match.group(1)
+            original_path = match.group(2)
+            
+            # Extract filename from the original path
+            original_filename = os.path.basename(original_path)
+            
+            # Check if we have a MinIO URL for this image
+            if original_filename in image_url_mapping:
+                minio_url = image_url_mapping[original_filename]
+                return f"![{alt_text}]({minio_url})"
+            
+            # If no mapping found, return original
+            return match.group(0)
+        
+        updated_content = re.sub(image_pattern, replace_image_link, updated_content)
+        
+        return updated_content
+
     def get_file_content(self, file_id: str, user_id: int = None) -> Optional[str]:
         """Retrieve file content by knowledge base item ID from MinIO."""
         try:

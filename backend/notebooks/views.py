@@ -1345,8 +1345,17 @@ class FileContentView(StandardAPIView, KnowledgeBasePermissionMixin):
             # Get the knowledge base item (verifies ownership)
             kb_item = self.get_user_kb_item(file_id, request.user)
 
-            # Get content from storage service
-            content = storage_adapter.get_file_content(file_id, user_id=request.user.pk)
+            # Check if user wants MinIO URLs for images
+            use_minio_urls = request.GET.get('minio_urls', 'false').lower() == 'true'
+            
+            if use_minio_urls:
+                # Get content with direct MinIO URLs
+                content = storage_adapter.storage_service.get_content_with_minio_urls(
+                    file_id, user_id=request.user.pk
+                )
+            else:
+                # Get content with API endpoint URLs (legacy behavior)
+                content = storage_adapter.get_file_content(file_id, user_id=request.user.pk)
 
             if content is None:
                 return self.error_response(
@@ -1360,12 +1369,54 @@ class FileContentView(StandardAPIView, KnowledgeBasePermissionMixin):
                     "title": kb_item.title,
                     "content_type": kb_item.content_type,
                     "metadata": kb_item.metadata or {},
+                    "uses_minio_urls": use_minio_urls,
                 }
             )
 
         except Exception as e:
             return self.error_response(
                 "Failed to retrieve content",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)},
+            )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class FileContentMinIOView(StandardAPIView, KnowledgeBasePermissionMixin):
+    """Serve parsed content from knowledge base items with direct MinIO URLs for images."""
+
+    def get(self, request, file_id):
+        """Get processed content with direct MinIO pre-signed URLs for images."""
+        try:
+            # Get the knowledge base item (verifies ownership)
+            kb_item = self.get_user_kb_item(file_id, request.user)
+
+            # Get content with direct MinIO URLs
+            expires = int(request.GET.get('expires', '86400'))  # Default 24 hours
+            content = storage_adapter.storage_service.get_content_with_minio_urls(
+                file_id, user_id=request.user.pk, expires=expires
+            )
+
+            if content is None:
+                return self.error_response(
+                    "Content not found or not accessible",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+
+            return self.success_response(
+                {
+                    "content": content,
+                    "title": kb_item.title,
+                    "content_type": kb_item.content_type,
+                    "metadata": kb_item.metadata or {},
+                    "uses_minio_urls": True,
+                    "url_expires_in": expires,
+                }
+            )
+
+        except Exception as e:
+            return self.error_response(
+                "Failed to retrieve content with MinIO URLs",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details={"error": str(e)},
             )

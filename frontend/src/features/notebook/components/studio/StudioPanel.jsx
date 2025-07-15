@@ -13,6 +13,7 @@ import apiService from '@/common/utils/api';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused custom hooks for specific concerns
+import { config } from '@/config';
 import { useStudioData, useGenerationState, useJobStatus } from '@/features/notebook/hooks';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
@@ -585,6 +586,7 @@ const StudioPanel = ({
           onToggleViewMode={toggleViewMode}
           onContentChange={setSelectedFileContent}
           notebookId={notebookId}
+          useMinIOUrls={config.USE_MINIO_URLS}
         />
       )}
 
