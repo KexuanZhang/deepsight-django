@@ -1246,11 +1246,11 @@ class FileDeleteView(APIView):
                         if file_or_upload_id in metadata_str:
                             upload_id_match = True
 
-                    # Check source metadata if available
-                    if source and hasattr(source, "upload") and source.upload:
-                        # Check if source file contains the upload ID pattern
-                        if file_or_upload_id in str(source.upload.file.name):
-                            upload_id_match = True
+                    # Check source metadata if available (legacy upload system - commented out)
+                    # if source and hasattr(source, "upload") and source.upload:
+                    #     # Check if source file contains the upload ID pattern
+                    #     if file_or_upload_id in str(source.upload.file.name):
+                    #         upload_id_match = True
 
                     if upload_id_match:
                         if force_delete:
@@ -1446,12 +1446,16 @@ class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
             kb_item = self.get_user_kb_item(file_id, request.user)
 
             # Try to serve original file first
-            if kb_item.original_file:
-                return self._serve_file(kb_item.original_file, kb_item.title)
+            if kb_item.original_file_object_key:
+                file_url = kb_item.get_original_file_url()
+                if file_url:
+                    return Response({"file_url": file_url}, status=status.HTTP_200_OK)
 
             # Fallback to processed file
-            if kb_item.file:
-                return self._serve_file(kb_item.file, kb_item.title)
+            if kb_item.file_object_key:
+                file_url = kb_item.get_file_url()
+                if file_url:
+                    return Response({"file_url": file_url}, status=status.HTTP_200_OK)
 
             raise Http404("Raw file not found")
 

@@ -204,7 +204,7 @@ class FileStorageService:
                 user_id=user_id,
                 title=title,
                 content_type=content_type,
-                content="",  # We'll store in MinIO
+                content=content,  # Store content in database for searchability
                 metadata=metadata,
                 source_hash=content_hash,
                 tags=self._extract_tags_from_metadata(metadata),

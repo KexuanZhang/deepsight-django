@@ -134,7 +134,7 @@ class KnowledgeBaseItemAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at", "source_hash")
     fieldsets = (
         (None, {"fields": ("user", "title", "content_type")}),
-        ("Content", {"fields": ("file", "original_file", "content", "tags")}),
+        ("Content", {"fields": ("file_object_key", "original_file_object_key", "content", "tags")}),
         ("Metadata", {"fields": ("metadata", "source_hash"), "classes": ("collapse",)}),
         (
             "Timestamps",
@@ -145,9 +145,9 @@ class KnowledgeBaseItemAdmin(admin.ModelAdmin):
     def get_file_status(self, obj):
         """Get file status display."""
         status = []
-        if obj.file:
+        if obj.file_object_key:
             status.append("Processed")
-        if obj.original_file:
+        if obj.original_file_object_key:
             status.append("Original")
         if obj.content:
             status.append("Inline")
@@ -201,7 +201,7 @@ class URLProcessingResultAdmin(admin.ModelAdmin):
 
     def has_file(self, obj):
         """Check if has downloaded file."""
-        return bool(obj.downloaded_file)
+        return bool(obj.downloaded_file_object_key)
 
     has_file.boolean = True
     has_file.short_description = "Has File"

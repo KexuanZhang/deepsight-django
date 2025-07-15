@@ -153,8 +153,10 @@ def add_user_files(
         source_name = item.title
         if item.file_metadata and 'original_filename' in item.file_metadata:
             source_name = item.file_metadata['original_filename']
-        elif item.file and hasattr(item.file, 'name'):
-            source_name = item.file.name.rsplit("/", 1)[-1]
+        elif item.metadata and 'original_filename' in item.metadata:
+            source_name = item.metadata['original_filename']
+        elif item.metadata and 'filename' in item.metadata:
+            source_name = item.metadata['filename']
 
         docs.append(Document(
             page_content=text,

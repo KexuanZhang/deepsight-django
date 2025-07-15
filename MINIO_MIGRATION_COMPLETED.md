@@ -2,92 +2,171 @@
 
 ## 🎉 Migration Summary
 
-The MinIO migration has been successfully implemented for the DeepSight Django project. The system now supports both local file storage and MinIO object storage with seamless backward compatibility.
+The MinIO migration has been successfully implemented for the DeepSight Django project. The system now uses MinIO as the primary object storage backend with a sophisticated hierarchical file organization structure that supports one-to-many relationships between major files and their dependent files.
 
 ## ✅ Completed Components
 
 ### 1. **MinIO Backend Service** (`backend/notebooks/utils/minio_backend.py`)
 - ✅ MinIO client initialization with proper configuration
-- ✅ Auto-generated object keys with timestamp, hash, and UUID
-- ✅ File upload/download operations
-- ✅ Pre-signed URL generation for secure file access
+- ✅ Structured object key generation with user_id/file_id hierarchy
+- ✅ File upload/download operations with auto-generated keys
+- ✅ Pre-signed URL generation for secure file access (configurable expiration)
 - ✅ Bucket management and file metadata handling
-- ✅ Error handling and logging
+- ✅ ASCII-compatible metadata sanitization
+- ✅ Error handling and comprehensive logging
+- ✅ File existence checking and copying operations
+- ✅ Bucket statistics and object listing by prefix
 
-### 2. **MinIO File Storage Service** (`backend/notebooks/utils/minio_file_storage.py`)
-- ✅ Complete replacement for local file storage
-- ✅ Store processed files with organized prefixes (kb/, kb-images/, reports/, podcasts/)
-- ✅ Content hash-based deduplication
-- ✅ Image processing and link updates in markdown content
-- ✅ Knowledge base item management with MinIO object keys
+### 2. **Unified File Storage Service** (`backend/notebooks/utils/file_storage.py`)
+- ✅ Complete MinIO-based storage implementation
+- ✅ Hierarchical file organization: `{user_id}/kb/{file_id}/[subfolder/]{filename}`
+- ✅ Content hash-based deduplication with metadata enhancement
+- ✅ Original file and processed content storage
+- ✅ Image processing with automatic subfolder organization (`images/`)
+- ✅ Comprehensive file metadata storage in database
+- ✅ Image link updates in markdown content with pre-signed URLs
+- ✅ Knowledge base item management with full MinIO integration
 
-### 3. **MinIO Upload Processor** (`backend/notebooks/utils/minio_upload_processor.py`)
-- ✅ Immediate file processing with MinIO storage
-- ✅ PDF processing with marker integration
-- ✅ Audio/video transcription with MinIO storage
-- ✅ Text and presentation file processing
-- ✅ Post-processing for marker PDF extraction
+### 3. **Storage Adapter** (`backend/notebooks/utils/storage_adapter.py`)
+- ✅ Simplified MinIO-only adapter (removed local storage complexity)
+- ✅ Unified API for all storage operations
+- ✅ Direct integration with FileStorageService
+- ✅ Storage information and diagnostics
+- ✅ Knowledge base management operations
 
-### 4. **Storage Adapter** (`backend/notebooks/utils/storage_adapter.py`)
-- ✅ Backward compatibility layer
-- ✅ Automatic backend selection (MinIO or local)
-- ✅ Unified API for storage operations
-- ✅ Migration analysis capabilities
+### 4. **Enhanced Database Models** (`backend/notebooks/models.py`)
 
-### 5. **Database Model Updates** (`backend/notebooks/models.py`)
-- ✅ Added MinIO-specific fields to KnowledgeBaseItem:
+#### KnowledgeBaseItem Model Updates:
+- ✅ **MinIO-specific fields**:
   - `storage_uuid`: Unique identifier for MinIO operations
   - `file_object_key`: MinIO object key for processed content
   - `original_file_object_key`: MinIO object key for original files
-  - `file_metadata`: JSON field for file metadata
-- ✅ Added MinIO helper methods:
-  - `get_file_url()`: Generate pre-signed URLs
-  - `get_original_file_url()`: Generate URLs for original files
-  - `get_file_content()`: Retrieve content from MinIO
-  - `has_minio_storage()`: Check storage type
-  - `get_storage_info()`: Storage information
+  - `file_metadata`: Comprehensive JSON metadata storage
+- ✅ **Helper methods**:
+  - `get_file_url(expires)`: Generate pre-signed URLs for processed files
+  - `get_original_file_url(expires)`: Generate URLs for original files
+  - `get_file_content()`: Retrieve content directly from MinIO
+  - `has_minio_storage()`: Check if item uses MinIO storage
+  - `get_storage_info()`: Detailed storage information
 
-### 6. **Database Migration** (`backend/notebooks/migrations/0002_add_minio_fields.py`)
-- ✅ Add MinIO fields to existing models
-- ✅ Create database indexes for MinIO object key lookups
-- ✅ Backward compatibility with existing data
+#### New KnowledgeBaseImage Model:
+- ✅ Complete image metadata management in database
+- ✅ MinIO object key storage for each image
+- ✅ Caption and figure name management
+- ✅ Sequential image ID assignment within files
+- ✅ Content type and file size tracking
+- ✅ Pre-signed URL generation for images
+- ✅ Figure data compatibility methods
+
+#### Other Model Updates:
+- ✅ URLProcessingResult, ProcessingJob with MinIO object keys
+- ✅ All models have MinIO-compatible storage fields
+- ✅ Comprehensive indexing for performance optimization
+
+### 5. **Database Migrations**
+- ✅ Migration 0002: Add basic MinIO fields
+- ✅ Migration 0007: Enhanced file metadata and object keys
+- ✅ Migration 0008: Remove Django FileFields (MinIO-only)
+- ✅ Migration 0010: Add KnowledgeBaseImage table
+- ✅ All migrations maintain backward compatibility
+
+### 6. **Enhanced Views and API Endpoints** (`backend/notebooks/views.py`)
+- ✅ **File serving through MinIO**:
+  - `FileRawView`: Serve original files via pre-signed URLs
+  - `FileImageView`: Serve images with database/MinIO integration
+  - `FileContentView`: Retrieve processed content from MinIO
+- ✅ **Video processing integration**:
+  - `VideoImageExtractionView`: Store extracted images in MinIO with hierarchical structure
+  - Automatic image upload to `{file_id}/images/` subfolder
+  - Database record creation for all extracted images
+- ✅ **File access validation**:
+  - Notebook-based permission checking
+  - User ownership validation
+  - Secure file access through pre-signed URLs
 
 ### 7. **Django Settings Configuration** (`backend/backend/settings.py`)
-- ✅ MinIO configuration with environment variables
-- ✅ Storage backend selection (STORAGE_BACKEND setting)
-- ✅ Fallback to local storage for compatibility
+- ✅ MINIO_SETTINGS configuration with all required parameters
+- ✅ Environment variable integration
+- ✅ Proper error handling for missing configuration
+- ✅ Regional and security settings support
 
 ### 8. **Management Commands** (`backend/notebooks/management/commands/`)
-- ✅ Test command for MinIO storage integration
-- ✅ Storage backend validation
-- ✅ File upload/retrieval testing
+- ✅ `test_minio_storage.py`: Comprehensive MinIO testing
+- ✅ Storage backend validation and file operations testing
+- ✅ Upload/download testing with object key verification
 
-### 9. **Updated Upload Processor** (`backend/notebooks/utils/upload_processor.py`)
-- ✅ Integration with storage adapter for backend selection
-- ✅ Seamless transition between local and MinIO storage
+## 🗂️ Current File Organization Structure
+
+The system uses a sophisticated hierarchical organization in MinIO:
+
+```
+{user_id}/kb/{file_id}/
+├── original_file.pdf           # Original uploaded file
+├── extracted_content.md        # Processed markdown content  
+└── images/                     # Subfolder for dependent images
+    ├── img_0001.png           # Extracted images
+    ├── img_0002.jpg
+    ├── figure_data.json       # Image metadata (legacy)
+    └── {video_title}_caption.json
+```
+
+### Object Key Patterns:
+- **Major files**: `{user_id}/kb/{file_id}/{filename}`
+- **Dependent files**: `{user_id}/kb/{file_id}/images/{filename}`
+- **Reports**: `{user_id}/reports/{auto_generated_key}`
+- **Podcasts**: `{user_id}/podcasts/{auto_generated_key}`
+
+### Database-MinIO Integration:
+- **Direct object key storage** in database for O(1) access
+- **Hierarchical grouping** via file_id in object keys
+- **Relationship integrity** through foreign keys
+- **Image metadata** stored in KnowledgeBaseImage table
+
+## 🔧 Key Features
+
+### **Hierarchical File Organization**
+- **One-to-Many relationships**: Major files with multiple dependent files
+- **Logical grouping**: All related files share the same file_id prefix
+- **Efficient retrieval**: Direct access via stored object keys
+- **Scalable structure**: Performance doesn't degrade with file count
+
+### **Advanced Image Management**
+- **Database-driven image tracking**: KnowledgeBaseImage model
+- **Automatic subfolder organization**: `images/` subfolder for related images
+- **Caption and metadata storage**: Full image information in database
+- **Pre-signed URL access**: Secure, time-limited image access
+
+### **Content Processing Integration**
+- **Marker PDF processing**: Full integration with MinIO storage
+- **Video image extraction**: Automatic upload to structured folders
+- **Audio transcription**: MinIO storage for all media processing
+- **Content linking**: Automatic image URL updates in markdown
+
+### **Performance Optimizations**
+- **Direct object access**: O(1) retrieval using stored keys
+- **Pre-signed URLs**: Client-side file access without server load
+- **Content deduplication**: Hash-based duplicate detection
+- **Efficient indexing**: Database indexes on object keys
 
 ## 🚀 How to Use
 
 ### 1. **Environment Setup**
 
-Add these environment variables to enable MinIO:
+Required MinIO configuration:
 
 ```bash
-# MinIO Configuration
+# MinIO Configuration (required)
 MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=minioadmin
+MINIO_ACCESS_KEY=minioadmin  
 MINIO_SECRET_KEY=minioadmin
 MINIO_BUCKET_NAME=deepsight-users
 MINIO_SECURE=false
 MINIO_REGION=us-east-1
-
-# Storage Backend Selection
-STORAGE_BACKEND=minio  # or 'local' for backward compatibility
 ```
 
 ### 2. **Database Migration**
 
-Run the database migration to add MinIO fields:
+Apply all MinIO-related migrations:
 
 ```bash
 cd backend
@@ -97,158 +176,123 @@ python manage.py migrate notebooks
 ### 3. **Start MinIO Server**
 
 ```bash
-# Using Docker
-cd milvus
+# Using Docker Compose (recommended)
 docker-compose up -d
 
-# Or install MinIO directly
-# See: https://docs.min.io/minio/baremetal/
+# MinIO will be available at localhost:9000
+# Web UI: http://localhost:9001 (if configured)
 ```
 
 ### 4. **Test the Integration**
 
 ```bash
-# Test MinIO storage
-python manage.py test_minio_storage --storage-backend=minio
+# Test complete MinIO integration
+python manage.py test_minio_storage
 
-# Test file operations
+# Test specific file operations
 python manage.py test_minio_storage --test-upload --test-retrieval
 ```
 
-### 5. **Switch Between Backends**
+## 📊 Current System Capabilities
 
-```python
-# In Django settings or environment
-STORAGE_BACKEND = 'minio'    # Use MinIO object storage
-STORAGE_BACKEND = 'local'    # Use local file storage
-```
+### **File Upload and Processing**
+1. **Single file upload**: Immediate MinIO storage with hierarchical organization
+2. **Batch file processing**: Celery-based async processing with MinIO integration
+3. **Content extraction**: PDF, document, image, and video processing
+4. **Image extraction**: Video frame extraction with organized storage
 
-## 🗂️ File Organization in MinIO
+### **File Access and Serving**
+1. **Direct file access**: Pre-signed URLs for original and processed files
+2. **Image serving**: Database-driven image access with metadata
+3. **Content retrieval**: Processed content from MinIO with caching
+4. **Permission validation**: Notebook-based access control
 
-The MinIO implementation uses organized prefixes:
-
-```
-deepsight-users/
-├── kb/                          # Knowledge base files
-│   ├── 20250714_143022_a1b2c3d4e5f6789a_8f4e2a1b.pdf
-│   └── 20250714_143025_b2c3d4e5f6789abc_9g5f3b2c.md
-├── kb-images/                   # Extracted images  
-│   ├── 20250714_143050_23456789abcdef01_fm1l9h8i.png
-│   └── 20250714_143055_3456789abcdef012_gn2m0i9j.jpg
-├── reports/                     # Generated reports
-│   └── 20250714_143030_d4e5f6789abcdef0_bi7h5d4e.pdf
-├── podcasts/                    # Generated podcasts
-│   └── 20250714_143040_f6789abcdef01234_dk9j7f6g.mp3
-└── temp/                        # Temporary uploads
-    └── 20250714_143100_456789abcdef0123_ho3n1j0k.tmp
-```
-
-**Object Key Pattern**: `{prefix}/{timestamp}_{content_hash}_{uuid}{extension}`
-
-## 🔧 Key Features
-
-### **MinIO-Native Object Storage**
-- Auto-generated object keys with deduplication
-- Pre-signed URLs for secure file access
-- Organized prefix-based file management
-- Cloud-native scalability
-
-### **Backward Compatibility**
-- Seamless transition from local file storage
-- Automatic backend selection based on configuration
-- Existing code continues to work without changes
-
-### **Database Integration**
-- MinIO object keys stored directly in database
-- No complex path generation functions needed
-- Efficient queries with proper indexing
-
-### **Advanced Features**
-- Content hash-based deduplication
-- Image processing with MinIO storage
-- Marker PDF processing with object storage
-- Audio/video transcription with MinIO backend
+### **Data Organization**
+1. **User isolation**: All files organized by user_id
+2. **Entity grouping**: Related files grouped by file_id
+3. **Type separation**: Images in dedicated subfolders
+4. **Metadata integration**: Rich metadata stored in database
 
 ## 🛠️ Development Workflow
 
-### **For New Files**
-1. Files are automatically stored in MinIO when `STORAGE_BACKEND=minio`
-2. Object keys are auto-generated and stored in database
-3. Pre-signed URLs provide secure access to files
+### **File Upload Process**
+1. User uploads file → `FileUploadView`
+2. `UploadProcessor.process_upload()` called
+3. Original file stored: `{user_id}/kb/{file_id}/original_file.ext`
+4. Content processed and stored: `{user_id}/kb/{file_id}/extracted_content.md`
+5. Images extracted to: `{user_id}/kb/{file_id}/images/`
+6. Database records created with all object keys
+7. Files linked to notebook via KnowledgeItem
 
-### **For Existing Files**
-1. Legacy files continue to work through storage adapter
-2. New uploads automatically use MinIO
-3. Migration tools available for bulk migration
+### **File Access Process**
+1. User requests file → `FileRawView` or `FileImageView`
+2. Permission validation through notebook ownership
+3. Object key retrieved from database
+4. Pre-signed URL generated from MinIO
+5. Client redirected to secure MinIO URL
 
-### **Testing**
+### **Image Management Process**
+1. Images extracted during processing
+2. Stored in `{file_id}/images/` subfolder
+3. KnowledgeBaseImage records created with metadata
+4. Access via database lookup + pre-signed URLs
+5. Caption data processed and stored in database
+
+## 🚨 Important Production Notes
+
+### **Security Configuration**
 ```bash
-# Test storage backend
-python manage.py test_minio_storage
-
-# Test specific operations
-python manage.py test_minio_storage --test-upload --test-retrieval
-
-# Switch backends for testing
-STORAGE_BACKEND=local python manage.py test_minio_storage
-STORAGE_BACKEND=minio python manage.py test_minio_storage
+# Production settings
+MINIO_SECURE=true                    # Use HTTPS
+MINIO_ENDPOINT=minio.yourdomain.com  # Production endpoint
+# Use strong, unique credentials
+MINIO_ACCESS_KEY=your_secure_key
+MINIO_SECRET_KEY=your_secure_secret
 ```
 
-## 📊 Migration Impact
+### **Performance Considerations**
+- **Pre-signed URL expiration**: Balance security vs. performance (default: 1-24 hours)
+- **Object key indexing**: Database indexes on all object key fields
+- **Bucket organization**: Hierarchical structure prevents prefix limitations
+- **Content deduplication**: Reduces storage costs and improves performance
 
-### **Database Changes**
-- ✅ Added 4 new fields to KnowledgeBaseItem model
-- ✅ Created optimized indexes for MinIO operations
-- ✅ Backward compatible with existing data
-
-### **API Changes**
-- ✅ No breaking changes to existing APIs
-- ✅ New methods added for MinIO operations
-- ✅ Storage adapter provides unified interface
-
-### **Performance Improvements**
-- ✅ Cloud-native object storage scalability
-- ✅ Pre-signed URLs for direct file access
-- ✅ Reduced server load for file serving
-- ✅ Content deduplication reduces storage usage
-
-## 🚨 Important Notes
-
-### **Production Deployment**
-1. Set secure MinIO credentials in production
-2. Use HTTPS for MinIO endpoint (`MINIO_SECURE=true`)
-3. Configure proper bucket policies and access controls
-4. Monitor MinIO storage usage and performance
-
-### **Data Migration**
-- Existing local files remain accessible
-- New uploads automatically use MinIO
-- Migration tools available for bulk data transfer
-- No data loss during transition
-
-### **Monitoring**
-- MinIO provides built-in monitoring and metrics
-- Django logging captures storage operations
-- Storage adapter provides backend information
+### **Monitoring and Maintenance**
+- **MinIO metrics**: Built-in monitoring dashboard
+- **Django logging**: Comprehensive operation logging
+- **Database monitoring**: Track object key usage and relationships
+- **Storage usage**: Monitor bucket size and object counts
 
 ## ✅ Verification Checklist
 
-- [x] MinIO backend service implemented
-- [x] File storage service migrated to MinIO
-- [x] Upload processor updated for MinIO
-- [x] Database models updated with MinIO fields
-- [x] Migration scripts created
-- [x] Django settings configured
-- [x] Storage adapter for backward compatibility
-- [x] Management commands for testing
-- [x] Documentation and examples provided
+- [x] MinIO backend service with hierarchical organization
+- [x] Unified file storage service (MinIO-only)
+- [x] Enhanced database models with full MinIO integration
+- [x] KnowledgeBaseImage model for image management
+- [x] Complete database migrations (local storage removed)
+- [x] Video processing with automatic image organization
+- [x] File serving through pre-signed URLs
+- [x] Permission validation and access control
+- [x] Management commands for testing and validation
+- [x] Comprehensive documentation and examples
 
-## 🎯 Next Steps
+## 🎯 Architecture Benefits
 
-1. **Deploy MinIO infrastructure** - Set up production MinIO cluster
-2. **Run database migrations** - Apply the MinIO field migrations
-3. **Test integration** - Verify file operations work correctly
-4. **Migrate existing data** - Use migration tools for bulk transfer
-5. **Monitor performance** - Track storage usage and performance metrics
+### **Scalability**
+- **Cloud-native storage**: No local filesystem limitations
+- **Hierarchical organization**: Efficient file grouping and retrieval
+- **Direct client access**: Pre-signed URLs reduce server load
+- **Parallel processing**: Multiple files processed simultaneously
 
-The MinIO migration is now complete and ready for deployment! 🚀
+### **Reliability**
+- **Object storage durability**: MinIO provides data redundancy
+- **Database integration**: Reliable metadata storage and relationships
+- **Error handling**: Comprehensive error recovery and logging
+- **Backup compatibility**: Standard S3-compatible backup solutions
+
+### **Maintainability**
+- **Clear separation**: Database for metadata, MinIO for content
+- **Consistent patterns**: Standardized object key generation
+- **Rich metadata**: Complete file information in database
+- **Development tools**: Testing commands and diagnostic utilities
+
+The MinIO migration implementation is complete and provides a robust, scalable file storage solution with sophisticated file organization and management capabilities! 🚀
