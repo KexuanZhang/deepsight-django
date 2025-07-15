@@ -976,7 +976,7 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
 
             # Add linked status to each item
             for item in knowledge_base:
-                item["linked_to_notebook"] = int(item["id"]) in linked_kb_item_ids
+                item["linked_to_notebook"] = item["id"] in linked_kb_item_ids
 
             return self.success_response(
                 {
@@ -1178,9 +1178,9 @@ class FileDeleteView(APIView):
         # Strategy 1: Try to find by knowledge_item_id (direct database ID)
         if not deleted:
             try:
-                knowledge_item_id = int(file_or_upload_id)
+                # Try as UUID string directly (no int conversion needed)
                 ki = KnowledgeItem.objects.filter(
-                    id=knowledge_item_id, notebook=notebook
+                    id=file_or_upload_id, notebook=notebook
                 ).first()
 
                 if ki:
@@ -1195,16 +1195,15 @@ class FileDeleteView(APIView):
                         # Just delete the link
                         ki.delete()
                         deleted = True
-            except (ValueError, TypeError):
-                pass  # Not a valid integer ID
+            except Exception:
+                pass  # Not a valid UUID or other error
 
-        # Strategy 2: Try to find by knowledge_base_item_id (if it's a valid integer)
+        # Strategy 2: Try to find by knowledge_base_item_id (UUID string)
         if not deleted:
             try:
-                kb_item_id = int(file_or_upload_id)
-                # Try to find a KnowledgeItem in this notebook that links to this KB item
+                # Try as UUID string directly (no int conversion needed)
                 ki = KnowledgeItem.objects.filter(
-                    notebook=notebook, knowledge_base_item_id=kb_item_id
+                    notebook=notebook, knowledge_base_item_id=file_or_upload_id
                 ).first()
 
                 if ki:
@@ -1787,11 +1786,11 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                         content_type=content_type,
                         metadata={
                             'kb_item_id': str(kb_item.id),
-                            'user_id': str(kb_item.user_id),
+                            'user_id': str(kb_item.user.id),
                             'file_type': 'video_extracted_image' if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')) else 'video_extracted_data',
                             'extracted_from': 'video_processing',
                         },
-                        user_id=str(kb_item.user_id),
+                        user_id=str(kb_item.user.id),
                         file_id=str(kb_item.id),
                         subfolder="images"
                     )
@@ -1838,7 +1837,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
             backend = get_minio_backend()
             
             # Try to find and download figure_data.json
-            prefix = f"{kb_item.user_id}/kb/{kb_item.id}/images/"
+            prefix = f"{kb_item.user.id}/kb/{kb_item.id}/images/"
             
             try:
                 objects = backend.client.list_objects(backend.bucket_name, prefix=prefix)
@@ -1961,7 +1960,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             
             # Search for objects that match the knowledge base item and filename pattern
             # The object key pattern is: user_id/kb/file_id/subfolder/filename (for video extraction files)
-            prefix = f"{kb_item.user_id}/kb/{kb_item.id}/images/"
+            prefix = f"{kb_item.user.id}/kb/{kb_item.id}/images/"
             
             try:
                 # List objects with the prefix for this knowledge base item
@@ -1979,9 +1978,9 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
                 # If no object found, try alternative prefix patterns
                 # For backward compatibility with different object key structures
                 alternative_prefixes = [
-                    f"{kb_item.user_id}/kb/{kb_item.id}/",  # Files in root kb folder (no subfolder)
-                    f"kb/{kb_item.user_id}/{kb_item.id}/images/",  # Alternative structure 1
-                    f"kb/images/{kb_item.user_id}/{kb_item.id}/",  # Alternative structure 2
+                    f"{kb_item.user.id}/kb/{kb_item.id}/",  # Files in root kb folder (no subfolder)
+                    f"kb/{kb_item.user.id}/{kb_item.id}/images/",  # Alternative structure 1
+                    f"kb/images/{kb_item.user.id}/{kb_item.id}/",  # Alternative structure 2
                 ]
                 
                 for alt_prefix in alternative_prefixes:
@@ -2011,7 +2010,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             from reports.core.figure_service import FigureDataService
 
             images_dir = FigureDataService._get_knowledge_base_images_path(
-                user_id=kb_item.user_id,
+                user_id=kb_item.user.id,
                 file_id=str(kb_item.id),
             )
 

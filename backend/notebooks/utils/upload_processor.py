@@ -1101,11 +1101,11 @@ class UploadProcessor:
                                 content_type="text/markdown" if file.endswith('.md') else "application/json",
                                 metadata={
                                     'kb_item_id': str(kb_item.id),
-                                    'user_id': str(kb_item.user_id),
+                                    'user_id': str(kb_item.user.id),
                                     'file_type': 'marker_content',
                                     'marker_original_file': file,
                                 },
-                                user_id=str(kb_item.user_id),
+                                user_id=str(kb_item.user.id),
                                 file_id=str(kb_item.id)
                             )
                             
@@ -1138,11 +1138,11 @@ class UploadProcessor:
                                 content_type=content_type,
                                 metadata={
                                     'kb_item_id': str(kb_item.id),
-                                    'user_id': str(kb_item.user_id),
+                                    'user_id': str(kb_item.user.id),
                                     'file_type': 'marker_image',
                                     'marker_original_file': file,
                                 },
-                                user_id=str(kb_item.user_id),
+                                user_id=str(kb_item.user.id),
                                 file_id=str(kb_item.id),
                                 subfolder="images"
                             )
@@ -1205,11 +1205,11 @@ class UploadProcessor:
                                 prefix="kb",
                                 metadata={
                                     'kb_item_id': str(kb_item.id),
-                                    'user_id': str(kb_item.user_id),
+                                    'user_id': str(kb_item.user.id),
                                     'file_type': 'marker_other',
                                     'marker_original_file': file,
                                 },
-                                user_id=str(kb_item.user_id),
+                                user_id=str(kb_item.user.id),
                                 file_id=str(kb_item.id)
                             )
                             
@@ -1244,7 +1244,7 @@ class UploadProcessor:
                     try:
                         from .knowledge_base_image_service import KnowledgeBaseImageService
                         caption_service = KnowledgeBaseImageService()
-                        caption_service.auto_populate_captions_from_content(kb_item.id, kb_item.user_id)
+                        caption_service.auto_populate_captions_from_content(kb_item.id, kb_item.user.id)
                         self.log_operation("marker_caption_generation", 
                             f"Auto-populated captions for {len(image_files)} images in file_id {file_id}")
                     except Exception as caption_error:

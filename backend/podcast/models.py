@@ -14,6 +14,7 @@ class PodcastJob(models.Model):
         ("cancelled", "Cancelled"),
     ]
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     job_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     

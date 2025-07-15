@@ -37,7 +37,7 @@ def populate_captions(user_id=None, kb_item_id=None, dry_run=True):
     query = KnowledgeBaseImage.objects.select_related('knowledge_base_item')
     
     if user_id:
-        query = query.filter(knowledge_base_item__user_id=user_id)
+        query = query.filter(knowledge_base_item__user=user_id)
     
     if kb_item_id:
         query = query.filter(knowledge_base_item_id=kb_item_id)
@@ -69,7 +69,7 @@ def populate_captions(user_id=None, kb_item_id=None, dry_run=True):
                     # Auto-populate captions for this knowledge base item
                     success = service.auto_populate_captions_from_content(
                         kb_item_id=kb_item.id,
-                        user_id=kb_item.user_id
+                        user_id=kb_item.user.id
                     )
                     
                     if success:

@@ -39,30 +39,33 @@ def ensure_user_collection(coll_name: str):
     logger.debug("Checking Milvus collection %r exists? %s", coll_name, exists)
     if not exists:
         logger.info("Creating Milvus collection %r via Collection constructor", coll_name)
-        # Define schema fields
+        # Define schema fields (using LangChain compatible field names)
         fields = [
             FieldSchema(name="pk",        dtype=DataType.INT64,        is_primary=True, auto_id=True),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=1536),
-            FieldSchema(name="user_id",   dtype=DataType.INT64),
+            FieldSchema(name="vector",    dtype=DataType.FLOAT_VECTOR, dim=1536),
+            FieldSchema(name="text",      dtype=DataType.VARCHAR,     max_length=65535),  # LangChain stores document content here
+            FieldSchema(name="user_id",   dtype=DataType.VARCHAR,     max_length=64),
             FieldSchema(name="source",    dtype=DataType.VARCHAR,     max_length=512),
         ]
         schema = CollectionSchema(fields, description="Per-user file embeddings")
         # Create collection using the ORM Collection constructor
         coll = Collection(name=coll_name, schema=schema, using="default")
-        # Create index on the embedding field for efficient similarity search
+        # Create index on the vector field for efficient similarity search
         index_params = {
             "index_type": "IVF_FLAT",
             "metric_type": "L2",
             "params": {"nlist": 128}
         }
-        coll.create_index(field_name="embedding", index_params=index_params, using="default")
+        coll.create_index(field_name="vector", index_params=index_params, using="default")
         # Load the collection into memory
         coll.load()
         logger.info("Collection %r created, indexed, and loaded", coll_name)
 
 # Helper to derive a user-specific collection name
-def user_collection(user_id: int) -> str:
-    return f"{BASE_COLLECTION}_{user_id}"
+def user_collection(user_id) -> str:
+    # Convert UUID to string and remove hyphens for valid Milvus collection name
+    user_id_str = str(user_id).replace('-', '')
+    return f"{BASE_COLLECTION}_{user_id_str}"
 
 # SSE-based streaming helper
 def _pdf_to_text(path: str) -> str:
@@ -98,7 +101,7 @@ class SSEStreamer(BaseCallbackHandler):
         yield None
 
 # Ingest helper (called on file upload, kept here if needed)
-def add_user_content_documents(user_id: int, docs: List[Document]) -> None:
+def add_user_content_documents(user_id, docs: List[Document]) -> None:
     coll_name = user_collection(user_id)
     ensure_user_collection(coll_name)
 
@@ -122,7 +125,7 @@ def add_user_content_documents(user_id: int, docs: List[Document]) -> None:
     coll.load()
 
 def add_user_files(
-    user_id: int,
+    user_id,
     kb_items: List,  # now take model instances, not paths
 ) -> None:
     print("!!!Add")
@@ -161,9 +164,9 @@ def add_user_files(
         docs.append(Document(
             page_content=text,
             metadata={
-                "user_id": user_id,
+                "user_id": str(user_id),
                 "source": source_name,
-                "kb_item_id": item.id,
+                "kb_item_id": str(item.id),
             }
         ))
 
@@ -194,7 +197,7 @@ def add_user_files(
 
 
 # Remove helper to delete vectors by source
-def delete_user_file(user_id: int, source: str) -> None:
+def delete_user_file(user_id, source: str) -> None:
     coll_name = user_collection(user_id)
     store = Milvus(
         embedding_function=OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY),
@@ -203,7 +206,7 @@ def delete_user_file(user_id: int, source: str) -> None:
         drop_old=False,
         auto_id=True,
     )
-    expr = f'user_id=={user_id} && source=="{source}"'
+    expr = f'user_id=="{user_id}" && source=="{source}"'
     store.delete(expr=expr)
 
 
@@ -289,7 +292,7 @@ class RAGChatbot:
     """
     def __init__(
         self,
-        user_id: int,
+        user_id,
         k_local: int = 7,
         k_global: int = 3,
     ):
@@ -328,7 +331,7 @@ class RAGChatbot:
     ) -> Generator[str, None, None]:
         history = history or []
         # build local retriever with Milvus expr including filter_sources
-        clauses = [f"user_id=={self.user_id}"]
+        clauses = [f'user_id=="{self.user_id}"']
         if filter_sources:
             quoted = ",".join(f'\"{s}\"' for s in filter_sources)
             clauses.append(f"source in [{quoted}]")

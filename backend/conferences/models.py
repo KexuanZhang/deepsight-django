@@ -1,8 +1,9 @@
+import uuid
 from django.db import models
 
 
 class Venue(models.Model):
-    venue_id = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     type = models.CharField(max_length=255)
     description = models.TextField()
@@ -12,7 +13,7 @@ class Venue(models.Model):
 
 
 class Instance(models.Model):
-    instance_id = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     venue = models.ForeignKey(Venue, on_delete=models.CASCADE, related_name='instances')
     year = models.IntegerField()
     start_date = models.DateField()
@@ -26,7 +27,7 @@ class Instance(models.Model):
 
 
 class Publication(models.Model):
-    publication_id = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     instance = models.ForeignKey(Instance, on_delete=models.CASCADE, related_name='publications')
     title = models.CharField(max_length=255)
     authors = models.CharField(max_length=255)
@@ -46,7 +47,7 @@ class Publication(models.Model):
 
 
 class Session(models.Model):
-    event_id = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     session_id = models.IntegerField()
     instance = models.ForeignKey(Instance, on_delete=models.CASCADE, related_name='sessions')
     publication = models.ForeignKey(Publication, on_delete=models.SET_NULL, null=True, blank=True, related_name='sessions')

@@ -781,7 +781,7 @@ class ApiService {
 
   // New method for getting batch job status
   async getBatchJobStatus(notebookId, batchJobId) {
-    return this.request(`/${notebookId}/batch-jobs/${batchJobId}/status/`);
+    return this.request(`/notebooks/${notebookId}/batch-jobs/${batchJobId}/status/`);
   }
 
   async extractVideoImages(notebookId, data = {}) {

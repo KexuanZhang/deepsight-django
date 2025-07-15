@@ -404,7 +404,7 @@ class JobService:
             query = Report.objects.select_related("user").order_by("-created_at")
             
             if user_id:
-                query = query.filter(user_id=user_id)
+                query = query.filter(user=user_id)
             
             reports = query[:limit]
             

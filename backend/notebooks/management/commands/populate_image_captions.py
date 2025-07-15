@@ -46,7 +46,7 @@ class Command(BaseCommand):
         query = KnowledgeBaseImage.objects.select_related('knowledge_base_item')
         
         if options['user_id']:
-            query = query.filter(knowledge_base_item__user_id=options['user_id'])
+            query = query.filter(knowledge_base_item__user=options['user_id'])
         
         if options['kb_item_id']:
             query = query.filter(knowledge_base_item_id=options['kb_item_id'])

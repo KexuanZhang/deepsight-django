@@ -1,3 +1,4 @@
+import uuid
 from django.db import models
 from django.contrib.auth.models import (
     AbstractBaseUser,
@@ -23,7 +24,7 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    user_id = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = models.CharField(max_length=50, unique=True)
     email = models.EmailField(max_length=100, blank=True)
     # AbstractBaseUser gives us `password` field; rename its column:
@@ -48,7 +49,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 class SearchHistory(models.Model):
-    search_id = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="search_history"
     )
@@ -56,4 +57,4 @@ class SearchHistory(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Search {self.search_id} by {self.user.username}"
+        return f"Search {self.id} by {self.user.username}"

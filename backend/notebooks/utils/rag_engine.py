@@ -89,7 +89,7 @@ def _pdf_to_text(path: str) -> str:
             return f.read()
 
 
-def add_user_files(user_id: int, pdf_paths: List[str]) -> None:
+def add_user_files(user_id, pdf_paths: List[str]) -> None:
     """
     Ingest the given PDFs into the shared Milvus collection
     under metadata 'user_id' so they persist across sessions.
@@ -106,14 +106,14 @@ def add_user_files(user_id: int, pdf_paths: List[str]) -> None:
         text = _pdf_to_text(path)
         docs.append(Document(
             page_content=text,
-            metadata={"user_id": user_id, "source": os.path.basename(path)}
+            metadata={"user_id": str(user_id), "source": os.path.basename(path)}
         ))
     chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap  =100) \
              .split_documents(docs)
     store.add_documents(chunks)
 
 
-def delete_user_file(user_id: int, source: str) -> None:
+def delete_user_file(user_id, source: str) -> None:
     """
     Remove all vectors matching a given user's 'source' filename.
     """
@@ -123,7 +123,7 @@ def delete_user_file(user_id: int, source: str) -> None:
         connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
         drop_old=False,
     )
-    expr = f'user_id=={user_id} && source=="{source}"'
+    expr = f'user_id=="{user_id}" && source=="{source}"'
     store.delete(expr=expr)
 
 
@@ -175,7 +175,7 @@ class RAGChatbot:
     """
     def __init__(
         self,
-        user_id: int,
+        user_id,
         chat_history: List[Tuple[str, str]] = None,
         k_local: int = 3,
         k_global: int = 5,
@@ -192,7 +192,7 @@ class RAGChatbot:
         )
         local_ret = store.as_retriever(search_kwargs={
             "k":   k_local,
-            "expr": f"user_id=={user_id}"
+            "expr": f'user_id=="{user_id}"'
         })
 
         # 2) Global retriever from your deployed hybrid chain

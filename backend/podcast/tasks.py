@@ -57,7 +57,7 @@ def process_podcast_generation(self, job_id: str):
             try:
                 # Get parsed file content using synchronous method
                 content = storage_adapter.get_file_content(
-                    file_id, user_id=job.user_id if job.user else None
+                    file_id, user_id=job.user.id if job.user else None
                 )
 
                 if content:

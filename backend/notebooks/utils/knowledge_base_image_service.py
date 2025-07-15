@@ -37,7 +37,7 @@ class KnowledgeBaseImageService:
             # Validate access to knowledge base item
             kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
             if user_id:
-                kb_item_query = kb_item_query.filter(user_id=user_id)
+                kb_item_query = kb_item_query.filter(user=user_id)
             
             kb_item = kb_item_query.first()
             if not kb_item:
@@ -110,7 +110,7 @@ class KnowledgeBaseImageService:
             
             image_query = KnowledgeBaseImage.objects.filter(id=image_id)
             if user_id:
-                image_query = image_query.filter(knowledge_base_item__user_id=user_id)
+                image_query = image_query.filter(knowledge_base_item__user=user_id)
             
             image = image_query.first()
             if not image:
@@ -146,7 +146,7 @@ class KnowledgeBaseImageService:
             # Validate access to knowledge base item
             kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
             if user_id:
-                kb_item_query = kb_item_query.filter(user_id=user_id)
+                kb_item_query = kb_item_query.filter(user=user_id)
             
             kb_item = kb_item_query.first()
             if not kb_item:
@@ -258,7 +258,7 @@ class KnowledgeBaseImageService:
             
             image_query = KnowledgeBaseImage.objects.filter(id=image_id)
             if user_id:
-                image_query = image_query.filter(knowledge_base_item__user_id=user_id)
+                image_query = image_query.filter(knowledge_base_item__user=user_id)
             
             image = image_query.first()
             if not image:
@@ -309,7 +309,7 @@ class KnowledgeBaseImageService:
             
             image_query = KnowledgeBaseImage.objects.filter(id=image_id)
             if user_id:
-                image_query = image_query.filter(knowledge_base_item__user_id=user_id)
+                image_query = image_query.filter(knowledge_base_item__user=user_id)
             
             image = image_query.first()
             if not image:
@@ -338,7 +338,7 @@ class KnowledgeBaseImageService:
             # Validate access to knowledge base item
             kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
             if user_id:
-                kb_item_query = kb_item_query.filter(user_id=user_id)
+                kb_item_query = kb_item_query.filter(user=user_id)
             
             kb_item = kb_item_query.first()
             if not kb_item:
@@ -378,7 +378,7 @@ class KnowledgeBaseImageService:
             # Validate access to knowledge base item
             kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
             if user_id:
-                kb_item_query = kb_item_query.filter(user_id=user_id)
+                kb_item_query = kb_item_query.filter(user=user_id)
             
             kb_item = kb_item_query.first()
             if not kb_item:

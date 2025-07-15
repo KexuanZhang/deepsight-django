@@ -271,7 +271,7 @@ class FigureDataService:
             from notebooks.models import KnowledgeBaseItem
             
             # Get the knowledge base item to find its actual creation date
-            kb_item = KnowledgeBaseItem.objects.filter(id=file_id, user_id=user_id).first()
+            kb_item = KnowledgeBaseItem.objects.filter(id=file_id, user=user_id).first()
             
             if kb_item:
                 # Use the actual creation date
@@ -456,7 +456,7 @@ class FigureDataService:
             from notebooks.models import KnowledgeBaseItem
             
             # Get the knowledge base item to find its actual creation date
-            kb_item = KnowledgeBaseItem.objects.filter(id=file_id, user_id=user_id).first()
+            kb_item = KnowledgeBaseItem.objects.filter(id=file_id, user=user_id).first()
             
             if kb_item:
                 # Use the actual creation date

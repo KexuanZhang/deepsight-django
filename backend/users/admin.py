@@ -40,11 +40,11 @@ class UserAdmin(BaseUserAdmin):
             },
         ),
     )
-    list_display = ("user_id", "username", "email", "is_staff", "created_at")
-    ordering = ("user_id",)
+    list_display = ("id", "username", "email", "is_staff", "created_at")
+    ordering = ("username",)
 
 
 @admin.register(SearchHistory)
 class SearchHistoryAdmin(admin.ModelAdmin):
-    list_display = ("search_id", "user", "search_content", "created_at")
+    list_display = ("id", "user", "search_content", "created_at")
     list_filter = ("user",)

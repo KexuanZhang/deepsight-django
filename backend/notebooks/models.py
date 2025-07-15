@@ -13,7 +13,8 @@ class Notebook(models.Model):
     """
     Represents a user-created notebook to organize sources and knowledge items.
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -39,7 +40,8 @@ class Source(models.Model):
     • URL
     • Pasted text
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     SOURCE_TYPE_CHOICES = [
         ("file", "File Upload"),
         ("url", "URL"),
@@ -89,7 +91,8 @@ class URLProcessingResult(models.Model):
     Holds the result of crawling or downloading when the user provides a URL.
     These are notebook-specific.
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     source = models.OneToOneField(
         Source,
         on_delete=models.CASCADE,
@@ -139,7 +142,8 @@ class ProcessingJob(models.Model):
     """
     A background job to process binaries or downloaded media (OCR, transcription, PDF→MD, etc.).
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     JOB_STATUS_CHOICES = [
         ("queued", "Queued"),
         ("running", "Running"),
@@ -203,7 +207,8 @@ class KnowledgeBaseItem(models.Model):
     User-wide knowledge base items that can be shared across notebooks.
     These are the processed, searchable content items.
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -342,7 +347,8 @@ class KnowledgeItem(models.Model):
     Links between notebooks and knowledge base items.
     This allows sharing knowledge items across multiple notebooks.
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     notebook = models.ForeignKey(
         Notebook,
         on_delete=models.CASCADE,
@@ -395,6 +401,7 @@ class BatchJob(models.Model):
     Tracks batch processing operations for multiple URLs/files.
     """
     
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     BATCH_STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('processing', 'Processing'),
@@ -434,6 +441,7 @@ class BatchJobItem(models.Model):
     Individual items within a batch job.
     """
     
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ITEM_STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('processing', 'Processing'),
@@ -462,6 +470,7 @@ class BatchJobItem(models.Model):
 
 
 class NotebookChatMessage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     notebook = models.ForeignKey(
         "Notebook",
         on_delete=models.CASCADE,
@@ -487,6 +496,7 @@ class KnowledgeBaseImage(models.Model):
     Each image is linked to a knowledge base item and stored in MinIO.
     """
     
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     knowledge_base_item = models.ForeignKey(
         KnowledgeBaseItem,
         on_delete=models.CASCADE,

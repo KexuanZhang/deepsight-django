@@ -162,13 +162,19 @@ class FileStorageService:
         try:
             # Import here to avoid circular imports
             from ..models import KnowledgeBaseItem, KnowledgeItem, Notebook, Source
+            from django.contrib.auth import get_user_model
+            
+            User = get_user_model()
+            
+            # Get the user instance
+            user = User.objects.get(id=user_id)
 
             # Calculate content hash for deduplication
             content_hash = self._calculate_content_hash(content, metadata)
 
             # Check if this content already exists in user's knowledge base
             existing_item = KnowledgeBaseItem.objects.filter(
-                user_id=user_id, source_hash=content_hash
+                user=user, source_hash=content_hash
             ).first()
 
             if existing_item:
@@ -176,7 +182,7 @@ class FileStorageService:
                     "duplicate_content", f"Content already exists: {existing_item.id}"
                 )
                 # Link existing knowledge base item to current notebook
-                notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
+                notebook = Notebook.objects.get(id=notebook_id, user=user)
 
                 # Get the source if provided
                 source = None
@@ -201,7 +207,7 @@ class FileStorageService:
 
             # Create the knowledge base item with MinIO fields
             kb_item = KnowledgeBaseItem.objects.create(
-                user_id=user_id,
+                user=user,
                 title=title,
                 content_type=content_type,
                 content=content,  # Store content in database for searchability
@@ -257,7 +263,7 @@ class FileStorageService:
             kb_item.save()
             
             # Link to current notebook
-            notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
+            notebook = Notebook.objects.get(id=notebook_id, user=user)
 
             # Get the source if provided
             source = None
@@ -273,7 +279,7 @@ class FileStorageService:
 
             self.log_operation(
                 "store_knowledge_item",
-                f"kb_item_id={kb_item.id}, user_id={user_id}, minio_storage=True",
+                f"kb_item_id={kb_item.id}, user_id={user.id}, minio_storage=True",
             )
             return str(kb_item.id)
 
@@ -295,10 +301,10 @@ class FileStorageService:
                 prefix="kb",
                 metadata={
                     'kb_item_id': str(kb_item.id),
-                    'user_id': str(kb_item.user_id),
+                    'user_id': str(kb_item.user.id),
                     'file_type': 'original',
                 },
-                user_id=str(kb_item.user_id),
+                user_id=str(kb_item.user.id),
                 file_id=str(kb_item.id)
             )
 
@@ -330,10 +336,10 @@ class FileStorageService:
                 content_type="text/markdown",
                 metadata={
                     'kb_item_id': str(kb_item.id),
-                    'user_id': str(kb_item.user_id),
+                    'user_id': str(kb_item.user.id),
                     'file_type': 'content',
                 },
-                user_id=str(kb_item.user_id),
+                user_id=str(kb_item.user.id),
                 file_id=str(kb_item.id)
             )
 
@@ -388,10 +394,10 @@ class FileStorageService:
                         content_type=content_type,
                         metadata={
                             'kb_item_id': str(kb_item.id),
-                            'user_id': str(kb_item.user_id),
+                            'user_id': str(kb_item.user.id),
                             'file_type': 'image',
                         },
-                        user_id=str(kb_item.user_id),
+                        user_id=str(kb_item.user.id),
                         file_id=str(kb_item.id),
                         subfolder="images"
                     )
@@ -492,7 +498,7 @@ class FileStorageService:
             # Query the database for the knowledge base item
             kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
             if user_id:
-                kb_query = kb_query.filter(user_id=user_id)
+                kb_query = kb_query.filter(user=user_id)
 
             kb_item = kb_query.first()
             if not kb_item:
@@ -541,7 +547,7 @@ class FileStorageService:
 
             kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
             if user_id:
-                kb_query = kb_query.filter(user_id=user_id)
+                kb_query = kb_query.filter(user=user_id)
 
             kb_item = kb_query.first()
             if not kb_item or not kb_item.file_object_key:
@@ -570,7 +576,7 @@ class FileStorageService:
 
             kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
             if user_id:
-                kb_query = kb_query.filter(user_id=user_id)
+                kb_query = kb_query.filter(user=user_id)
 
             kb_item = kb_query.first()
             if not kb_item or not kb_item.original_file_object_key:
@@ -610,7 +616,7 @@ class FileStorageService:
             from ..models import KnowledgeBaseItem
 
             kb_item = KnowledgeBaseItem.objects.filter(
-                id=kb_item_id, user_id=user_id
+                id=kb_item_id, user=user_id
             ).first()
             if not kb_item:
                 return False
@@ -696,7 +702,7 @@ class FileStorageService:
         try:
             from ..models import KnowledgeBaseItem
 
-            query = KnowledgeBaseItem.objects.filter(user_id=user_id)
+            query = KnowledgeBaseItem.objects.filter(user=user_id)
             if content_type:
                 query = query.filter(content_type=content_type)
 
@@ -739,12 +745,12 @@ class FileStorageService:
 
             # Verify ownership
             kb_item = KnowledgeBaseItem.objects.filter(
-                id=kb_item_id, user_id=user_id
+                id=kb_item_id, user=user_id
             ).first()
             if not kb_item:
                 return False
 
-            notebook = Notebook.objects.filter(id=notebook_id, user_id=user_id).first()
+            notebook = Notebook.objects.filter(id=notebook_id, user=user_id).first()
             if not notebook:
                 return False
 
@@ -777,7 +783,7 @@ class FileStorageService:
             from ..models import KnowledgeItem, Notebook
 
             # Verify ownership
-            notebook = Notebook.objects.filter(id=notebook_id, user_id=user_id).first()
+            notebook = Notebook.objects.filter(id=notebook_id, user=user_id).first()
             if not notebook:
                 return False
 
