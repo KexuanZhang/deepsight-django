@@ -9,7 +9,6 @@ from .views import (
     FileUploadView,
     URLParseView,
     URLParseWithMediaView,
-    URLParseDocumentView,
     FileStatusView,
     FileStatusStreamView,
     FileDeleteView,
@@ -55,6 +54,7 @@ urlpatterns = [
         name="question-suggestions",
     ),
     path("chat/", RAGChatFromKBView.as_view(), name="chat-rag"),
+    
     # 2) upload & parse a new file
     path(
         "<int:notebook_id>/files/upload/", FileUploadView.as_view(), name="file-upload"
@@ -73,13 +73,6 @@ urlpatterns = [
         '<int:notebook_id>/files/parse_url_media/',
         URLParseWithMediaView.as_view(),
         name='url-parse-media'
-    ),
-
-    # 4.1) parse document URL with format validation
-    path(
-        '<int:notebook_id>/files/parse_document_url/',
-        URLParseDocumentView.as_view(),
-        name='url-parse-document'
     ),
 
     # 5) get one‐time status snapshot for an in‐flight upload
@@ -170,7 +163,6 @@ urlpatterns = [
     path("<int:notebook_id>/report-jobs/<str:job_id>/", report_views.NotebookReportDetailView.as_view(), name="notebook-report-detail"),
     path("<int:notebook_id>/report-jobs/<str:job_id>/cancel/", report_views.NotebookReportCancelView.as_view(), name="notebook-report-cancel"),
     path("<int:notebook_id>/report-jobs/<str:job_id>/download/", report_views.NotebookReportDownloadView.as_view(), name="notebook-report-download"),
-    path("<int:notebook_id>/report-jobs/<str:job_id>/download-pdf/", report_views.NotebookReportPdfDownloadView.as_view(), name="notebook-report-pdf-download"),
     path("<int:notebook_id>/report-jobs/<str:job_id>/files/", report_views.NotebookReportFilesView.as_view(), name="notebook-report-files"),
     path("<int:notebook_id>/report-jobs/<str:job_id>/content/", report_views.NotebookReportContentView.as_view(), name="notebook-report-content"),
     

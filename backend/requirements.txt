@@ -62,3 +62,6 @@ faiss-cpu
 crawl4ai
 toml
 marker-pdf==1.7.5
+django-storages
+django-storages[boto3]
+PyPDF2

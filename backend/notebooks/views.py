@@ -317,7 +317,6 @@ class FileUploadView(NotebookPermissionMixin, APIView):
             ki.source = source
             ki.save(update_fields=["source"])
         
-        print("!!!kb item", kb_item)
         
         add_user_files(
             user_id=user.pk,

@@ -149,7 +149,6 @@ def add_user_files(
             }
         ))
 
-    print("!!!docs", docs)
     # split into chunks and add
     chunks = RecursiveCharacterTextSplitter(
         chunk_size=1000,
