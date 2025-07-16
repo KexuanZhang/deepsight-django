@@ -70,15 +70,35 @@ const StatusDisplay = ({
   const displayText = config.getText(title);
   const formattedProgress = formatProgress(progress);
 
-  // Map specific Celery log messages to a deterministic progress percentage
+  // Map specific progress messages to a deterministic progress percentage
   const getProgressPercentage = (msg) => {
     if (!msg) return 0;
     const lower = msg.toLowerCase();
+    
+    // Extract percentage from progress message if it contains (XX%)
+    const percentageMatch = msg.match(/\((\d+)%\)/);
+    if (percentageMatch) {
+      return parseInt(percentageMatch[1]);
+    }
+    
+    // Report generation stages
     if (lower.includes('run_knowledge_curation_module')) return 20;
     if (lower.includes('run_outline_generation_module')) return 40;
     if (lower.includes('run_article_generation_module')) return 60;
     if (lower.includes('run_article_polishing_module')) return 80;
+    
+    // Podcast generation stages
+    if (lower.includes('starting podcast generation')) return 10;
+    if (lower.includes('gathering content from source files')) return 20;
+    if (lower.includes('generating podcast conversation')) return 40;
+    if (lower.includes('conversation script and title generated')) return 70;
+    if (lower.includes('generating podcast audio')) return 80;
+    if (lower.includes('audio file uploaded successfully')) return 95;
+    
+    // Completion states
     if (lower.includes('succeeded') || lower.includes('completed successfully')) return 100;
+    if (lower.includes('cancelled')) return 0;
+    
     return 0; // Unknown stage
   };
 

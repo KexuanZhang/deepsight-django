@@ -40,7 +40,7 @@ class StatusService:
     ):
         """Update job progress and optionally status"""
         try:
-            job = PodcastJob.objects.get(job_id=job_id)
+            job = PodcastJob.objects.get(id=job_id)
             job.progress = progress
             if status:
                 job.status = status
@@ -48,11 +48,11 @@ class StatusService:
             
             # Cache status for SSE streaming
             status_data = {
-                "job_id": str(job.job_id),
+                "job_id": str(job.id),
                 "status": job.status,
                 "progress": job.progress,
                 "error_message": job.error_message,
-                "audio_file_url": job.audio_file.url if job.audio_file else None,
+                "audio_file_url": job.get_audio_url(),
                 "title": job.title,
             }
             self._cache_job_status(job_id, status_data)

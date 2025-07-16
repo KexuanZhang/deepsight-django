@@ -107,10 +107,26 @@ const StudioPanel = ({
   }, [podcastGeneration, studioData, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Job status monitoring ======
+  const handleReportError = useCallback((error) => {
+    if (error === 'Job was cancelled') {
+      reportGeneration.cancelGeneration();
+    } else {
+      reportGeneration.failGeneration(error);
+    }
+  }, [reportGeneration]);
+
+  const handlePodcastError = useCallback((error) => {
+    if (error === 'Job was cancelled') {
+      podcastGeneration.cancelGeneration();
+    } else {
+      podcastGeneration.failGeneration(error);
+    }
+  }, [podcastGeneration]);
+
   const reportJobStatus = useJobStatus(
     reportGeneration.currentJobId,
     handleReportComplete,
-    reportGeneration.failGeneration,
+    handleReportError,
     notebookId,
     'report'
   );
@@ -118,7 +134,7 @@ const StudioPanel = ({
   const podcastJobStatus = useJobStatus(
     podcastGeneration.currentJobId,
     handlePodcastComplete,
-    podcastGeneration.failGeneration,
+    handlePodcastError,
     notebookId,
     'podcast'
   );
@@ -251,10 +267,13 @@ const StudioPanel = ({
     if (reportGeneration.currentJobId) {
       try {
         await studioService.cancelGeneration(reportGeneration.currentJobId);
-        reportGeneration.cancelGeneration();
+        // Don't set local state immediately - let SSE handle the status update
+        // reportGeneration.cancelGeneration();
         jobService.clearJob(reportGeneration.currentJobId);
       } catch (error) {
         console.error('Failed to cancel report generation:', error);
+        // Only set local state if API call failed
+        reportGeneration.failGeneration('Failed to cancel generation');
       }
     }
   }, [reportGeneration]);
@@ -263,10 +282,13 @@ const StudioPanel = ({
     if (podcastGeneration.currentJobId) {
       try {
         await studioService.cancelGeneration(podcastGeneration.currentJobId);
-        podcastGeneration.cancelGeneration();
+        // Don't set local state immediately - let SSE handle the status update
+        // podcastGeneration.cancelGeneration();
         jobService.clearJob(podcastGeneration.currentJobId);
       } catch (error) {
         console.error('Failed to cancel podcast generation:', error);
+        // Only set local state if API call failed
+        podcastGeneration.failGeneration('Failed to cancel generation');
       }
     }
   }, [podcastGeneration]);
@@ -564,7 +586,6 @@ const StudioPanel = ({
           onToggleCollapse={() => toggleSection('podcasts')}
           onDownloadPodcast={handleDownloadPodcast}
           onDeletePodcast={handleDeletePodcast}
-          studioService={studioService}
         />
       </div>
 

@@ -41,7 +41,7 @@ class JobService:
             job = PodcastJob.objects.create(**job_data)
             
             logger.info(
-                f"Created podcast job {job.job_id} with {len(source_file_ids)} source files"
+                f"Created podcast job {job.id} with {len(source_file_ids)} source files"
             )
             return job
             
@@ -52,9 +52,9 @@ class JobService:
     def get_job_status(self, job_id: str) -> Optional[Dict]:
         """Get the status of a podcast generation job"""
         try:
-            job = PodcastJob.objects.get(job_id=job_id)
+            job = PodcastJob.objects.get(id=job_id)
             return {
-                "job_id": str(job.job_id),
+                "job_id": str(job.id),
                 "status": job.status,
                 "progress": job.progress,
                 "title": job.title,
@@ -80,7 +80,7 @@ class JobService:
     def update_job_result(self, job_id: str, result: Dict, status: str = "completed"):
         """Update job with final result"""
         try:
-            job = PodcastJob.objects.get(job_id=job_id)
+            job = PodcastJob.objects.get(id=job_id)
             job.status = status
             
             if status == "completed":
@@ -104,7 +104,7 @@ class JobService:
     def update_job_error(self, job_id: str, error: str):
         """Update job with error information"""
         try:
-            job = PodcastJob.objects.get(job_id=job_id)
+            job = PodcastJob.objects.get(id=job_id)
             job.status = "error"
             job.error_message = error
             job.progress = f"Job failed: {error}"
@@ -120,7 +120,7 @@ class JobService:
     def cancel_job(self, job_id: str) -> bool:
         """Cancel a podcast generation job"""
         try:
-            job = PodcastJob.objects.get(job_id=job_id)
+            job = PodcastJob.objects.get(id=job_id)
             
             if job.status in ["pending", "generating"]:
                 # Queue the cancellation task (same pattern as reports)
@@ -143,11 +143,16 @@ class JobService:
     def delete_job(self, job_id: str) -> bool:
         """Delete a podcast generation job and its associated files"""
         try:
-            job = PodcastJob.objects.get(job_id=job_id)
+            job = PodcastJob.objects.get(id=job_id)
             
             # Delete associated audio file if it exists
-            if job.audio_file:
-                job.audio_file.delete(save=False)
+            if job.audio_object_key:
+                try:
+                    from notebooks.utils.minio_backend import get_minio_backend
+                    minio_backend = get_minio_backend()
+                    minio_backend.delete_file(job.audio_object_key)
+                except Exception as e:
+                    logger.error(f"Error deleting audio file from MinIO: {e}")
             
             # Delete the job
             job.delete()
@@ -174,7 +179,7 @@ class JobService:
             result = []
             for job in jobs:
                 job_data = {
-                    "job_id": str(job.job_id),
+                    "job_id": str(job.id),
                     "title": job.title,
                     "description": job.description,
                     "status": job.status,
