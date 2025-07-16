@@ -6,7 +6,7 @@ import {
   FileText, 
   ChevronDown, 
   ChevronUp, 
-  Download,
+  ExternalLink,
   Edit,
   Trash2,
   Clock
@@ -86,9 +86,9 @@ const ReportFileItem = React.memo(({
               onDownload(report);
             }}
             className="h-8 w-8 p-0"
-            title="Download report"
+            title="Open PDF"
           >
-            <Download className="h-4 w-4" />
+            <ExternalLink className="h-4 w-4" />
           </Button>
           
           <Button

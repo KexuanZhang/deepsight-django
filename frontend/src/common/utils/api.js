@@ -164,6 +164,11 @@ class ApiService {
     return this.request(`/notebooks/files/${fileId}/content/`);
   }
 
+  async getFileContentWithMinIOUrls(fileId, expires = 86400) {
+    // Get file content with direct MinIO pre-signed URLs for images
+    return this.request(`/notebooks/files/${fileId}/content/minio/?expires=${expires}`);
+  }
+
   async getFileRaw(fileId, notebookId) {
     // Serve raw file content (for PDFs, videos, audio, etc.)
     const url = `${this.baseUrl}/notebooks/${notebookId}/files/${fileId}/raw/`;
@@ -781,7 +786,7 @@ class ApiService {
 
   // New method for getting batch job status
   async getBatchJobStatus(notebookId, batchJobId) {
-    return this.request(`/${notebookId}/batch-jobs/${batchJobId}/status/`);
+    return this.request(`/notebooks/${notebookId}/batch-jobs/${batchJobId}/status/`);
   }
 
   async extractVideoImages(notebookId, data = {}) {

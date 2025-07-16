@@ -28,7 +28,7 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
     """Process a single URL asynchronously."""
     try:
         # Get required objects
-        notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
+        notebook = Notebook.objects.get(id=notebook_id, user=user_id)
         user = User.objects.get(id=user_id)
         
         # Update batch item status if this is part of a batch
@@ -119,7 +119,7 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
     """Process a single URL with media extraction asynchronously."""
     try:
         # Get required objects
-        notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
+        notebook = Notebook.objects.get(id=notebook_id, user=user_id)
         user = User.objects.get(id=user_id)
         
         # Update batch item status if this is part of a batch
@@ -210,7 +210,7 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
     """Process a single file upload asynchronously."""
     try:
         # Get required objects
-        notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
+        notebook = Notebook.objects.get(id=notebook_id, user=user_id)
         user = User.objects.get(id=user_id)
         
         # Update batch item status if this is part of a batch

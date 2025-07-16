@@ -4,16 +4,15 @@ from .models import (
     Source,
     URLProcessingResult,
     ProcessingJob,
-    KnowledgeItem,
     KnowledgeBaseItem,
+    KnowledgeBaseImage,
+    KnowledgeItem,
     BatchJob,
     BatchJobItem,
 )
 
 
 class NotebookSerializer(serializers.ModelSerializer):
-    """Serializer for Notebook model."""
-
     class Meta:
         model = Notebook
         fields = ["id", "name", "description", "created_at"]
@@ -68,7 +67,7 @@ class VideoImageExtractionSerializer(serializers.Serializer):
     extract_interval = serializers.IntegerField(
         default=8,
         min_value=1,
-        max_value=300,
+        max_value=3600,
         help_text="Frame extraction interval in seconds (default: 8)"
     )
     pixel_threshold = serializers.IntegerField(
@@ -90,49 +89,75 @@ class VideoImageExtractionSerializer(serializers.Serializer):
         help_text="Cosine similarity threshold for global deep deduplication (default: 0.85)"
     )
     min_words = serializers.IntegerField(
-        default=5,
+        default=20,
         min_value=0,
-        max_value=100,
-        help_text="Minimum words/numbers required to keep an image via OCR filter (default: 5)"
+        help_text="Minimum words per caption (default: 20)"
+    )
+    max_words = serializers.IntegerField(
+        default=100,
+        min_value=0,
+        help_text="Maximum words per caption (default: 100)"
     )
 
 
 class URLProcessingResultSerializer(serializers.ModelSerializer):
-    """Serializer for URL processing results."""
-
+    """Serializer for URL processing results with MinIO object key support."""
+    
+    downloaded_file_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = URLProcessingResult
-        fields = ["id", "content_md", "downloaded_file", "error_message", "created_at"]
+        fields = [
+            "id", 
+            "content_md", 
+            "downloaded_file_object_key",
+            "downloaded_file_url",
+            "file_metadata", 
+            "error_message", 
+            "created_at"
+        ]
         read_only_fields = ["id", "created_at"]
+    
+    def get_downloaded_file_url(self, obj):
+        """Get pre-signed URL for downloaded file."""
+        return obj.get_downloaded_file_url() if obj.downloaded_file_object_key else None
 
 
 class ProcessingJobSerializer(serializers.ModelSerializer):
-    """Serializer for background processing jobs."""
-
+    """Serializer for processing jobs with MinIO object key support."""
+    
+    result_file_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = ProcessingJob
         fields = [
             "id",
             "job_type",
             "status",
-            "result_file",
+            "result_file_object_key",
+            "result_file_url",
+            "result_file_metadata",
             "error_message",
             "created_at",
             "completed_at",
         ]
         read_only_fields = [
             "id",
-            "status",
-            "result_file",
-            "error_message",
             "created_at",
-            "completed_at",
+            "completed_at"
         ]
+    
+    def get_result_file_url(self, obj):
+        """Get pre-signed URL for result file."""
+        return obj.get_result_file_url() if obj.result_file_object_key else None
 
 
 class KnowledgeBaseItemSerializer(serializers.ModelSerializer):
-    """Serializer for knowledge base items."""
-
+    """Serializer for knowledge base items with MinIO object key support."""
+    
+    file_url = serializers.SerializerMethodField()
+    original_file_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = KnowledgeBaseItem
         fields = [
@@ -140,14 +165,95 @@ class KnowledgeBaseItemSerializer(serializers.ModelSerializer):
             "title",
             "content_type",
             "content",
-            "file",
-            "original_file",
+            "file_object_key",
+            "file_url",
+            "original_file_object_key", 
+            "original_file_url",
+            "file_metadata",
             "metadata",
             "tags",
+            "source_hash",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at", "source_hash"]
+    
+    def get_file_url(self, obj):
+        """Get pre-signed URL for processed file."""
+        return obj.get_file_url() if obj.file_object_key else None
+    
+    def get_original_file_url(self, obj):
+        """Get pre-signed URL for original file."""
+        return obj.get_original_file_url() if obj.original_file_object_key else None
+
+
+class KnowledgeBaseImageSerializer(serializers.ModelSerializer):
+    """Serializer for knowledge base images with MinIO storage support."""
+    
+    image_url = serializers.SerializerMethodField()
+    figure_data_dict = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = KnowledgeBaseImage
+        fields = [
+            "id",
+            "knowledge_base_item",
+            "image_caption",
+            "figure_name",
+            "minio_object_key",
+            "image_url",
+            "content_type",
+            "file_size",
+            "image_metadata",
+            "figure_data_dict",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id", 
+            "image_url", 
+            "figure_data_dict",
+            "created_at", 
+            "updated_at"
+        ]
+    
+    def get_image_url(self, obj):
+        """Get pre-signed URL for image access"""
+        return obj.get_image_url()
+    
+    def get_figure_data_dict(self, obj):
+        """Get figure_data.json compatible dictionary"""
+        return obj.to_figure_data_dict()
+
+
+class KnowledgeBaseImageCreateUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for creating/updating knowledge base images."""
+    
+    class Meta:
+        model = KnowledgeBaseImage
+        fields = [
+            "knowledge_base_item",
+            "image_caption",
+            "figure_name",
+        ]
+    
+    def validate_figure_name(self, value):
+        """Ensure figure_name is unique within the knowledge base item"""
+        knowledge_base_item = self.initial_data.get('knowledge_base_item')
+        if knowledge_base_item:
+            existing = KnowledgeBaseImage.objects.filter(
+                knowledge_base_item=knowledge_base_item,
+                figure_name=value
+            )
+            # Exclude current instance if updating
+            if self.instance:
+                existing = existing.exclude(id=self.instance.id)
+            
+            if existing.exists():
+                raise serializers.ValidationError(
+                    f"Figure name '{value}' already exists for this knowledge base item"
+                )
+        return value
 
 
 class KnowledgeItemSerializer(serializers.ModelSerializer):
@@ -192,13 +298,9 @@ class SourceSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "created_at",
+            "needs_processing",
             "processing_status",
-            "url_result",
-            "jobs",
-            "knowledge_items",
         ]
-
-# Batch processing serializers
 
 
 class BatchURLParseSerializer(serializers.Serializer):
@@ -212,14 +314,15 @@ class BatchURLParseSerializer(serializers.Serializer):
         allow_empty=False
     )
     upload_url_id = serializers.CharField(required=False)
-    
+
     def validate(self, data):
-        """Ensure either url or urls is provided, but not both."""
+        """Ensure either url or urls is provided."""
         url = data.get('url')
         urls = data.get('urls')
         
         if not url and not urls:
             raise serializers.ValidationError("Either 'url' or 'urls' must be provided.")
+        
         if url and urls:
             raise serializers.ValidationError("Provide either 'url' or 'urls', not both.")
         
@@ -237,14 +340,15 @@ class BatchURLParseWithMediaSerializer(serializers.Serializer):
         allow_empty=False
     )
     upload_url_id = serializers.CharField(required=False)
-    
+
     def validate(self, data):
-        """Ensure either url or urls is provided, but not both."""
+        """Ensure either url or urls is provided."""
         url = data.get('url')
         urls = data.get('urls')
         
         if not url and not urls:
             raise serializers.ValidationError("Either 'url' or 'urls' must be provided.")
+        
         if url and urls:
             raise serializers.ValidationError("Provide either 'url' or 'urls', not both.")
         
@@ -262,14 +366,15 @@ class BatchFileUploadSerializer(serializers.Serializer):
         allow_empty=False
     )
     upload_file_id = serializers.CharField(required=False)
-    
+
     def validate(self, data):
-        """Ensure either file or files is provided, but not both."""
+        """Ensure either file or files is provided."""
         file = data.get('file')
         files = data.get('files')
         
         if not file and not files:
             raise serializers.ValidationError("Either 'file' or 'files' must be provided.")
+        
         if file and files:
             raise serializers.ValidationError("Provide either 'file' or 'files', not both.")
         
@@ -277,8 +382,6 @@ class BatchFileUploadSerializer(serializers.Serializer):
 
 
 class BatchJobSerializer(serializers.ModelSerializer):
-    """Serializer for batch job tracking."""
-    
     class Meta:
         model = BatchJob
         fields = [
@@ -289,8 +392,6 @@ class BatchJobSerializer(serializers.ModelSerializer):
 
 
 class BatchJobItemSerializer(serializers.ModelSerializer):
-    """Serializer for individual batch job items."""
-    
     class Meta:
         model = BatchJobItem
         fields = [

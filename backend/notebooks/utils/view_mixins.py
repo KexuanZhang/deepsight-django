@@ -184,9 +184,9 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             "added_to_notebook_at": ki.added_at.isoformat(),
             "notes": ki.notes,
             "metadata": kb_item.metadata or {},
-            "has_file": bool(kb_item.file),
+            "has_file": bool(kb_item.file_object_key),
             "has_content": bool(kb_item.content),
-            "has_original_file": bool(kb_item.original_file),
+            "has_original_file": bool(kb_item.original_file_object_key),
             "parsing_status": "completed",
             # Extract metadata
             "original_filename": self.extract_original_filename(
@@ -234,21 +234,25 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
                     }
                 )
 
-        # Add knowledge base file URLs
-        if kb_item.file:
-            file_data.update(
-                {
-                    "knowledge_file_path": kb_item.file.name,
-                    "knowledge_file_url": kb_item.file.url,
-                }
-            )
+        # Add knowledge base file URLs (MinIO-based)
+        if kb_item.file_object_key:
+            file_url = kb_item.get_file_url()
+            if file_url:
+                file_data.update(
+                    {
+                        "knowledge_file_path": kb_item.file_object_key,
+                        "knowledge_file_url": file_url,
+                    }
+                )
 
-        if kb_item.original_file:
-            file_data.update(
-                {
-                    "original_file_path": kb_item.original_file.name,
-                    "original_file_url": kb_item.original_file.url,
-                }
-            )
+        if kb_item.original_file_object_key:
+            original_file_url = kb_item.get_original_file_url()
+            if original_file_url:
+                file_data.update(
+                    {
+                        "original_file_path": kb_item.original_file_object_key,
+                        "original_file_url": original_file_url,
+                    }
+                )
 
         return file_data

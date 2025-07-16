@@ -17,7 +17,8 @@ from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import UploadedFile, InMemoryUploadedFile
 import io
 
-from .file_storage import FileStorageService
+from .storage_adapter import get_storage_adapter
+from .image_processing import clean_title
 from .content_index import ContentIndexingService
 from .upload_processor import UploadProcessor
 from .config import config as settings
@@ -33,7 +34,7 @@ class URLExtractor:
         self.logger = logging.getLogger(f"{__name__}.url_extractor")
         
         # Initialize storage services
-        self.file_storage = FileStorageService()
+        self.storage_adapter = get_storage_adapter()
         self.content_indexing = ContentIndexingService()
         
         # Track ongoing processing tasks
@@ -202,11 +203,10 @@ class URLExtractor:
             import yt_dlp
             
             base_title = media_info.get('title', 'media_download')
-            base_filename = self.upload_processor._clean_title(base_title)
+            base_filename = clean_title(base_title)
             
-            # Ensure the base filename leaves room for "_transcript.md" suffix (14 characters)
-            # Limit to reasonable length for transcript filename
-            max_base_length = 86  # 100 - 14 = 86 characters for base name
+            # Limit to reasonable length for filename
+            max_base_length = 100  # 100 characters for base name
             if len(base_filename) > max_base_length:
                 base_filename = base_filename[:max_base_length].rstrip('_')
             
@@ -214,7 +214,7 @@ class URLExtractor:
             temp_dir = tempfile.mkdtemp(prefix="deepsight_media_")
             
             content_parts = []
-            transcript_filename = f"{base_filename}_transcript.md"
+            transcript_filename = f"{base_filename}.md"
             
             # Process video if available
             if media_info.get('has_video'):
@@ -381,15 +381,6 @@ class URLExtractor:
         except Exception as e:
             self.log_operation("audio_download_error", f"Error downloading audio: {e}", "error")
             return None
-    
-    def _clean_title(self, title: str) -> str:
-        """Clean title for filename usage."""
-        # Remove invalid filename characters
-        cleaned = re.sub(r'[<>:"/\\|?*]', '', title)
-        # Replace spaces with underscores
-        cleaned = re.sub(r'\s+', '_', cleaned)
-        # Limit length
-        return cleaned[:100]
     
     def _clean_markdown_content(self, content: str, features: Dict[str, Any]) -> str:
         """Clean markdown content by removing invalid image references that cause 404 errors."""
@@ -649,8 +640,9 @@ class URLExtractor:
             # Generate filename from URL or use generic name
             parsed_url = urlparse(url)
             filename = os.path.basename(parsed_url.path) or "document"
-            if not filename or '.' not in filename:
+            if not filename:
                 filename = "document.tmp"
+                self.log_operation("debug_filename_fallback", f"Empty filename, using fallback: {filename}")
             
             temp_file_path = os.path.join(temp_dir, filename)
             
@@ -669,6 +661,7 @@ class URLExtractor:
             
             # Fix file extension based on detected content type or magic detection
             corrected_path = await self._fix_file_extension(temp_file_path, content_type)
+            corrected_filename = os.path.basename(corrected_path)
             
             self.log_operation("document_downloaded", f"Downloaded {os.path.getsize(corrected_path)} bytes to {corrected_path}")
             return corrected_path
@@ -702,7 +695,21 @@ class URLExtractor:
                 
                 # Only rename if extension is missing or incorrect
                 if not current_extension or current_extension != correct_extension:
-                    new_path = current_path.with_suffix(correct_extension)
+                    # For document files, preserve the original filename and add correct extension
+                    original_name = current_path.name
+                    
+                    # Only remove extension if it's a known file extension, not just any suffix
+                    known_extensions = {'.pdf', '.ppt', '.pptx', '.doc', '.docx', '.txt', '.md', '.html', '.htm', '.zip', '.tar', '.gz'}
+                    if current_extension and current_extension in known_extensions:
+                        # Remove the known extension and add the correct one
+                        original_name = original_name[:-len(current_extension)]
+                    
+                    # Use clean_title to sanitize the filename and add correct extension
+                    from .image_processing import clean_title
+                    clean_base_name = clean_title(original_name)
+                    new_filename = clean_base_name + correct_extension
+                    new_path = current_path.parent / new_filename
+                    
                     shutil.move(str(current_path), str(new_path))
                     self.log_operation("extension_fixed", f"Fixed extension from {current_extension} to {correct_extension}")
                     return str(new_path)
@@ -721,6 +728,7 @@ class URLExtractor:
             # Get file info
             file_size = os.path.getsize(file_path)
             filename = os.path.basename(file_path)
+            
             
             # Detect file type using python-magic
             mime_type = magic.from_file(file_path, mime=True)
@@ -841,7 +849,7 @@ class URLExtractor:
             # Use sync_to_async to call the synchronous storage method
             # Use thread_sensitive=False to run in thread pool where sync ORM calls are allowed
             from asgiref.sync import sync_to_async
-            store_file_sync = sync_to_async(self.file_storage.store_processed_file, thread_sensitive=False)
+            store_file_sync = sync_to_async(self.storage_adapter.store_processed_file, thread_sensitive=False)
             
             # Store the processed content with original file if available
             processing_result_data = {

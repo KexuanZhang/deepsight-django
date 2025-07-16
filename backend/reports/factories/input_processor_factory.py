@@ -24,10 +24,10 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
         input_data = {"text_files": [], "selected_file_ids": []}
         
         try:
-            from notebooks.utils.file_storage import FileStorageService
+            from notebooks.utils.storage_adapter import get_storage_adapter
             from notebooks.models import KnowledgeBaseItem
             
-            file_storage = FileStorageService()
+            storage_adapter = get_storage_adapter()
             
             for file_id in file_paths:
                 try:
@@ -49,7 +49,7 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
                     input_data["selected_file_ids"].append(f"f_{file_id}")
                     
                     # Get file content using the file storage service
-                    content = file_storage.get_file_content(file_id)
+                    content = storage_adapter.get_file_content(file_id)
                     
                     if content:
                         # Get metadata from knowledge base item
@@ -57,12 +57,14 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
                             kb_item = KnowledgeBaseItem.objects.get(id=file_id)
                             filename = kb_item.title or f"file_{file_id}"
                             content_type = getattr(kb_item, 'content_type', 'unknown')
-                            # Get original file extension and MIME type
+                            # Get original file extension and MIME type from MinIO metadata
                             raw_extension = None
                             raw_mime = None
-                            if kb_item.original_file and kb_item.original_file.name:
-                                raw_extension = os.path.splitext(kb_item.original_file.name)[1].lower()
-                                raw_mime, _ = mimetypes.guess_type(kb_item.original_file.name)
+                            if kb_item.original_file_object_key:
+                                # Extract filename from metadata or use the title
+                                original_filename = kb_item.file_metadata.get('original_filename') or kb_item.title
+                                raw_extension = os.path.splitext(original_filename)[1].lower()
+                                raw_mime, _ = mimetypes.guess_type(original_filename)
                             file_data = {
                                 "content": content,
                                 "filename": filename,

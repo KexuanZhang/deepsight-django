@@ -1,5 +1,6 @@
 """
-Immediate file processing on upload - designed to be fast and synchronous.
+MinIO-based upload processor for immediate file processing.
+Handles immediate processing of uploaded files with MinIO object storage only.
 """
 
 import os
@@ -11,7 +12,7 @@ import time
 import re
 from typing import Dict, Any, Optional
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     import fitz  # PyMuPDF
@@ -28,12 +29,14 @@ try:
     from .content_index import ContentIndexingService
     from .file_validator import FileValidator
     from .config import config as settings
+    from .image_processing import clean_title
 except ImportError:
     # Fallback classes to prevent import errors
     FileStorageService = None
     ContentIndexingService = None
     FileValidator = None
     settings = None
+    clean_title = None
 
 # Marker imports with lazy loading
 marker_imports = {}
@@ -61,8 +64,9 @@ def get_marker_imports():
             marker_imports = {'available': False}
     return marker_imports
 
+
 class UploadProcessor:
-    """Handles immediate processing of uploaded files."""
+    """Handles immediate processing of uploaded files with MinIO storage only."""
 
     def __init__(self):
         self.service_name = "upload_processor"
@@ -82,7 +86,7 @@ class UploadProcessor:
         # Track upload statuses in memory (in production, use Redis or database)
         self._upload_statuses = {}
 
-        self.logger.info("Upload processor service initialized")
+        self.logger.info("MinIO-based upload processor service initialized")
 
     def log_operation(self, operation: str, details: str = "", level: str = "info"):
         """Log service operations with consistent formatting."""
@@ -304,8 +308,8 @@ class UploadProcessor:
             
             # Clean the title for filename
             base_title = Path(filename).stem  # Remove file extension
-            cleaned_title = self._clean_title(base_title)
-            suggested_filename = f"{cleaned_title}_transcript.md"
+            cleaned_title = clean_title(base_title)
+            suggested_filename = f"{cleaned_title}.md"
             
             # Build the transcript
             transcript_lines = []
@@ -336,21 +340,22 @@ class UploadProcessor:
                 return self._upload_statuses[upload_file_id]
 
             # Check if file is already processed and stored
-            file_metadata = self.file_storage.get_file_by_upload_id(
-                upload_file_id, user_pk
-            )
-            if file_metadata:
-                status = {
-                    "upload_file_id": upload_file_id,
-                    "file_id": file_metadata.get("file_id"),
-                    "status": "completed",
-                    "parsing_status": "completed",
-                    "filename": file_metadata.get("original_filename"),
-                    "metadata": file_metadata,
-                }
-                # Cache for future requests
-                self._upload_statuses[upload_file_id] = status
-                return status
+            if self.file_storage:
+                file_metadata = self.file_storage.get_file_by_upload_id(
+                    upload_file_id, user_pk
+                )
+                if file_metadata:
+                    status = {
+                        "upload_file_id": upload_file_id,
+                        "file_id": file_metadata.get("file_id"),
+                        "status": "completed",
+                        "parsing_status": "completed",
+                        "filename": file_metadata.get("original_filename"),
+                        "metadata": file_metadata,
+                    }
+                    # Cache for future requests
+                    self._upload_statuses[upload_file_id] = status
+                    return status
 
             return None
         except Exception as e:
@@ -365,7 +370,9 @@ class UploadProcessor:
                 del self._upload_statuses[upload_file_id]
 
             # Delete from storage
-            return self.file_storage.delete_file_by_upload_id(upload_file_id, user_pk)
+            if self.file_storage:
+                return self.file_storage.delete_file_by_upload_id(upload_file_id, user_pk)
+            return False
         except Exception as e:
             self.log_operation("delete_upload_error", str(e), "error")
             return False
@@ -379,7 +386,7 @@ class UploadProcessor:
                     "upload_file_id": upload_file_id,
                     "status": status,
                     "parsing_status": status,
-                    "updated_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                     **kwargs,
                 }
             )
@@ -392,8 +399,7 @@ class UploadProcessor:
         user_pk: Optional[int] = None,
         notebook_id: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Main entry point for immediate file processing."""
-        print("upload")
+        """Main entry point for immediate file processing with MinIO storage."""
         temp_path = None
         try:
             # Initialize status tracking
@@ -440,16 +446,25 @@ class UploadProcessor:
             # Get file size
             file_size = os.path.getsize(temp_path)
 
-            # Prepare file metadata with original file information
+            # Clean the original filename using clean_title function
+            file_path = Path(file.name)
+            base_name = file_path.stem
+            extension = file_path.suffix
+            clean_base_name = clean_title(base_name)
+            clean_filename = f"{clean_base_name}{extension}"
+            
+            
+            # Prepare file metadata with cleaned file information
             file_metadata = {
-                "filename": file.name,
-                "original_filename": file.name,  # Ensure original filename is preserved
+                "filename": clean_filename,
+                "original_filename": clean_filename,  # Store cleaned filename
                 "file_extension": validation["file_extension"],
                 "content_type": validation["content_type"],
                 "file_size": file_size,
                 "upload_file_id": upload_file_id,
-                "upload_timestamp": datetime.now().isoformat(),
+                "upload_timestamp": datetime.now(timezone.utc).isoformat(),
                 "parsing_status": "processing",
+                "storage_backend": "minio",  # Mark as MinIO storage
             }
 
             # Process based on file type
@@ -458,7 +473,7 @@ class UploadProcessor:
             # Update file metadata with parsing status
             file_metadata["parsing_status"] = "completed"
 
-            # Store result with user isolation
+            # Store result with user isolation using MinIO storage
             if user_pk is None:
                 raise ValueError("user_pk is required for file storage")
             if notebook_id is None:
@@ -472,6 +487,10 @@ class UploadProcessor:
             # Run synchronous file storage in executor
             # Use thread_sensitive=False to run in thread pool where sync ORM calls are allowed
             from asgiref.sync import sync_to_async
+            
+            if not self.file_storage:
+                raise Exception("MinIO file storage service not available")
+                
             store_file_sync = sync_to_async(self.file_storage.store_processed_file, thread_sensitive=False)
             file_id = await store_file_sync(
                 content=processing_result["content"],
@@ -483,13 +502,14 @@ class UploadProcessor:
             )
 
             # Run synchronous content indexing in executor
-            index_content_sync = sync_to_async(self.content_indexing.index_content, thread_sensitive=False)
-            await index_content_sync(
-                file_id=file_id,
-                content=processing_result["content"],
-                metadata=file_metadata,
-                processing_stage="immediate",
-            )
+            if self.content_indexing:
+                index_content_sync = sync_to_async(self.content_indexing.index_content, thread_sensitive=False)
+                await index_content_sync(
+                    file_id=file_id,
+                    content=processing_result["content"],
+                    metadata=file_metadata,
+                    processing_stage="immediate",
+                )
             
             # Handle marker extraction post-processing if needed
             if 'marker_extraction_result' in processing_result:
@@ -505,6 +525,7 @@ class UploadProcessor:
                     filename=file.name,
                     file_size=file_size,
                     metadata=file_metadata,
+                    storage_backend="minio",
                 )
 
             # Clean up temp file
@@ -524,6 +545,7 @@ class UploadProcessor:
                 "filename": file.name,
                 "file_size": file_size,
                 "upload_file_id": upload_file_id,
+                "storage_backend": "minio",
             }
 
         except ValidationError:
@@ -547,7 +569,7 @@ class UploadProcessor:
         try:
             suffix = Path(file.name).suffix.lower()
             with tempfile.NamedTemporaryFile(
-                delete=False, suffix=suffix, prefix="deepsight_"
+                delete=False, suffix=suffix, prefix="deepsight_minio_"
             ) as tmp_file:
                 content = file.read()
 
@@ -585,7 +607,9 @@ class UploadProcessor:
             return await self._process_audio_immediate(file_path, file_metadata)
         elif file_extension in [".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".3gp", ".ogv", ".m4v"]:
             return await self._process_video_immediate(file_path, file_metadata)
-        elif file_extension in [".txt", ".md"]:
+        elif file_extension == ".md":
+            return self._process_markdown_direct(file_path, file_metadata)
+        elif file_extension == ".txt":
             return self._process_text_immediate(file_path, file_metadata)
         elif file_extension in [".ppt", ".pptx"]:
             return self._process_presentation_immediate(file_path, file_metadata)
@@ -618,7 +642,7 @@ class UploadProcessor:
             original_filename = file_metadata.get('filename', 'document')
             # Remove file extension
             base_title = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
-            clean_pdf_title = self._clean_title(base_title)
+            clean_pdf_title = clean_title(base_title)
 
             # Convert the PDF to markdown using marker (this generates images directly)
             rendered = pdf_processor(str(file_path))
@@ -690,7 +714,7 @@ class UploadProcessor:
 
             result = {
                 'content': summary_content,
-                'content_filename': f"{clean_pdf_title}_parsed.md",  # Prevent content.md creation
+                'content_filename': f"{clean_pdf_title}.md", 
                 'metadata': pdf_metadata,
                 'features_available': ['advanced_pdf_extraction', 'figure_extraction', 'table_extraction', 'formula_extraction', 'layout_analysis'],
                 'processing_time': f'{duration:.2f}s',
@@ -723,7 +747,6 @@ class UploadProcessor:
             doc = fitz.open(file_path)
             content = ""
 
-
             # Extract basic metadata
             pdf_metadata = {
                 'page_count': doc.page_count,
@@ -734,7 +757,6 @@ class UploadProcessor:
                 'processing_method': 'pymupdf_fallback'
             }
 
-
             # Extract text from all pages
             for page_num in range(doc.page_count):
                 page = doc[page_num]
@@ -742,14 +764,11 @@ class UploadProcessor:
                 page_text = page.get_text()
                 content += page_text
 
-
             doc.close()
-
 
             # Check if content extraction was successful
             if not content.strip():
                 content = f"PDF document '{file_metadata['filename']}' appears to be image-based or empty. Text extraction may require OCR processing."
-
 
             return {
                 "content": content,
@@ -761,7 +780,6 @@ class UploadProcessor:
                 ],
                 "processing_time": "immediate",
             }
-
 
         except Exception as e:
             raise Exception(f"PDF processing failed: {str(e)}")
@@ -833,8 +851,8 @@ class UploadProcessor:
 
             # Always generate a transcript filename based on the video name
             base_title = Path(file_metadata['filename']).stem
-            cleaned_title = self._clean_title(base_title)
-            transcript_filename = f"{cleaned_title}_transcript.md"
+            cleaned_title = clean_title(base_title)
+            transcript_filename = f"{cleaned_title}.md"
 
             if result.returncode == 0 and self.whisper_model and os.path.exists(audio_path):
                 try:
@@ -877,6 +895,40 @@ class UploadProcessor:
 
         except Exception as e:
             raise Exception(f"Video processing failed: {str(e)}")
+
+    def _process_markdown_direct(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
+        """Process markdown files directly, returning the original file without additional processing."""
+        try:
+            self.log_operation("markdown_direct_processing", f"Processing markdown file directly: {file_path}")
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # For markdown files, we don't use the marker extraction logic.
+            # We just return the content and use the original filename.
+            # The content will be indexed directly without creating additional files.
+            text_metadata = {
+                "word_count": len(content.split()),
+                "char_count": len(content),
+                "line_count": len(content.splitlines()),
+                "encoding": "utf-8",
+                "processing_method": "direct_markdown",
+                "is_markdown_file": True,
+            }
+
+            # Use the original filename directly - no processing needed for .md files
+            original_filename = file_metadata['filename']
+
+            return {
+                "content": content,
+                "metadata": text_metadata,
+                "features_available": ["content_analysis", "summarization"],
+                "processing_time": "immediate",
+                "content_filename": original_filename,  # Use original filename
+                "use_original_file": True   # Flag to indicate we should use the original uploaded file
+            }
+        except Exception as e:
+            self.log_operation("markdown_direct_error", f"Error processing markdown file directly: {e}", "error")
+            raise Exception(f"Markdown processing failed: {str(e)}")
 
     def _process_text_immediate(
         self, file_path: str, file_metadata: Dict
@@ -1025,142 +1077,12 @@ class UploadProcessor:
         except Exception:
             return {'error': 'Could not extract video metadata'}
     
-    def _get_device_info(self):
-        """Get information about available compute devices."""
-        device_info = []
-        
-        # Check for CUDA
-        try:
-            import torch
-            if torch.cuda.is_available():
-                device_info.append(f"CUDA ({torch.cuda.get_device_name(0)})")
-        except ImportError:
-            pass
-        
-        # Check for MPS (Apple Silicon)
-        try:
-            import torch
-            if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                device_info.append("MPS (Apple Silicon)")
-        except ImportError:
-            pass
-        
-        if not device_info:
-            device_info.append("CPU")
-        
-        return ", ".join(device_info)
-    
-    def _clean_title(self, title: str) -> str:
-        """Clean the title by replacing non-alphanumeric characters with underscores."""
-        # Replace all non-alphanumeric characters (except for underscores) with underscores
-        cleaned = re.sub(r'[^\w\d]', '_', title)
-        # Replace consecutive underscores with a single underscore
-        cleaned = re.sub(r'_+', '_', cleaned)
-        # Remove leading/trailing underscores
-        cleaned = cleaned.strip('_')
-        return cleaned 
-    
-    def _update_image_links_in_markdown(self, markdown_content: str, image_mapping: Dict[str, str], base_images_path: str = "images") -> str:
-        """
-        Update image links in markdown content to point to the saved image locations.
-        
-        Args:
-            markdown_content: Original markdown content
-            image_mapping: Dictionary mapping original image names to saved paths
-            base_images_path: Base path for images (default: "images")
-            
-        Returns:
-            Updated markdown content with corrected image links
-        """
-        if not image_mapping:
-            return markdown_content
-        
-        updated_content = markdown_content
-        
-        # Pattern to match markdown image syntax: ![alt text](image_path)
-        image_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
-        
-        def replace_image_link(match):
-            alt_text = match.group(1)
-            original_path = match.group(2)
-            
-            # Extract filename from the original path
-            original_filename = os.path.basename(original_path)
-            
-            # Check if we have a saved version of this image
-            if original_filename in image_mapping:
-                # If the mapping value starts with "../", use it as-is (for relative paths)
-                if image_mapping[original_filename].startswith("../"):
-                    new_path = image_mapping[original_filename]
-                else:
-                    # Use relative path for markdown
-                    new_path = f"{base_images_path}/{os.path.basename(image_mapping[original_filename])}"
-                return f"![{alt_text}]({new_path})"
-            
-            # If no mapping found, return original
-            return match.group(0)
-        
-        updated_content = re.sub(image_pattern, replace_image_link, updated_content)
-        
-        self.log_operation("update_image_links", f"Updated {len(image_mapping)} image links in markdown")
-        
-        return updated_content
-
-    def _update_markdown_image_paths(self, markdown_file_path: Path, image_files: list):
-        """
-        Update image paths in a markdown file to point to the new images directory.
-        
-        Args:
-            markdown_file_path: Path to the markdown file to update
-            image_files: List of image filenames that were moved to images/ directory
-        """
-        try:
-            # Read the current markdown content
-            with open(markdown_file_path, 'r', encoding='utf-8') as f:
-                markdown_content = f.read()
-            
-            # Create a set of image filenames for quick lookup
-            image_filename_set = set(image_files)
-            
-            # Pattern to match markdown image syntax: ![alt text](image_path)
-            image_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
-            
-            def replace_image_link(match):
-                alt_text = match.group(1)
-                original_path = match.group(2)
-                
-                # Extract filename from the original path
-                original_filename = os.path.basename(original_path)
-                
-                # Check if this image was moved to the images directory
-                if original_filename in image_filename_set:
-                    # Update path to point to ../images/ (relative to content directory)
-                    new_path = f"../images/{original_filename}"
-                    return f"![{alt_text}]({new_path})"
-                
-                # If image not in our moved files, return original
-                return match.group(0)
-            
-            # Apply the replacements
-            updated_content = re.sub(image_pattern, replace_image_link, markdown_content)
-            
-            # Write the updated content back to the file
-            with open(markdown_file_path, 'w', encoding='utf-8') as f:
-                f.write(updated_content)
-            
-            # Count how many replacements were made
-            original_matches = len(re.findall(image_pattern, markdown_content))
-            updated_matches = len(re.findall(r'!\[([^\]]*)\]\(\.\./images/[^)]+\)', updated_content))
-            
-            self.log_operation("update_markdown_paths", 
-                f"Updated image paths in {markdown_file_path.name}: {updated_matches} of {original_matches} images updated to ../images/ paths")
-            
-        except Exception as e:
-            self.log_operation("update_markdown_paths_error", 
-                f"Failed to update image paths in {markdown_file_path}: {e}", "error")
 
     def _post_process_marker_extraction(self, file_id: str, marker_extraction_result: Dict[str, Any]):
-        """Move marker PDF extraction results to the correct directory structure."""
+        """
+        Post-process marker PDF extraction results by storing them in MinIO.
+        This replaces the file system organization with MinIO object storage.
+        """
         try:
             if not marker_extraction_result.get("success"):
                 return
@@ -1170,110 +1092,268 @@ class UploadProcessor:
             if not temp_marker_dir or not os.path.exists(temp_marker_dir):
                 return
 
-            # Get the file storage base path and organize files correctly
-            if self.file_storage:
-                try:
-                    # Import here to avoid circular imports
-                    from ..models import KnowledgeBaseItem
-                    
-                    # Get the knowledge base item to find the file location
-                    kb_item = KnowledgeBaseItem.objects.filter(id=file_id).first()
-                    if not kb_item:
-                        self.log_operation("marker_extraction_warning", f"Could not find knowledge base item for file_id: {file_id}", "warning")
-                        return
-                    
-                    # Generate paths based on the knowledge base item
-                    paths = self.file_storage._generate_knowledge_base_paths(
-                        user_id=kb_item.user_id,
-                        original_filename=kb_item.title + '.pdf',  # Reconstruct filename
-                        kb_item_id=str(kb_item.id)
-                    )
-                    
-                    # Create the directory structure
-                    base_dir_path = self.file_storage.base_data_root / paths['base_dir']
-                    content_dir = base_dir_path / "content"
-                    images_dir = base_dir_path / "images"
-                    
-                    # Ensure directories exist
-                    content_dir.mkdir(parents=True, exist_ok=True)
-                    images_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    # Get clean title for renaming
-                    clean_title = marker_extraction_result.get("clean_title", "document")
-                    
-                    # Move files to appropriate directories
-                    content_files = []
-                    image_files = []
-                    
-                    for root, dirs, files in os.walk(temp_marker_dir):
-                        for file in files:
-                            source_file = os.path.join(root, file)
-                            
-                            # Determine file type and target directory
-                            if file.endswith(('.md', '.json')):
-                                # Content files go to content/ directory
-                                if file == "markdown.md":
-                                    target_filename = f"{clean_title}_parsed.md"
-                                else:
-                                    target_filename = file
-                                
-                                target_file = content_dir / target_filename
-                                target_dir_name = "content"
-                                content_files.append(target_filename)
-                                
-                            elif file.endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')):
-                                # Image files go to images/ directory
-                                target_filename = file
-                                target_file = images_dir / target_filename
-                                target_dir_name = "images"
-                                image_files.append(target_filename)
-                                
-                            else:
-                                # Other files go to content/ directory by default
-                                target_filename = file
-                                target_file = content_dir / target_filename
-                                target_dir_name = "content"
-                                content_files.append(target_filename)
-                            
-                            # Handle file name conflicts by overwriting
-                            if target_file.exists():
-                                target_file.unlink()
-                            
-                            import shutil
-                            shutil.move(source_file, str(target_file))
-                            self.log_operation("marker_file_move", f"Moved {file} to {target_dir_name}/{target_filename}")
-                    
-                    # Log summary
-                    total_files = len(content_files) + len(image_files)
-                    self.log_operation("marker_extraction_summary", 
-                        f"Moved {total_files} files: {len(content_files)} to content/, {len(image_files)} to images/")
-                    
-                    if content_files:
-                        self.log_operation("marker_content_files", f"Content files: {content_files}")
-                    if image_files:
-                        self.log_operation("marker_image_files", f"Image files: {image_files}")
-                    
-                    # Update image paths in markdown files after moving files
-                    if image_files and content_files:
-                        for content_file in content_files:
-                            if content_file.endswith('.md'):
-                                self._update_markdown_image_paths(content_dir / content_file, image_files)
-                    
-                    # Clean up the now-empty temp directory
-                    try:
-                        import shutil
-                        shutil.rmtree(temp_marker_dir)
-                        self.log_operation("marker_cleanup", f"Cleaned up temporary directory: {temp_marker_dir}")
-                    except Exception as cleanup_error:
-                        self.log_operation("marker_cleanup_warning", f"Could not clean up temp marker directory: {cleanup_error}", "warning")
+            # Get the MinIO storage service
+            if not self.file_storage:
+                self.log_operation("marker_extraction_warning", "MinIO file storage service not available", "warning")
+                return
+
+            try:
+                # Import here to avoid circular imports
+                from ..models import KnowledgeBaseItem
+                
+                # Get the knowledge base item
+                kb_item = KnowledgeBaseItem.objects.filter(id=file_id).first()
+                if not kb_item:
+                    self.log_operation("marker_extraction_warning", f"Could not find knowledge base item for file_id: {file_id}", "warning")
+                    return
+                
+                # Get clean title for file organization
+                clean_title = marker_extraction_result.get("clean_title", "document")
+                
+                # Process files from temp directory and store in MinIO
+                content_files = []
+                image_files = []
+                markdown_content = None  # Store markdown content for figure name extraction
+                
+                for root, dirs, files in os.walk(temp_marker_dir):
+                    for file in files:
+                        source_file = os.path.join(root, file)
                         
-                except Exception as e:
-                    self.log_operation("marker_extraction_database_error", f"Database error while processing file_id {file_id}: {e}", "error")
-            else:
-                self.log_operation("marker_extraction_warning", "File storage service not available", "warning")
+                        # Read file content
+                        with open(source_file, 'rb') as f:
+                            file_content = f.read()
+                        
+                        # Determine file type and store in appropriate MinIO prefix
+                        if file.endswith(('.md', '.json')):
+                            # Content files go to 'kb' prefix
+                            if file == "markdown.md":
+                                target_filename = f"{clean_title}.md"
+                            else:
+                                target_filename = file
+                            
+                            # Store in MinIO using file ID structure
+                            object_key = self.file_storage.minio_backend.save_file_with_auto_key(
+                                content=file_content,
+                                filename=target_filename,
+                                prefix="kb",
+                                content_type="text/markdown" if file.endswith('.md') else "application/json",
+                                metadata={
+                                    'kb_item_id': str(kb_item.id),
+                                    'user_id': str(kb_item.user.id),
+                                    'file_type': 'marker_content',
+                                    'marker_original_file': file,
+                                },
+                                user_id=str(kb_item.user.id),
+                                file_id=str(kb_item.id)
+                            )
+                            
+                            content_files.append({
+                                'original_filename': file,
+                                'target_filename': target_filename,
+                                'object_key': object_key
+                            })
+                            
+                            # Update the knowledge base item's file_object_key if this is the main markdown file
+                            if file == "markdown.md":
+                                kb_item.file_object_key = object_key
+                                # Also store markdown content inline for RAG system compatibility
+                                markdown_content = file_content.decode('utf-8', errors='ignore')
+                                kb_item.content = markdown_content
+                                
+                        elif file.endswith(('.jpg', '.jpeg', '.png', '.gif', '.svg')):
+                            # Image files go to kb folder with file ID structure in images subfolder
+                            target_filename = file
+                            
+                            # Determine content type
+                            import mimetypes
+                            content_type, _ = mimetypes.guess_type(target_filename)
+                            content_type = content_type or 'application/octet-stream'
+                            
+                            # Create KnowledgeBaseImage record first to get ID
+                            from ..models import KnowledgeBaseImage
+                            import uuid
+                            
+                            # Extract figure names from markdown content if available
+                            figure_names_dict = {}
+                            if markdown_content:
+                                # Create a temporary file to use with extract_figure_data
+                                import tempfile
+                                try:
+                                    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as temp_file:
+                                        temp_file.write(markdown_content)
+                                        temp_file_path = temp_file.name
+                                    
+                                    # Use the existing extract_figure_data function
+                                    from agents.report_agent.utils.paper_processing import extract_figure_data
+                                    figures_data = extract_figure_data(temp_file_path)
+                                    
+                                    # Convert to figure_names_dict: figure_number -> figure_name
+                                    for fig_data in figures_data:
+                                        figure_name = fig_data.get('figure_name', '')
+                                        # Extract number from figure_name
+                                        import re
+                                        match = re.search(r'(\d+)', figure_name)
+                                        if match:
+                                            figure_num = int(match.group(1))
+                                            figure_names_dict[figure_num] = figure_name
+                                    
+                                    # Clean up temp file
+                                    os.unlink(temp_file_path)
+                                except Exception as e:
+                                    self.log_operation("figure_extraction_error", f"Error extracting figure names: {e}", "warning")
+                            
+                            # Calculate figure sequence based on existing images for this kb_item
+                            existing_count = KnowledgeBaseImage.objects.filter(
+                                knowledge_base_item=kb_item
+                            ).count()
+                            figure_sequence = existing_count + 1
+                            
+                            # Get figure name (extracted or auto-generated)
+                            if figure_sequence in figure_names_dict:
+                                figure_name = figure_names_dict[figure_sequence]
+                            else:
+                                figure_name = f"Figure {figure_sequence}"
+                            
+                            # Create a temporary record to get the ID
+                            kb_image = KnowledgeBaseImage(
+                                knowledge_base_item=kb_item,
+                                image_caption="",  # Will be filled later if caption data is available
+                                figure_name=figure_name,
+                                content_type=content_type,
+                                file_size=len(file_content),
+                                image_metadata={
+                                    'original_filename': target_filename,
+                                    'file_size': len(file_content),
+                                    'content_type': content_type,
+                                    'kb_item_id': str(kb_item.id),
+                                    'source': 'marker_extraction',
+                                    'marker_original_file': file,
+                                }
+                            )
+                            
+                            # Store in MinIO using file ID structure with images subfolder and UUID
+                            object_key = self.file_storage.minio_backend.save_file_with_auto_key(
+                                content=file_content,
+                                filename=target_filename,
+                                prefix="kb",
+                                content_type=content_type,
+                                metadata={
+                                    'kb_item_id': str(kb_item.id),
+                                    'user_id': str(kb_item.user.id),
+                                    'file_type': 'marker_image',
+                                    'marker_original_file': file,
+                                },
+                                user_id=str(kb_item.user.id),
+                                file_id=str(kb_item.id),
+                                subfolder="images",
+                                subfolder_uuid=str(kb_image.id)
+                            )
+                            
+                            # Now set the object key and save the record
+                            try:
+                                kb_image.minio_object_key = object_key
+                                kb_image.save()
+                                
+                                self.log_operation(
+                                    "marker_image_db_created", 
+                                    f"Created KnowledgeBaseImage record: id={kb_image.id}, object_key={object_key}"
+                                )
+                                
+                            except Exception as e:
+                                self.log_operation(
+                                    "marker_image_db_error", 
+                                    f"Failed to create KnowledgeBaseImage record for {target_filename}: {str(e)}", 
+                                    "error"
+                            )
+                            
+                            image_files.append({
+                                'original_filename': file,
+                                'target_filename': target_filename,
+                                'object_key': object_key
+                            })
+                            
+                        else:
+                            # Other files go to 'kb' prefix as content
+                            target_filename = file
+                            
+                            # Store in MinIO using file ID structure
+                            object_key = self.file_storage.minio_backend.save_file_with_auto_key(
+                                content=file_content,
+                                filename=target_filename,
+                                prefix="kb",
+                                metadata={
+                                    'kb_item_id': str(kb_item.id),
+                                    'user_id': str(kb_item.user.id),
+                                    'file_type': 'marker_other',
+                                    'marker_original_file': file,
+                                },
+                                user_id=str(kb_item.user.id),
+                                file_id=str(kb_item.id)
+                            )
+                            
+                            content_files.append({
+                                'original_filename': file,
+                                'target_filename': target_filename,
+                                'object_key': object_key
+                            })
+                
+                # Update the knowledge base item's metadata with MinIO object keys
+                if not kb_item.file_metadata:
+                    kb_item.file_metadata = {}
+                
+                kb_item.file_metadata['marker_extraction'] = {
+                    'success': True,
+                    'content_files': content_files,
+                    'image_files': image_files,
+                    'total_files': len(content_files) + len(image_files),
+                    'extraction_timestamp': datetime.now(timezone.utc).isoformat(),
+                    'storage_backend': 'minio'
+                }
+                
+                # Store image object keys for future reference
+                if image_files:
+                    kb_item.file_metadata['image_object_keys'] = [f['object_key'] for f in image_files]
+                    kb_item.file_metadata['image_count'] = len(image_files)
+                
+                kb_item.save()
+                
+                # Auto-populate image captions if images were created
+                if image_files:
+                    try:
+                        from .knowledge_base_image_service import KnowledgeBaseImageService
+                        caption_service = KnowledgeBaseImageService()
+                        caption_service.auto_populate_captions_from_content(kb_item.id, kb_item.user.id)
+                        self.log_operation("marker_caption_generation", 
+                            f"Auto-populated captions for {len(image_files)} images in file_id {file_id}")
+                    except Exception as caption_error:
+                        self.log_operation("marker_caption_generation_error", 
+                            f"Failed to auto-populate captions for file_id {file_id}: {str(caption_error)}", "error")
+                
+                # Log summary
+                total_files = len(content_files) + len(image_files)
+                self.log_operation("marker_extraction_minio_summary", 
+                    f"Stored {total_files} marker files in MinIO: {len(content_files)} content files, {len(image_files)} image files")
+                
+                if content_files:
+                    content_file_names = [f['target_filename'] for f in content_files]
+                    self.log_operation("marker_content_files_minio", f"Content files stored: {content_file_names}")
+                if image_files:
+                    image_file_names = [f['target_filename'] for f in image_files]
+                    self.log_operation("marker_image_files_minio", f"Image files stored: {image_file_names}")
+                
+                # Clean up the now-empty temp directory
+                try:
+                    import shutil
+                    shutil.rmtree(temp_marker_dir)
+                    self.log_operation("marker_cleanup", f"Cleaned up temporary directory: {temp_marker_dir}")
+                except Exception as cleanup_error:
+                    self.log_operation("marker_cleanup_warning", f"Could not clean up temp marker directory: {cleanup_error}", "warning")
+                    
+            except Exception as e:
+                self.log_operation("marker_extraction_minio_error", f"MinIO storage error while processing file_id {file_id}: {e}", "error")
 
         except Exception as e:
-            self.log_operation("post_process_marker_extraction_error", f"Failed to move marker extraction results: {e}", "error")
+            self.log_operation("post_process_marker_extraction_minio_error", f"Failed to store marker extraction results in MinIO: {e}", "error")
             # Clean up temp directory if it still exists
             temp_marker_dir = marker_extraction_result.get("temp_marker_dir")
             if temp_marker_dir and os.path.exists(temp_marker_dir):
@@ -1282,3 +1362,7 @@ class UploadProcessor:
                     shutil.rmtree(temp_marker_dir)
                 except Exception as cleanup_error:
                     self.log_operation("marker_cleanup_warning", f"Could not clean up temp marker directory: {cleanup_error}", "warning")
+
+
+# Global singleton instance
+upload_processor = UploadProcessor()

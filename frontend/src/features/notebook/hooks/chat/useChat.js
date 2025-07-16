@@ -147,7 +147,7 @@ export const useChat = (notebookId, sourcesListRef) => {
     }
 
     try {
-      const response = await fetch(`${config.API_BASE_URL}/notebooks/chat/`, {
+      const response = await fetch(`${config.API_BASE_URL}/notebooks/${notebookId}/chat/`, {
         method: "POST",
         credentials: 'include',
         headers: {
@@ -156,8 +156,7 @@ export const useChat = (notebookId, sourcesListRef) => {
         },
         body: JSON.stringify({
           file_ids: selectedFileIds,
-          question: userMessage.content,
-          notebook_id: notebookId
+          question: userMessage.content
         })
       });
 

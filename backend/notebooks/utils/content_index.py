@@ -19,10 +19,14 @@ class ContentIndexingService:
         self.service_name = "content_indexing"
         self.logger = logging.getLogger(f"{__name__}.content_indexing")
 
-        # Use Django's MEDIA_ROOT instead of legacy data directory
-        media_root = Path(settings.MEDIA_ROOT)
-        self.index_dir = media_root / "search_index"
-        self.index_dir.mkdir(exist_ok=True)
+        # Use a dedicated search index directory (independent of user file storage)
+        import tempfile
+        import os
+        
+        # Create search index directory in system temp or use environment variable
+        base_index_dir = os.getenv('SEARCH_INDEX_DIR', tempfile.gettempdir())
+        self.index_dir = Path(base_index_dir) / "deepsight_search_index"
+        self.index_dir.mkdir(parents=True, exist_ok=True)
 
         # Simple in-memory search index (can be enhanced with Elasticsearch later)
         self.search_index = {}

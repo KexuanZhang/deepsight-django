@@ -13,7 +13,7 @@ import os
 
 from .models import PodcastJob
 from .orchestrator import podcast_orchestrator
-from notebooks.utils.file_storage import FileStorageService
+from notebooks.utils.storage_adapter import get_storage_adapter
 from notebooks.models import KnowledgeBaseItem
 
 logger = logging.getLogger(__name__)
@@ -50,14 +50,14 @@ def process_podcast_generation(self, job_id: str):
         combined_content = ""
         source_metadata = []
 
-        # Initialize file storage service
-        file_storage = FileStorageService()
+        # Initialize storage adapter
+        storage_adapter = get_storage_adapter()
 
         for file_id in job.source_file_ids:
             try:
                 # Get parsed file content using synchronous method
-                content = file_storage.get_file_content(
-                    file_id, user_id=job.user_id if job.user else None
+                content = storage_adapter.get_file_content(
+                    file_id, user_id=job.user.id if job.user else None
                 )
 
                 if content:

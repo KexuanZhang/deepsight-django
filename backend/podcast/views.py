@@ -148,18 +148,13 @@ class NotebookPodcastJobDetailView(APIView):
                         
                 except Exception as e:
                     logger.error(f"Error deleting podcast directory for job {job_id}: {e}")
-                    # Fallback: try to delete the file directly if it exists
+                    # Fallback: try to delete the file using MinIO storage
                     try:
-                        from pathlib import Path
-                        from django.conf import settings
-                        
-                        if job.audio_file.name:
-                            audio_file_path = Path(settings.MEDIA_ROOT) / job.audio_file.name
-                            if audio_file_path.exists():
-                                audio_file_path.unlink()
-                                logger.info(f"Deleted audio file: {audio_file_path}")
+                        if job.audio_file and hasattr(job.audio_file, 'delete'):
+                            job.audio_file.delete(save=False)
+                            logger.info(f"Deleted audio file from MinIO storage")
                     except Exception as fallback_error:
-                        logger.error(f"Fallback deletion also failed: {fallback_error}")
+                        logger.error(f"MinIO storage deletion also failed: {fallback_error}")
             
             # Delete the job record from database
             job.delete()

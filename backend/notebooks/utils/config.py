@@ -186,5 +186,7 @@ class DeepSightStorageConfig:
             return False
 
 
-# Global storage configuration instance
-storage_config = DeepSightStorageConfig()
+# DEPRECATED: DeepSightStorageConfig has been replaced by MinIO storage adapter
+# Commented out to prevent usage - all storage operations should use storage_adapter
+# storage_config = DeepSightStorageConfig()
+storage_config = None  # This will cause errors if legacy code tries to use it

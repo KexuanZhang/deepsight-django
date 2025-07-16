@@ -97,15 +97,27 @@ MIDDLEWARE = [
 ]
 
 
+# MinIO Configuration
+MINIO_SETTINGS = {
+    'ENDPOINT': os.getenv('MINIO_ENDPOINT', 'localhost:9000'),
+    'ACCESS_KEY': os.getenv('MINIO_ACCESS_KEY', 'minioadmin'),
+    'SECRET_KEY': os.getenv('MINIO_SECRET_KEY', 'minioadmin'),
+    'BUCKET_NAME': os.getenv('MINIO_BUCKET_NAME', 'deepsight-users'),
+    'SECURE': os.getenv('MINIO_SECURE', 'False').lower() == 'true',
+    'REGION': os.getenv('MINIO_REGION', 'us-east-1'),
+}
+
+# Storage Backend - MinIO only
 DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
 
-AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
-AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME')
-AWS_S3_ENDPOINT_URL = os.getenv('AWS_S3_ENDPOINT_URL')
-AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME')
-AWS_S3_USE_SSL = os.getenv('AWS_S3_USE_SSL', 'False') == 'True'
-AWS_S3_VERIFY = os.getenv('AWS_S3_VERIFY', 'False') == 'True'
+# AWS S3 settings configured for MinIO
+AWS_ACCESS_KEY_ID = MINIO_SETTINGS['ACCESS_KEY']
+AWS_SECRET_ACCESS_KEY = MINIO_SETTINGS['SECRET_KEY']
+AWS_STORAGE_BUCKET_NAME = MINIO_SETTINGS['BUCKET_NAME']
+AWS_S3_ENDPOINT_URL = f"{'https' if MINIO_SETTINGS['SECURE'] else 'http'}://{MINIO_SETTINGS['ENDPOINT']}"
+AWS_S3_REGION_NAME = MINIO_SETTINGS['REGION']
+AWS_S3_USE_SSL = MINIO_SETTINGS['SECURE']
+AWS_S3_VERIFY = MINIO_SETTINGS['SECURE']
 
 
 CORS_ALLOW_CREDENTIALS = True
@@ -203,12 +215,8 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
-# Media files (uploaded content) - Updated to use new DeepSight data storage path
-DEEPSIGHT_DATA_ROOT = Path("/Users/zhang/Desktop/huawei/ds-django-2/deepsight-django/backend/backend/data00")
-# DEEPSIGHT_DATA_ROOT = Path("/Users/eason/Downloads/data00/Deepsight")
-# DEEPSIGHT_DATA_ROOT = Path("C:/Users/zhang/my_app_data/data00/Deepsight")
-MEDIA_ROOT = DEEPSIGHT_DATA_ROOT
-MEDIA_URL = "/media/"
+# Media files are stored in MinIO object storage only
+# MEDIA_ROOT and MEDIA_URL are not used with MinIO backend
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -290,5 +298,6 @@ LOGS_DIR.mkdir(exist_ok=True)
 MILVUS_HOST               = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT               = os.getenv("MILVUS_PORT", "19530")
 MILVUS_COLLECTION_NAME    = os.getenv("MILVUS_LOCAL_COLLECTION", "user_vectors")
+
 
 

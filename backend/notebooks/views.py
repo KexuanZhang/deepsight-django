@@ -14,7 +14,7 @@ import traceback
 logger = logging.getLogger(__name__)
 
 from django.db import transaction
-from django.http import StreamingHttpResponse, Http404, FileResponse
+from django.http import StreamingHttpResponse, Http404, FileResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.views.decorators.csrf import csrf_exempt
@@ -45,7 +45,7 @@ from .serializers import (
     BatchJobItemSerializer
 )
 from .utils.upload_processor import UploadProcessor
-from .utils.file_storage import FileStorageService
+from .utils.storage_adapter import get_storage_adapter
 from .utils.url_extractor import URLExtractor
 from .utils.media_extractor import MediaFeatureExtractor
 from .utils.image_processing import clean_title
@@ -76,7 +76,7 @@ from PyPDF2 import PdfReader
 
 
 upload_processor = UploadProcessor()
-file_storage = FileStorageService()
+storage_adapter = get_storage_adapter()
 url_extractor = URLExtractor()
 media_extractor = MediaFeatureExtractor()
 
@@ -794,24 +794,22 @@ class FileListView(StandardAPIView, NotebookPermissionMixin, FileListResponseMix
 
 class RAGChatFromKBView(NotebookPermissionMixin, APIView):
     """
-    POST /api/rag/chat/
+    POST /api/v1/notebooks/{notebook_id}/chat/
     {
-      "notebook_id":    123,
       "question":       "Explain quantum tunneling",
       "mode":           "local"|"global"|"hybrid",
       "filter_sources": ["paper1.pdf","notes.md"]
     }
     """
-    def post(self, request):
-        notebook_id    = request.data.get("notebook_id")
+    def post(self, request, notebook_id):
         question       = request.data.get("question")
         mode           = request.data.get("mode", "hybrid")
         filter_sources = request.data.get("filter_sources", None)
 
         # 1) validate inputs
-        if not notebook_id or not question:
+        if not question:
             return Response(
-                {"error": "Both notebook_id and question are required."},
+                {"error": "Question is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
         if mode not in ("local", "global", "hybrid"):
@@ -960,7 +958,7 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
             limit, offset = self.get_pagination_params(request)
 
             # Get knowledge base items
-            knowledge_base = file_storage.get_user_knowledge_base(
+            knowledge_base = storage_adapter.get_user_knowledge_base(
                 user_id=request.user.pk,
                 content_type=content_type,
                 limit=limit,
@@ -976,7 +974,7 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
 
             # Add linked status to each item
             for item in knowledge_base:
-                item["linked_to_notebook"] = int(item["id"]) in linked_kb_item_ids
+                item["linked_to_notebook"] = item["id"] in linked_kb_item_ids
 
             return self.success_response(
                 {
@@ -1007,7 +1005,7 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
                 return self.error_response("knowledge_base_item_id is required")
 
             # Link the item
-            success = file_storage.link_knowledge_item_to_notebook(
+            success = storage_adapter.link_knowledge_item_to_notebook(
                 kb_item_id=kb_item_id,
                 notebook_id=notebook_id,
                 user_id=request.user.pk,
@@ -1038,7 +1036,7 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
                 return self.error_response("knowledge_base_item_id is required")
 
             # Delete the knowledge base item entirely
-            success = file_storage.delete_knowledge_base_item(
+            success = storage_adapter.delete_knowledge_base_item(
                 kb_item_id, request.user.pk
             )
 
@@ -1178,15 +1176,15 @@ class FileDeleteView(APIView):
         # Strategy 1: Try to find by knowledge_item_id (direct database ID)
         if not deleted:
             try:
-                knowledge_item_id = int(file_or_upload_id)
+                # Try as UUID string directly (no int conversion needed)
                 ki = KnowledgeItem.objects.filter(
-                    id=knowledge_item_id, notebook=notebook
+                    id=file_or_upload_id, notebook=notebook
                 ).first()
 
                 if ki:
                     if force_delete:
                         # Delete the knowledge base item entirely
-                        success = file_storage.delete_knowledge_base_item(
+                        success = storage_adapter.delete_knowledge_base_item(
                             str(ki.knowledge_base_item.id), request.user.pk
                         )
                         if success:
@@ -1195,29 +1193,28 @@ class FileDeleteView(APIView):
                         # Just delete the link
                         ki.delete()
                         deleted = True
-            except (ValueError, TypeError):
-                pass  # Not a valid integer ID
+            except Exception:
+                pass  # Not a valid UUID or other error
 
-        # Strategy 2: Try to find by knowledge_base_item_id (if it's a valid integer)
+        # Strategy 2: Try to find by knowledge_base_item_id (UUID string)
         if not deleted:
             try:
-                kb_item_id = int(file_or_upload_id)
-                # Try to find a KnowledgeItem in this notebook that links to this KB item
+                # Try as UUID string directly (no int conversion needed)
                 ki = KnowledgeItem.objects.filter(
-                    notebook=notebook, knowledge_base_item_id=kb_item_id
+                    notebook=notebook, knowledge_base_item_id=file_or_upload_id
                 ).first()
 
                 if ki:
                     if force_delete:
                         # Delete the knowledge base item entirely
-                        success = file_storage.delete_knowledge_base_item(
+                        success = storage_adapter.delete_knowledge_base_item(
                             str(kb_item_id), request.user.pk
                         )
                         if success:
                             deleted = True
                     else:
                         # Just unlink from this notebook
-                        success = file_storage.unlink_knowledge_item_from_notebook(
+                        success = storage_adapter.unlink_knowledge_item_from_notebook(
                             str(kb_item_id), notebook_id, request.user.pk
                         )
                         if success:
@@ -1246,16 +1243,16 @@ class FileDeleteView(APIView):
                         if file_or_upload_id in metadata_str:
                             upload_id_match = True
 
-                    # Check source metadata if available
-                    if source and hasattr(source, "upload") and source.upload:
-                        # Check if source file contains the upload ID pattern
-                        if file_or_upload_id in str(source.upload.file.name):
-                            upload_id_match = True
+                    # Check source metadata if available (legacy upload system - commented out)
+                    # if source and hasattr(source, "upload") and source.upload:
+                    #     # Check if source file contains the upload ID pattern
+                    #     if file_or_upload_id in str(source.upload.file.name):
+                    #         upload_id_match = True
 
                     if upload_id_match:
                         if force_delete:
                             # Delete the knowledge base item entirely
-                            success = file_storage.delete_knowledge_base_item(
+                            success = storage_adapter.delete_knowledge_base_item(
                                 str(kb_item.id), request.user.pk
                             )
                             if success:
@@ -1281,7 +1278,7 @@ class FileDeleteView(APIView):
                 if ki:
                     if force_delete:
                         # Delete the knowledge base item entirely
-                        success = file_storage.delete_knowledge_base_item(
+                        success = storage_adapter.delete_knowledge_base_item(
                             str(ki.knowledge_base_item.id), request.user.pk
                         )
                         if success:
@@ -1348,8 +1345,17 @@ class FileContentView(StandardAPIView, KnowledgeBasePermissionMixin):
             # Get the knowledge base item (verifies ownership)
             kb_item = self.get_user_kb_item(file_id, request.user)
 
-            # Get content from storage service
-            content = file_storage.get_file_content(file_id, user_id=request.user.pk)
+            # Check if user wants MinIO URLs for images
+            use_minio_urls = request.GET.get('minio_urls', 'false').lower() == 'true'
+            
+            if use_minio_urls:
+                # Get content with direct MinIO URLs
+                content = storage_adapter.storage_service.get_content_with_minio_urls(
+                    file_id, user_id=request.user.pk
+                )
+            else:
+                # Get content with API endpoint URLs (legacy behavior)
+                content = storage_adapter.get_file_content(file_id, user_id=request.user.pk)
 
             if content is None:
                 return self.error_response(
@@ -1363,12 +1369,54 @@ class FileContentView(StandardAPIView, KnowledgeBasePermissionMixin):
                     "title": kb_item.title,
                     "content_type": kb_item.content_type,
                     "metadata": kb_item.metadata or {},
+                    "uses_minio_urls": use_minio_urls,
                 }
             )
 
         except Exception as e:
             return self.error_response(
                 "Failed to retrieve content",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)},
+            )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class FileContentMinIOView(StandardAPIView, KnowledgeBasePermissionMixin):
+    """Serve parsed content from knowledge base items with direct MinIO URLs for images."""
+
+    def get(self, request, file_id):
+        """Get processed content with direct MinIO pre-signed URLs for images."""
+        try:
+            # Get the knowledge base item (verifies ownership)
+            kb_item = self.get_user_kb_item(file_id, request.user)
+
+            # Get content with direct MinIO URLs
+            expires = int(request.GET.get('expires', '86400'))  # Default 24 hours
+            content = storage_adapter.storage_service.get_content_with_minio_urls(
+                file_id, user_id=request.user.pk, expires=expires
+            )
+
+            if content is None:
+                return self.error_response(
+                    "Content not found or not accessible",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+
+            return self.success_response(
+                {
+                    "content": content,
+                    "title": kb_item.title,
+                    "content_type": kb_item.content_type,
+                    "metadata": kb_item.metadata or {},
+                    "uses_minio_urls": True,
+                    "url_expires_in": expires,
+                }
+            )
+
+        except Exception as e:
+            return self.error_response(
+                "Failed to retrieve content with MinIO URLs",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details={"error": str(e)},
             )
@@ -1387,12 +1435,12 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
             )
 
             # Try to serve original file first
-            if kb_item.original_file:
-                return self._serve_file(kb_item.original_file, kb_item.title)
+            if kb_item.original_file_object_key:
+                return self._serve_minio_file(kb_item.original_file_object_key, kb_item.title)
 
             # Fallback to processed file
-            if kb_item.file:
-                return self._serve_file(kb_item.file, kb_item.title)
+            if kb_item.file_object_key:
+                return self._serve_minio_file(kb_item.file_object_key, kb_item.title)
 
             raise Http404("Raw file not found")
 
@@ -1407,15 +1455,25 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
                 details={"error": str(e)},
             )
 
-    def _serve_file(self, file_field, title):
-        """Serve a file through Django's FileResponse."""
+    def _serve_minio_file(self, object_key, title):
+        """Serve a file from MinIO through Django's FileResponse."""
         try:
-            content_type, _ = mimetypes.guess_type(file_field.name)
+            from .utils.minio_backend import get_minio_backend
+            from io import BytesIO
+            
+            minio_backend = get_minio_backend()
+            file_content = minio_backend.get_file_content(object_key)
+            
+            # Guess content type from the title/filename
+            content_type, _ = mimetypes.guess_type(title)
             if not content_type:
                 content_type = "application/octet-stream"
 
+            # Create a BytesIO stream from the content
+            file_stream = BytesIO(file_content)
+            
             response = FileResponse(
-                file_field.open("rb"), content_type=content_type, as_attachment=False
+                file_stream, content_type=content_type, as_attachment=False
             )
             response["Content-Disposition"] = f'inline; filename="{title}"'
             response["X-Content-Type-Options"] = "nosniff"
@@ -1436,12 +1494,16 @@ class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
             kb_item = self.get_user_kb_item(file_id, request.user)
 
             # Try to serve original file first
-            if kb_item.original_file:
-                return self._serve_file(kb_item.original_file, kb_item.title)
+            if kb_item.original_file_object_key:
+                file_url = kb_item.get_original_file_url()
+                if file_url:
+                    return Response({"file_url": file_url}, status=status.HTTP_200_OK)
 
             # Fallback to processed file
-            if kb_item.file:
-                return self._serve_file(kb_item.file, kb_item.title)
+            if kb_item.file_object_key:
+                file_url = kb_item.get_file_url()
+                if file_url:
+                    return Response({"file_url": file_url}, status=status.HTTP_200_OK)
 
             raise Http404("Raw file not found")
 
@@ -1454,19 +1516,32 @@ class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
                 details={"error": str(e)},
             )
 
-    def _serve_file(self, file_field, title):
-        """Helper to serve a file with proper headers."""
-        content_type, _ = mimetypes.guess_type(file_field.name)
-        if not content_type:
-            content_type = "application/octet-stream"
+    def _serve_minio_file(self, object_key, title):
+        """Helper to serve a file from MinIO with proper headers."""
+        try:
+            from .utils.minio_backend import get_minio_backend
+            from io import BytesIO
+            
+            minio_backend = get_minio_backend()
+            file_content = minio_backend.get_file_content(object_key)
+            
+            # Guess content type from the title/filename
+            content_type, _ = mimetypes.guess_type(title)
+            if not content_type:
+                content_type = "application/octet-stream"
 
-        response = FileResponse(
-            file_field.open("rb"), content_type=content_type, as_attachment=False
-        )
-        response["Content-Disposition"] = f'inline; filename="{title}"'
-        response["X-Content-Type-Options"] = "nosniff"
-        response["X-Frame-Options"] = "DENY"
-        return response
+            # Create a BytesIO stream from the content
+            file_stream = BytesIO(file_content)
+            
+            response = FileResponse(
+                file_stream, content_type=content_type, as_attachment=False
+            )
+            response["Content-Disposition"] = f'inline; filename="{title}"'
+            response["X-Content-Type-Options"] = "nosniff"
+            response["X-Frame-Options"] = "DENY"
+            return response
+        except Exception as e:
+            raise Http404(f"File not accessible: {str(e)}")
 
 
 class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
@@ -1540,91 +1615,146 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
             else:
                 actual_file_id = video_file_id
 
-            # Get the original video file path from the knowledge base
-            video_file_path = file_storage.get_original_file_path(actual_file_id, request.user.pk)
-            if not video_file_path:
+            # Get the knowledge base item for metadata
+            kb_item = get_object_or_404(
+                KnowledgeBaseItem, id=actual_file_id, user=request.user
+            )
+
+            # Get the original video file from MinIO and download to temp location
+            import tempfile
+            import requests
+            
+            # Get pre-signed URL for the video file
+            video_file_url = storage_adapter.get_original_file_url(actual_file_id, request.user.pk)
+            if not video_file_url:
                 return self.error_response(
                     f"Video file not found for ID: {video_file_id}",
                     status_code=status.HTTP_404_NOT_FOUND
                 )
 
+            # Download the video file to a temporary location
+            try:
+                response = requests.get(video_file_url, stream=True)
+                response.raise_for_status()
+                
+                # Create temporary file with appropriate extension
+                original_filename = kb_item.metadata.get('original_filename', 'video.mp4') if kb_item.metadata else 'video.mp4'
+                file_extension = os.path.splitext(original_filename)[1] or '.mp4'
+                
+                temp_video_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_extension)
+                for chunk in response.iter_content(chunk_size=8192):
+                    temp_video_file.write(chunk)
+                temp_video_file.close()
+                
+                video_file_path = temp_video_file.name
+                
+            except Exception as e:
+                return self.error_response(
+                    f"Failed to download video file: {str(e)}",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
             # Validate that the file is a video
             if not self._is_video_file(video_file_path):
+                # Clean up temp file
+                os.unlink(video_file_path)
                 return self.error_response(
-                    f"File is not a video: {video_file_path}",
+                    f"File is not a video: {original_filename}",
                     status_code=status.HTTP_400_BAD_REQUEST
                 )
 
             # Build extraction options
             extraction_options = self._build_extraction_options(serializer.validated_data)
 
-            # Get the knowledge base item for metadata
-            kb_item = get_object_or_404(
-                KnowledgeBaseItem, id=actual_file_id, user=request.user
-            )
-
             # Generate clean title from filename
-            original_filename = kb_item.metadata.get('original_filename') if kb_item.metadata else 'video'
             video_title = clean_title(Path(original_filename).stem)
 
-            # Set up output directory within the knowledge base item structure
-            paths = file_storage._generate_knowledge_base_paths(
-                request.user.pk, original_filename, actual_file_id
-            )
-            
-            # Set base directory for extraction - the media extractor will create the images subfolder
-            base_file_dir = os.path.join(file_storage.base_data_root, paths['base_dir'])
-            os.makedirs(base_file_dir, exist_ok=True)
+            # Use temporary directory for processing instead of local user directory
+            temp_base_dir = tempfile.mkdtemp(prefix=f"video_extraction_{actual_file_id}_")
+            base_file_dir = temp_base_dir
 
-            # Process the video for image extraction
-            async def process_video_async():
-                return await media_extractor.process_video_for_images(
-                    file_path=video_file_path,
-                    output_dir=base_file_dir,  # Pass base directory, not images directory
-                    video_title=video_title,
-                    extraction_options=extraction_options,
-                    final_images_dir_name="images"  # This will create images/ folder in base_file_dir
-                )
+            try:
+                # Process the video for image extraction
+                async def process_video_async():
+                    return await media_extractor.process_video_for_images(
+                        file_path=video_file_path,
+                        output_dir=base_file_dir,  # Pass base directory, not images directory
+                        video_title=video_title,
+                        extraction_options=extraction_options,
+                        final_images_dir_name="images"  # This will create images/ folder in base_file_dir
+                    )
 
-            # Run async processing
-            result = async_to_sync(process_video_async)()
+                # Run async processing
+                result = async_to_sync(process_video_async)()
 
-            # Calculate final output paths
-            final_images_dir = os.path.join(base_file_dir, 'images')  # This will be f_{file_id}/images/
-            caption_file = os.path.join(final_images_dir, f"{video_title}_caption.json")  # Inside images folder
+                # Calculate final output paths
+                final_images_dir = os.path.join(base_file_dir, 'images')  # This will be f_{file_id}/images/
+                caption_file = os.path.join(final_images_dir, f"{video_title}_caption.json")  # Inside images folder
+                
+                # Upload extracted images to MinIO
+                if result.get('success') and os.path.exists(final_images_dir):
+                    self._upload_extracted_images_to_minio(final_images_dir, kb_item)
+                    
+                    # Process caption data locally before cleanup (instead of from MinIO)
+                    self._process_local_caption_data(final_images_dir, kb_item)
+                    
+                    # Clean up temporary processing directory after upload
+                    import shutil
+                    try:
+                        shutil.rmtree(base_file_dir)
+                        logger.info(f"Cleaned up temporary directory: {base_file_dir}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up temporary directory {base_file_dir}: {str(e)}")
 
-            # Update knowledge base item metadata with extraction info
-            if kb_item.metadata is None:
-                kb_item.metadata = {}
-            
-            kb_item.metadata.update({
-                'video_image_extraction': {
-                    'completed': result.get('success', False),
-                    'timestamp': datetime.now().isoformat(),
-                    'extraction_options': extraction_options,
-                    'output_paths': {
-                        'dedup_images_directory': final_images_dir,
-                        'caption_file': caption_file,
-                        'extractions_directory': final_images_dir
-                    },
-                    'statistics': result.get('statistics', {})
-                }
-            })
-            kb_item.save(update_fields=['metadata'])
+                # Update knowledge base item metadata with extraction info
+                if kb_item.metadata is None:
+                    kb_item.metadata = {}
+                
+                kb_item.metadata.update({
+                    'video_image_extraction': {
+                        'completed': result.get('success', False),
+                        'timestamp': datetime.now().isoformat(),
+                        'extraction_options': extraction_options,
+                        'processing_info': {
+                            'processing_type': 'temporary_directory',
+                            'images_stored_in_minio': True,
+                            'temp_processing_completed': True
+                        },
+                        'statistics': result.get('statistics', {})
+                    }
+                })
+                kb_item.save(update_fields=['metadata'])
 
-            return Response({
-                "success": True,
-                "message": "Video image extraction completed successfully",
-                "file_id": f"f_{actual_file_id}",
-                "notebook_id": notebook_id,
-                "result": result,
-                "output_paths": {
-                    "dedup_images_directory": final_images_dir,
-                    "caption_file": caption_file,
-                    "extractions_directory": final_images_dir,
-                    "knowledge_base_path": f"{paths['base_dir']}/images/"
-                }
-            }, status=status.HTTP_200_OK)
+                return Response({
+                    "success": True,
+                    "message": "Video image extraction completed successfully",
+                    "file_id": f"f_{actual_file_id}",
+                    "notebook_id": notebook_id,
+                    "result": result,
+                    "output_paths": {
+                        "images_uploaded_to_minio": True,
+                        "temp_processing_directory": base_file_dir,
+                        "processing_type": "temporary_directory"
+                    }
+                }, status=status.HTTP_200_OK)
+                
+            finally:
+                # Clean up temporary video file
+                if 'video_file_path' in locals() and os.path.exists(video_file_path):
+                    try:
+                        os.unlink(video_file_path)
+                        logger.info(f"Cleaned up temporary video file: {video_file_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up temporary video file: {e}")
+                
+                # Clean up temporary processing directory if it still exists
+                if 'temp_base_dir' in locals() and os.path.exists(temp_base_dir):
+                    try:
+                        import shutil
+                        shutil.rmtree(temp_base_dir)
+                        logger.info(f"Final cleanup of temporary directory: {temp_base_dir}")
+                    except Exception as e:
+                        logger.warning(f"Failed final cleanup of temporary directory: {e}")
 
         except Exception as e:
             return self.error_response(
@@ -1660,37 +1790,336 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
         
         return options
 
+    def _upload_extracted_images_to_minio(self, local_images_dir: str, kb_item):
+        """Upload extracted images from local directory to MinIO with proper structure."""
+        try:
+            import glob
+            import os
+            from .models import KnowledgeBaseImage
+            
+            # First, delete any existing images for this knowledge base item to avoid duplicates
+            existing_images = KnowledgeBaseImage.objects.filter(knowledge_base_item=kb_item)
+            if existing_images.exists():
+                logger.info(f"Deleting {existing_images.count()} existing images for kb_item {kb_item.id}")
+                
+                # Delete files from MinIO first
+                for img in existing_images:
+                    if img.minio_object_key:
+                        try:
+                            storage_adapter.storage_service.minio_backend.delete_file(img.minio_object_key)
+                            logger.info(f"Deleted existing image from MinIO: {img.minio_object_key}")
+                        except Exception as e:
+                            logger.warning(f"Failed to delete existing image from MinIO: {e}")
+                
+                # Delete database records
+                existing_images.delete()
+                logger.info(f"Deleted existing image records for kb_item {kb_item.id}")
+            
+            # Find all image files in the local directory
+            image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.gif', '*.svg']
+            image_files = []
+            for ext in image_extensions:
+                image_files.extend(glob.glob(os.path.join(local_images_dir, ext)))
+            
+            # Note: JSON files are now processed locally and stored in database, not uploaded to MinIO
+            all_files = image_files
+            
+            if not all_files:
+                logger.info(f"No images or data files found in {local_images_dir}")
+                return
+            
+            logger.info(f"Uploading {len(all_files)} files from {local_images_dir} to MinIO")
+            
+            # Extract figure names from existing content if available
+            figure_names_dict = {}
+            if kb_item.content:
+                # Create a temporary file to use with extract_figure_data
+                import tempfile
+                try:
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as temp_file:
+                        temp_file.write(kb_item.content)
+                        temp_file_path = temp_file.name
+                    
+                    # Use the existing extract_figure_data function
+                    from agents.report_agent.utils.paper_processing import extract_figure_data
+                    figures_data = extract_figure_data(temp_file_path)
+                    
+                    # Convert to figure_names_dict: figure_number -> figure_name
+                    for fig_data in figures_data:
+                        figure_name = fig_data.get('figure_name', '')
+                        # Extract number from figure_name
+                        import re
+                        match = re.search(r'(\d+)', figure_name)
+                        if match:
+                            figure_num = int(match.group(1))
+                            figure_names_dict[figure_num] = figure_name
+                    
+                    # Clean up temp file
+                    os.unlink(temp_file_path)
+                except Exception as e:
+                    logger.warning(f"Error extracting figure names: {e}")
+            
+            # Upload each file to MinIO
+            figure_sequence = 1
+            for file_path in all_files:
+                try:
+                    filename = os.path.basename(file_path)
+                    
+                    # Read file content
+                    with open(file_path, 'rb') as f:
+                        file_content = f.read()
+                    
+                    # Determine content type
+                    import mimetypes
+                    content_type, _ = mimetypes.guess_type(filename)
+                    content_type = content_type or 'application/octet-stream'
+                    
+                    # Get figure name (extracted or auto-generated)
+                    if figure_sequence in figure_names_dict:
+                        figure_name = figure_names_dict[figure_sequence]
+                    else:
+                        figure_name = f"Figure {figure_sequence}"
+                    
+                    # Create and save KnowledgeBaseImage record first to get UUID
+                    kb_image = KnowledgeBaseImage(
+                        knowledge_base_item=kb_item,
+                        image_caption="",  # Will be populated from caption data if available
+                        figure_name=figure_name,
+                        content_type=content_type,
+                        file_size=len(file_content),
+                        image_metadata={
+                            'original_filename': filename,
+                            'file_size': len(file_content),
+                            'content_type': content_type,
+                            'kb_item_id': str(kb_item.id),
+                            'source': 'video_extraction',
+                            'extracted_from': 'video_processing',
+                        }
+                    )
+                    # Save to get UUID for MinIO object key
+                    kb_image.save()
+                    
+                    # Store in MinIO using file ID structure with images subfolder and UUID
+                    object_key = storage_adapter.storage_service.minio_backend.save_file_with_auto_key(
+                        content=file_content,
+                        filename=filename,
+                        prefix="kb",
+                        content_type=content_type,
+                        metadata={
+                            'kb_item_id': str(kb_item.id),
+                            'user_id': str(kb_item.user.id),
+                            'file_type': 'video_extracted_image',
+                            'extracted_from': 'video_processing',
+                        },
+                        user_id=str(kb_item.user.id),
+                        file_id=str(kb_item.id),
+                        subfolder="images",
+                        subfolder_uuid=str(kb_image.id)
+                    )
+                    
+                    # Update the record with MinIO object key
+                    kb_image.minio_object_key = object_key
+                    kb_image.save(update_fields=['minio_object_key'])
+                    
+                    logger.info(f"Uploaded {filename} to MinIO: {object_key}")
+                    figure_sequence += 1
+                    
+                except Exception as e:
+                    logger.error(f"Failed to upload {filename} to MinIO: {str(e)}")
+                    continue
+            
+            logger.info(f"Successfully uploaded {len(all_files)} files to MinIO for kb_item {kb_item.id}")
+            
+        except Exception as e:
+            logger.error(f"Error uploading extracted images to MinIO: {str(e)}")
+
+    def _process_local_caption_data(self, local_images_dir: str, kb_item):
+        """Process caption data from local JSON files and update KnowledgeBaseImage records."""
+        try:
+            import json
+            import glob
+            from .models import KnowledgeBaseImage
+            
+            # Find JSON files with caption data
+            json_files = glob.glob(os.path.join(local_images_dir, '*.json'))
+            
+            for json_file in json_files:
+                try:
+                    with open(json_file, 'r', encoding='utf-8') as f:
+                        caption_data = json.load(f)
+                    
+                    # Process caption data and update database records
+                    if isinstance(caption_data, list):
+                        for item in caption_data:
+                            if isinstance(item, dict) and 'figure_name' in item and 'caption' in item:
+                                figure_name = item['figure_name']
+                                caption = item['caption']
+                                
+                                # Find image by exact figure_name match
+                                image_record = KnowledgeBaseImage.objects.filter(
+                                    knowledge_base_item=kb_item,
+                                    figure_name=figure_name
+                                ).first()
+                                
+                                if image_record:
+                                    image_record.image_caption = caption
+                                    image_record.save(update_fields=['image_caption'])
+                                    logger.info(f"Updated caption for {figure_name}: {caption[:50]}...")
+                                else:
+                                    # Fallback 1: try to match by sequence number from filename
+                                    import re
+                                    match = re.search(r'(\d+)', figure_name)
+                                    if match:
+                                        figure_num = int(match.group(1))
+                                        auto_generated_name = f"Figure {figure_num}"
+                                        
+                                        image_record = KnowledgeBaseImage.objects.filter(
+                                            knowledge_base_item=kb_item,
+                                            figure_name=auto_generated_name
+                                        ).first()
+                                        
+                                        if image_record:
+                                            image_record.image_caption = caption
+                                            image_record.save(update_fields=['image_caption'])
+                                            logger.info(f"Updated caption for {auto_generated_name}: {caption[:50]}...")
+                                        else:
+                                            # Fallback 2: try to match by filename in MinIO object key
+                                            filename_to_match = f"{figure_name}.png"  # Add extension
+                                            image_record = KnowledgeBaseImage.objects.filter(
+                                                knowledge_base_item=kb_item,
+                                                minio_object_key__icontains=filename_to_match
+                                            ).first()
+                                            
+                                            if image_record:
+                                                image_record.image_caption = caption
+                                                image_record.save(update_fields=['image_caption'])
+                                                logger.info(f"Updated caption for {image_record.figure_name} (matched by filename {filename_to_match}): {caption[:50]}...")
+                                            else:
+                                                logger.warning(f"Could not find image record for figure_name: {figure_name}")
+                                    else:
+                                        logger.warning(f"Could not extract number from figure_name: {figure_name}")
+                    
+                    logger.info(f"Processed caption data from {json_file}")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing caption file {json_file}: {str(e)}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Error processing local caption data: {str(e)}")
+
+    def _process_uploaded_caption_data(self, kb_item):
+        """Process uploaded caption data from figure_data.json and update image records."""
+        try:
+            import json
+            from .utils.minio_backend import get_minio_backend
+            from .models import KnowledgeBaseImage
+            
+            backend = get_minio_backend()
+            
+            # Try to find and download figure_data.json
+            prefix = f"{kb_item.user.id}/kb/{kb_item.id}/images/"
+            
+            try:
+                objects = backend.client.list_objects(backend.bucket_name, prefix=prefix)
+                figure_data_key = None
+                
+                for obj in objects:
+                    if obj.object_name.endswith('figure_data.json'):
+                        figure_data_key = obj.object_name
+                        break
+                
+                if not figure_data_key:
+                    logger.info(f"No figure_data.json found for kb_item {kb_item.id}")
+                    return
+                
+                # Download and parse the JSON data
+                content = backend.get_file_content(figure_data_key)
+                caption_data = json.loads(content.decode('utf-8'))
+                
+                # Update KnowledgeBaseImage records with captions
+                if isinstance(caption_data, list):
+                    for item in caption_data:
+                        if isinstance(item, dict) and 'figure_name' in item and 'caption' in item:
+                            # Match by exact figure_name from extraction
+                            figure_name = item['figure_name']
+                            caption = item['caption']
+                            
+                            # Find image by exact figure_name match
+                            image_record = KnowledgeBaseImage.objects.filter(
+                                knowledge_base_item=kb_item,
+                                figure_name=figure_name
+                            ).first()
+                            
+                            if image_record:
+                                image_record.image_caption = caption
+                                image_record.save()
+                                logger.info(f"Updated caption for {figure_name}: {caption[:50]}...")
+                            else:
+                                # Fallback: try to extract number and match by auto-generated names
+                                import re
+                                match = re.search(r'(\d+)', figure_name)
+                                if match:
+                                    figure_num = int(match.group(1))
+                                    auto_generated_name = f"Figure {figure_num}"
+                                    
+                                    image_record = KnowledgeBaseImage.objects.filter(
+                                        knowledge_base_item=kb_item,
+                                        figure_name=auto_generated_name
+                                    ).first()
+                                    
+                                    if image_record:
+                                        image_record.image_caption = caption
+                                        image_record.save()
+                                        logger.info(f"Updated caption for {auto_generated_name}: {caption[:50]}...")
+                                    else:
+                                        logger.warning(f"No image record found for {figure_name} or {auto_generated_name}")
+                                else:
+                                    logger.warning(f"Could not match figure name: {figure_name}")
+                
+                logger.info(f"Processed caption data for kb_item {kb_item.id}")
+                
+            except Exception as e:
+                logger.error(f"Error processing caption data for kb_item {kb_item.id}: {e}")
+                
+        except Exception as e:
+            logger.error(f"Error in _process_uploaded_caption_data: {e}")
+
 
 @method_decorator(csrf_exempt, name="dispatch")
 class FileImageView(StandardAPIView, FileAccessValidatorMixin):
-    """Serve image files from knowledge base items."""
+    """Serve image files from knowledge base items using database storage."""
 
-    def get(self, request, notebook_id, file_id, image_name):
-        """Serve image file through notebook context."""
+    def get(self, request, notebook_id, file_id, image_file):
+        """Serve image file through notebook context from database/MinIO."""
         try:
             # Validate access through notebook
             notebook, kb_item, knowledge_item = self.validate_notebook_file_access(
                 notebook_id, file_id, request.user
             )
 
-            # Resolve images directory using FigureDataService helper which considers
-            # the actual creation date and performs fallback searches across months.
-            # Import inside the method to avoid potential circular dependencies.
-            from reports.core.figure_service import FigureDataService  # noqa: WPS433, E402
-
-            images_dir = FigureDataService._get_knowledge_base_images_path(
-                user_id=request.user.pk,
-                file_id=str(kb_item.id),
-            )
-
-            image_path = Path(images_dir) / image_name
+            # Try to find the image in the database by filename in object key
+            from .models import KnowledgeBaseImage
             
-            # Check if image exists
-            if not image_path.exists():
-                raise Http404(f"Image not found: {image_name}")
+            image_record = KnowledgeBaseImage.objects.filter(
+                knowledge_base_item=kb_item,
+                minio_object_key__icontains=image_file
+            ).first()
             
-            # Serve the image file
-            return self._serve_image(image_path, image_name)
+            if image_record:
+                # Serve from MinIO using the database record
+                return self._serve_image_from_minio(image_record)
+            
+            # For JSON files and video extraction files, try to find them in MinIO directly
+            if image_file.endswith(('.json', '.txt', '.md')):
+                try:
+                    return self._serve_file_from_minio_by_filename(kb_item, image_file)
+                except Http404:
+                    pass  # Fall through to filesystem fallback
+            
+            # Fallback: try to serve from legacy filesystem approach
+            # This maintains backward compatibility during migration
+            return self._serve_image_from_filesystem(kb_item, image_file)
 
         except PermissionDenied as e:
             return self.error_response(str(e), status_code=status.HTTP_403_FORBIDDEN)
@@ -1702,8 +2131,105 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details={"error": str(e)},
             )
+    
+    def _serve_image_from_minio(self, image_record):
+        """Serve image from MinIO using database record."""
+        try:
+            # Get pre-signed URL for the image
+            image_url = image_record.get_image_url(expires=3600)  # 1 hour expiration
+            
+            if not image_url:
+                raise Http404("Image file not accessible in storage")
+            
+            # Return redirect to pre-signed URL
+            from django.http import HttpResponseRedirect
+            return HttpResponseRedirect(image_url)
+            
+        except Exception as e:
+            logger.error(f"Error serving image from MinIO: {e}")
+            raise Http404("Image file not accessible")
+    
+    def _serve_file_from_minio_by_filename(self, kb_item, filename):
+        """Serve file from MinIO by searching for object keys that contain the filename."""
+        try:
+            from .utils.minio_backend import get_minio_backend
+            from django.http import HttpResponseRedirect
+            
+            backend = get_minio_backend()
+            
+            # Search for objects that match the knowledge base item and filename pattern
+            # The object key pattern is: user_id/kb/file_id/subfolder/filename (for video extraction files)
+            prefix = f"{kb_item.user.id}/kb/{kb_item.id}/images/"
+            
+            try:
+                # List objects with the prefix for this knowledge base item
+                objects = backend.client.list_objects(backend.bucket_name, prefix=prefix)
+                
+                # Find the object that ends with our filename
+                for obj in objects:
+                    if obj.object_name.endswith(filename):
+                        # Generate pre-signed URL
+                        file_url = backend.get_file_url(obj.object_name, expires=3600)
+                        
+                        # Return redirect to pre-signed URL
+                        return HttpResponseRedirect(file_url)
+                
+                # If no object found, try alternative prefix patterns
+                # For backward compatibility with different object key structures
+                alternative_prefixes = [
+                    f"{kb_item.user.id}/kb/{kb_item.id}/",  # Files in root kb folder (no subfolder)
+                    f"kb/{kb_item.user.id}/{kb_item.id}/images/",  # Alternative structure 1
+                    f"kb/images/{kb_item.user.id}/{kb_item.id}/",  # Alternative structure 2
+                ]
+                
+                for alt_prefix in alternative_prefixes:
+                    try:
+                        objects = backend.client.list_objects(backend.bucket_name, prefix=alt_prefix)
+                        for obj in objects:
+                            if obj.object_name.endswith(filename):
+                                file_url = backend.get_file_url(obj.object_name, expires=3600)
+                                return HttpResponseRedirect(file_url)
+                    except Exception:
+                        continue
+                
+                raise Http404(f"File not found in MinIO: {filename}")
+                
+            except Exception as e:
+                logger.error(f"Error searching for file in MinIO: {filename} - {e}")
+                raise Http404(f"File not accessible: {filename}")
+            
+        except Exception as e:
+            logger.error(f"Error serving file from MinIO: {filename} - {e}")
+            raise Http404(f"File not accessible: {filename}")
+    
+    def _serve_image_from_filesystem(self, kb_item, image_file):
+        """Fallback method to serve image from filesystem (legacy support)."""
+        try:
+            # Import inside the method to avoid potential circular dependencies
+            from reports.core.figure_service import FigureDataService
 
-    def _serve_image(self, image_path: Path, image_name: str):
+            images_dir = FigureDataService._get_knowledge_base_images_path(
+                user_id=kb_item.user.id,
+                file_id=str(kb_item.id),
+            )
+
+            if not images_dir:
+                raise Http404(f"Image not found: {image_file}")
+            
+            image_path = Path(images_dir) / image_file
+            
+            # Check if image exists
+            if not image_path.exists():
+                raise Http404(f"Image not found: {image_file}")
+            
+            # Serve the image file
+            return self._serve_image(image_path, image_file)
+
+        except Exception as e:
+            logger.error(f"Error serving image from filesystem: {e}")
+            raise Http404(f"Image not found: {image_file}")
+
+    def _serve_image(self, image_path: Path, image_file: str):
         """Serve an image file through Django's FileResponse."""
         try:
             response = FileResponse(
@@ -1717,13 +2243,97 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
                 content_type = "application/octet-stream"
             
             response["Content-Type"] = content_type
-            response["Content-Disposition"] = f'inline; filename="{image_name}"'
+            response["Content-Disposition"] = f'inline; filename="{image_file}"'
             response["Cache-Control"] = "public, max-age=3600"  # Cache for 1 hour
             response["X-Content-Type-Options"] = "nosniff"
             
             return response
         except Exception as e:
             raise Http404(f"Image not accessible: {str(e)}")
+    
+
+
+class KnowledgeBaseImagesView(StandardAPIView, NotebookPermissionMixin, FileAccessValidatorMixin):
+    """REST API endpoint for querying KnowledgeBaseImage records."""
+
+    @swagger_auto_schema(
+        operation_description="Get images for a knowledge base item",
+        responses={
+            200: openapi.Response(
+                description="List of images for the knowledge base item",
+                examples={
+                    "application/json": {
+                        "images": [
+                            {
+                                "id": "uuid",
+                                "figure_name": "Figure 1",
+                                "image_caption": "Sample caption",
+                                "image_url": "https://...",
+                                "minio_object_key": "...",
+                                "content_type": "image/jpeg",
+                                "file_size": 12345,
+                                "created_at": "2025-01-01T12:00:00Z"
+                            }
+                        ],
+                        "count": 1
+                    }
+                }
+            ),
+            404: openapi.Response(description="Knowledge base item not found"),
+        },
+        manual_parameters=[
+            openapi.Parameter(
+                'notebook_id',
+                openapi.IN_PATH,
+                description="ID of the notebook",
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'file_id',
+                openapi.IN_PATH,
+                description="ID of the knowledge base item",
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+        ]
+    )
+    def get(self, request, notebook_id, file_id):
+        """Get all images for a knowledge base item."""
+        try:
+            # Validate access
+            notebook, kb_item, _ = self.validate_notebook_file_access(
+                notebook_id, file_id, request.user
+            )
+            
+            # Query images
+            from .models import KnowledgeBaseImage
+            from .serializers import KnowledgeBaseImageSerializer
+            
+            images = KnowledgeBaseImage.objects.filter(
+                knowledge_base_item=kb_item
+            ).order_by('created_at')
+            
+            # Serialize data
+            serializer = KnowledgeBaseImageSerializer(images, many=True)
+            
+            return Response({
+                "images": serializer.data,
+                "count": len(serializer.data),
+                "file_id": file_id,
+                "notebook_id": notebook_id
+            }, status=status.HTTP_200_OK)
+            
+        except PermissionDenied as e:
+            return self.error_response(str(e), status_code=status.HTTP_403_FORBIDDEN)
+        except Http404 as e:
+            return self.error_response(str(e), status_code=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return self.error_response(
+                "Failed to retrieve images",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)}
+            )
 
 
 class BatchJobStatusView(StandardAPIView, NotebookPermissionMixin):
