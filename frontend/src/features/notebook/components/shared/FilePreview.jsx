@@ -7,6 +7,7 @@ import { generatePreview, supportsPreview, PREVIEW_TYPES, formatDate, getVideoMi
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import rehypeRaw from "rehype-raw";
 import "highlight.js/styles/github.css";
 import GallerySection from './GallerySection';
 
@@ -150,7 +151,7 @@ const MarkdownContent = React.memo(({ content }) => (
   <div className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900">
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
+      rehypePlugins={[rehypeHighlight, rehypeRaw]}
       components={{
         h1: ({children}) => <h1 className="text-3xl font-bold text-gray-900 mb-6 pb-3 border-b">{children}</h1>,
         h2: ({children}) => <h2 className="text-2xl font-semibold text-gray-800 mt-8 mb-4">{children}</h2>,
