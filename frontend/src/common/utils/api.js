@@ -682,6 +682,7 @@ class ApiService {
       credentials: 'include', // This includes session cookies for authentication
       headers: {
         'X-CSRFToken': getCookie('csrftoken'),
+        'Accept': 'application/json',
       },
     });
 
@@ -697,7 +698,18 @@ class ApiService {
       throw new Error(errorMessage);
     }
 
-    return response.blob();
+    const data = await response.json();
+    if (!data.audio_url) {
+      throw new Error('No audio URL returned from server');
+    }
+    
+    // Download the file from the pre-signed URL
+    const audioResponse = await fetch(data.audio_url);
+    if (!audioResponse.ok) {
+      throw new Error('Failed to download audio file');
+    }
+    
+    return audioResponse.blob();
   }
 
   async deletePodcast(jobId, notebookId) {

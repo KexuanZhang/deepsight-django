@@ -14,8 +14,7 @@ class PodcastJob(models.Model):
         ("cancelled", "Cancelled"),
     ]
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    job_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, unique=True, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     
     # Required linking to a notebook - breaking change for dev phase
@@ -66,8 +65,7 @@ class PodcastJob(models.Model):
     source_file_ids = models.JSONField(default=list)
     source_metadata = models.JSONField(default=dict)
 
-    # Audio metadata
-    duration_seconds = models.IntegerField(null=True, blank=True)
+    # Audio metadata moved to file_metadata JSON field
 
     class Meta:
         ordering = ["-created_at"]
@@ -79,7 +77,7 @@ class PodcastJob(models.Model):
         ]
 
     def __str__(self):
-        return f"PodcastJob {self.job_id} - {self.title} ({self.status})"
+        return f"PodcastJob {self.id} - {self.title} ({self.status})"
 
     def get_audio_url(self, expires=3600):
         """Get pre-signed URL for audio access"""
@@ -100,13 +98,13 @@ class PodcastJob(models.Model):
     def get_result_dict(self):
         """Return result data as dictionary"""
         return {
-            "job_id": str(self.job_id),
+            "job_id": str(self.id),
             "title": self.title,
             "description": self.description,
             "status": self.status,
             "audio_url": self.get_audio_url(),
             "conversation_text": self.conversation_text,
-            "duration_seconds": self.duration_seconds,
+            "duration_seconds": self.file_metadata.get("duration_seconds"),
             "source_file_ids": self.source_file_ids,
             "created_at": self.created_at.isoformat(),
             "error_message": self.error_message,
