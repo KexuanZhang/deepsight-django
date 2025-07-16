@@ -19,6 +19,7 @@ from .views import (
     FileRawView,
     FileRawSimpleView,
     FileImageView,
+    KnowledgeBaseImagesView,
     RAGChatFromKBView,
     VideoImageExtractionView,
     BatchJobStatusView,
@@ -138,6 +139,13 @@ urlpatterns = [
         "<str:notebook_id>/files/<str:file_id>/images/<str:image_file>",
         FileImageView.as_view(),
         name="file-image",
+    ),
+
+    # 11b) REST API endpoint for knowledge base images
+    path(
+        "<str:notebook_id>/files/<str:file_id>/images/",
+        KnowledgeBaseImagesView.as_view(),
+        name="knowledge-base-images",
     ),
 
     # 12) video image extraction endpoint
