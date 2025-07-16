@@ -14,6 +14,7 @@ import { Button } from '@/common/components/ui/button';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import rehypeRaw from 'rehype-raw';
 import AuthenticatedImage from './AuthenticatedImage';
 import { processReportMarkdownContent, getFileContentWithMinIOUrls } from '../utils';
 
@@ -22,7 +23,7 @@ const MarkdownContent = React.memo(({ content, notebookId, useMinIOUrls = false 
   <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-a:text-blue-600 prose-strong:text-gray-900 prose-code:text-red-600 prose-pre:bg-gray-50">
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
+      rehypePlugins={[rehypeHighlight, rehypeRaw]}
       components={{
         img: ({ src, alt, title }) => (
           <AuthenticatedImage src={src} alt={alt} title={title} />
