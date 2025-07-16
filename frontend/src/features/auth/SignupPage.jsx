@@ -30,16 +30,26 @@ export default function SignupPage() {
   const handleSignup = async (e) => {
     e.preventDefault();
 
+    // Check if passwords match before submitting
     if (password !== passwordConfirm) {
       return;
     }
 
-    dispatch(signupUser({ username, email, password }));
+    // Prepare the payload with both password and password_confirm
+    const signupData = {
+      username,
+      email,
+      password,
+      password_confirm: passwordConfirm, // Send password_confirm as well
+    };
+
+    // Dispatch the signup action with the payload
+    dispatch(signupUser(signupData));
   };
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate("/");
+      navigate("/"); // Redirect to the homepage if the user is authenticated
     }
   }, [isAuthenticated, navigate]);
 
