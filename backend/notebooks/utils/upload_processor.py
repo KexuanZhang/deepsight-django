@@ -887,34 +887,34 @@ class UploadProcessor:
             raise Exception(f"Video processing failed: {str(e)}")
 
     def _process_markdown_direct(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
-        """Process markdown files directly, skipping marker extraction."""
+        """Process markdown files directly, returning the original file without additional processing."""
         try:
             self.log_operation("markdown_direct_processing", f"Processing markdown file directly: {file_path}")
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             # For markdown files, we don't use the marker extraction logic.
-            # We just return the content and a placeholder metadata.
-            # The content will be indexed directly.
+            # We just return the content and use the original filename.
+            # The content will be indexed directly without creating additional files.
             text_metadata = {
                 "word_count": len(content.split()),
                 "char_count": len(content),
                 "line_count": len(content.splitlines()),
                 "encoding": "utf-8",
+                "processing_method": "direct_markdown",
+                "is_markdown_file": True,
             }
 
-            # Clean the title for filename
-            base_title = Path(file_metadata['filename']).stem
-            clean_title = self._clean_title(base_title)
-            suggested_filename = f"{clean_title}_parsed.md"
+            # Use the original filename directly - no processing needed for .md files
+            original_filename = file_metadata['filename']
 
             return {
                 "content": content,
                 "metadata": text_metadata,
                 "features_available": ["content_analysis", "summarization"],
                 "processing_time": "immediate",
-                "content_filename": suggested_filename,
-                "skip_content_file": True # Indicate that content file should not be created
+                "content_filename": original_filename,  # Use original filename
+                "use_original_file": True   # Flag to indicate we should use the original uploaded file
             }
         except Exception as e:
             self.log_operation("markdown_direct_error", f"Error processing markdown file directly: {e}", "error")

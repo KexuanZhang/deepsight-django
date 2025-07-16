@@ -226,7 +226,12 @@ class FileStorageService:
                 kb_item.original_file_object_key = original_object_key
             
             # Store processed content in MinIO
-            if not processing_result.get('skip_content_file', False):
+            # Special handling for markdown files that should use original file as content
+            if processing_result.get('use_original_file', False) and original_file_path and self._file_exists(original_file_path):
+                # Use the original file as the content file (for .md files)
+                kb_item.file_object_key = kb_item.original_file_object_key
+            elif not processing_result.get('skip_content_file', False):
+                # Normal processing: create separate content file
                 content_filename = processing_result.get('content_filename', 'extracted_content.md')
                 content_object_key = self._store_content_file_minio(kb_item, content, content_filename)
                 # Update the knowledge base item with MinIO object key
@@ -246,9 +251,12 @@ class FileStorageService:
                         kb_item.file_object_key = content_object_key
 
             # Store comprehensive file metadata in the database
+            # For markdown files using original file, content filename should be the original filename
+            content_filename = original_filename if processing_result.get('use_original_file', False) else processing_result.get('content_filename', 'extracted_content.md')
+            
             file_metadata = {
                 'original_filename': original_filename,
-                'content_filename': processing_result.get('content_filename', 'extracted_content.md'),
+                'content_filename': content_filename,
                 'file_size': metadata.get('file_size', 0),
                 'content_type': metadata.get('content_type', ''),
                 'upload_timestamp': metadata.get('upload_timestamp', datetime.now(timezone.utc).isoformat()),
@@ -257,6 +265,7 @@ class FileStorageService:
                     'has_original_file': bool(kb_item.original_file_object_key),
                     'has_content_file': bool(kb_item.file_object_key),
                     'has_images': bool('images' in processing_result and processing_result['images']),
+                    'uses_original_as_content': processing_result.get('use_original_file', False),
                 }
             }
             kb_item.file_metadata = file_metadata
