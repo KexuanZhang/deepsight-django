@@ -199,15 +199,56 @@ def add_user_files(
 # Remove helper to delete vectors by source
 def delete_user_file(user_id, source: str) -> None:
     coll_name = user_collection(user_id)
-    store = Milvus(
-        embedding_function=OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY),
-        collection_name=coll_name,
-        connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
-        drop_old=False,
-        auto_id=True,
-    )
-    expr = f'user_id=="{user_id}" && source=="{source}"'
-    store.delete(expr=expr)
+    
+    # Check if collection exists
+    if not utility.has_collection(coll_name, using="default"):
+        logger.info(f"Collection {coll_name} does not exist, skipping deletion")
+        return
+    
+    # Get the collection to query for primary keys
+    coll = Collection(coll_name, using="default")
+    
+    try:
+        # First, query to get the primary keys of vectors to delete
+        # Use string literals for proper escaping in Milvus query
+        user_id_escaped = str(user_id).replace('"', '\\"')
+        source_escaped = source.replace('"', '\\"')
+        expr = f'user_id == "{user_id_escaped}" && source == "{source_escaped}"'
+        
+        logger.info(f"Querying Milvus collection {coll_name} with expression: {expr}")
+        
+        # Query to get primary keys
+        results = coll.query(
+            expr=expr,
+            output_fields=["pk"],
+            consistency_level="Strong"
+        )
+        
+        if not results:
+            logger.info(f"No vectors found for user_id={user_id}, source={source}")
+            return
+        
+        # Extract primary keys
+        pks = [result["pk"] for result in results]
+        logger.info(f"Found {len(pks)} vectors to delete for source: {source}")
+        
+        # Delete by primary keys using simple pk-based expression
+        if pks:
+            # Create pk-based deletion expression
+            pk_list = ",".join(str(pk) for pk in pks)
+            pk_expr = f"pk in [{pk_list}]"
+            
+            logger.info(f"Deleting vectors with expression: {pk_expr}")
+            coll.delete(expr=pk_expr)
+            
+            # Flush to ensure deletion is persisted
+            coll.flush()
+            logger.info(f"Successfully deleted {len(pks)} vectors for source: {source}")
+        
+    except Exception as e:
+        logger.error(f"Error deleting vectors for user_id={user_id}, source={source}: {str(e)}")
+        # Re-raise to let the caller handle the error appropriately
+        raise
 
 
 from typing import List, Optional
