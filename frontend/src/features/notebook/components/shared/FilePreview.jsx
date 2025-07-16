@@ -849,42 +849,40 @@ const FilePreview = ({ source, isOpen, onClose, notebookId, useMinIOUrls = false
               variant="default"
               onClick={async () => {
                 try {
-                  console.log('Downloading PDF with URL:', state.preview.pdfUrl);
+                  console.log('Opening PDF with URL:', state.preview.pdfUrl);
                   
-                  // Download PDF similar to video downloads
+                  // Open PDF in browser instead of downloading
                   const response = await fetch(state.preview.pdfUrl, {
                     credentials: 'include'
                   });
                   
                   if (!response.ok) {
-                    throw new Error(`Failed to download PDF: ${response.status}`);
+                    throw new Error(`Failed to load PDF: ${response.status}`);
                   }
                   
                   const blob = await response.blob();
-                  const url = window.URL.createObjectURL(blob);
-                  const link = document.createElement('a');
-                  link.href = url;
+                  // Create blob with explicit PDF MIME type
+                  const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+                  const url = window.URL.createObjectURL(pdfBlob);
                   
-                  // Use the title from preview or fallback to generic name
-                  const title = state.preview.title || 'document';
-                  const cleanTitle = title.replace(/\.[^/.]+$/, ''); // Remove any existing extension
-                  link.download = `${cleanTitle}.pdf`;
+                  // Open PDF in new tab/window
+                  window.open(url, '_blank');
                   
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                  window.URL.revokeObjectURL(url);
+                  // Clean up the blob URL after a short delay
+                  setTimeout(() => {
+                    window.URL.revokeObjectURL(url);
+                  }, 1000);
                   
                 } catch (error) {
-                  console.error('PDF download failed:', error);
-                  // Fallback to opening in new tab
+                  console.error('PDF open failed:', error);
+                  // Fallback to opening URL directly
                   window.open(state.preview.pdfUrl, '_blank');
                 }
               }}
               className="text-xs font-medium"
             >
               <ExternalLink className="h-3 w-3 mr-1.5" />
-              Download
+              Open PDF
             </Button>
           </div>
         </div>
@@ -918,42 +916,40 @@ const FilePreview = ({ source, isOpen, onClose, notebookId, useMinIOUrls = false
             variant="default"
             onClick={async () => {
               try {
-                console.log('Downloading PDF with URL:', state.preview.pdfUrl);
+                console.log('Opening PDF with URL:', state.preview.pdfUrl);
                 
-                // Download PDF similar to video downloads
+                // Open PDF in browser instead of downloading
                 const response = await fetch(state.preview.pdfUrl, {
                   credentials: 'include'
                 });
                 
                 if (!response.ok) {
-                  throw new Error(`Failed to download PDF: ${response.status}`);
+                  throw new Error(`Failed to load PDF: ${response.status}`);
                 }
                 
                 const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
+                // Create blob with explicit PDF MIME type
+                const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+                const url = window.URL.createObjectURL(pdfBlob);
                 
-                // Use the title from preview or fallback to generic name
-                const title = state.preview.title || 'document';
-                const cleanTitle = title.replace(/\.[^/.]+$/, ''); // Remove any existing extension
-                link.download = `${cleanTitle}.pdf`;
+                // Open PDF in new tab/window
+                window.open(url, '_blank');
                 
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                window.URL.revokeObjectURL(url);
+                // Clean up the blob URL after a short delay
+                setTimeout(() => {
+                  window.URL.revokeObjectURL(url);
+                }, 1000);
                 
               } catch (error) {
-                console.error('PDF download failed:', error);
-                // Fallback to opening in new tab
+                console.error('PDF open failed:', error);
+                // Fallback to opening URL directly
                 window.open(state.preview.pdfUrl, '_blank');
               }
             }}
             className="text-xs"
           >
             <ExternalLink className="h-3 w-3 mr-1" />
-            Download
+            Open PDF
           </Button>
         </div>
         
