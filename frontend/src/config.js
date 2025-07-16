@@ -6,7 +6,7 @@ const getConfig = () => {
   // In a browser environment, these would typically be set at build time
   // For development, we use defaults
   const HOST_IP = import.meta.env.VITE_HOST_IP || 'localhost';
-  const BACKEND_PORT = import.meta.env.VITE_BACKEND_PORT || '8000';
+  const BACKEND_PORT = import.meta.env.VITE_BACKEND_PORT || '8001';
   
   return {
     HOST_IP,

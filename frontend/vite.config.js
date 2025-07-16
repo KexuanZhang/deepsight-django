@@ -188,7 +188,7 @@ export default defineConfig({
 		proxy: {
 		// any request that starts with /api will be forwarded
 		'/api': {
-			        target: process.env.VITE_BACKEND_URL || 'http://localhost:8000',
+			        target: process.env.VITE_BACKEND_URL || 'http://localhost:8001',
 			changeOrigin: true,
 			secure: false,
 			},

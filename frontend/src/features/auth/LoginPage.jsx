@@ -33,6 +33,7 @@ export default function LoginPage() {
   const handleLogin = async (e) => {
     e.preventDefault();
     dispatch(loginUser({ username, password }));
+    console.log("Logging");
   };
 
   useEffect(() => {
