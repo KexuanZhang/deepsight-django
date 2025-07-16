@@ -1797,6 +1797,24 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
             import os
             from .models import KnowledgeBaseImage
             
+            # First, delete any existing images for this knowledge base item to avoid duplicates
+            existing_images = KnowledgeBaseImage.objects.filter(knowledge_base_item=kb_item)
+            if existing_images.exists():
+                logger.info(f"Deleting {existing_images.count()} existing images for kb_item {kb_item.id}")
+                
+                # Delete files from MinIO first
+                for img in existing_images:
+                    if img.minio_object_key:
+                        try:
+                            storage_adapter.storage_service.minio_backend.delete_file(img.minio_object_key)
+                            logger.info(f"Deleted existing image from MinIO: {img.minio_object_key}")
+                        except Exception as e:
+                            logger.warning(f"Failed to delete existing image from MinIO: {e}")
+                
+                # Delete database records
+                existing_images.delete()
+                logger.info(f"Deleted existing image records for kb_item {kb_item.id}")
+            
             # Find all image files in the local directory
             image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.gif', '*.svg']
             image_files = []
