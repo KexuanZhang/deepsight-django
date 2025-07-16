@@ -29,12 +29,14 @@ try:
     from .content_index import ContentIndexingService
     from .file_validator import FileValidator
     from .config import config as settings
+    from .image_processing import clean_title
 except ImportError:
     # Fallback classes to prevent import errors
     FileStorageService = None
     ContentIndexingService = None
     FileValidator = None
     settings = None
+    clean_title = None
 
 # Marker imports with lazy loading
 marker_imports = {}
@@ -306,8 +308,8 @@ class UploadProcessor:
             
             # Clean the title for filename
             base_title = Path(filename).stem  # Remove file extension
-            cleaned_title = self._clean_title(base_title)
-            suggested_filename = f"{cleaned_title}_transcript.md"
+            cleaned_title = clean_title(base_title)
+            suggested_filename = f"{cleaned_title}.md"
             
             # Build the transcript
             transcript_lines = []
@@ -444,10 +446,18 @@ class UploadProcessor:
             # Get file size
             file_size = os.path.getsize(temp_path)
 
-            # Prepare file metadata with original file information
+            # Clean the original filename using clean_title function
+            file_path = Path(file.name)
+            base_name = file_path.stem
+            extension = file_path.suffix
+            clean_base_name = clean_title(base_name)
+            clean_filename = f"{clean_base_name}{extension}"
+            
+            
+            # Prepare file metadata with cleaned file information
             file_metadata = {
-                "filename": file.name,
-                "original_filename": file.name,  # Ensure original filename is preserved
+                "filename": clean_filename,
+                "original_filename": clean_filename,  # Store cleaned filename
                 "file_extension": validation["file_extension"],
                 "content_type": validation["content_type"],
                 "file_size": file_size,
@@ -632,7 +642,7 @@ class UploadProcessor:
             original_filename = file_metadata.get('filename', 'document')
             # Remove file extension
             base_title = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
-            clean_pdf_title = self._clean_title(base_title)
+            clean_pdf_title = clean_title(base_title)
 
             # Convert the PDF to markdown using marker (this generates images directly)
             rendered = pdf_processor(str(file_path))
@@ -704,7 +714,7 @@ class UploadProcessor:
 
             result = {
                 'content': summary_content,
-                'content_filename': f"{clean_pdf_title}_parsed.md",  # Prevent content.md creation
+                'content_filename': f"{clean_pdf_title}.md", 
                 'metadata': pdf_metadata,
                 'features_available': ['advanced_pdf_extraction', 'figure_extraction', 'table_extraction', 'formula_extraction', 'layout_analysis'],
                 'processing_time': f'{duration:.2f}s',
@@ -841,8 +851,8 @@ class UploadProcessor:
 
             # Always generate a transcript filename based on the video name
             base_title = Path(file_metadata['filename']).stem
-            cleaned_title = self._clean_title(base_title)
-            transcript_filename = f"{cleaned_title}_transcript.md"
+            cleaned_title = clean_title(base_title)
+            transcript_filename = f"{cleaned_title}.md"
 
             if result.returncode == 0 and self.whisper_model and os.path.exists(audio_path):
                 try:
@@ -1067,15 +1077,6 @@ class UploadProcessor:
         except Exception:
             return {'error': 'Could not extract video metadata'}
     
-    def _clean_title(self, title: str) -> str:
-        """Clean the title by replacing non-alphanumeric characters with underscores."""
-        # Replace all non-alphanumeric characters (except for underscores) with underscores
-        cleaned = re.sub(r'[^\w\d]', '_', title)
-        # Replace consecutive underscores with a single underscore
-        cleaned = re.sub(r'_+', '_', cleaned)
-        # Remove leading/trailing underscores
-        cleaned = cleaned.strip('_')
-        return cleaned 
 
     def _post_process_marker_extraction(self, file_id: str, marker_extraction_result: Dict[str, Any]):
         """
@@ -1126,7 +1127,7 @@ class UploadProcessor:
                         if file.endswith(('.md', '.json')):
                             # Content files go to 'kb' prefix
                             if file == "markdown.md":
-                                target_filename = f"{clean_title}_parsed.md"
+                                target_filename = f"{clean_title}.md"
                             else:
                                 target_filename = file
                             

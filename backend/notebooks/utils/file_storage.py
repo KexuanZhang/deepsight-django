@@ -16,6 +16,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 
 from .minio_backend import get_minio_backend
+from .image_processing import clean_title
 
 
 class FileStorageService:
@@ -45,91 +46,6 @@ class FileStorageService:
 
         getattr(self.logger, level)(message)
 
-    def _clean_filename(self, filename: str, max_length: int = 100) -> str:
-        """
-        Clean filename according to FilenameCleanup rules for cross-platform compatibility.
-
-        Rules:
-        - ASCII letters (A–Z, a–z), digits (0–9), hyphens (-), underscores (_), single period (.)
-        - No null character, directory separators, Windows-forbidden symbols, whitespace
-        - No names starting/ending with hyphens, underscores, periods, or whitespace
-        - Length constraints: filename ≤ 255 characters; we use max_length for practical limits
-        """
-        if not filename:
-            return "unnamed_file"
-
-        # Split filename and extension
-        name_parts = filename.rsplit(".", 1)
-        basename = name_parts[0] if name_parts else filename
-        extension = name_parts[1] if len(name_parts) > 1 else ""
-
-        # Clean basename: replace invalid characters with underscores
-        # Keep only ASCII letters, digits, hyphens, underscores
-        basename_cleaned = re.sub(r"[^A-Za-z0-9_-]", "_", basename)
-
-        # Remove leading/trailing hyphens, underscores, periods
-        basename_cleaned = re.sub(r"^[_.-]+|[_.-]+$", "", basename_cleaned)
-
-        # Ensure it doesn't start or end with invalid characters
-        if not basename_cleaned or not re.match(r"^[A-Za-z0-9]", basename_cleaned):
-            basename_cleaned = "file_" + basename_cleaned
-
-        # Ensure it doesn't end with invalid characters
-        if not re.match(r".*[A-Za-z0-9]$", basename_cleaned):
-            basename_cleaned = basename_cleaned + "_file"
-
-        # Clean extension similarly
-        if extension:
-            extension_cleaned = re.sub(r"[^A-Za-z0-9_-]", "", extension)
-            if not extension_cleaned:
-                extension_cleaned = "bin"  # fallback for binary files
-        else:
-            extension_cleaned = ""
-
-        # Check against Windows reserved names
-        windows_reserved = {
-            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", 
-            "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", 
-            "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-        }
-
-        if basename_cleaned.upper() in windows_reserved:
-            basename_cleaned = f"file_{basename_cleaned}"
-
-        # Construct final filename
-        if extension_cleaned:
-            final_filename = f"{basename_cleaned}.{extension_cleaned}"
-        else:
-            final_filename = basename_cleaned
-
-        # Enforce length constraint
-        if len(final_filename) > max_length:
-            # Truncate basename while preserving extension
-            available_length = (
-                max_length - len(f".{extension_cleaned}")
-                if extension_cleaned
-                else max_length
-            )
-            basename_truncated = basename_cleaned[: max(1, available_length)]
-            final_filename = (
-                f"{basename_truncated}.{extension_cleaned}"
-                if extension_cleaned
-                else basename_truncated
-            )
-
-        # Final validation with regex (simplified version of the full regex)
-        if not re.match(
-            r"^[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)?$", final_filename
-        ):
-            # Fallback to a safe name
-            timestamp = int(datetime.now().timestamp())
-            final_filename = (
-                f"file_{timestamp}.{extension_cleaned}"
-                if extension_cleaned
-                else f"file_{timestamp}"
-            )
-
-        return final_filename
 
     def _calculate_content_hash(self, content: str, metadata: Dict[str, Any] = None) -> str:
         """
@@ -303,10 +219,17 @@ class FileStorageService:
             with open(original_file_path, "rb") as f:
                 file_content = f.read()
 
+            # Clean the original filename using clean_title function
+            file_path = Path(original_filename)
+            base_name = file_path.stem
+            extension = file_path.suffix
+            clean_base_name = clean_title(base_name)
+            clean_filename = f"{clean_base_name}{extension}"
+
             # Store in MinIO with 'kb' prefix using file ID structure
             object_key = self.minio_backend.save_file_with_auto_key(
                 content=file_content,
-                filename=original_filename,
+                filename=clean_filename,
                 prefix="kb",
                 metadata={
                     'kb_item_id': str(kb_item.id),
