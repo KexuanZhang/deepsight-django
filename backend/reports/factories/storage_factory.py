@@ -243,9 +243,7 @@ class MinIOFileStorage(FileStorageInterface):
         try:
             # Use the provided parameters to construct MinIO path
             notebook_part = notebook_id or 'standalone'
-            logger.info(f"Storing files to MinIO: user_id={user_id}, notebook_id={notebook_part}, report_id={report_id}")
-            logger.info(f"Files to store: {source_files}")
-            
+
             # Process files
             for file_path in source_files:
                 try:

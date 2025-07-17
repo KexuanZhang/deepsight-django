@@ -246,7 +246,6 @@ class JobService:
             if "report_content" in result and result["report_content"]:
                 # Use the processed content from the report generator
                 report.result_content = result["report_content"]
-                logger.info("Stored processed report content from result data")
 
             # Handle file storage - upload generated files to MinIO if using MinIO storage
             generated_files = result.get("generated_files", [])
@@ -267,7 +266,6 @@ class JobService:
                     
                     # Update generated_files with MinIO keys
                     generated_files = minio_keys
-                    logger.info(f"Uploaded {len(minio_keys)} files to MinIO")
                     
                     # Clean up the temporary directory
                     import shutil
@@ -328,8 +326,7 @@ class JobService:
                     "generated_files": generated_files[:10],  # Store first 10 files to avoid huge metadata
                     "main_report_object_key": report.main_report_object_key
                 }
-                logger.info(f"Stored {len(generated_files)} generated files in metadata")
-            
+               
             # Fallback: Save processed report content directly to MinIO if no generated files
             elif "report_content" in result and result["report_content"]:
                 try:
@@ -376,7 +373,6 @@ class JobService:
             # Update topic with improved/generated topic if available
             if "generated_topic" in result and result["generated_topic"] and result["generated_topic"] != report.topic:
                 report.topic = result["generated_topic"]
-                logger.info(f"Updated topic from STORM generation: {result['generated_topic']}")
             
             # Store additional metadata (use MinIO keys if available, otherwise use original paths)
             metadata = {

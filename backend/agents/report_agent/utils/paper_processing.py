@@ -24,25 +24,32 @@ def _get_image_url_from_db(image_id: str) -> str:
     try:
         # Import here to avoid circular imports
         import django
-        from django.conf import settings
+        import os
+        from django.conf import settings as django_settings
         
         # Initialize Django if not already done
-        if not settings.configured:
-            import os
+        if not django_settings.configured:
             os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
             django.setup()
         
         from notebooks.models import KnowledgeBaseImage
         
         try:
-            image = KnowledgeBaseImage.objects.get(id=int(image_id))
-            return image.get_image_url()
-        except (KnowledgeBaseImage.DoesNotExist, ValueError):
+            image = KnowledgeBaseImage.objects.get(id=image_id)
+            url = image.get_image_url()
+            logging.info(f"Successfully retrieved image URL for id {image_id}")
+            return url
+        except KnowledgeBaseImage.DoesNotExist:
             logging.warning(f"Image with id {image_id} not found in database")
+            return None
+        except ValueError as ve:
+            logging.warning(f"Invalid image ID format {image_id}: {ve}")
             return None
             
     except Exception as e:
         logging.error(f"Error getting image URL for id {image_id}: {e}")
+        import traceback
+        logging.error(f"Traceback: {traceback.format_exc()}")
         return None
 
 
