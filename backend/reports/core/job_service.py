@@ -245,7 +245,28 @@ class JobService:
             # Store the main content (prefer processed content from result data)
             if "report_content" in result and result["report_content"]:
                 # Use the processed content from the report generator
-                report.result_content = result["report_content"]
+                content = result["report_content"]
+                
+                # Process images if include_image is enabled
+                if report.include_image:
+                    try:
+                        from .report_image_service import ReportImageService
+                        image_service = ReportImageService()
+                        
+                        # Process report images - extract figure IDs, copy images, and update content
+                        report_images, updated_content = image_service.process_report_images(report, content)
+                        
+                        if report_images:
+                            logger.info(f"Processed {len(report_images)} images for report {report.id}")
+                            content = updated_content
+                        else:
+                            logger.info(f"No images processed for report {report.id}")
+                            
+                    except Exception as e:
+                        logger.error(f"Error processing report images: {e}")
+                        # Continue without failing the report generation
+                
+                report.result_content = content
 
             # Handle file storage - upload generated files to MinIO if using MinIO storage
             generated_files = result.get("generated_files", [])

@@ -272,6 +272,11 @@ def fix_image_paths(
         logger.warning("No user ID provided, skipping image path fixing")
         return content
     
+    # Check if content already has ReportImage-processed images (with data-figure-id)
+    if 'data-figure-id=' in content:
+        logger.info("Content already has ReportImage-processed images, skipping legacy image path fixing")
+        return content
+    
     # Pattern to match img tags with problematic src paths
     # Matches images with underscores and common extensions (legacy filename-based references)
     # Skip images that have data-figure-id attribute (already processed by insert_figure_images)
