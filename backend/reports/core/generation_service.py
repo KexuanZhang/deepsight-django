@@ -90,7 +90,7 @@ class GenerationService:
             config_dict.update({
                 'output_dir': output_dir,
                 'old_outline': report.old_outline,
-                'report_id': report.id,
+                'report_id': str(report.id),  # Convert UUID to string for JSON serialization
                 'figure_data': figure_data,  # Add figure data to config
                 **content_data  # Add content data directly (no file paths)
             })

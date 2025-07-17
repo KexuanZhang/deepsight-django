@@ -121,7 +121,7 @@ class JobService:
             job_metadata = {
                 "job_id": report.job_id,
                 "report_id": str(report.id),  # Convert UUID to string for JSON serialization
-                "user_id": report.user.pk,
+                "user_id": str(report.user.pk),  # Convert UUID to string for JSON serialization
                 "status": report.status,
                 "progress": report.progress,
                 "created_at": report.created_at.isoformat(),
@@ -171,7 +171,7 @@ class JobService:
                 job_data = {
                     "job_id": job_id,
                     "report_id": str(report.id),  # Convert UUID to string for JSON serialization
-                    "user_id": report.user.pk,
+                    "user_id": str(report.user.pk),  # Convert UUID to string for JSON serialization
                     "status": report.status,
                     "progress": report.progress,
                     "created_at": report.created_at.isoformat(),
@@ -525,7 +525,7 @@ class JobService:
                 jobs.append({
                     "job_id": report.job_id,
                     "report_id": str(report.id),  # Convert UUID to string for JSON serialization
-                    "user_id": report.user.pk,
+                    "user_id": str(report.user.pk),  # Convert UUID to string for JSON serialization
                     "status": report.status,
                     "progress": report.progress,
                     "created_at": report.created_at.isoformat(),
