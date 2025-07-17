@@ -97,8 +97,20 @@ def remove_figure_placeholders(content, remove_figure_placeholders=True):
     if not remove_figure_placeholders:
         return content
 
+    # UUID pattern: 8-4-4-4-12 hexadecimal characters
+    uuid_pattern = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    
     # Targeted patterns that include surrounding whitespace/newlines for better cleanup
     patterns = [
+        # UUID placeholders that are on their own line (with optional surrounding whitespace)
+        (rf"\n[ \t]*<\s*{uuid_pattern}\s*>[ \t]*\n", "\n"),  # \n<12f86924-df70-48a7-93e9-29f64855a4da>\n -> \n
+        # UUID placeholders at the start of content
+        (rf"^[ \t]*<\s*{uuid_pattern}\s*>[ \t]*\n", ""),  # ^<12f86924-df70-48a7-93e9-29f64855a4da>\n -> (empty)
+        # UUID placeholders at the end of content
+        (rf"\n[ \t]*<\s*{uuid_pattern}\s*>[ \t]*$", ""),  # \n<12f86924-df70-48a7-93e9-29f64855a4da>$ -> (empty)
+        # Any remaining inline UUID placeholders
+        (rf"<\s*{uuid_pattern}\s*>", ""),  # <12f86924-df70-48a7-93e9-29f64855a4da> -> (empty)
+        
         # Figure placeholders that are on their own line (with optional surrounding whitespace)
         (r"\n[ \t]*<\s*[Ff]igure\s*\d+\s*[^>]*>[ \t]*\n", "\n"),  # \n<Figure 9>\n -> \n
         (r"\n[ \t]*<\s*图\s*\d+\s*[^>]*>[ \t]*\n", "\n"),  # \n<图 9>\n -> \n
