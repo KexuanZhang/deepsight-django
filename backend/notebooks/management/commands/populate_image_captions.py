@@ -55,7 +55,7 @@ class Command(BaseCommand):
         if not options['force']:
             query = query.filter(image_caption__in=['', None])
         
-        images_to_process = query.order_by('knowledge_base_item_id', 'figure_name')
+        images_to_process = query.order_by('knowledge_base_item_id', 'created_at')
         
         self.stdout.write(f"Found {images_to_process.count()} images to process")
         
@@ -96,12 +96,12 @@ class Command(BaseCommand):
                     else:
                         image.image_caption = caption
                         image.save(update_fields=['image_caption', 'updated_at'])
-                        self.stdout.write(f"Updated image {image.id} ({image.figure_name})")
+                        self.stdout.write(f"Updated image {image.id}")
                     
                     updated_count += 1
                 else:
                     self.stdout.write(
-                        self.style.WARNING(f"No caption found for image {image.id} ({image.figure_name})")
+                        self.style.WARNING(f"No caption found for image {image.id}")
                     )
                 
             except Exception as e:
@@ -172,11 +172,7 @@ class Command(BaseCommand):
     def _find_caption_for_image(self, image, figure_data):
         """Find matching caption for an image from figure data."""
         try:
-            # Try to match by figure name first
-            if image.figure_name:
-                for figure in figure_data:
-                    if figure.get('figure_name') == image.figure_name:
-                        return figure.get('caption', '')
+            # Try to match by image name from object key first
             
             # Try to match by image name from object key
             if image.minio_object_key:
@@ -189,12 +185,19 @@ class Command(BaseCommand):
                         if figure_basename == image_basename:
                             return figure.get('caption', '')
             
-            # Try to match by figure_name/figure number  
-            if image.figure_name:
-                for figure in figure_data:
-                    figure_name = figure.get('figure_name', '')
-                    if image.figure_name in figure_name or figure_name in image.figure_name:
-                        return figure.get('caption', '')
+            # Fallback: match by index in the figure data list
+            # Use the creation order as an approximation
+            if figure_data:
+                images_in_kb = KnowledgeBaseImage.objects.filter(
+                    knowledge_base_item=image.knowledge_base_item
+                ).order_by('created_at')
+                
+                try:
+                    image_index = list(images_in_kb).index(image)
+                    if image_index < len(figure_data):
+                        return figure_data[image_index].get('caption', '')
+                except (ValueError, IndexError):
+                    pass
             
             return None
             

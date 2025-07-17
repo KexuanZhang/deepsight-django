@@ -374,20 +374,19 @@ class JobService:
             if "generated_topic" in result and result["generated_topic"] and result["generated_topic"] != report.topic:
                 report.topic = result["generated_topic"]
             
-            # Store additional metadata (use MinIO keys if available, otherwise use original paths)
-            metadata = {
+            # Store additional metadata in file_metadata (use MinIO keys if available, otherwise use original paths)
+            file_metadata = report.file_metadata.copy() if report.file_metadata else {}
+            file_metadata.update({
                 "output_directory": result.get("output_directory", ""),
-                "generated_files": generated_files,  # Use MinIO keys if uploaded, otherwise original paths
-                "processing_logs": result.get("processing_logs", []),
                 "created_at": result.get("created_at", datetime.now(timezone.utc).isoformat()),
-            }
+            })
             
             # Add main report info to metadata if saved
             if report.main_report_object_key:
-                metadata["main_report_object_key"] = report.main_report_object_key
-                logger.info(f"Stored main report object key in metadata: {report.main_report_object_key}")
+                file_metadata["main_report_object_key"] = report.main_report_object_key
+                logger.info(f"Stored main report object key in file_metadata: {report.main_report_object_key}")
             
-            report.result_metadata = metadata
+            report.file_metadata = file_metadata
             
             # Store generated files (use MinIO keys if available, otherwise use original paths)
             if generated_files:
@@ -396,8 +395,8 @@ class JobService:
             if result.get("processing_logs"):
                 report.processing_logs = result["processing_logs"]
             
-            # Save all changes to database including result_content, result_metadata, article_title, topic, and MinIO fields
-            report.save(update_fields=["result_content", "result_metadata", "article_title", "topic", "generated_files", "processing_logs", "main_report_object_key", "file_metadata", "updated_at"])
+            # Save all changes to database including result_content, file_metadata, article_title, topic, and MinIO fields
+            report.save(update_fields=["result_content", "file_metadata", "article_title", "topic", "generated_files", "processing_logs", "main_report_object_key", "updated_at"])
             
             # Update status after saving content and metadata
             report.update_status(status, progress="Report generation completed successfully")
@@ -564,14 +563,32 @@ class JobService:
     
     def _format_result(self, report: Report) -> Optional[Dict[str, Any]]:
         """Format the result data for API responses"""
-        if report.status != Report.STATUS_COMPLETED or not report.result_metadata:
+        if report.status != Report.STATUS_COMPLETED:
             return None
         
-        result = report.result_metadata.copy()
+        result = {}
+        
+        # Add report content
         if report.result_content:
             result["report_content"] = report.result_content
+            
+        # Add file metadata
+        if report.file_metadata:
+            result.update(report.file_metadata)
+            
+        # Add generated files
+        if report.generated_files:
+            result["generated_files"] = report.generated_files
+            
+        # Add processing logs
+        if report.processing_logs:
+            result["processing_logs"] = report.processing_logs
+            
+        # Add main report object key
+        if report.main_report_object_key:
+            result["main_report_object_key"] = report.main_report_object_key
         
-        return result
+        return result if result else None
     
     def _check_worker_crash(self, report: Report) -> Dict[str, Any]:
         """Check if a Celery worker has crashed for a running job"""

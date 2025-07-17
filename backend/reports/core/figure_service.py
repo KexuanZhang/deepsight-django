@@ -146,7 +146,7 @@ class FigureDataService:
             # Get all images for this knowledge base item
             images = KnowledgeBaseImage.objects.filter(
                 knowledge_base_item_id=kb_item_id
-            ).order_by('figure_name')
+            ).order_by('created_at')
             
             figure_data = []
             for image in images:
@@ -158,7 +158,7 @@ class FigureDataService:
                     'file_size': image.file_size,
                     'minio_object_key': image.minio_object_key,
                     'kb_item_id': kb_item_id,
-                    'original_figure_name': image.figure_name  # Keep original for reference
+                    # Remove original_figure_name as field no longer exists
                 })
                 figure_data.append(figure_dict)
                 
@@ -326,7 +326,7 @@ class FigureDataService:
         
         for i, figure in enumerate(figure_data):
             # Validate required fields
-            required_fields = ['image_path', 'figure_name', 'caption']
+            required_fields = ['image_path', 'caption']
             if not all(field in figure for field in required_fields):
                 logger.warning(f"Figure {i} missing required fields: {required_fields}, skipping")
                 continue
@@ -340,19 +340,11 @@ class FigureDataService:
             
             cleaned_figure = {
                 'image_path': image_path,
-                'figure_name': figure['figure_name'],
                 'caption': figure['caption']
             }
             cleaned_data.append(cleaned_figure)
         
         return cleaned_data
-    
-    @staticmethod
-    def _renumber_figures(figures: List[Dict]) -> List[Dict]:
-        """Renumber all figures as Figure 1, Figure 2, etc."""
-        for i, figure in enumerate(figures, 1):
-            figure['figure_name'] = f"Figure {i}"
-        return figures
     
     @staticmethod
     def _create_figure_data_from_images(user_id: int, file_id: str) -> List[Dict]:

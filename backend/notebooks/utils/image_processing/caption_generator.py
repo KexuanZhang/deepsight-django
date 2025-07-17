@@ -108,17 +108,15 @@ def generate_captions_for_directory(
         for img in tqdm(images, desc="Generating captions", unit="image"):
             image_path = os.path.join(images_dir, img)
             caption_text = generate_caption_for_image(image_path, prompt, api_key)
-            figure_name = os.path.splitext(img)[0]
             
             results.append({
                 "image_path": image_path,
-                "figure_name": figure_name,
                 "caption": caption_text
             })
         
         # Sort results by image number (extracted from filename)
         try:
-            results.sort(key=lambda x: int(re.search(r'(\d+)', x['figure_name']).group(0)))
+            results.sort(key=lambda x: int(re.search(r'(\d+)', os.path.basename(x['image_path'])).group(0)))
         except (AttributeError, ValueError):
             # If sorting fails, keep original order
             logger.warning("Could not sort results by image number")

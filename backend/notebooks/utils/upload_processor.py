@@ -1186,52 +1186,12 @@ class UploadProcessor:
                             from ..models import KnowledgeBaseImage
                             import uuid
                             
-                            # Extract figure names from markdown content if available
-                            figure_names_dict = {}
-                            if markdown_content:
-                                # Create a temporary file to use with extract_figure_data
-                                import tempfile
-                                try:
-                                    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as temp_file:
-                                        temp_file.write(markdown_content)
-                                        temp_file_path = temp_file.name
-                                    
-                                    # Use the existing extract_figure_data function
-                                    from agents.report_agent.utils.paper_processing import extract_figure_data
-                                    figures_data = extract_figure_data(temp_file_path)
-                                    
-                                    # Convert to figure_names_dict: figure_number -> figure_name
-                                    for fig_data in figures_data:
-                                        figure_name = fig_data.get('figure_name', '')
-                                        # Extract number from figure_name
-                                        import re
-                                        match = re.search(r'(\d+)', figure_name)
-                                        if match:
-                                            figure_num = int(match.group(1))
-                                            figure_names_dict[figure_num] = figure_name
-                                    
-                                    # Clean up temp file
-                                    os.unlink(temp_file_path)
-                                except Exception as e:
-                                    self.log_operation("figure_extraction_error", f"Error extracting figure names: {e}", "warning")
-                            
-                            # Calculate figure sequence based on existing images for this kb_item
-                            existing_count = KnowledgeBaseImage.objects.filter(
-                                knowledge_base_item=kb_item
-                            ).count()
-                            figure_sequence = existing_count + 1
-                            
-                            # Get figure name (extracted or auto-generated)
-                            if figure_sequence in figure_names_dict:
-                                figure_name = figure_names_dict[figure_sequence]
-                            else:
-                                figure_name = f"Figure {figure_sequence}"
+                            # Process images without figure names
                             
                             # Create a temporary record to get the ID
                             kb_image = KnowledgeBaseImage(
                                 knowledge_base_item=kb_item,
                                 image_caption="",  # Will be filled later if caption data is available
-                                figure_name=figure_name,
                                 content_type=content_type,
                                 file_size=len(file_content),
                                 image_metadata={

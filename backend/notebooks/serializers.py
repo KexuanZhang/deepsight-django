@@ -199,7 +199,6 @@ class KnowledgeBaseImageSerializer(serializers.ModelSerializer):
             "id",
             "knowledge_base_item",
             "image_caption",
-            "figure_name",
             "minio_object_key",
             "image_url",
             "content_type",
@@ -234,26 +233,9 @@ class KnowledgeBaseImageCreateUpdateSerializer(serializers.ModelSerializer):
         fields = [
             "knowledge_base_item",
             "image_caption",
-            "figure_name",
         ]
     
-    def validate_figure_name(self, value):
-        """Ensure figure_name is unique within the knowledge base item"""
-        knowledge_base_item = self.initial_data.get('knowledge_base_item')
-        if knowledge_base_item:
-            existing = KnowledgeBaseImage.objects.filter(
-                knowledge_base_item=knowledge_base_item,
-                figure_name=value
-            )
-            # Exclude current instance if updating
-            if self.instance:
-                existing = existing.exclude(id=self.instance.id)
-            
-            if existing.exists():
-                raise serializers.ValidationError(
-                    f"Figure name '{value}' already exists for this knowledge base item"
-                )
-        return value
+    # validate_figure_name method removed as field no longer exists
 
 
 class KnowledgeItemSerializer(serializers.ModelSerializer):

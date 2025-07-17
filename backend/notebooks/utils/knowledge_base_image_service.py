@@ -155,9 +155,8 @@ class KnowledgeBaseImageService:
             
             with transaction.atomic():
                 for figure in figure_data:
-                    # Try to match by image file name or figure name
+                    # Try to match by image file name
                     image_file = figure.get('image_file', '')
-                    figure_name = figure.get('figure_name', '')
                     caption = figure.get('caption', '')
                     
                     if not image_file and 'image_path' in figure:
@@ -172,17 +171,9 @@ class KnowledgeBaseImageService:
                             minio_object_key__icontains=image_file
                         ).first()
                     
-                    if not matching_image and figure_name:
-                        matching_image = KnowledgeBaseImage.objects.filter(
-                            knowledge_base_item=kb_item,
-                            figure_name=figure_name
-                        ).first()
-                    
                     if matching_image:
                         # Update existing image
                         matching_image.image_caption = caption
-                        if figure_name and not matching_image.figure_name:
-                            matching_image.figure_name = figure_name
                         
                         # Update metadata
                         matching_image.image_metadata.update({

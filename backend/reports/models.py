@@ -183,9 +183,6 @@ class Report(models.Model):
 
     # Results and files
     result_content = models.TextField(blank=True, help_text="Generated report content")
-    result_metadata = models.JSONField(
-        default=dict, blank=True, help_text="Additional result metadata"
-    )
     error_message = models.TextField(blank=True)
 
     # MinIO-native storage (replaces Django FileField)

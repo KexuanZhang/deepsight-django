@@ -29,7 +29,6 @@ class ReportAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
         "result_content",
-        "result_metadata",
         "generated_files",
         "processing_logs",
         "main_report_object_key",
@@ -121,7 +120,6 @@ class ReportAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "result_content",
-                    "result_metadata",
                     "main_report_object_key",
                     "generated_files",
                     "processing_logs",

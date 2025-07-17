@@ -41,7 +41,6 @@ class ReportSerializer(serializers.ModelSerializer):
             "status",
             "progress",
             "result_content",
-            "result_metadata",
             "error_message",
             "main_report_object_key",
             "figure_data_object_key",
@@ -255,7 +254,7 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
     figure_data = serializers.JSONField(
         required=False, 
         allow_null=True,
-        help_text="List of figure data dictionaries with image_path, figure_name, and caption"
+        help_text="List of figure data dictionaries with image_path and caption"
     )
 
     def validate(self, data):
@@ -282,7 +281,7 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
             if not isinstance(figure, dict):
                 raise serializers.ValidationError(f"Figure {i} must be a dictionary")
                 
-            required_fields = ['image_path', 'figure_name', 'caption']
+            required_fields = ['image_path', 'caption']
             missing_fields = [field for field in required_fields if field not in figure]
             if missing_fields:
                 raise serializers.ValidationError(
@@ -309,7 +308,6 @@ class ReportStatusSerializer(serializers.ModelSerializer):
             "status",
             "progress",
             "article_title",
-            "result_metadata",
             "error_message",
             "created_at",
             "updated_at",

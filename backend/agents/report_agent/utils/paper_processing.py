@@ -423,7 +423,7 @@ def extract_figure_data(file_path):
 
     Returns:
         list: A list of dictionaries, where each dictionary represents a figure
-              and contains 'image_path', 'figure_name', and 'caption'.
+              and contains 'image_path' and 'caption'.
               Returns an empty list if the file_path is empty, or a ValueError
               if the file cannot be read. Returns an empty list if no figures are found.
     """
@@ -479,8 +479,6 @@ def extract_figure_data(file_path):
             # Clean up markdown formatting in caption
             caption = re.sub(r'\*{2,}', '', caption)  # Remove ** markdown bold
             caption = caption.strip()
-            
-            figure_name = f"Figure {figure_number}"
 
             # Find the nearest preceding image
             preceding_images = [
@@ -497,17 +495,16 @@ def extract_figure_data(file_path):
                     figures.append(
                         {
                             "image_path": image_path,
-                            "figure_name": figure_name,
                             "caption": caption,
                         }
                     )
 
-    # Remove duplicates while preserving order (in case of multiple captions matching the same figure number)
+    # Remove duplicates while preserving order (based on image_path)
     unique_figures = []
     seen = set()
     for fig in figures:
-        if fig["figure_name"] not in seen:
-            seen.add(fig["figure_name"])
+        if fig["image_path"] not in seen:
+            seen.add(fig["image_path"])
             unique_figures.append(fig)
 
     return unique_figures

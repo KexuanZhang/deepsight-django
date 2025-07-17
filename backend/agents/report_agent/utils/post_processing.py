@@ -85,7 +85,7 @@ def remove_captions(content, remove_figure_captions=True):
 
 def remove_figure_placeholders(content, remove_figure_placeholders=True):
     """
-    Remove figure placeholders like <Figure 9>, <figure 9>, <图 9> from content and clean up resulting blank lines.
+    Remove figure placeholders like <uuid>, <Figure 9>, <figure 9>, <图 9> from content and clean up resulting blank lines.
 
     Args:
         content (str): The markdown content to process
@@ -262,7 +262,8 @@ def fix_image_paths(
     
     # Pattern to match img tags with problematic src paths
     # Matches images with underscores and common extensions (legacy filename-based references)
-    img_pattern = r'<img\s+src="([^"]*_[^"]*\.(?:jpeg|jpg|png|gif))"([^>]*)>'
+    # Skip images that have data-image-id attribute (already processed by insert_figure_images)
+    img_pattern = r'<img\s+src="([^"]*_[^"]*\.(?:jpeg|jpg|png|gif))"(?![^>]*data-image-id)([^>]*)>'
     
     try:
         # Import here to avoid circular imports
@@ -305,7 +306,7 @@ def fix_image_paths(
                     image_path = figure['image_path']
                     # Only accept MinIO URLs
                     if image_path.startswith('http') or 'localhost:9000' in image_path:
-                        filename = figure.get('figure_name', os.path.basename(image_path))
+                        filename = os.path.basename(image_path)
                         image_mapping[filename] = image_path
                     else:
                         logger.warning(f"Figure image not found or not a MinIO URL: {figure.get('image_path', 'No path')}")
