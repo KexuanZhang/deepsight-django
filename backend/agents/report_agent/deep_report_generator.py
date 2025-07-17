@@ -197,6 +197,7 @@ class ReportGenerationConfig:
     author_json: Optional[str] = None
     caption_files: Optional[List[str]] = None
     selected_files_paths: Optional[List[str]] = None  # For image path fixing
+    user_id: Optional[str] = None  # User ID for MinIO access
 
     # CSV processing options (for non-interactive API use)
     csv_session_code: Optional[str] = None
@@ -747,9 +748,11 @@ class DeepReportGenerator:
             runner = STORMWikiRunner(engine_args, lm_configs, rm)
             runner.author_json = config.author_json
 
-            # Pass selected_files_paths for image path fixing
+            # Pass selected_files_paths and user_id for image path fixing
             if config.selected_files_paths:
                 runner.selected_files_paths = config.selected_files_paths
+            if config.user_id:
+                runner.user_id = config.user_id
 
             # Process CSV metadata
             article_title, speakers, csv_text_input = self._process_csv_metadata(
@@ -866,13 +869,13 @@ class DeepReportGenerator:
                         # Apply image path fixing to ensure final Report content has correct paths
                         try:
                             from agents.report_agent.utils.post_processing import (
-                                fix_image_paths_advanced,
+                                fix_image_paths,
                             )
 
-                            content = fix_image_paths_advanced(
+                            content = fix_image_paths(
                                 content,
-                                config.selected_files_paths,
-                                report_output_dir=article_output_dir,
+                                knowledge_base_items=config.selected_files_paths,
+                                user_id=config.user_id,
                                 figure_data=config.figure_data if hasattr(config, 'figure_data') else None,
                             )
                         except Exception as e:

@@ -91,6 +91,7 @@ class GenerationService:
                 'output_dir': output_dir,
                 'old_outline': report.old_outline,
                 'report_id': str(report.id),  # Convert UUID to string for JSON serialization
+                'user_id': str(report.user.pk),  # Add user ID for MinIO access
                 'figure_data': figure_data,  # Add figure data to config
                 **content_data  # Add content data directly (no file paths)
             })
