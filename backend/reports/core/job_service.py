@@ -292,22 +292,25 @@ class JobService:
             
             # Set main report object key from generated files (now MinIO keys)
             if generated_files:
-                # Find the main report file from generated files
-                main_report_key = None
-                for file_path in generated_files:
-                    # For MinIO storage, these are already MinIO keys
-                    # For local storage, these are file paths
-                    filename = os.path.basename(file_path)
-                    
-                    # Look for main report file patterns
-                    if filename.startswith(f"report_{report.id}") and filename.endswith(".md"):
-                        main_report_key = file_path
-                        break
-                    elif "polished" in filename.lower() and filename.endswith(".md"):
-                        main_report_key = file_path
-                        break
-                    elif filename.endswith(".md"):
-                        main_report_key = file_path  # Fallback to any .md file
+                # Use storage factory to identify main report file
+                try:
+                    from ..factories.storage_factory import StorageFactory
+                    storage = StorageFactory.create_storage('minio')
+                    main_report_key = storage.get_main_report_file(generated_files)
+                except Exception as e:
+                    logger.warning(f"Failed to identify main report file using storage factory: {e}")
+                    # Fallback to manual identification
+                    main_report_key = None
+                    for file_path in generated_files:
+                        filename = os.path.basename(file_path)
+                        if filename.startswith(f"report_{report.id}") and filename.endswith(".md"):
+                            main_report_key = file_path
+                            break
+                        elif "polished" in filename.lower() and filename.endswith(".md"):
+                            main_report_key = file_path
+                            break
+                        elif filename.endswith(".md"):
+                            main_report_key = file_path  # Fallback to any .md file
                 
                 if main_report_key:
                     # For MinIO storage, this is already a MinIO key
@@ -375,10 +378,10 @@ class JobService:
                 report.topic = result["generated_topic"]
                 logger.info(f"Updated topic from STORM generation: {result['generated_topic']}")
             
-            # Store additional metadata
+            # Store additional metadata (use MinIO keys if available, otherwise use original paths)
             metadata = {
                 "output_directory": result.get("output_directory", ""),
-                "generated_files": result.get("generated_files", []),
+                "generated_files": generated_files,  # Use MinIO keys if uploaded, otherwise original paths
                 "processing_logs": result.get("processing_logs", []),
                 "created_at": result.get("created_at", datetime.now(timezone.utc).isoformat()),
             }
@@ -390,9 +393,9 @@ class JobService:
             
             report.result_metadata = metadata
             
-            # Store generated files (no need to filter since we no longer create duplicate files)
-            if result.get("generated_files"):
-                report.generated_files = result["generated_files"]
+            # Store generated files (use MinIO keys if available, otherwise use original paths)
+            if generated_files:
+                report.generated_files = generated_files
             
             if result.get("processing_logs"):
                 report.processing_logs = result["processing_logs"]

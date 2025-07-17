@@ -270,7 +270,7 @@ class NotebookReportDetailView(APIView):
                     # Delete from MinIO storage
                     from notebooks.utils.file_storage import FileStorageService
                     storage_service = FileStorageService()
-                    storage_service.delete_file(report.main_report_object_key)
+                    storage_service.minio_backend.delete_file(report.main_report_object_key)
                     deleted_files = 1
                     logger.info(f"Deleted report file from MinIO storage")
                 except Exception as e:
