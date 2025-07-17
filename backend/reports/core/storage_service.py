@@ -48,7 +48,7 @@ class StorageService:
             
             return {
                 "stored_files": stored_files,
-                "main_report_file": main_file,
+                "main_report_object_key": main_file,  # For MinIO, this will be an object key
                 "file_metadata": file_metadata,
                 "storage_directory": str(output_dir)
             }
@@ -57,7 +57,7 @@ class StorageService:
             logger.error(f"Error storing report files: {e}")
             return {
                 "stored_files": [],
-                "main_report_file": None,
+                "main_report_object_key": None,
                 "file_metadata": [],
                 "storage_directory": str(output_dir)
             }
@@ -96,7 +96,13 @@ class StorageService:
     def validate_storage_setup(self, output_dir: Path) -> bool:
         """Validate that storage is properly set up"""
         try:
-            return output_dir.exists() and output_dir.is_dir()
+            # For MinIO storage, we don't need to check physical directory existence
+            if str(output_dir).startswith('minio://'):
+                logger.info(f"MinIO storage path validated: {output_dir}")
+                return True
+            else:
+                # For local storage, check directory exists
+                return output_dir.exists() and output_dir.is_dir()
         except Exception as e:
             logger.error(f"Error validating storage setup: {e}")
             return False

@@ -89,21 +89,22 @@ class JobService:
                 if field not in report_data or report_data.get(field) is None:
                     report_data[field] = ""
             
+            # Generate unique job ID first
+            job_id = str(uuid.uuid4())
+            
             job_data = {
                 "user": user,
                 "status": Report.STATUS_PENDING,
                 "progress": "Report generation job has been queued",
+                "job_id": job_id,  # Set job_id during creation
                 **report_data,
             }
             
             if notebook:
                 job_data["notebooks"] = notebook
             
-            # Create the report
+            # Create the report with job_id already set
             report = Report.objects.create(**job_data)
-            
-            # Generate unique job ID
-            report.job_id = str(uuid.uuid4())
             
             # Handle figure_data if provided
             if figure_data:
@@ -112,14 +113,14 @@ class JobService:
                     user.pk, f"direct_{report.id}", figure_data
                 )
                 if figure_data_path:
-                    report.figure_data_path = figure_data_path
+                    report.figure_data_object_key = figure_data_path
             
-            report.save(update_fields=["job_id", "figure_data_path"])
+            report.save(update_fields=["figure_data_object_key"])
             
             # Create job metadata for caching
             job_metadata = {
                 "job_id": report.job_id,
-                "report_id": report.id,
+                "report_id": str(report.id),  # Convert UUID to string for JSON serialization
                 "user_id": report.user.pk,
                 "status": report.status,
                 "progress": report.progress,
@@ -169,7 +170,7 @@ class JobService:
                 
                 job_data = {
                     "job_id": job_id,
-                    "report_id": report.id,
+                    "report_id": str(report.id),  # Convert UUID to string for JSON serialization
                     "user_id": report.user.pk,
                     "status": report.status,
                     "progress": report.progress,
@@ -247,17 +248,40 @@ class JobService:
                 report.result_content = result["report_content"]
                 logger.info("Stored processed report content from result data")
                 
-                # Save the processed content to Django FileField
+                # Save the processed content to MinIO
                 try:
+                    from notebooks.utils.minio_backend import get_minio_backend
+                    import io
+                    
                     filename = f"report_{report.id}.md"
-                    report.main_report_file.save(
-                        filename, 
-                        ContentFile(result["report_content"].encode('utf-8')), 
-                        save=False
+                    # Generate MinIO key: userId/notebook/notebookID/report/reportID/filename
+                    minio_key = f"{report.user.id}/notebook/{report.notebooks.id if report.notebooks else 'standalone'}/report/{report.id}/{filename}"
+                    
+                    # Upload to MinIO
+                    content_bytes = result["report_content"].encode('utf-8')
+                    content_stream = io.BytesIO(content_bytes)
+                    file_size = len(content_bytes)
+                    
+                    minio_backend = get_minio_backend()
+                    minio_backend.client.put_object(
+                        bucket_name=minio_backend.bucket_name,
+                        object_name=minio_key,
+                        data=content_stream,
+                        length=file_size,
+                        content_type="text/markdown"
                     )
-                    logger.info(f"Saved main_report_file: {report.main_report_file.name}")
+                    
+                    # Save MinIO key and metadata to database
+                    report.main_report_object_key = minio_key
+                    report.file_metadata = {
+                        "main_report_filename": filename,
+                        "main_report_size": file_size,
+                        "main_report_content_type": "text/markdown",
+                        "main_report_minio_key": minio_key
+                    }
+                    logger.info(f"Saved main report to MinIO: {minio_key}")
                 except Exception as e:
-                    logger.warning(f"Could not save main_report_file: {e}")
+                    logger.warning(f"Could not save main report to MinIO: {e}")
             else:
                 logger.warning("No processed report content found in result data")
             
@@ -279,10 +303,10 @@ class JobService:
                 "created_at": result.get("created_at", datetime.now(timezone.utc).isoformat()),
             }
             
-            # Add main_report_file path to metadata if saved
-            if report.main_report_file:
-                metadata["main_report_file"] = report.main_report_file.name
-                logger.info(f"Stored main_report_file path in metadata: {report.main_report_file.name}")
+            # Add main report info to metadata if saved
+            if report.main_report_object_key:
+                metadata["main_report_object_key"] = report.main_report_object_key
+                logger.info(f"Stored main report object key in metadata: {report.main_report_object_key}")
             
             report.result_metadata = metadata
             
@@ -293,8 +317,8 @@ class JobService:
             if result.get("processing_logs"):
                 report.processing_logs = result["processing_logs"]
             
-            # Save all changes to database including result_content, result_metadata, article_title, topic, and main_report_file
-            report.save(update_fields=["result_content", "result_metadata", "article_title", "topic", "generated_files", "processing_logs", "main_report_file", "updated_at"])
+            # Save all changes to database including result_content, result_metadata, article_title, topic, and MinIO fields
+            report.save(update_fields=["result_content", "result_metadata", "article_title", "topic", "generated_files", "processing_logs", "main_report_object_key", "file_metadata", "updated_at"])
             
             # Update status after saving content and metadata
             report.update_status(status, progress="Report generation completed successfully")
@@ -412,7 +436,7 @@ class JobService:
             for report in reports:
                 jobs.append({
                     "job_id": report.job_id,
-                    "report_id": report.id,
+                    "report_id": str(report.id),  # Convert UUID to string for JSON serialization
                     "user_id": report.user.pk,
                     "status": report.status,
                     "progress": report.progress,

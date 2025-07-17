@@ -5,6 +5,7 @@ Factory for creating file storage handlers.
 import shutil
 import logging
 import os
+import io
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
@@ -215,18 +216,204 @@ class DjangoFileStorage(FileStorageInterface):
             return {}
 
 
+class MinIOFileStorage(FileStorageInterface):
+    """MinIO-based file storage implementation"""
+    
+    def __init__(self):
+        """Initialize MinIO storage"""
+        from notebooks.utils.minio_backend import get_minio_backend
+        self.minio_backend = get_minio_backend()
+    
+    def create_output_directory(self, user_id: int, report_id: str, notebook_id: Optional[int] = None) -> Path:
+        """Create output directory for report files (MinIO doesn't need physical directories)"""
+        # For MinIO, we don't need to create physical directories
+        # Just return a logical path that represents the structure
+        return Path(f"minio://{user_id}/notebook/{notebook_id or 'standalone'}/report/{report_id}")
+    
+    def store_generated_files(self, source_files: List[str], target_dir: Path) -> List[str]:
+        """Store generated files in MinIO and return list of stored object keys"""
+        stored_object_keys = []
+        
+        try:
+            # Extract user_id, notebook_id, report_id from target_dir
+            # target_dir format: minio://user_id/notebook/notebook_id/report/report_id
+            parts = str(target_dir).replace('minio://', '').split('/')
+            if len(parts) >= 5:
+                user_id = parts[0]
+                notebook_part = parts[2]  # 'standalone' or actual notebook_id
+                report_id = parts[4]
+                
+                for file_path in source_files:
+                    try:
+                        source_path = Path(file_path)
+                        if not source_path.exists() or not source_path.is_file():
+                            continue
+                        
+                        filename = source_path.name
+                        # Generate MinIO key
+                        minio_key = f"{user_id}/notebook/{notebook_part}/report/{report_id}/{filename}"
+                        
+                        # Read file content
+                        with open(source_path, 'rb') as f:
+                            file_content = f.read()
+                        
+                        content_stream = io.BytesIO(file_content)
+                        file_size = len(file_content)
+                        
+                        # Determine content type
+                        content_type = "application/octet-stream"
+                        if filename.endswith('.md'):
+                            content_type = "text/markdown"
+                        elif filename.endswith('.html'):
+                            content_type = "text/html"
+                        elif filename.endswith('.pdf'):
+                            content_type = "application/pdf"
+                        elif filename.endswith('.json'):
+                            content_type = "application/json"
+                        
+                        # Upload to MinIO
+                        self.minio_backend.client.put_object(
+                            bucket_name=self.minio_backend.bucket_name,
+                            object_name=minio_key,
+                            data=content_stream,
+                            length=file_size,
+                            content_type=content_type
+                        )
+                        
+                        stored_object_keys.append(minio_key)
+                        logger.info(f"Stored file in MinIO: {minio_key}")
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to store file {file_path} in MinIO: {e}")
+                        continue
+            
+            return stored_object_keys
+            
+        except Exception as e:
+            logger.error(f"Error storing generated files in MinIO: {e}")
+            return stored_object_keys
+    
+    def get_main_report_file(self, file_list: List[str]) -> Optional[str]:
+        """Identify the main report file from a list of object keys"""
+        # First, look specifically for report_{id}.md files (highest priority)
+        for object_key in file_list:
+            filename = Path(object_key).name
+            if filename.startswith("report_") and filename.endswith(".md"):
+                return object_key
+        
+        # Look for polished files second
+        for object_key in file_list:
+            filename = Path(object_key).name
+            if filename.endswith((".md", ".html", ".pdf")) and "polished" in filename.lower():
+                return object_key
+        
+        # Look for any report files third
+        for object_key in file_list:
+            filename = Path(object_key).name
+            if filename.endswith((".md", ".html", ".pdf")) and "report" in filename.lower():
+                return object_key
+        
+        # Fallback to any markdown file
+        for object_key in file_list:
+            if object_key.endswith(".md"):
+                return object_key
+        
+        return None
+    
+    def clean_output_directory(self, directory: Path) -> bool:
+        """Clean an output directory before generation (MinIO specific)"""
+        try:
+            # For MinIO, we need to delete objects with the prefix
+            prefix = str(directory).replace('minio://', '') + "/"
+            
+            # List and delete objects with this prefix
+            objects = self.minio_backend.client.list_objects(
+                bucket_name=self.minio_backend.bucket_name,
+                prefix=prefix,
+                recursive=True
+            )
+            
+            for obj in objects:
+                self.minio_backend.client.remove_object(
+                    bucket_name=self.minio_backend.bucket_name,
+                    object_name=obj.object_name
+                )
+                logger.info(f"Deleted MinIO object: {obj.object_name}")
+            
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to clean MinIO directory {directory}: {e}")
+            return False
+    
+    def delete_report_files(self, report_id: str, user_id: int) -> bool:
+        """Delete all files associated with a report from MinIO"""
+        try:
+            # Search for objects with the pattern user_id/*/report/report_id/*
+            prefix = f"{user_id}/"
+            
+            objects = self.minio_backend.client.list_objects(
+                bucket_name=self.minio_backend.bucket_name,
+                prefix=prefix,
+                recursive=True
+            )
+            
+            deleted_count = 0
+            for obj in objects:
+                # Check if this object belongs to the report
+                if f"/report/{report_id}/" in obj.object_name:
+                    try:
+                        self.minio_backend.client.remove_object(
+                            bucket_name=self.minio_backend.bucket_name,
+                            object_name=obj.object_name
+                        )
+                        deleted_count += 1
+                        logger.info(f"Deleted MinIO object: {obj.object_name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete MinIO object {obj.object_name}: {e}")
+            
+            return deleted_count > 0
+            
+        except Exception as e:
+            logger.error(f"Error deleting report files from MinIO for report {report_id}: {e}")
+            return False
+    
+    def get_file_metadata(self, object_key: str) -> Dict[str, Any]:
+        """Get metadata for a specific MinIO object"""
+        try:
+            stat = self.minio_backend.client.stat_object(
+                bucket_name=self.minio_backend.bucket_name,
+                object_name=object_key
+            )
+            
+            filename = Path(object_key).name
+            return {
+                "filename": filename,
+                "size": stat.size,
+                "type": Path(filename).suffix.lower(),
+                "modified": stat.last_modified.isoformat() if stat.last_modified else None,
+                "content_type": stat.content_type,
+                "object_key": object_key
+            }
+            
+        except Exception as e:
+            logger.warning(f"Failed to get metadata for MinIO object {object_key}: {e}")
+            return {}
+
+
 class StorageFactory:
     """Factory for creating file storage handlers"""
     
     @staticmethod
-    def create_storage(storage_type: str = 'django') -> FileStorageInterface:
+    def create_storage(storage_type: str = 'minio') -> FileStorageInterface:
         """Create file storage handler based on type"""
         if storage_type == 'django':
             return DjangoFileStorage()
+        elif storage_type == 'minio':
+            return MinIOFileStorage()
         else:
             raise ValueError(f"Unknown storage type: {storage_type}")
     
     @staticmethod
     def get_available_storage_types() -> list:
         """Get list of available storage types"""
-        return ['django']
+        return ['django', 'minio']

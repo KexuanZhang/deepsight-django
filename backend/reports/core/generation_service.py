@@ -67,12 +67,12 @@ class GenerationService:
                         )
                         if figure_data_ref:
                             # Store the database reference instead of file path
-                            report.figure_data_path = figure_data_ref
-                            report.save(update_fields=['figure_data_path'])
+                            report.figure_data_object_key = figure_data_ref
+                            report.save(update_fields=['figure_data_object_key'])
             
             # Load figure data if available
             figure_data = []
-            if report.include_image and report.figure_data_path:
+            if report.include_image and report.figure_data_object_key:
                 from .figure_service import FigureDataService
                 
                 # Check if we have cached figure data
@@ -80,7 +80,7 @@ class GenerationService:
                     figure_data = report._cached_figure_data
                 else:
                     # Load from database or fallback to file
-                    figure_data = FigureDataService.load_combined_figure_data(report.figure_data_path)
+                    figure_data = FigureDataService.load_combined_figure_data(report.figure_data_object_key)
 
             # Create configuration for report generation
             config_dict = report.get_configuration_dict()

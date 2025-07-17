@@ -47,7 +47,7 @@ class KnowledgeBaseImageService:
             # Get all images for this knowledge base item
             images = KnowledgeBaseImage.objects.filter(
                 knowledge_base_item=kb_item
-            ).order_by('image_id')
+            ).order_by('id')
             
             # Convert to figure_data.json compatible format
             figure_data = [image.to_figure_data_dict() for image in images]
@@ -82,9 +82,7 @@ class KnowledgeBaseImageService:
                 file_images = self.get_images_for_knowledge_base_item(clean_file_id, user_id)
                 combined_figure_data.extend(file_images)
             
-            # Renumber figures sequentially
-            if combined_figure_data:
-                combined_figure_data = self._renumber_figures(combined_figure_data)
+            # No need to renumber figures since we're using UUIDs
                 
             self.logger.info(f"Combined figure data from {len(file_ids)} files: {len(combined_figure_data)} total images")
             return combined_figure_data
@@ -286,12 +284,6 @@ class KnowledgeBaseImageService:
             self.logger.error(f"Error deleting image {image_id}: {e}")
             return False
     
-    def _renumber_figures(self, figures: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Renumber all figures as Figure 1, Figure 2, etc."""
-        for i, figure in enumerate(figures, 1):
-            figure['figure_name'] = f"Figure {i}"
-            figure['image_id'] = i
-        return figures
     
     def get_image_url(self, image_id: int, user_id: int = None, expires: int = 3600) -> Optional[str]:
         """

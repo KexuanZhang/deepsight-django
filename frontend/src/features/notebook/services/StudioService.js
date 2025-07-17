@@ -55,10 +55,19 @@ export class ApiStudioService extends IStudioService {
     // For now, we'll determine the type and call the appropriate cancel method
     // This could be improved by storing job type metadata
     try {
-      return await this.api.post(`/notebooks/${this.notebookId}/report-jobs/${jobId}/cancel/`);
+      // Try report cancel first
+      const reportUrl = `/notebooks/${this.notebookId}/report-jobs/${jobId}/cancel/`;
+      const result = await this.api.post(reportUrl);
+      return result;
     } catch (error) {
       // If report cancel fails, try podcast cancel
-      return await this.api.post(`/notebooks/${this.notebookId}/podcast-jobs/${jobId}/cancel/`);
+      try {
+        const podcastUrl = `/notebooks/${this.notebookId}/podcast-jobs/${jobId}/cancel/`;
+        const result = await this.api.post(podcastUrl);
+        return result;
+      } catch (podcastError) {
+        throw podcastError;
+      }
     }
   }
 

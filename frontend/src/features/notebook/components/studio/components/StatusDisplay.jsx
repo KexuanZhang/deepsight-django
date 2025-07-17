@@ -121,15 +121,14 @@ const StatusDisplay = ({
         </div>
         
         {showCancel && state === GenerationState.GENERATING && (
-          <Button
-            variant="outline"
-            size="sm"
+          <button
+            type="button"
             onClick={onCancel}
-            className="text-red-600 border-red-300 hover:bg-red-50 hover:border-red-400"
+            className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md border border-red-300 text-red-600 bg-white hover:bg-red-50 hover:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
           >
             <X className="mr-1 h-4 w-4" />
             Cancel
-          </Button>
+          </button>
         )}
       </div>
       
