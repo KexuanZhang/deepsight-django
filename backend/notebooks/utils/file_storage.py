@@ -309,8 +309,6 @@ class FileStorageService:
             # Import here to avoid circular imports
             from ..models import KnowledgeBaseImage
             
-            image_id = 1  # Start sequential numbering
-            
             for image_file, image_data in images.items():
                 try:
                     # Determine content type
@@ -355,8 +353,6 @@ class FileStorageService:
                         "store_image_minio", 
                         f"Stored image in MinIO and DB: {object_key}, kb_image_id={kb_image.id}"
                     )
-                    
-                    image_id += 1  # Increment for next image
                     
                 except Exception as e:
                     self.log_operation("store_image_minio_error", f"Failed to store image {image_file}: {str(e)}", "error")

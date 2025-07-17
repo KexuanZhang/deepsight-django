@@ -11,12 +11,12 @@ if not logging.getLogger().hasHandlers():
     )
 
 
-def _get_image_url_from_db(image_id: str) -> str:
+def _get_figure_url_from_db(figure_id: str) -> str:
     """
-    Get the MinIO URL for an image from the database using the image_id.
+    Get the MinIO URL for an image from the database using the figure_id.
     
     Args:
-        image_id: The database ID of the KnowledgeBaseImage
+        figure_id: The figure_id of the KnowledgeBaseImage
         
     Returns:
         The MinIO URL for the image, or None if not found
@@ -35,19 +35,19 @@ def _get_image_url_from_db(image_id: str) -> str:
         from notebooks.models import KnowledgeBaseImage
         
         try:
-            image = KnowledgeBaseImage.objects.get(id=image_id)
+            image = KnowledgeBaseImage.objects.get(figure_id=figure_id)
             url = image.get_image_url()
-            logging.info(f"Successfully retrieved image URL for id {image_id}")
+            logging.info(f"Successfully retrieved image URL for figure_id {figure_id}")
             return url
         except KnowledgeBaseImage.DoesNotExist:
-            logging.warning(f"Image with id {image_id} not found in database")
+            logging.warning(f"Image with figure_id {figure_id} not found in database")
             return None
         except ValueError as ve:
-            logging.warning(f"Invalid image ID format {image_id}: {ve}")
+            logging.warning(f"Invalid figure_id format {figure_id}: {ve}")
             return None
             
     except Exception as e:
-        logging.error(f"Error getting image URL for id {image_id}: {e}")
+        logging.error(f"Error getting image URL for figure_id {figure_id}: {e}")
         import traceback
         logging.error(f"Traceback: {traceback.format_exc()}")
         return None
@@ -279,24 +279,24 @@ def insert_figure_images(
     article_content: str, figures: list[dict], reorder: bool = False
 ) -> str:
     """
-    Inserts image captions into the article content at placeholders in the format <image_id>.
+    Inserts image captions into the article content at placeholders in the format <figure_id>.
     Only inserts at the first occurrence of each image placeholder, and skips images that have already been inserted.
-    Note: image_path is no longer required - only image_id and caption are used.
+    Note: image_path is no longer required - only figure_id and caption are used.
     """
     figure_dict = {
-        fig["image_id"]: fig["caption"] for fig in figures
+        fig["figure_id"]: fig["caption"] for fig in figures
     }
     
-    # Check which figures have already been inserted by looking for existing img tags with data-image-id
+    # Check which figures have already been inserted by looking for existing img tags with data-figure-id
     already_inserted = set()
-    for image_id in figure_dict:
-        # Check if there's already an img tag with this image_id
-        existing_img_pattern = rf'<img\s+[^>]*data-image-id=["\']' + re.escape(str(image_id)) + r'["\'][^>]*>'
+    for figure_id in figure_dict:
+        # Check if there's already an img tag with this figure_id
+        existing_img_pattern = rf'<img\s+[^>]*data-figure-id=["\']' + re.escape(str(figure_id)) + r'["\'][^>]*>'
         if re.search(existing_img_pattern, article_content, re.IGNORECASE):
-            already_inserted.add(image_id)
-            logging.info(f"Image ID '{image_id}' already inserted, skipping.")
+            already_inserted.add(figure_id)
+            logging.info(f"Figure ID '{figure_id}' already inserted, skipping.")
     
-    # Look for image placeholders in format <image uuid> on standalone lines
+    # Look for figure placeholders in format <figure uuid> on standalone lines
     # UUID pattern: 8-4-4-4-12 hexadecimal characters
     uuid_pattern = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
     pattern = rf"^\s*<({uuid_pattern})>\s*$"
@@ -306,24 +306,24 @@ def insert_figure_images(
     first_occurrences = {}
     # Then add each match if it's not already in the dict
     for match in matches:
-        # Extract image_id from <image_id> placeholder
-        image_id = match.group(1).strip()
+        # Extract figure_id from <figure_id> placeholder
+        figure_id = match.group(1).strip()
         
-        # Skip if this image has already been inserted
-        if image_id in already_inserted:
+        # Skip if this figure has already been inserted
+        if figure_id in already_inserted:
             continue
         
-        # Only include if we have this image in our figure_dict
-        if image_id in figure_dict:
-            if image_id not in first_occurrences:
-                first_occurrences[image_id] = match.start()
+        # Only include if we have this figure in our figure_dict
+        if figure_id in figure_dict:
+            if figure_id not in first_occurrences:
+                first_occurrences[figure_id] = match.start()
 
     # No need to filter since we already checked figure_dict membership above
     valid_occurrences = first_occurrences
 
     # Sort insertion points by position in text
     insertion_points = [
-        (pos, image_id) for image_id, pos in valid_occurrences.items()
+        (pos, figure_id) for figure_id, pos in valid_occurrences.items()
     ]
     insertion_points.sort(key=lambda x: x[0])
 
@@ -333,10 +333,10 @@ def insert_figure_images(
     max_image_height = "500px"
 
     # Find and replace each placeholder with figure content
-    for pos, image_id in insertion_points:
+    for pos, figure_id in insertion_points:
         # Find the end of the placeholder line
         placeholder_match = re.search(
-            r"^\s*<" + re.escape(image_id) + r">\s*$",
+            r"^\s*<" + re.escape(figure_id) + r">\s*$",
             article_content[pos:],
             re.MULTILINE,
         )
@@ -347,14 +347,14 @@ def insert_figure_images(
             output_segments.append(article_content[prev_end:pos])
 
             # Add figure content
-            caption = figure_dict[image_id]
-            # Get image URL from database using image_id
-            image_url = _get_image_url_from_db(image_id)
+            caption = figure_dict[figure_id]
+            # Get image URL from database using figure_id
+            image_url = _get_figure_url_from_db(figure_id)
             if image_url:
-                insertion_text = f'<img src="{image_url}" data-image-id="{image_id}" style="max-height: {max_image_height};">\n\n{caption}\n\n'
+                insertion_text = f'<img src="{image_url}" data-figure-id="{figure_id}" style="max-height: {max_image_height};">\n\n{caption}\n\n'
             else:
                 # Fallback if image URL not found
-                insertion_text = f'<div data-image-id="{image_id}" style="padding: 20px; border: 1px dashed #ccc; text-align: center;">Image not found (ID: {image_id})</div>\n\n{caption}\n\n'
+                insertion_text = f'<div data-figure-id="{figure_id}" style="padding: 20px; border: 1px dashed #ccc; text-align: center;">Image not found (ID: {figure_id})</div>\n\n{caption}\n\n'
             output_segments.append(insertion_text)
 
             prev_end = placeholder_end

@@ -580,7 +580,7 @@ class KnowledgeBaseImage(models.Model):
         This maintains compatibility with existing code that expects figure_data structure.
         """
         return {
-            'image_id': str(self.id),
+            'figure_id': str(self.figure_id),
             'caption': self.image_caption,
         }
     

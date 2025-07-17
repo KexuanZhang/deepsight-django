@@ -111,6 +111,18 @@ def remove_figure_placeholders(content, remove_figure_placeholders=True):
         # Any remaining inline UUID placeholders
         (rf"<\s*{uuid_pattern}\s*>", ""),  # <12f86924-df70-48a7-93e9-29f64855a4da> -> (empty)
         
+        # Bare UUID patterns (not in angle brackets)
+        # UUID at the end of a sentence (preceded by space and followed by sentence end)
+        (rf"\s+{uuid_pattern}(?=\s*[.!?])", ""),  # " 33e61969-bec2-4d93-ac39-175f1c1490e1." -> "."
+        # UUID on its own line
+        (rf"\n[ \t]*{uuid_pattern}[ \t]*\n", "\n"),  # \n33e61969-bec2-4d93-ac39-175f1c1490e1\n -> \n
+        # UUID at start of content
+        (rf"^[ \t]*{uuid_pattern}[ \t]*\n", ""),  # ^33e61969-bec2-4d93-ac39-175f1c1490e1\n -> (empty)
+        # UUID at end of content
+        (rf"\n[ \t]*{uuid_pattern}[ \t]*$", ""),  # \n33e61969-bec2-4d93-ac39-175f1c1490e1$ -> (empty)
+        # Any remaining inline bare UUIDs (with surrounding whitespace)
+        (rf"\s+{uuid_pattern}\s+", " "),  # " 33e61969-bec2-4d93-ac39-175f1c1490e1 " -> " "
+        
         # Figure placeholders that are on their own line (with optional surrounding whitespace)
         (r"\n[ \t]*<\s*[Ff]igure\s*\d+\s*[^>]*>[ \t]*\n", "\n"),  # \n<Figure 9>\n -> \n
         (r"\n[ \t]*<\s*图\s*\d+\s*[^>]*>[ \t]*\n", "\n"),  # \n<图 9>\n -> \n
@@ -262,8 +274,8 @@ def fix_image_paths(
     
     # Pattern to match img tags with problematic src paths
     # Matches images with underscores and common extensions (legacy filename-based references)
-    # Skip images that have data-image-id attribute (already processed by insert_figure_images)
-    img_pattern = r'<img\s+src="([^"]*_[^"]*\.(?:jpeg|jpg|png|gif))"(?![^>]*data-image-id)([^>]*)>'
+    # Skip images that have data-figure-id attribute (already processed by insert_figure_images)
+    img_pattern = r'<img\s+src="([^"]*_[^"]*\.(?:jpeg|jpg|png|gif))"(?![^>]*data-figure-id)([^>]*)>'
     
     try:
         # Import here to avoid circular imports

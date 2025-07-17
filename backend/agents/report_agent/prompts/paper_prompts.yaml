@@ -137,9 +137,9 @@ prompts:
     \ restating objective facts or summarizing content. Instead, use the outline or\
     \ text input headings as a springboard to delve deeper and present thought-provoking\
     \ insights.\n\nAVAILABLE FIGURES:\nIf 'Available figures' is provided (i.e., not\
-    \ 'N/A'), it will be a list of dictionaries, each containing 'image_id', and 'caption'. \
+    \ 'N/A'), it will be a list of dictionaries, each containing 'figure_id', and 'caption'. \
     \ Figure Selection Rules:\n\t1.\tInspect each entry in Available figures (a list of\
-    \ dictionaries with keys image_id, and caption).\n\
+    \ dictionaries with keys figure_id, and caption).\n\
     \t2.\tChoose one figure whose caption is both:\n\t   - Highly relevant to the\
     \ ideas discussed in the current section, and\n\t   - Rich in content, meaning\
     \ the caption describes data, a chart/graph, or product-specific information.\n\
@@ -148,9 +148,9 @@ prompts:
     Referencing the Chosen Figure:\n\t1. Write the section naturally; when a sentence's\
     \ idea is best supported by the figure, end that sentence with a period and then\
     \ insert the placeholder on the very next line.\n\t2. The placeholder must be\
-    \ a stand-alone line in the form of <image_id> without any other text, such as <12f86924-df70-48a7-93e9-29f64855a4da>,\
-    \ image_id is in a form of uuid, and it's a unique identifier for the figure. You should\
-    \ use the exact image_id as placeholder without any other text.\n\
+    \ a stand-alone line in the form of <figure_id> without any other text, such as <12f86924-df70-48a7-93e9-29f64855a4da>,\
+    \ figure_id is in a form of uuid, and it's a unique identifier for the figure. You should\
+    \ use the exact figure_id as placeholder without any other text.\n\
     \   3. Do not mention the figure name inside the section itself. The placeholder\
     \ is the only reference.\n\t4. Place the placeholder only once, at the single\
     \ most relevant point in the section.\n\nPlease follow these formatting guidelines:\n\
@@ -219,7 +219,7 @@ prompts:
     \ 3. 禁止输出原文中没有出现过的内容。\n\n请按照上述格式与要求，输出最终摘要。"
   PolishPage: "您是一位忠实的文本编辑者，擅长在文章中找到重复信息并删除它们，以确保没有重复，但必须确保文章结构完整（由 '#'、'##' 等表示）。您不会删除文章中任何未重复的部分。\n\
     \nCRITICAL: 必须100%保留所有HTML <img>标签！这是最重要的要求！\n- 严格保留文中所有原始HTML标签，特别是 <img src=\"\
-    ...\" alt=\"...\" style=\"...\"> 标签，绝对禁止删除或进行任何修改\n- 如果您删除任何<img>标签，系统将报错！请确保输出中包含所有输入中的<img>标签\n\
+    ...\" data-figure-id=\"...\" style=\"...\"> 标签，绝对禁止删除或进行任何修改\n- 如果您删除任何<img>标签，系统将报错！请确保输出中包含所有输入中的<img>标签\n\
     \n- 您会保持对应的原始引用编号顺序（包括数字引用如 [1][2]），严禁篡改引文编号顺序和格式。\n- 严禁输出参考文献或url链接列表。\n- 如果文章中任何地方出现参考文献列表，请删除参考文献列表，并确保文中只有内联引文，没有参考文献列表。\n\
     - 若发现某个小节并无实质内容，请删除无实质内容的小节的标题及其内容，并注意修改后保持文章结构完整。严禁输出任何额外说明或理由，例如：\"该小节已删除\"\
     等。\n- 此外，如果某个章节标题下方的内容为空或仅包含空的项目列表（如\"1. \n2. \n3. \n4. \n5.\"），请删除该章节标题及其空内容。\n\
