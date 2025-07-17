@@ -3049,6 +3049,69 @@
       "content_length": 2951,
       "content_type": ".pdf",
       "filename": "Official EVUS Enrollment Website - Enrollment Status.pdf"
+    },
+    "32": {
+      "file_id": "32",
+      "content": "",
+      "searchable_content": "",
+      "keywords": [],
+      "metadata": {
+        "filename": "Official EVUS Enrollment Website - Enrollment Status.pdf",
+        "original_filename": "Official EVUS Enrollment Website - Enrollment Status.pdf",
+        "file_extension": ".pdf",
+        "content_type": "application/pdf",
+        "file_size": 113964,
+        "upload_file_id": "upload_1752695249983_7zzttmg4g",
+        "upload_timestamp": "2025-07-16T19:47:30.066427",
+        "parsing_status": "completed"
+      },
+      "processing_stage": "immediate",
+      "indexed_at": "2025-07-16T19:47:54.753883+00:00",
+      "content_length": 0,
+      "content_type": ".pdf",
+      "filename": "Official EVUS Enrollment Website - Enrollment Status.pdf"
+    },
+    "33": {
+      "file_id": "33",
+      "content": "",
+      "searchable_content": "",
+      "keywords": [],
+      "metadata": {
+        "filename": "2504.09307v1.pdf",
+        "original_filename": "2504.09307v1.pdf",
+        "file_extension": ".pdf",
+        "content_type": "application/pdf",
+        "file_size": 592584,
+        "upload_file_id": "upload_1752762656219_tjh3ri8ne",
+        "upload_timestamp": "2025-07-17T14:30:56.334903",
+        "parsing_status": "completed"
+      },
+      "processing_stage": "immediate",
+      "indexed_at": "2025-07-17T14:31:31.193766+00:00",
+      "content_length": 0,
+      "content_type": ".pdf",
+      "filename": "2504.09307v1.pdf"
+    },
+    "34": {
+      "file_id": "34",
+      "content": "",
+      "searchable_content": "",
+      "keywords": [],
+      "metadata": {
+        "filename": "2503.06433v1.pdf",
+        "original_filename": "2503.06433v1.pdf",
+        "file_extension": ".pdf",
+        "content_type": "application/pdf",
+        "file_size": 825289,
+        "upload_file_id": "upload_1752763412361_fycfdzrcn",
+        "upload_timestamp": "2025-07-17T14:43:32.405591",
+        "parsing_status": "completed"
+      },
+      "processing_stage": "immediate",
+      "indexed_at": "2025-07-17T14:44:22.802450+00:00",
+      "content_length": 0,
+      "content_type": ".pdf",
+      "filename": "2503.06433v1.pdf"
     }
   },
   "file_index": {
@@ -3226,7 +3289,28 @@
       "indexed_at": "2025-07-10T19:50:10.176448+00:00",
       "content_length": 2951,
       "processing_stage": "immediate"
+    },
+    "32": {
+      "filename": "Official EVUS Enrollment Website - Enrollment Status.pdf",
+      "content_type": ".pdf",
+      "indexed_at": "2025-07-16T19:47:54.753883+00:00",
+      "content_length": 0,
+      "processing_stage": "immediate"
+    },
+    "33": {
+      "filename": "2504.09307v1.pdf",
+      "content_type": ".pdf",
+      "indexed_at": "2025-07-17T14:31:31.193766+00:00",
+      "content_length": 0,
+      "processing_stage": "immediate"
+    },
+    "34": {
+      "filename": "2503.06433v1.pdf",
+      "content_type": ".pdf",
+      "indexed_at": "2025-07-17T14:44:22.802450+00:00",
+      "content_length": 0,
+      "processing_stage": "immediate"
     }
   },
-  "last_updated": "2025-07-10T19:50:10.176465+00:00"
+  "last_updated": "2025-07-17T14:44:22.802473+00:00"
 }

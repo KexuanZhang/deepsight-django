@@ -3,7 +3,7 @@ from datetime import datetime
 from django.core.management.base import BaseCommand
 from django.db.models import QuerySet
 from dotenv import load_dotenv
-from pymilvus import connections
+from pymilvus import connections, utility, Collection
 from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
@@ -84,6 +84,9 @@ def ingest_collection(name: str, queryset: QuerySet, host: str, port: str,
         connection_args={"host": host, "port": port},
         drop_old=drop_old
     )
+    coll = Collection(name)
+    coll.flush()
+    coll.load()
     log(f"[{name}] ✅ Ingested {len(chunks)} chunks into Milvus")
 
 

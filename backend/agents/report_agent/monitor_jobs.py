@@ -12,7 +12,7 @@ import sys
 import os
 
 BASE_URL = (
-    f"http://{os.getenv('HOST_IP', 'localhost')}:{os.getenv('BACKEND_PORT', '8001')}"
+    f"http://{os.getenv('HOST_IP', 'localhost')}:{os.getenv('BACKEND_PORT', '8000')}"
 )
 
 
