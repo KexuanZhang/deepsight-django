@@ -130,6 +130,32 @@ class ReportOrchestrator:
     def cleanup_old_jobs(self, days: int = 7):
         """Clean up old jobs"""
         self.job_service.cleanup_old_jobs(days)
+    
+    def cleanup_failed_job(self, job_id: str):
+        """Clean up temp directories and resources for a failed job"""
+        try:
+            # First try to get the report to find its output directory
+            from .models import Report
+            try:
+                report = Report.objects.get(job_id=job_id)
+                # Create the output directory path to cleanup
+                output_dir = self.storage_service.file_storage.create_output_directory(
+                    user_id=report.user.pk,
+                    report_id=str(report.id),
+                    notebook_id=report.notebooks.pk if report.notebooks else None
+                )
+                
+                # Clean up the failed generation resources
+                self.storage_service.cleanup_failed_generation(output_dir)
+                logger.info(f"Cleaned up storage resources for failed job {job_id}")
+            except Report.DoesNotExist:
+                logger.warning(f"Report not found for cleanup: {job_id}")
+            
+            # Also use the cancel_generation method for any additional cleanup
+            self.cancel_generation(job_id)
+            logger.info(f"Completed cleanup for failed job {job_id}")
+        except Exception as e:
+            logger.warning(f"Error cleaning up failed job {job_id}: {e}")
 
 
 # Global singleton instance with default dependencies

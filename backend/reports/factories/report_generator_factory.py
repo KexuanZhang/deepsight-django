@@ -117,20 +117,12 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
     
     def generate_report(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Generate a report based on the provided configuration"""
-        temp_dir = None
         original_output_dir = config.get('output_dir')
-        is_minio_storage = str(original_output_dir).startswith('minio://')
         
         try:
-            # If using MinIO storage, create temporary directory for generation
-            if is_minio_storage:
-                temp_dir = tempfile.mkdtemp(prefix='report_gen_')
-                self._temp_dirs.append(temp_dir)
-                logger.info(f"Created temporary directory for report generation: {temp_dir}")
-                
-                # Update config to use temp directory
-                config = config.copy()
-                config['output_dir'] = temp_dir
+            # The output_dir is now always a proper filesystem path
+            # MinIO storage creates temp directories, Django storage uses configured paths
+            logger.info(f"Using output directory: {original_output_dir}")
             
             # Convert our config to DeepReportGenerator config
             deep_config = self._create_deep_config(config)
@@ -139,37 +131,14 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
             result = self.generator.generate_report(deep_config)
             
             if not result.success:
-                # Generation failed - cleanup temp directory
-                if temp_dir and is_minio_storage:
-                    self._cleanup_temp_directory(temp_dir)
-                
                 return {
                     'success': False,
                     'error_message': result.error_message or "Report generation failed"
                 }
             
-            # If successful and using MinIO, handle file upload and cleanup
+            # Return the generated files as-is - they're now already in temp directory
+            # The storage service will handle uploading to MinIO later
             generated_files = result.generated_files or []
-            if is_minio_storage and temp_dir:
-                try:
-                    # Upload files to MinIO and get MinIO paths
-                    minio_files = self._upload_to_minio(generated_files, original_output_dir)
-                    
-                    # Clean up temp directory after successful upload
-                    self._cleanup_temp_directory(temp_dir)
-                    
-                    # Return MinIO paths instead of local paths
-                    generated_files = minio_files
-                    logger.info(f"Successfully uploaded {len(minio_files)} files to MinIO and cleaned up temp directory")
-                    
-                except Exception as upload_error:
-                    logger.error(f"Failed to upload files to MinIO: {upload_error}")
-                    # Clean up temp directory on upload failure
-                    self._cleanup_temp_directory(temp_dir)
-                    return {
-                        'success': False,
-                        'error_message': f"Report generated but failed to save to storage: {str(upload_error)}"
-                    }
             
             # Convert result to our standard format
             return {
@@ -184,9 +153,6 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
             
         except Exception as e:
             logger.error(f"Report generation failed: {e}")
-            # Clean up temp directory on any error
-            if temp_dir and is_minio_storage:
-                self._cleanup_temp_directory(temp_dir)
             
             return {
                 'success': False,
@@ -208,10 +174,15 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
     
     def cancel_generation(self, job_id: str) -> bool:
         """Cancel an ongoing report generation if possible"""
-        # DeepReportGenerator doesn't currently support cancellation
-        # Clean up any temp directories as part of cancellation
-        self._cleanup_all_temp_directories()
-        return False
+        try:
+            # DeepReportGenerator doesn't currently support cancellation
+            # Clean up any temp directories as part of cancellation
+            self._cleanup_all_temp_directories()
+            logger.info(f"Cleaned up temp directories for cancelled job {job_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error during cancellation cleanup for job {job_id}: {e}")
+            return False
     
     @property
     def generator_name(self) -> str:
@@ -233,12 +204,12 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
         for temp_dir in self._temp_dirs.copy():
             self._cleanup_temp_directory(temp_dir)
     
-    def _upload_to_minio(self, local_files: list, minio_output_dir: str) -> list:
+    def _upload_to_minio(self, local_files: list, user_id: int, report_id: str, notebook_id: int = None) -> list:
         """Upload generated files to MinIO storage and return MinIO object keys"""
         from ..factories.storage_factory import StorageFactory
         
         minio_storage = StorageFactory.create_storage('minio')
-        minio_files = minio_storage.store_generated_files(local_files, Path(minio_output_dir))
+        minio_files = minio_storage.store_generated_files(local_files, user_id, report_id, notebook_id)
         
         return minio_files
     

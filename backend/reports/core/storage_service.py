@@ -30,11 +30,25 @@ class StorageService:
             logger.error(f"Error setting up storage for report {report_id}: {e}")
             raise
     
-    def store_report_files(self, generated_files: List[str], output_dir: Path) -> Dict[str, Any]:
+    def store_report_files(self, generated_files: List[str], user_id: int, report_id: str, notebook_id: int = None) -> Dict[str, Any]:
         """Store generated report files and return storage information"""
         try:
-            # Store the files
-            stored_files = self.file_storage.store_generated_files(generated_files, output_dir)
+            # Store the files - use new signature for MinIO, fallback for others
+            if hasattr(self.file_storage, 'store_generated_files'):
+                # Check if the storage supports the new signature
+                import inspect
+                sig = inspect.signature(self.file_storage.store_generated_files)
+                if 'user_id' in sig.parameters:
+                    # New MinIO signature
+                    stored_files = self.file_storage.store_generated_files(generated_files, user_id, report_id, notebook_id)
+                else:
+                    # Old signature - create output_dir and use it
+                    output_dir = self.file_storage.create_output_directory(user_id, report_id, notebook_id)
+                    stored_files = self.file_storage.store_generated_files(generated_files, output_dir)
+            else:
+                # Fallback
+                output_dir = self.file_storage.create_output_directory(user_id, report_id, notebook_id)
+                stored_files = self.file_storage.store_generated_files(generated_files, output_dir)
             
             # Identify main report file
             main_file = self.file_storage.get_main_report_file(stored_files)
@@ -50,7 +64,7 @@ class StorageService:
                 "stored_files": stored_files,
                 "main_report_object_key": main_file,  # For MinIO, this will be an object key
                 "file_metadata": file_metadata,
-                "storage_directory": str(output_dir)
+                "storage_directory": f"{user_id}/notebook/{notebook_id or 'standalone'}/report/{report_id}"
             }
             
         except Exception as e:
@@ -59,7 +73,7 @@ class StorageService:
                 "stored_files": [],
                 "main_report_object_key": None,
                 "file_metadata": [],
-                "storage_directory": str(output_dir)
+                "storage_directory": f"{user_id}/notebook/{notebook_id or 'standalone'}/report/{report_id}"
             }
     
     def clean_report_directory(self, output_dir: Path) -> bool:
@@ -82,6 +96,21 @@ class StorageService:
             return success
         except Exception as e:
             logger.error(f"Error deleting storage for report {report_id}: {e}")
+            return False
+    
+    def cleanup_failed_generation(self, output_dir: Path) -> bool:
+        """Clean up resources for failed report generation"""
+        try:
+            # For MinIO storage, clean up the temporary directory
+            if hasattr(self.file_storage, 'cleanup_failed_generation'):
+                self.file_storage.cleanup_failed_generation(output_dir)
+                logger.info(f"Cleaned up failed generation resources: {output_dir}")
+                return True
+            else:
+                logger.warning(f"Storage doesn't support cleanup_failed_generation: {type(self.file_storage)}")
+                return False
+        except Exception as e:
+            logger.error(f"Error cleaning up failed generation for {output_dir}: {e}")
             return False
     
     def get_file_info(self, file_path: str) -> Dict[str, Any]:

@@ -225,67 +225,75 @@ class MinIOFileStorage(FileStorageInterface):
         self.minio_backend = get_minio_backend()
     
     def create_output_directory(self, user_id: int, report_id: str, notebook_id: Optional[int] = None) -> Path:
-        """Create output directory for report files (MinIO doesn't need physical directories)"""
-        # For MinIO, we don't need to create physical directories
-        # Just return a logical path that represents the structure
-        return Path(f"minio://{user_id}/notebook/{notebook_id or 'standalone'}/report/{report_id}")
+        """Create temporary directory for report generation, then upload to MinIO"""
+        import tempfile
+        
+        # Always create a temporary directory for local processing
+        # The files will be uploaded to MinIO later via store_generated_files
+        temp_dir = tempfile.mkdtemp(prefix=f'report_{report_id}_')
+        
+        logger.info(f"Created temporary directory for MinIO report generation: {temp_dir}")
+        
+        return Path(temp_dir)
     
-    def store_generated_files(self, source_files: List[str], target_dir: Path) -> List[str]:
+    def store_generated_files(self, source_files: List[str], user_id: int, report_id: str, notebook_id: Optional[int] = None) -> List[str]:
         """Store generated files in MinIO and return list of stored object keys"""
         stored_object_keys = []
         
         try:
-            # Extract user_id, notebook_id, report_id from target_dir
-            # target_dir format: minio://user_id/notebook/notebook_id/report/report_id
-            parts = str(target_dir).replace('minio://', '').split('/')
-            if len(parts) >= 5:
-                user_id = parts[0]
-                notebook_part = parts[2]  # 'standalone' or actual notebook_id
-                report_id = parts[4]
-                
-                for file_path in source_files:
-                    try:
-                        source_path = Path(file_path)
-                        if not source_path.exists() or not source_path.is_file():
-                            continue
-                        
-                        filename = source_path.name
-                        # Generate MinIO key
-                        minio_key = f"{user_id}/notebook/{notebook_part}/report/{report_id}/{filename}"
-                        
-                        # Read file content
-                        with open(source_path, 'rb') as f:
-                            file_content = f.read()
-                        
-                        content_stream = io.BytesIO(file_content)
-                        file_size = len(file_content)
-                        
-                        # Determine content type
-                        content_type = "application/octet-stream"
-                        if filename.endswith('.md'):
-                            content_type = "text/markdown"
-                        elif filename.endswith('.html'):
-                            content_type = "text/html"
-                        elif filename.endswith('.pdf'):
-                            content_type = "application/pdf"
-                        elif filename.endswith('.json'):
-                            content_type = "application/json"
-                        
-                        # Upload to MinIO
-                        self.minio_backend.client.put_object(
-                            bucket_name=self.minio_backend.bucket_name,
-                            object_name=minio_key,
-                            data=content_stream,
-                            length=file_size,
-                            content_type=content_type
-                        )
-                        
-                        stored_object_keys.append(minio_key)
-                        logger.info(f"Stored file in MinIO: {minio_key}")
-                        
-                    except Exception as e:
-                        logger.warning(f"Failed to store file {file_path} in MinIO: {e}")
+            # Use the provided parameters to construct MinIO path
+            notebook_part = notebook_id or 'standalone'
+            logger.info(f"Storing files to MinIO: user_id={user_id}, notebook_id={notebook_part}, report_id={report_id}")
+            logger.info(f"Files to store: {source_files}")
+            
+            # Process files
+            for file_path in source_files:
+                try:
+                    source_path = Path(file_path)
+                    if not source_path.exists() or not source_path.is_file():
                         continue
+                    
+                    filename = source_path.name
+                    # Generate MinIO key
+                    minio_key = f"{user_id}/notebook/{notebook_part}/report/{report_id}/{filename}"
+                    
+                    # Read file content
+                    with open(source_path, 'rb') as f:
+                        file_content = f.read()
+                    
+                    content_stream = io.BytesIO(file_content)
+                    file_size = len(file_content)
+                    
+                    # Determine content type
+                    content_type = "application/octet-stream"
+                    if filename.endswith('.md'):
+                        content_type = "text/markdown"
+                    elif filename.endswith('.html'):
+                        content_type = "text/html"
+                    elif filename.endswith('.pdf'):
+                        content_type = "application/pdf"
+                    elif filename.endswith('.json'):
+                        content_type = "application/json"
+                    elif filename.endswith('.jsonl'):
+                        content_type = "application/jsonl"
+                    elif filename.endswith('.txt'):
+                        content_type = "text/plain"
+                    
+                    # Upload to MinIO
+                    self.minio_backend.client.put_object(
+                        bucket_name=self.minio_backend.bucket_name,
+                        object_name=minio_key,
+                        data=content_stream,
+                        length=file_size,
+                        content_type=content_type
+                    )
+                    
+                    stored_object_keys.append(minio_key)
+                    logger.info(f"Stored file in MinIO: {minio_key}")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to store file {file_path} in MinIO: {e}")
+                    continue
             
             return stored_object_keys
             
@@ -319,6 +327,24 @@ class MinIOFileStorage(FileStorageInterface):
                 return object_key
         
         return None
+    
+    def _cleanup_temp_directory(self, temp_dir: Path) -> None:
+        """Clean up temporary directory after successful upload to MinIO"""
+        try:
+            import shutil
+            if temp_dir.exists() and temp_dir.is_dir():
+                shutil.rmtree(str(temp_dir))
+                logger.info(f"Cleaned up temporary directory: {temp_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to clean up temporary directory {temp_dir}: {e}")
+    
+    def cleanup_failed_generation(self, temp_dir: Path) -> None:
+        """Clean up temporary directory for failed report generation"""
+        try:
+            self._cleanup_temp_directory(temp_dir)
+            logger.info(f"Cleaned up failed generation temp directory: {temp_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to clean up failed generation temp directory {temp_dir}: {e}")
     
     def clean_output_directory(self, directory: Path) -> bool:
         """Clean an output directory before generation (MinIO specific)"""

@@ -49,6 +49,9 @@ class GenerationService:
                 notebook_id=report.notebooks.pk if report.notebooks else None
             )
             
+            # Log the output directory path to track MinIO vs temp paths
+            logger.info(f"Output directory for report {report_id}: {output_dir}")
+            
             # Prepare input data from knowledge base (no temp files - direct content like podcast)
             content_data = {}
             if report.selected_files_paths:
@@ -105,14 +108,10 @@ class GenerationService:
                 error_msg = result.get('error_message', 'Report generation failed')
                 raise Exception(error_msg)
             
-            # Store generated files
+            # For MinIO storage, files are already uploaded by the report generator
+            # For local storage, we need to ensure files are in the correct location
             generated_files = result.get('generated_files', [])
-            if generated_files:
-                stored_files = self.file_storage.store_generated_files(
-                    generated_files, output_dir
-                )
-            else:
-                stored_files = []
+            stored_files = generated_files  # Files are already in final location
             
             # Find main report file
             main_report_file = self.file_storage.get_main_report_file(stored_files)
@@ -137,6 +136,12 @@ class GenerationService:
             
         except Exception as e:
             logger.error(f"Error in report generation for report {report_id}: {e}")
+            
+            # Cleanup any temp directories on failure
+            try:
+                self.report_generator.cancel_generation(str(report.job_id) if report else "unknown")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup temp directories after error: {cleanup_error}")
             
             raise
     

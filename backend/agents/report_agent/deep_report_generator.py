@@ -825,13 +825,28 @@ class DeepReportGenerator:
             runner.summary()
             processing_logs.append("Report generation completed")
 
-            # Always collect the basic storm files
+            # Collect all files from the output directory
+            import glob
+            all_files = glob.glob(os.path.join(article_output_dir, "*"))
+            # Filter to only include files (not directories) and common report file types
+            generated_files.extend([
+                f for f in all_files 
+                if os.path.isfile(f) and any(f.endswith(ext) for ext in 
+                    ['.md', '.txt', '.json', '.jsonl', '.html', '.pdf', '.csv'])
+            ])
+            
+            self.logger.info(f"Collected {len(generated_files)} files from output directory: {[os.path.basename(f) for f in generated_files]}")
+            
+            # Also collect the basic storm files specifically (for backwards compatibility)
             basic_storm_files = [
                 os.path.join(article_output_dir, "storm_gen_outline.txt"),
                 os.path.join(article_output_dir, "storm_gen_article.md"),
                 os.path.join(article_output_dir, "storm_gen_article_polished.md"),
             ]
-            generated_files.extend(basic_storm_files)
+            # Add any basic files that weren't already collected
+            for f in basic_storm_files:
+                if f not in generated_files and os.path.exists(f):
+                    generated_files.append(f)
 
             # Store the final processed report content for Django FileField storage
             # The actual file will be created by job_service.py using Django FileField
@@ -904,6 +919,17 @@ class DeepReportGenerator:
 
             # Use generated article title if available, otherwise use original
             final_article_title = getattr(runner, 'generated_article_title', None) or article_title
+            
+            # Create report_{id}.md file with the final content
+            if final_report_content and config.report_id:
+                report_file_path = os.path.join(article_output_dir, f"report_{config.report_id}.md")
+                try:
+                    with open(report_file_path, 'w', encoding='utf-8') as f:
+                        f.write(final_report_content)
+                    generated_files.append(report_file_path)
+                    self.logger.info(f"Created report_{config.report_id}.md file")
+                except Exception as e:
+                    self.logger.warning(f"Failed to create report_{config.report_id}.md file: {e}")
             
             return ReportGenerationResult(
                 success=True,

@@ -120,6 +120,12 @@ def cancel_report_generation(self, job_id: str):
             except Exception as e:
                 logger.warning(f"Failed to revoke Celery task for job {job_id}: {e}")
 
+        # Call generator cancellation to clean up temp directories
+        try:
+            report_orchestrator.cancel_generation(job_id)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup during cancellation for job {job_id}: {e}")
+
         # Update job status in database to 'cancelled'
         report.update_status(Report.STATUS_CANCELLED, progress="Job cancelled by user")
         

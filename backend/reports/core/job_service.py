@@ -247,8 +247,88 @@ class JobService:
                 # Use the processed content from the report generator
                 report.result_content = result["report_content"]
                 logger.info("Stored processed report content from result data")
+
+            # Handle file storage - upload generated files to MinIO if using MinIO storage
+            generated_files = result.get("generated_files", [])
+            
+            # Upload files to MinIO if there are generated files
+            if generated_files:
+                try:
+                    from ..factories.storage_factory import StorageFactory
+                    storage = StorageFactory.create_storage('minio')
+                    
+                    # Upload files to MinIO and get MinIO keys
+                    minio_keys = storage.store_generated_files(
+                        generated_files, 
+                        report.user.id, 
+                        str(report.id), 
+                        report.notebooks.id if report.notebooks else None
+                    )
+                    
+                    # Update generated_files with MinIO keys
+                    generated_files = minio_keys
+                    logger.info(f"Uploaded {len(minio_keys)} files to MinIO")
+                    
+                    # Clean up the temporary directory
+                    import shutil
+                    import os
+                    if result.get("generated_files"):
+                        # Get temp directory from the first generated file
+                        first_file = result["generated_files"][0]
+                        temp_dir = os.path.dirname(first_file)
+                        
+                        # Only clean up if it's a temp directory (contains report_ prefix)
+                        if temp_dir and os.path.exists(temp_dir) and 'report_' in os.path.basename(temp_dir):
+                            shutil.rmtree(temp_dir)
+                            logger.info(f"Cleaned up temporary directory: {temp_dir}")
+                        else:
+                            logger.info(f"Skipped cleanup of non-temp directory: {temp_dir}")
+                    else:
+                        logger.info("No generated files to determine temp directory for cleanup")
+                        
+                except Exception as e:
+                    logger.error(f"Failed to upload files to MinIO: {e}")
+                    # Continue without failing the job
+            
+            # Set main report object key from generated files (now MinIO keys)
+            if generated_files:
+                # Find the main report file from generated files
+                main_report_key = None
+                for file_path in generated_files:
+                    # For MinIO storage, these are already MinIO keys
+                    # For local storage, these are file paths
+                    filename = os.path.basename(file_path)
+                    
+                    # Look for main report file patterns
+                    if filename.startswith(f"report_{report.id}") and filename.endswith(".md"):
+                        main_report_key = file_path
+                        break
+                    elif "polished" in filename.lower() and filename.endswith(".md"):
+                        main_report_key = file_path
+                        break
+                    elif filename.endswith(".md"):
+                        main_report_key = file_path  # Fallback to any .md file
                 
-                # Save the processed content to MinIO
+                if main_report_key:
+                    # For MinIO storage, this is already a MinIO key
+                    # For local storage, this would be a file path
+                    if main_report_key.startswith(('minio://', str(report.user.id))):
+                        report.main_report_object_key = main_report_key
+                        logger.info(f"Set main report object key: {main_report_key}")
+                    else:
+                        # This is a local file path, need to handle differently
+                        logger.warning(f"Main report appears to be local file: {main_report_key}")
+                        
+                # Update file metadata with generated files info
+                report.file_metadata = {
+                    "generated_files_count": len(generated_files),
+                    "generated_files": generated_files[:10],  # Store first 10 files to avoid huge metadata
+                    "main_report_object_key": report.main_report_object_key
+                }
+                logger.info(f"Stored {len(generated_files)} generated files in metadata")
+            
+            # Fallback: Save processed report content directly to MinIO if no generated files
+            elif "report_content" in result and result["report_content"]:
                 try:
                     from notebooks.utils.minio_backend import get_minio_backend
                     import io
@@ -279,11 +359,11 @@ class JobService:
                         "main_report_content_type": "text/markdown",
                         "main_report_minio_key": minio_key
                     }
-                    logger.info(f"Saved main report to MinIO: {minio_key}")
+                    logger.info(f"Saved main report content to MinIO: {minio_key}")
                 except Exception as e:
                     logger.warning(f"Could not save main report to MinIO: {e}")
             else:
-                logger.warning("No processed report content found in result data")
+                logger.warning("No generated files or report content found in result data")
             
             # Update article_title with generated title from polishing
             if "article_title" in result and result["article_title"] != report.article_title:
@@ -357,6 +437,14 @@ class JobService:
             # Also terminate the celery task if it's still running
             if report.celery_task_id:
                 self._terminate_celery_task(report.celery_task_id)
+            
+            # Cleanup temp directories and prevent MinIO upload for failed jobs
+            try:
+                from ..orchestrator import report_orchestrator
+                report_orchestrator.cleanup_failed_job(job_id)
+                logger.info(f"Cleaned up temp directories for failed job {job_id}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup temp directories for failed job {job_id}: {cleanup_error}")
             
             # Update cache
             cache_key = f"report_job:{job_id}"
