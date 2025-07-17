@@ -586,12 +586,8 @@ class KnowledgeBaseImage(models.Model):
         This maintains compatibility with existing code that expects figure_data structure.
         """
         return {
-            'image_path': self.get_image_url() or '',
-            'figure_name': self.figure_name,
+            'image_id': str(self.id),
             'caption': self.image_caption,
-            'content_type': self.content_type,
-            'file_size': self.file_size,
-            'minio_object_key': self.minio_object_key,
         }
     
     @classmethod

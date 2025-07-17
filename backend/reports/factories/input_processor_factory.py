@@ -6,6 +6,7 @@ import tempfile
 import logging
 import os
 import mimetypes
+import uuid
 from typing import Dict, Any, List
 from pathlib import Path
 from ..interfaces.input_processor_interface import InputProcessorInterface
@@ -31,19 +32,21 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
             
             for file_id in file_paths:
                 try:
-                    # Convert file_id to int if it's a string
-                    if isinstance(file_id, str) and file_id.isdigit():
-                        file_id = int(file_id)
-                    elif isinstance(file_id, str):
-                        # If it's not a digit, it might be an actual path (legacy)
-                        folder_path_obj = Path(file_id)
-                        if folder_path_obj.exists() and folder_path_obj.is_dir():
-                            # Process as folder path (legacy support)
-                            self._process_folder_path(folder_path_obj, input_data)
+                    # Handle UUID file identifiers (only UUID format supported)
+                    if isinstance(file_id, str):
+                        # Validate that it's a proper UUID
+                        try:
+                            uuid.UUID(file_id)
+                            # It's a valid UUID string, use as-is
+                        except ValueError:
+                            logger.warning(f"Invalid UUID file ID: {file_id}")
                             continue
-                        else:
-                            logger.warning(f"Invalid file path or ID: {file_id}")
-                            continue
+                    elif hasattr(file_id, 'hex'):
+                        # Already a UUID object, convert to string
+                        file_id = str(file_id)
+                    else:
+                        logger.warning(f"Unsupported file ID type: {type(file_id)} for {file_id}")
+                        continue
                     
                     # Store file ID for figure data combination
                     input_data["selected_file_ids"].append(f"f_{file_id}")

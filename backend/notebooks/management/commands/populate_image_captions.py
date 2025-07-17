@@ -55,7 +55,7 @@ class Command(BaseCommand):
         if not options['force']:
             query = query.filter(image_caption__in=['', None])
         
-        images_to_process = query.order_by('knowledge_base_item_id', 'image_id')
+        images_to_process = query.order_by('knowledge_base_item_id', 'figure_name')
         
         self.stdout.write(f"Found {images_to_process.count()} images to process")
         

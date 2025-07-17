@@ -19,8 +19,7 @@ const PodcastListSection = ({
   isCollapsed,
   onToggleCollapse,
   onDownloadPodcast,
-  onDeletePodcast,
-  studioService
+  onDeletePodcast
 }) => {
   const podcastCount = podcasts.length;
 
@@ -89,7 +88,6 @@ const PodcastListSection = ({
                   podcast={podcast}
                   onDownload={onDownloadPodcast}
                   onDelete={onDeletePodcast}
-                  studioService={studioService}
                 />
               ))}
             </div>

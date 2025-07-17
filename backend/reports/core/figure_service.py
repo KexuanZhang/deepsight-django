@@ -93,56 +93,80 @@ class FigureDataService:
             return None
     
     @staticmethod
-    def load_combined_figure_data(figure_data_path: str) -> List[Dict]:
+    def load_combined_figure_data(figure_data_reference: str) -> List[Dict]:
         """
-        Load figure data from database or fallback to JSON file.
-        This method maintains compatibility with existing code.
+        Load figure data from KnowledgeBaseImage table using database references.
+        No longer uses JSON files - everything comes from database.
         """
-        # Check if this is a database reference
-        if figure_data_path and figure_data_path.startswith('database_'):
-            try:
-                # Extract identifiers from the path
-                if 'combined_' in figure_data_path:
-                    # This is a combined figure data request
-                    report_id = figure_data_path.split('_')[-1]
+        if not figure_data_reference:
+            return []
+            
+        try:
+            # Check if this is a database reference
+            if figure_data_reference.startswith('database_'):
+                # Extract identifiers from the reference
+                if 'combined_' in figure_data_reference:
+                    # This is a combined figure data request for a report
+                    report_id = figure_data_reference.split('_')[-1]
                     
                     # Try to get from cached data first
                     from reports.models import Report
                     try:
-                        report = Report.objects.get(id=int(report_id))
+                        report = Report.objects.get(id=report_id)
                         if hasattr(report, '_cached_figure_data'):
                             return report._cached_figure_data
-                    except:
+                    except Exception:
                         pass
                     
-                    # If no cached data, return empty list (should be handled by caller)
+                    # If no cached data, return empty list
                     logger.warning(f"No cached figure data found for report {report_id}")
                     return []
                     
-                elif 'kb_' in figure_data_path:
+                elif 'kb_' in figure_data_reference:
                     # This is a single knowledge base item request
-                    kb_item_id = figure_data_path.split('_')[-1]
-                    
-                    from notebooks.utils.knowledge_base_image_service import KnowledgeBaseImageService
-                    image_service = KnowledgeBaseImageService()
-                    
-                    return image_service.get_images_for_knowledge_base_item(
-                        kb_item_id=int(kb_item_id)
-                    )
+                    kb_item_id = figure_data_reference.split('_')[-1]
+                    return FigureDataService._load_kb_item_figure_data(int(kb_item_id))
                 
-            except Exception as e:
-                logger.error(f"Error loading figure data from database reference {figure_data_path}: {e}")
-                return []
-        
-        # Fallback to original JSON file loading for backward compatibility
-        if not figure_data_path or not os.path.exists(figure_data_path):
-            return []
-        
-        try:
-            with open(figure_data_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            # Direct knowledge base item ID (new approach)
+            elif figure_data_reference.isdigit():
+                kb_item_id = int(figure_data_reference)
+                return FigureDataService._load_kb_item_figure_data(kb_item_id)
+                
         except Exception as e:
-            logger.error(f"Error loading figure data from {figure_data_path}: {e}")
+            logger.error(f"Error loading figure data from reference {figure_data_reference}: {e}")
+            
+        return []
+    
+    @staticmethod
+    def _load_kb_item_figure_data(kb_item_id: int) -> List[Dict]:
+        """Load figure data directly from KnowledgeBaseImage table"""
+        try:
+            from notebooks.models import KnowledgeBaseImage
+            
+            # Get all images for this knowledge base item
+            images = KnowledgeBaseImage.objects.filter(
+                knowledge_base_item_id=kb_item_id
+            ).order_by('figure_name')
+            
+            figure_data = []
+            for image in images:
+                # Use to_figure_data_dict method for consistency
+                figure_dict = image.to_figure_data_dict()
+                # Add additional metadata for backwards compatibility if needed
+                figure_dict.update({
+                    'content_type': image.content_type,
+                    'file_size': image.file_size,
+                    'minio_object_key': image.minio_object_key,
+                    'kb_item_id': kb_item_id,
+                    'original_figure_name': image.figure_name  # Keep original for reference
+                })
+                figure_data.append(figure_dict)
+                
+            logger.info(f"Loaded {len(figure_data)} figures for KB item {kb_item_id}")
+            return figure_data
+            
+        except Exception as e:
+            logger.error(f"Error loading figure data for KB item {kb_item_id}: {e}")
             return []
     
     @staticmethod
@@ -175,43 +199,11 @@ class FigureDataService:
     @staticmethod
     def migrate_existing_figure_data_to_database(user_id: int, file_id: str) -> bool:
         """
-        Migrate existing figure_data.json files to database.
-        This helps transition from the old file-based system.
-        
-        Args:
-            user_id: User ID
-            file_id: Knowledge base file ID (without f_ prefix)
-            
-        Returns:
-            True if migration was successful, False otherwise
+        DEPRECATED: No longer needed as we use KnowledgeBaseImage table directly.
+        This method is kept for compatibility but always returns True.
         """
-        try:
-            # Try to find existing figure_data.json file
-            images_folder_path = FigureDataService._get_knowledge_base_images_path(user_id, file_id)
-            
-            if images_folder_path and os.path.exists(images_folder_path):
-                figure_data_path = os.path.join(images_folder_path, "figure_data.json")
-                
-                if os.path.exists(figure_data_path):
-                    from notebooks.utils.knowledge_base_image_service import KnowledgeBaseImageService
-                    
-                    image_service = KnowledgeBaseImageService()
-                    success = image_service.migrate_figure_data_json_to_database(
-                        kb_item_id=int(file_id),
-                        figure_data_path=figure_data_path,
-                        user_id=user_id
-                    )
-                    
-                    if success:
-                        logger.info(f"Successfully migrated figure_data.json to database for kb_item {file_id}")
-                        return True
-            
-            # Also try to create figure data from existing images if no JSON file exists
-            return FigureDataService._create_figure_data_from_images_in_database(user_id, file_id)
-            
-        except Exception as e:
-            logger.error(f"Error migrating figure data to database for kb_item {file_id}: {e}")
-            return False
+        logger.info(f"Migration not needed - using KnowledgeBaseImage table directly for file {file_id}")
+        return True
     
     @staticmethod
     def _create_figure_data_from_images_in_database(user_id: int, file_id: str) -> bool:
@@ -306,9 +298,8 @@ class FigureDataService:
     
     @staticmethod
     def _get_report_figure_data_path(report) -> str:
-        """Generate absolute path for combined report figure_data.json."""
-        # With MinIO storage, we can't use local file paths
-        logger.warning(f"Using MinIO storage - cannot resolve local figure data path for report {report.id}")
+        """DEPRECATED: No longer creates JSON files. Always returns None."""
+        logger.info(f"Using KnowledgeBaseImage table directly - no figure data path needed for report {report.id}")
         return None
         
         user_id = report.user.pk
@@ -324,10 +315,9 @@ class FigureDataService:
     
     @staticmethod
     def _load_knowledge_base_figure_data(user_id: int, file_id: str) -> List[Dict]:
-        """Load individual figure_data.json from knowledge base item."""
-        # With MinIO storage, we can't load figure data from local files
-        logger.info(f"Using MinIO storage - cannot load figure data for file {file_id}")
-        return []
+        """DEPRECATED: Use _load_kb_item_figure_data instead."""
+        logger.info(f"Using KnowledgeBaseImage table directly for file {file_id}")
+        return FigureDataService._load_kb_item_figure_data(int(file_id))
     
     @staticmethod
     def _validate_and_clean_figure_data(figure_data: List[Dict]) -> List[Dict]:
@@ -367,83 +357,10 @@ class FigureDataService:
     @staticmethod
     def _create_figure_data_from_images(user_id: int, file_id: str) -> List[Dict]:
         """
-        Create figure data by extracting from markdown content in the content folder.
-        Only creates if images folder exists and figure_data.json doesn't already exist.
+        DEPRECATED: No longer creates JSON files. Use KnowledgeBaseImage table directly.
         """
-        images_folder_path = FigureDataService._get_knowledge_base_images_path(user_id, file_id)
-        
-        if not os.path.exists(images_folder_path):
-            logger.info(f"Images folder doesn't exist at {images_folder_path}")
-            return []
-        
-        # Check if figure_data.json already exists (should be created by media extractor)
-        figure_data_path = os.path.join(images_folder_path, "figure_data.json")
-        if os.path.exists(figure_data_path):
-            logger.info(f"figure_data.json already exists at {figure_data_path}, not creating from markdown")
-            return []
-        
-        # Get the content folder path
-        content_folder_path = FigureDataService._get_knowledge_base_content_path(user_id, file_id)
-        
-        if not os.path.exists(content_folder_path):
-            logger.info(f"Content folder doesn't exist at {content_folder_path}")
-            # Create empty figure_data.json since images folder exists but no content
-            with open(figure_data_path, 'w', encoding='utf-8') as f:
-                json.dump([], f, indent=2, ensure_ascii=False)
-            logger.info(f"Created empty figure_data.json at {figure_data_path}")
-            return []
-        
-        # Find markdown file in content folder
-        md_files = glob.glob(os.path.join(content_folder_path, "*.md"))
-        if not md_files:
-            logger.info(f"No markdown files found in {content_folder_path}")
-            # Create empty figure_data.json since images folder exists but no markdown file
-            with open(figure_data_path, 'w', encoding='utf-8') as f:
-                json.dump([], f, indent=2, ensure_ascii=False)
-            logger.info(f"Created empty figure_data.json at {figure_data_path}")
-            return []
-        
-        # Use the first markdown file found
-        md_file_path = md_files[0]
-        logger.info(f"Extracting figure data from {md_file_path}")
-        
-        try:
-            # Extract figure data using paper_processing function
-            figure_data = extract_figure_data(md_file_path)
-            
-            # Update image paths to point to the images folder
-            updated_figure_data = []
-            for figure in figure_data:
-                # Get just the filename from the original image path
-                image_filename = os.path.basename(figure['image_path'])
-                # Create absolute path to the image in the images folder
-                absolute_image_path = os.path.join(images_folder_path, image_filename)
-                
-                # Only include if the image file actually exists in the images folder
-                if os.path.exists(absolute_image_path):
-                    updated_figure = {
-                        'image_path': absolute_image_path,
-                        'figure_name': figure['figure_name'],
-                        'caption': figure['caption']
-                    }
-                    updated_figure_data.append(updated_figure)
-                else:
-                    logger.warning(f"Image file {absolute_image_path} referenced in markdown but not found in images folder")
-            
-            # Create figure_data.json file (even if empty)
-            with open(figure_data_path, 'w', encoding='utf-8') as f:
-                json.dump(updated_figure_data, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Created figure_data.json at {figure_data_path} with {len(updated_figure_data)} figures")
-            return updated_figure_data
-            
-        except Exception as e:
-            logger.error(f"Error extracting figure data from {md_file_path}: {e}")
-            # Create empty figure_data.json on error
-            with open(figure_data_path, 'w', encoding='utf-8') as f:
-                json.dump([], f, indent=2, ensure_ascii=False)
-            logger.info(f"Created empty figure_data.json at {figure_data_path} due to extraction error")
-            return []
+        logger.info(f"Using KnowledgeBaseImage table directly for file {file_id} - no JSON creation needed")
+        return FigureDataService._load_kb_item_figure_data(int(file_id))
     
     @staticmethod
     def _get_knowledge_base_content_path(user_id: int, file_id: str) -> str:

@@ -381,13 +381,22 @@ class UploadProcessor:
         """Update the status of an upload."""
         if upload_file_id:
             current_status = self._upload_statuses.get(upload_file_id, {})
+            
+            # Convert UUID objects to strings for JSON serialization
+            json_safe_kwargs = {}
+            for key, value in kwargs.items():
+                if hasattr(value, '__str__') and hasattr(value, 'hex'):  # UUID check
+                    json_safe_kwargs[key] = str(value)
+                else:
+                    json_safe_kwargs[key] = value
+            
             current_status.update(
                 {
                     "upload_file_id": upload_file_id,
                     "status": status,
                     "parsing_status": status,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
-                    **kwargs,
+                    **json_safe_kwargs,
                 }
             )
             self._upload_statuses[upload_file_id] = current_status

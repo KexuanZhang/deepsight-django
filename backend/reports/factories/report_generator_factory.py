@@ -2,9 +2,15 @@
 Factory for creating report generator instances.
 """
 
+import tempfile
+import shutil
+import logging
 from typing import Dict, Any, Optional
+from pathlib import Path
 from ..interfaces.report_generator_interface import ReportGeneratorInterface
 from ..config.report_config import report_config
+
+logger = logging.getLogger(__name__)
 
 
 class DeepReportGeneratorAdapter(ReportGeneratorInterface):
@@ -13,6 +19,7 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
     def __init__(self, secrets_path: Optional[str] = None):
         self._generator = None
         self.secrets_path = secrets_path or report_config.get_secrets_path()
+        self._temp_dirs = []  # Track temp directories for cleanup
         
     @property
     def generator(self):
@@ -110,25 +117,43 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
     
     def generate_report(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Generate a report based on the provided configuration"""
+        original_output_dir = config.get('output_dir')
+        
         try:
+            # The output_dir is now always a proper filesystem path
+            # MinIO storage creates temp directories, Django storage uses configured paths
+            logger.info(f"Using output directory: {original_output_dir}")
+            
             # Convert our config to DeepReportGenerator config
             deep_config = self._create_deep_config(config)
             
             # Generate the report
             result = self.generator.generate_report(deep_config)
             
+            if not result.success:
+                return {
+                    'success': False,
+                    'error_message': result.error_message or "Report generation failed"
+                }
+            
+            # Return the generated files as-is - they're now already in temp directory
+            # The storage service will handle uploading to MinIO later
+            generated_files = result.generated_files or []
+            
             # Convert result to our standard format
             return {
-                'success': result.success,
+                'success': True,
                 'article_title': result.article_title,
                 'generated_topic': getattr(result, 'generated_topic', None),
                 'report_content': getattr(result, 'report_content', ''),
-                'generated_files': result.generated_files or [],
+                'generated_files': generated_files,
                 'processing_logs': result.processing_logs or [],
-                'error_message': result.error_message if not result.success else None
+                'error_message': None
             }
             
         except Exception as e:
+            logger.error(f"Report generation failed: {e}")
+            
             return {
                 'success': False,
                 'error_message': f"Report generation failed: {str(e)}"
@@ -149,13 +174,48 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
     
     def cancel_generation(self, job_id: str) -> bool:
         """Cancel an ongoing report generation if possible"""
-        # DeepReportGenerator doesn't currently support cancellation
-        # This would need to be implemented if needed
-        return False
+        try:
+            # DeepReportGenerator doesn't currently support cancellation
+            # Clean up any temp directories as part of cancellation
+            self._cleanup_all_temp_directories()
+            logger.info(f"Cleaned up temp directories for cancelled job {job_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error during cancellation cleanup for job {job_id}: {e}")
+            return False
     
     @property
     def generator_name(self) -> str:
         return "report_agent"
+    
+    def _cleanup_temp_directory(self, temp_dir: str) -> None:
+        """Clean up a specific temporary directory"""
+        try:
+            if temp_dir and Path(temp_dir).exists():
+                shutil.rmtree(temp_dir)
+                logger.info(f"Cleaned up temporary directory: {temp_dir}")
+                if temp_dir in self._temp_dirs:
+                    self._temp_dirs.remove(temp_dir)
+        except Exception as e:
+            logger.warning(f"Failed to clean up temporary directory {temp_dir}: {e}")
+    
+    def _cleanup_all_temp_directories(self) -> None:
+        """Clean up all tracked temporary directories"""
+        for temp_dir in self._temp_dirs.copy():
+            self._cleanup_temp_directory(temp_dir)
+    
+    def _upload_to_minio(self, local_files: list, user_id: int, report_id: str, notebook_id: int = None) -> list:
+        """Upload generated files to MinIO storage and return MinIO object keys"""
+        from ..factories.storage_factory import StorageFactory
+        
+        minio_storage = StorageFactory.create_storage('minio')
+        minio_files = minio_storage.store_generated_files(local_files, user_id, report_id, notebook_id)
+        
+        return minio_files
+    
+    def __del__(self):
+        """Cleanup temp directories when adapter is destroyed"""
+        self._cleanup_all_temp_directories()
     
     def _create_deep_config(self, config: Dict[str, Any]) -> Any:
         """Create DeepReportGenerator configuration from our config"""
@@ -216,7 +276,7 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
             deep_config = ReportGenerationConfig(
                 topic=config.get('topic'),  # Keep topic empty if not provided - let TopicGenerator handle it
                 article_title=config.get('article_title') or f"Report_{config.get('report_id', 'Unknown')}",
-                output_dir=str(config['output_dir']),
+                output_dir=str(config['output_dir']),  # Now always a local path (temp dir if MinIO)
                 report_id=config.get('report_id'),
                 model_provider=model_provider_map.get(
                     config.get('model_provider', 'openai'), ModelProvider.OPENAI

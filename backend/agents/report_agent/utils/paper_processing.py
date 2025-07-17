@@ -11,6 +11,48 @@ if not logging.getLogger().hasHandlers():
     )
 
 
+def _get_image_url_from_db(image_id: str) -> str:
+    """
+    Get the MinIO URL for an image from the database using the image_id.
+    
+    Args:
+        image_id: The database ID of the KnowledgeBaseImage
+        
+    Returns:
+        The MinIO URL for the image, or None if not found
+    """
+    try:
+        # Import here to avoid circular imports
+        import django
+        import os
+        from django.conf import settings as django_settings
+        
+        # Initialize Django if not already done
+        if not django_settings.configured:
+            os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+            django.setup()
+        
+        from notebooks.models import KnowledgeBaseImage
+        
+        try:
+            image = KnowledgeBaseImage.objects.get(id=image_id)
+            url = image.get_image_url()
+            logging.info(f"Successfully retrieved image URL for id {image_id}")
+            return url
+        except KnowledgeBaseImage.DoesNotExist:
+            logging.warning(f"Image with id {image_id} not found in database")
+            return None
+        except ValueError as ve:
+            logging.warning(f"Invalid image ID format {image_id}: {ve}")
+            return None
+            
+    except Exception as e:
+        logging.error(f"Error getting image URL for id {image_id}: {e}")
+        import traceback
+        logging.error(f"Traceback: {traceback.format_exc()}")
+        return None
+
+
 def parse_paper_title(paper_content: str) -> str:
     """
     Extracts and cleans the title from paper content.
@@ -237,72 +279,51 @@ def insert_figure_images(
     article_content: str, figures: list[dict], reorder: bool = False
 ) -> str:
     """
-    Inserts image paths and captions into the article content at placeholders in the format <Figure X>.
-    Only inserts at the first occurrence of each figure placeholder, and skips figures that have already been inserted.
+    Inserts image captions into the article content at placeholders in the format <image_id>.
+    Only inserts at the first occurrence of each image placeholder, and skips images that have already been inserted.
+    Note: image_path is no longer required - only image_id and caption are used.
     """
     figure_dict = {
-        fig["figure_name"]: (fig["image_path"], fig["caption"]) for fig in figures
+        fig["image_id"]: fig["caption"] for fig in figures
     }
     
-    # Check which figures have already been inserted by looking for existing img tags with alt text
+    # Check which figures have already been inserted by looking for existing img tags with data-image-id
     already_inserted = set()
-    for figure_name in figure_dict:
-        # Check if there's already an img tag with this figure's alt text (handle both single and double quotes)
-        existing_img_pattern = rf'<img\s+[^>]*alt=["\']' + re.escape(figure_name) + r'["\'][^>]*>'
+    for image_id in figure_dict:
+        # Check if there's already an img tag with this image_id
+        existing_img_pattern = rf'<img\s+[^>]*data-image-id=["\']' + re.escape(str(image_id)) + r'["\'][^>]*>'
         if re.search(existing_img_pattern, article_content, re.IGNORECASE):
-            already_inserted.add(figure_name)
-            logging.info(f"Figure '{figure_name}' already inserted, skipping.")
+            already_inserted.add(image_id)
+            logging.info(f"Image ID '{image_id}' already inserted, skipping.")
     
-    # Look for placeholders in format <Figure X> on standalone lines
-    pattern = r"^\s*<Figure \d+>\s*$"
-    matches = list(re.finditer(pattern, article_content, re.MULTILINE | re.IGNORECASE))
+    # Look for image placeholders in format <image uuid> on standalone lines
+    # UUID pattern: 8-4-4-4-12 hexadecimal characters
+    uuid_pattern = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    pattern = rf"^\s*<({uuid_pattern})>\s*$"
+    matches = list(re.finditer(pattern, article_content, re.MULTILINE))
 
     # Initialize as empty dict first
     first_occurrences = {}
     # Then add each match if it's not already in the dict
     for match in matches:
-        # Extract figure name from <Figure X> placeholder
-        placeholder_text = match.group().strip()
-        figure_name = re.sub(
-            r"[<>]", "", placeholder_text
-        )  # Remove < and > to get "Figure X"
+        # Extract image_id from <image_id> placeholder
+        image_id = match.group(1).strip()
         
-        # Skip if this figure has already been inserted
-        if figure_name in already_inserted:
+        # Skip if this image has already been inserted
+        if image_id in already_inserted:
             continue
-            
-        if figure_name not in first_occurrences:
-            first_occurrences[figure_name] = match.start()
+        
+        # Only include if we have this image in our figure_dict
+        if image_id in figure_dict:
+            if image_id not in first_occurrences:
+                first_occurrences[image_id] = match.start()
 
-    if reorder:
-        sorted_figures = sorted(first_occurrences, key=first_occurrences.get)
-        mapping = {old: f"Figure {i + 1}" for i, old in enumerate(sorted_figures)}
-        for old, new in mapping.items():
-            # Update placeholders in content
-            article_content = re.sub(
-                rf"<{old}>", f"<{new}>", article_content, flags=re.IGNORECASE
-            )
-        new_figure_dict = {
-            mapping[old]: figure_dict[old] for old in mapping if old in figure_dict
-        }
-        figure_dict = new_figure_dict
-        first_occurrences = {
-            mapping[k]: v for k, v in first_occurrences.items() if k in mapping
-        }
-
-    # Filter out figure references that don't exist in figure_dict
-    valid_occurrences = {}
-    for figure_name, pos in first_occurrences.items():
-        if figure_name in figure_dict:
-            valid_occurrences[figure_name] = pos
-        else:
-            logging.warning(
-                f"Figure placeholder '<{figure_name}>' found in article but no matching figure data exists. Skipping insertion."
-            )
+    # No need to filter since we already checked figure_dict membership above
+    valid_occurrences = first_occurrences
 
     # Sort insertion points by position in text
     insertion_points = [
-        (pos, figure_name) for figure_name, pos in valid_occurrences.items()
+        (pos, image_id) for image_id, pos in valid_occurrences.items()
     ]
     insertion_points.sort(key=lambda x: x[0])
 
@@ -312,10 +333,10 @@ def insert_figure_images(
     max_image_height = "500px"
 
     # Find and replace each placeholder with figure content
-    for pos, figure_name in insertion_points:
+    for pos, image_id in insertion_points:
         # Find the end of the placeholder line
         placeholder_match = re.search(
-            r"^\s*<" + re.escape(figure_name) + r">\s*$",
+            r"^\s*<" + re.escape(image_id) + r">\s*$",
             article_content[pos:],
             re.MULTILINE,
         )
@@ -326,8 +347,14 @@ def insert_figure_images(
             output_segments.append(article_content[prev_end:pos])
 
             # Add figure content
-            image_path, caption = figure_dict[figure_name]
-            insertion_text = f'<img src="{image_path}" alt="{figure_name}" style="max-height: {max_image_height};">\n\n{figure_name}: {caption}\n\n'
+            caption = figure_dict[image_id]
+            # Get image URL from database using image_id
+            image_url = _get_image_url_from_db(image_id)
+            if image_url:
+                insertion_text = f'<img src="{image_url}" data-image-id="{image_id}" style="max-height: {max_image_height};">\n\n{caption}\n\n'
+            else:
+                # Fallback if image URL not found
+                insertion_text = f'<div data-image-id="{image_id}" style="padding: 20px; border: 1px dashed #ccc; text-align: center;">Image not found (ID: {image_id})</div>\n\n{caption}\n\n'
             output_segments.append(insertion_text)
 
             prev_end = placeholder_end

@@ -59,7 +59,7 @@ class NotebookReportListCreateView(APIView):
             for report in reports:
                 if report.status == Report.STATUS_COMPLETED:
                     # Check if the job has actual files
-                    if report.main_report_file or report.result_content:
+                    if report.main_report_object_key or report.result_content:
                         validated_reports.append(self._format_report_data(report))
                     else:
                         logger.warning(
@@ -130,7 +130,7 @@ class NotebookReportListCreateView(APIView):
             "created_at": report.created_at.isoformat(),
             "updated_at": report.updated_at.isoformat(),
             "error": report.error_message,
-            "has_files": bool(report.main_report_file),
+            "has_files": bool(report.main_report_object_key),
             "has_content": bool(report.result_content),
         }
 
@@ -270,7 +270,7 @@ class NotebookReportDetailView(APIView):
                     # Delete from MinIO storage
                     from notebooks.utils.file_storage import FileStorageService
                     storage_service = FileStorageService()
-                    storage_service.delete_file(report.main_report_object_key)
+                    storage_service.minio_backend.delete_file(report.main_report_object_key)
                     deleted_files = 1
                     logger.info(f"Deleted report file from MinIO storage")
                 except Exception as e:
@@ -764,6 +764,7 @@ def notebook_report_status_stream(request, notebook_id, job_id):
                             break
                         status_data = {
                             "job_id": job_id,
+                            "report_id": str(current_report.id),  # Convert UUID to string for JSON serialization
                             "status": current_report.status,
                             "progress": current_report.progress,
                             "error_message": current_report.error_message,

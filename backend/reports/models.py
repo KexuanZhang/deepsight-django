@@ -294,6 +294,9 @@ class Report(models.Model):
             "domain_list": self.domain_list,
             "include_image": self.include_image,
             "search_depth": self.search_depth,
+            # Content input fields
+            "topic": self.topic,
+            "selected_files_paths": self.selected_files_paths,
         }
 
     def update_status(self, status, progress=None, error=None):
