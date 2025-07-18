@@ -85,7 +85,7 @@ class PodcastJob(models.Model):
             try:
                 from notebooks.utils.storage import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_url(self.audio_object_key, expires)
+                return backend.get_presigned_url(self.audio_object_key, expires)
             except Exception:
                 return None
         return None

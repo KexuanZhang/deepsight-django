@@ -987,7 +987,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
                 for obj in objects:
                     if obj.object_name.endswith(filename):
                         # Generate pre-signed URL
-                        file_url = backend.get_file_url(obj.object_name, expires=3600)
+                        file_url = backend.get_presigned_url(obj.object_name, expires=3600)
                         
                         # Return redirect to pre-signed URL
                         return HttpResponseRedirect(file_url)
@@ -1005,7 +1005,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
                         objects = backend.client.list_objects(backend.bucket_name, prefix=alt_prefix)
                         for obj in objects:
                             if obj.object_name.endswith(filename):
-                                file_url = backend.get_file_url(obj.object_name, expires=3600)
+                                file_url = backend.get_presigned_url(obj.object_name, expires=3600)
                                 return HttpResponseRedirect(file_url)
                     except Exception:
                         continue
