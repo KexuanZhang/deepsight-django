@@ -54,6 +54,11 @@ class NotebookReportListCreateView(APIView):
                 notebooks=notebook
             ).order_by('-created_at')
             
+            # Calculate last modified time for caching
+            last_modified = None
+            if reports:
+                last_modified = max(report.updated_at for report in reports)
+            
             # Filter out phantom jobs (completed jobs without actual files)
             validated_reports = []
             for report in reports:
@@ -69,7 +74,18 @@ class NotebookReportListCreateView(APIView):
                     # Include non-completed jobs as-is
                     validated_reports.append(self._format_report_data(report))
             
-            return Response({"reports": validated_reports})
+            response = Response({"reports": validated_reports})
+            
+            # Add caching headers
+            if last_modified:
+                response['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            
+            # Cache for 30 seconds if no active jobs, otherwise 5 seconds
+            has_active_jobs = any(report.get('status') in ['pending', 'running'] for report in validated_reports)
+            cache_timeout = 5 if has_active_jobs else 30
+            response['Cache-Control'] = f'max-age={cache_timeout}, must-revalidate'
+            
+            return response
         except Exception as e:
             logger.error(f"Error listing reports for notebook {notebook_id}: {e}")
             return Response(

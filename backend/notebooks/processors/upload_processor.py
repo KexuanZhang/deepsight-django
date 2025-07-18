@@ -25,11 +25,10 @@ from django.http import Http404
 from django.core.exceptions import ValidationError
 
 try:
-    from .file_storage import FileStorageService
-    from .content_index import ContentIndexingService
-    from .file_validator import FileValidator
-    from .config import config as settings
-    from .image_processing import clean_title
+    from ..utils.storage import FileStorageService
+    from ..utils.helpers import ContentIndexingService, config as settings
+    from ..utils.validators import FileValidator
+    from ..utils.image_processing.utils import clean_title
 except ImportError:
     # Fallback classes to prevent import errors
     FileStorageService = None
@@ -1329,7 +1328,7 @@ class UploadProcessor:
                 # Auto-populate image captions if images were created
                 if image_files:
                     try:
-                        from .knowledge_base_image_service import KnowledgeBaseImageService
+                        from ..services.knowledge_base_image_service import KnowledgeBaseImageService
                         caption_service = KnowledgeBaseImageService()
                         caption_service.auto_populate_captions_from_content(kb_item.id, kb_item.user.id)
                         self.log_operation("marker_caption_generation", 

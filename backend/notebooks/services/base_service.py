@@ -20,7 +20,7 @@ except ImportError:
     redis_available = False
 
 try:
-    from .config import config as settings
+    from ..utils.helpers import config as settings
 except ImportError:
     settings = None
 

@@ -129,9 +129,9 @@ class URLProcessingResult(models.Model):
         """Get pre-signed URL for downloaded file"""
         if self.downloaded_file_object_key:
             try:
-                from .utils.minio_backend import get_minio_backend
+                from .utils.storage import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_url(self.downloaded_file_object_key, expires)
+                return backend.get_presigned_url(self.downloaded_file_object_key, expires)
             except Exception:
                 return None
         return None
@@ -192,9 +192,9 @@ class ProcessingJob(models.Model):
         """Get pre-signed URL for result file"""
         if self.result_file_object_key:
             try:
-                from .utils.minio_backend import get_minio_backend
+                from .utils.storage import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_url(self.result_file_object_key, expires)
+                return backend.get_presigned_url(self.result_file_object_key, expires)
             except Exception:
                 return None
         return None
@@ -287,9 +287,9 @@ class KnowledgeBaseItem(models.Model):
         """Get pre-signed URL for processed file"""
         if self.file_object_key:
             try:
-                from .utils.minio_backend import get_minio_backend
+                from .utils.storage import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_url(self.file_object_key, expires)
+                return backend.get_presigned_url(self.file_object_key, expires)
             except Exception:
                 return None
         return None
@@ -298,9 +298,9 @@ class KnowledgeBaseItem(models.Model):
         """Get pre-signed URL for original file"""
         if self.original_file_object_key:
             try:
-                from .utils.minio_backend import get_minio_backend
+                from .utils.storage import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_url(self.original_file_object_key, expires)
+                return backend.get_presigned_url(self.original_file_object_key, expires)
             except Exception:
                 return None
         return None
@@ -311,9 +311,9 @@ class KnowledgeBaseItem(models.Model):
             return self.content
         elif self.file_object_key:
             try:
-                from .utils.minio_backend import get_minio_backend
+                from .utils.storage import get_minio_backend
                 backend = get_minio_backend()
-                content = backend.get_file_content(self.file_object_key)
+                content = backend.get_file(self.file_object_key)
                 return content.decode('utf-8') if isinstance(content, bytes) else content
             except Exception:
                 pass  # Fall through to try original file
@@ -321,9 +321,9 @@ class KnowledgeBaseItem(models.Model):
         # If no processed content, try the original file (useful for .md files)
         if self.original_file_object_key:
             try:
-                from .utils.minio_backend import get_minio_backend
+                from .utils.storage import get_minio_backend
                 backend = get_minio_backend()
-                content = backend.get_file_content(self.original_file_object_key)
+                content = backend.get_file(self.original_file_object_key)
                 return content.decode('utf-8') if isinstance(content, bytes) else content
             except Exception:
                 pass
@@ -562,9 +562,9 @@ class KnowledgeBaseImage(models.Model):
         """Get pre-signed URL for image access"""
         if self.minio_object_key:
             try:
-                from .utils.minio_backend import get_minio_backend
+                from .utils.storage import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_url(self.minio_object_key, expires)
+                return backend.get_presigned_url(self.minio_object_key, expires)
             except Exception:
                 return None
         return None
@@ -573,9 +573,9 @@ class KnowledgeBaseImage(models.Model):
         """Get image content as bytes from MinIO"""
         if self.minio_object_key:
             try:
-                from .utils.minio_backend import get_minio_backend
+                from .utils.storage import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_content(self.minio_object_key)
+                return backend.get_file(self.minio_object_key)
             except Exception:
                 return None
         return None

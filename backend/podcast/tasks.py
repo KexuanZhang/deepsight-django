@@ -138,7 +138,7 @@ def process_podcast_generation(self, job_id: str):
             )
 
             # Generate audio file using MinIO storage
-            from notebooks.utils.minio_backend import get_minio_backend
+            from notebooks.utils.storage import get_minio_backend
             import tempfile
             import os
             import re
@@ -263,7 +263,7 @@ def cleanup_old_podcast_jobs():
                 # Delete associated audio file if it exists
                 if job.audio_object_key:
                     try:
-                        from notebooks.utils.minio_backend import get_minio_backend
+                        from notebooks.utils.storage import get_minio_backend
                         minio_backend = get_minio_backend()
                         minio_backend.delete_file(job.audio_object_key)
                     except Exception as e:
