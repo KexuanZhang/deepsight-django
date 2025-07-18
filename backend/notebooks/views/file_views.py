@@ -712,6 +712,11 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
     def _build_extraction_options(self, validated_data):
         """Build extraction options from validated data."""
         return {
+            'extract_interval': validated_data.get('extract_interval'),
+            'pixel_threshold': validated_data.get('pixel_threshold'),
+            'sequential_deep_threshold': validated_data.get('sequential_deep_threshold'),
+            'global_deep_threshold': validated_data.get('global_deep_threshold'),
+            'min_words': validated_data.get('min_words'),
             'dedup_pixel_global': validated_data.get('dedup_pixel_global', True),
             'dedup_deep_sequential': validated_data.get('dedup_deep_sequential', True),
             'dedup_deep_global': validated_data.get('dedup_deep_global', True),
