@@ -8,17 +8,19 @@ doesn't require external binaries like wkhtmltopdf.
 
 Features:
 - Converts Markdown to PDF with embedded images
-- Supports relative and absolute image paths
+- Downloads MinIO images to temp directory for PDF conversion
 - Page numbers (no table of contents per requirements)
 - Customizable styling with CSS
 - No external binary dependencies
 """
 
-import os
 import logging
+import re
+import tempfile
+import shutil
+import requests
 from pathlib import Path
 from typing import Optional
-from django.conf import settings
 
 try:
     from markdown_pdf import MarkdownPdf, Section
@@ -38,6 +40,60 @@ class PdfService:
                 "markdown-pdf library not found. "
                 "Please install it using: pip install markdown-pdf"
             )
+    
+    def _download_images_and_update_content(self, content: str):
+        """
+        Download MinIO images to temp directory and update content with local paths.
+        Returns (updated_content, temp_dir_path) or (original_content, None) if no images.
+        """
+        # Find MinIO URLs in content
+        minio_pattern = r'<img[^>]+src=["\']([^"\']*localhost:9000[^"\']*)["\'][^>]*>'
+        urls = re.findall(minio_pattern, content)
+        
+        if not urls:
+            logger.info("No MinIO images found in content")
+            return content, None
+        
+        # Create temp directory
+        temp_dir = Path(tempfile.mkdtemp(prefix="pdf_images_"))
+        images_dir = temp_dir / "images"
+        images_dir.mkdir()
+        
+        updated_content = content
+        
+        try:
+            logger.info(f"Found {len(urls)} images to download")
+            
+            for i, url in enumerate(urls):
+                try:
+                    # Download image
+                    logger.debug(f"Downloading image from: {url}")
+                    response = requests.get(url, timeout=30)
+                    response.raise_for_status()
+                    
+                    # Save with simple filename
+                    filename = f"image_{i+1}.jpeg"
+                    local_path = images_dir / filename
+                    
+                    with open(local_path, 'wb') as f:
+                        f.write(response.content)
+                    
+                    # Replace URL with local path in content
+                    local_img_path = f"images/{filename}"
+                    updated_content = updated_content.replace(url, local_img_path)
+                    
+                    logger.info(f"Downloaded image {i+1}: {filename} ({len(response.content):,} bytes)")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to download image {url}: {e}")
+                    continue
+            
+            return updated_content, str(temp_dir)
+            
+        except Exception as e:
+            logger.error(f"Error downloading images: {e}")
+            shutil.rmtree(temp_dir)
+            return content, None
     
     def convert_markdown_to_pdf(
         self,
@@ -65,6 +121,8 @@ class PdfService:
         Raises:
             Exception: If conversion fails
         """
+        temp_dir = None
+        
         try:
             # Ensure output directory exists
             output_file = Path(output_path)
@@ -73,95 +131,32 @@ class PdfService:
             logger.info(f"Converting markdown to PDF: {output_file.name}")
             logger.debug(f"Content length: {len(markdown_content):,} characters")
             
+            # Download MinIO images and update content
+            content_to_convert, temp_dir = self._download_images_and_update_content(markdown_content)
+            
+            # Use temp directory as image root if we downloaded images
+            if temp_dir:
+                root_dir = temp_dir
+                logger.info(f"Using temp directory as image root: {root_dir}")
+            elif image_root:
+                root_dir = str(Path(image_root).resolve())
+                logger.info(f"Using provided image root: {root_dir}")
+            elif input_file_path:
+                root_dir = str(Path(input_file_path).parent.resolve())
+                logger.info(f"Using input file directory as root: {root_dir}")
+            else:
+                root_dir = str(output_file.parent.resolve())
+                logger.info(f"Using output directory as root: {root_dir}")
+            
             # Create PDF converter with no TOC and optimization enabled
             pdf = MarkdownPdf(
                 toc_level=0,  # No table of contents per requirements
                 optimize=True
             )
             
-            # Check for image references and analyze paths
-            import re
-            image_patterns = [
-                r'!\[.*?\]\((.*?)\)',  # Markdown image syntax
-                r'<img[^>]+src=["\']([^"\']+)["\']',  # HTML img tags
-            ]
-            
-            found_images = []
-            for pattern in image_patterns:
-                matches = re.findall(pattern, markdown_content)
-                found_images.extend(matches)
-            
-            if found_images:
-                logger.info(f"📷 Found {len(found_images)} image references:")
-                for img in found_images[:5]:  # Show first 5
-                    if img.startswith('../'):
-                        logger.info(f"   - {img} (relative path)")
-                    elif img.startswith('http'):
-                        logger.info(f"   - {img} (web URL)")
-                    else:
-                        logger.info(f"   - {img}")
-                if len(found_images) > 5:
-                    logger.info(f"   ... and {len(found_images) - 5} more")
-            
-            # Determine the root directory for image resolution
-            if input_file_path:
-                # Use the input file path to calculate image root
-                input_path = Path(input_file_path)
-                
-                # Try to intelligently determine the root directory
-                # Check if the markdown contains paths that go up multiple levels
-                if '../../' in markdown_content:
-                    # Calculate how many levels up we need to go
-                    max_levels_up = 0
-                    lines = markdown_content.split('\n')
-                    for line in lines:
-                        if ('src=' in line or '![](' in line) and '../' in line:
-                            levels = line.count('../')
-                            max_levels_up = max(max_levels_up, levels)
-                    
-                    # Go up the calculated number of levels from the input file directory
-                    root_dir = input_path.parent
-                    for _ in range(max_levels_up):
-                        root_dir = root_dir.parent
-                    root_dir = str(root_dir.resolve())
-                    
-                    logger.info(f"📁 Detected complex relative paths, using root: {root_dir}")
-                else:
-                    # Use the input file's directory as root
-                    root_dir = str(input_path.parent.resolve())
-                    logger.info(f"📁 Using input file directory as root: {root_dir}")
-            elif image_root:
-                # Fallback to provided image root
-                root_dir = str(Path(image_root).resolve())
-                logger.info(f"📁 Using provided image root: {root_dir}")
-            else:
-                # Only try to intelligently determine the root directory if no image_root is provided
-                # Check if the markdown contains paths that go up multiple levels
-                if '../../' in markdown_content:
-                    # Calculate how many levels up we need to go
-                    max_levels_up = 0
-                    lines = markdown_content.split('\n')
-                    for line in lines:
-                        if ('src=' in line or '![](' in line) and '../' in line:
-                            levels = line.count('../')
-                            max_levels_up = max(max_levels_up, levels)
-                    
-                    # IMPORTANT: Since we don't have an actual input file, we use the output directory
-                    # but this is only when no image_root is provided (which shouldn't happen in our case)
-                    root_dir = output_file.parent
-                    for _ in range(max_levels_up):
-                        root_dir = root_dir.parent
-                    root_dir = str(root_dir.resolve())
-                    
-                    logger.info(f"📁 Detected complex relative paths, using root: {root_dir}")
-                else:
-                    # Use the output file's directory as root
-                    root_dir = str(output_file.parent.resolve())
-                    logger.info(f"📁 Using output directory as root: {root_dir}")
-            
             # Create section with content
             section = Section(
-                markdown_content,
+                content_to_convert,
                 root=root_dir,
                 paper_size=paper_size
             )
@@ -254,6 +249,15 @@ class PdfService:
         except Exception as e:
             logger.error(f"Failed to convert markdown to PDF: {e}")
             raise Exception(f"PDF conversion failed: {e}")
+        
+        finally:
+            # Clean up temp directory
+            if temp_dir and Path(temp_dir).exists():
+                try:
+                    shutil.rmtree(temp_dir)
+                    logger.info(f"Cleaned up temp directory: {temp_dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temp directory {temp_dir}: {e}")
     
     def convert_report_file_to_pdf(
         self,
@@ -291,4 +295,4 @@ class PdfService:
             
         except Exception as e:
             logger.error(f"Failed to convert report file to PDF: {e}")
-            raise Exception(f"Report file PDF conversion failed: {e}") 
+            raise Exception(f"Report file PDF conversion failed: {e}")

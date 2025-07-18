@@ -510,31 +510,36 @@ class NotebookReportPdfDownloadView(APIView):
             temp_dir = Path(tempfile.mkdtemp())
             pdf_path = temp_dir / filename
             
-            # With MinIO storage, we can't use local file paths for images
-            # PDF generation will need to work without local image directory
-            image_root = None
-            logger.info("Using MinIO storage - PDF will be generated in temporary location")
-
             try:
-                # Convert markdown to PDF
+                # Convert markdown to PDF (now handles image downloading internally)
+                logger.info("Converting markdown to PDF with automatic image handling")
                 pdf_file_path = pdf_service.convert_markdown_to_pdf(
                     markdown_content=markdown_content,
                     output_path=str(pdf_path),
                     title=report_title,
-                    image_root=image_root,
                     input_file_path=None  # MinIO files don't have local paths
                 )
                 
                 # Return the PDF file
-                return FileResponse(
+                response = FileResponse(
                     open(pdf_file_path, "rb"),
                     as_attachment=True,
                     filename=filename,
                     content_type='application/pdf'
                 )
                 
+                # Clean up temporary directory
+                # Note: We can't clean up immediately due to FileResponse streaming
+                # The temp directory will be cleaned up by the OS eventually
+                logger.info(f"PDF generated successfully: {pdf_file_path}")
+                return response
+                
             except Exception as e:
                 logger.error(f"Error converting report to PDF for job {job_id}: {e}")
+                # Clean up temporary directory on error
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                
                 return Response(
                     {"detail": f"PDF conversion failed: {str(e)}"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
