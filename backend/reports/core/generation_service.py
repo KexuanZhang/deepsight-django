@@ -63,7 +63,7 @@ class GenerationService:
             content_data = {}
             if report.selected_files_paths:
                 processed_data = self.input_processor.process_selected_files(
-                    report.selected_files_paths
+                    report.selected_files_paths, user_id=report.user.pk
                 )
                 content_data = self.input_processor.get_content_data(processed_data)
                 

@@ -31,7 +31,7 @@ class FigureDataService:
             str: Success message or None if failed
         """
         try:
-            from notebooks.utils.knowledge_base_image_service import KnowledgeBaseImageService
+            from notebooks.services.knowledge_base_image_service import KnowledgeBaseImageService
             
             image_service = KnowledgeBaseImageService()
             
@@ -67,7 +67,7 @@ class FigureDataService:
             str: Success indicator or None if no figure data found
         """
         try:
-            from notebooks.utils.knowledge_base_image_service import KnowledgeBaseImageService
+            from notebooks.services.knowledge_base_image_service import KnowledgeBaseImageService
             
             image_service = KnowledgeBaseImageService()
             
@@ -183,7 +183,7 @@ class FigureDataService:
             List of figure data dictionaries
         """
         try:
-            from notebooks.utils.knowledge_base_image_service import KnowledgeBaseImageService
+            from notebooks.services.knowledge_base_image_service import KnowledgeBaseImageService
             
             image_service = KnowledgeBaseImageService()
             
@@ -233,7 +233,7 @@ class FigureDataService:
             figure_data = extract_figure_data_from_markdown(md_file_path)
             
             if figure_data:
-                from notebooks.utils.knowledge_base_image_service import KnowledgeBaseImageService
+                from notebooks.services.knowledge_base_image_service import KnowledgeBaseImageService
                 
                 image_service = KnowledgeBaseImageService()
                 success = image_service.update_images_from_figure_data(
