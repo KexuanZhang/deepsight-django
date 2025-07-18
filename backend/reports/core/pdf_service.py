@@ -2,22 +2,19 @@
 """
 PDF Service for converting Markdown reports to PDF
 
-This service converts Markdown content to PDF format with proper image rendering.
-It uses the markdown-pdf library which provides excellent image support and
-doesn't require external binaries like wkhtmltopdf.
+This service converts Markdown content to PDF format with automatic remote image handling.
+It converts remote images to base64 data URLs which work reliably with PDF conversion.
 
 Features:
-- Converts Markdown to PDF with embedded images
-- Downloads MinIO images to temp directory for PDF conversion
-- Page numbers (no table of contents per requirements)
-- Customizable styling with CSS
-- No external binary dependencies
+- Converts Markdown to PDF with embedded remote images
+- Converts remote images to base64 data URLs for reliable embedding
+- No temporary files or external dependencies required
+- Professional PDF styling with CSS
 """
 
 import logging
 import re
-import tempfile
-import shutil
+import base64
 import requests
 from pathlib import Path
 from typing import Optional
@@ -32,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class PdfService:
-    """Service for converting markdown reports to PDF"""
+    """Service for converting markdown reports to PDF with automatic image handling"""
     
     def __init__(self):
         if MarkdownPdf is None:
@@ -41,59 +38,55 @@ class PdfService:
                 "Please install it using: pip install markdown-pdf"
             )
     
-    def _download_images_and_update_content(self, content: str):
+    def _convert_remote_images_to_base64(self, content: str) -> str:
         """
-        Download MinIO images to temp directory and update content with local paths.
-        Returns (updated_content, temp_dir_path) or (original_content, None) if no images.
+        Convert remote image URLs to base64 data URLs.
+        
+        Args:
+            content: HTML/markdown content with remote image URLs
+            
+        Returns:
+            str: Content with remote images converted to base64 data URLs
         """
-        # Find MinIO URLs in content
-        minio_pattern = r'<img[^>]+src=["\']([^"\']*localhost:9000[^"\']*)["\'][^>]*>'
-        urls = re.findall(minio_pattern, content)
+        # Find all img tags with remote URLs
+        img_pattern = r'<img([^>]*?)src=["\']([^"\']*https?://[^"\']*)["\']([^>]*?)>'
         
-        if not urls:
-            logger.info("No MinIO images found in content")
-            return content, None
-        
-        # Create temp directory
-        temp_dir = Path(tempfile.mkdtemp(prefix="pdf_images_"))
-        images_dir = temp_dir / "images"
-        images_dir.mkdir()
-        
-        updated_content = content
-        
-        try:
-            logger.info(f"Found {len(urls)} images to download")
+        def replace_img(match):
+            before_src = match.group(1)
+            img_url = match.group(2)
+            after_src = match.group(3)
             
-            for i, url in enumerate(urls):
-                try:
-                    # Download image
-                    logger.debug(f"Downloading image from: {url}")
-                    response = requests.get(url, timeout=30)
-                    response.raise_for_status()
-                    
-                    # Save with simple filename
-                    filename = f"image_{i+1}.jpeg"
-                    local_path = images_dir / filename
-                    
-                    with open(local_path, 'wb') as f:
-                        f.write(response.content)
-                    
-                    # Replace URL with local path in content
-                    local_img_path = f"images/{filename}"
-                    updated_content = updated_content.replace(url, local_img_path)
-                    
-                    logger.info(f"Downloaded image {i+1}: {filename} ({len(response.content):,} bytes)")
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to download image {url}: {e}")
-                    continue
-            
-            return updated_content, str(temp_dir)
-            
-        except Exception as e:
-            logger.error(f"Error downloading images: {e}")
-            shutil.rmtree(temp_dir)
-            return content, None
+            try:
+                logger.debug(f"Downloading image: {img_url}")
+                
+                # Download the image
+                response = requests.get(img_url, timeout=30)
+                response.raise_for_status()
+                
+                # Get image data and content type
+                img_data = response.content
+                content_type = response.headers.get('content-type', 'image/jpeg')
+                
+                # Convert to base64
+                img_base64 = base64.b64encode(img_data).decode('utf-8')
+                
+                # Create data URL
+                data_url = f"data:{content_type};base64,{img_base64}"
+                
+                logger.info(f"Converted image to base64: {len(img_data):,} bytes")
+                
+                # Return the updated img tag
+                return f'<img{before_src}src="{data_url}"{after_src}>'
+                
+            except Exception as e:
+                logger.warning(f"Failed to convert image {img_url}: {e}")
+                # Return original img tag if conversion fails
+                return match.group(0)
+        
+        # Replace all remote images with base64 data URLs
+        updated_content = re.sub(img_pattern, replace_img, content)
+        
+        return updated_content
     
     def convert_markdown_to_pdf(
         self,
@@ -105,7 +98,7 @@ class PdfService:
         input_file_path: Optional[str] = None
     ) -> str:
         """
-        Convert markdown content to PDF.
+        Convert markdown content to PDF with automatic remote image handling.
         
         Args:
             markdown_content: The markdown content to convert
@@ -121,8 +114,6 @@ class PdfService:
         Raises:
             Exception: If conversion fails
         """
-        temp_dir = None
-        
         try:
             # Ensure output directory exists
             output_file = Path(output_path)
@@ -131,22 +122,8 @@ class PdfService:
             logger.info(f"Converting markdown to PDF: {output_file.name}")
             logger.debug(f"Content length: {len(markdown_content):,} characters")
             
-            # Download MinIO images and update content
-            content_to_convert, temp_dir = self._download_images_and_update_content(markdown_content)
-            
-            # Use temp directory as image root if we downloaded images
-            if temp_dir:
-                root_dir = temp_dir
-                logger.info(f"Using temp directory as image root: {root_dir}")
-            elif image_root:
-                root_dir = str(Path(image_root).resolve())
-                logger.info(f"Using provided image root: {root_dir}")
-            elif input_file_path:
-                root_dir = str(Path(input_file_path).parent.resolve())
-                logger.info(f"Using input file directory as root: {root_dir}")
-            else:
-                root_dir = str(output_file.parent.resolve())
-                logger.info(f"Using output directory as root: {root_dir}")
+            # Convert remote images to base64 data URLs
+            content_with_base64_images = self._convert_remote_images_to_base64(markdown_content)
             
             # Create PDF converter with no TOC and optimization enabled
             pdf = MarkdownPdf(
@@ -154,9 +131,20 @@ class PdfService:
                 optimize=True
             )
             
+            # Determine root directory for any remaining local images
+            if input_file_path:
+                root_dir = str(Path(input_file_path).parent.resolve())
+                logger.debug(f"Using input file directory as root: {root_dir}")
+            elif image_root:
+                root_dir = str(Path(image_root).resolve())
+                logger.debug(f"Using provided image root: {root_dir}")
+            else:
+                root_dir = str(output_file.parent.resolve())
+                logger.debug(f"Using output directory as root: {root_dir}")
+            
             # Create section with content
             section = Section(
-                content_to_convert,
+                content_with_base64_images,
                 root=root_dir,
                 paper_size=paper_size
             )
@@ -164,7 +152,7 @@ class PdfService:
             # Custom CSS for better appearance with page numbers
             custom_css = """
             body {
-                font-family: 'Helvetica', 'Arial', sans-serif;
+                font-family: 'Georgia', 'Times New Roman', serif;
                 line-height: 1.6;
                 color: #333;
                 margin: 0;
@@ -249,15 +237,6 @@ class PdfService:
         except Exception as e:
             logger.error(f"Failed to convert markdown to PDF: {e}")
             raise Exception(f"PDF conversion failed: {e}")
-        
-        finally:
-            # Clean up temp directory
-            if temp_dir and Path(temp_dir).exists():
-                try:
-                    shutil.rmtree(temp_dir)
-                    logger.info(f"Cleaned up temp directory: {temp_dir}")
-                except Exception as e:
-                    logger.warning(f"Failed to clean up temp directory {temp_dir}: {e}")
     
     def convert_report_file_to_pdf(
         self,
