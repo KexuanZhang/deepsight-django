@@ -3,10 +3,12 @@ File Views - Handle file upload and management operations only
 """
 import logging
 import traceback
+from pathlib import Path
 from uuid import uuid4
 
 from asgiref.sync import async_to_sync
 from django.core.exceptions import ValidationError
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import status, permissions, authentication
 from rest_framework.views import APIView
@@ -672,7 +674,6 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                 if result.get('success') and os.path.exists(final_images_dir):
                     self._upload_extracted_images_to_minio(final_images_dir, kb_item)
                     self._process_local_caption_data(final_images_dir, kb_item)
-                    self._update_content_with_extracted_images(kb_item)
 
                 # Clean up temp files
                 os.unlink(video_file_path)
@@ -870,110 +871,180 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
         except Exception as e:
             logger.error(f"Error processing local caption data: {str(e)}")
 
-    def _update_content_with_extracted_images(self, kb_item):
-        """Update the knowledge base item's content to include extracted images."""
-        try:
-            from ..models import KnowledgeBaseImage
-            
-            # Get all images for this knowledge base item
-            images = KnowledgeBaseImage.objects.filter(
-                knowledge_base_item=kb_item,
-                image_metadata__source="video_extraction"
-            ).order_by('created_at')
-            
-            if not images.exists():
-                logger.warning(f"No extracted images found for KB item {kb_item.id}")
-                return
-            
-            # Build content with extracted images
-            content_parts = []
-            
-            # Add header
-            content_parts.append("# Extracted Images from Video\n")
-            content_parts.append(f"**Video:** {kb_item.title}\n")
-            content_parts.append(f"**Total Images:** {images.count()}\n\n")
-            
-            # Add each image with its caption
-            for i, image in enumerate(images, 1):
-                # Use the API endpoint that serves images through the notebook context
-                image_url = f"/api/notebooks/{{notebook_id}}/files/{kb_item.id}/images/{image.figure_id}"
-                
-                content_parts.append(f"## Image {i}\n")
-                content_parts.append(f"![Figure {i}]({image_url})\n")
-                
-                if image.image_caption:
-                    content_parts.append(f"**Caption:** {image.image_caption}\n")
-                
-                # Add metadata if available
-                if image.image_metadata:
-                    extraction_method = image.image_metadata.get('extraction_method', 'unknown')
-                    content_parts.append(f"**Extraction Method:** {extraction_method}\n")
-                
-                content_parts.append("\n---\n\n")
-            
-            # Update the knowledge base item's content
-            new_content = "".join(content_parts)
-            
-            # Append to existing content or replace it
-            if kb_item.content:
-                kb_item.content += f"\n\n{new_content}"
-            else:
-                kb_item.content = new_content
-            
-            kb_item.save(update_fields=['content'])
-            
-            logger.info(f"Updated content for KB item {kb_item.id} with {images.count()} extracted images")
-            
-        except Exception as e:
-            logger.error(f"Error updating content with extracted images: {str(e)}")
-            raise
 
 
 class FileImageView(StandardAPIView, FileAccessValidatorMixin):
-    """Serve individual images from knowledge base items."""
+    """Serve image files from knowledge base items using database storage."""
 
-    def get(self, request, notebook_id, file_id, figure_id):
-        """Serve an individual image file."""
+    def get(self, request, notebook_id, file_id, image_file):
+        """Serve image file through notebook context from database/MinIO."""
         try:
+            from django.http import Http404, HttpResponseRedirect, FileResponse
+            from django.core.exceptions import PermissionDenied
+            import mimetypes
+            
             # Validate access through notebook
-            _, kb_item, _ = self.validate_notebook_file_access(
+            notebook, kb_item, knowledge_item = self.validate_notebook_file_access(
                 notebook_id, file_id, request.user
             )
 
-            # Find the image by figure ID
+            # Try to find the image in the database by filename in object key
             from ..models import KnowledgeBaseImage
             
-            try:
-                image = KnowledgeBaseImage.objects.get(
-                    knowledge_base_item=kb_item,
-                    figure_id=figure_id
-                )
-            except KnowledgeBaseImage.DoesNotExist:
-                return self.error_response(
-                    f"Image '{figure_id}' not found in file",
-                    status_code=status.HTTP_404_NOT_FOUND
-                )
+            image_record = KnowledgeBaseImage.objects.filter(
+                knowledge_base_item=kb_item,
+                minio_object_key__icontains=image_file
+            ).first()
+            
+            if image_record:
+                # Serve from MinIO using the database record
+                return self._serve_image_from_minio(image_record)
+            
+            # For JSON files and video extraction files, try to find them in MinIO directly
+            if image_file.endswith(('.json', '.txt', '.md')):
+                try:
+                    return self._serve_file_from_minio_by_filename(kb_item, image_file)
+                except Http404:
+                    pass  # Fall through to filesystem fallback
+            
+            # Fallback: try to serve from legacy filesystem approach
+            # This maintains backward compatibility during migration
+            return self._serve_image_from_filesystem(kb_item, image_file)
 
-            # Get pre-signed URL for the image
-            image_url = image.get_image_url(expires=3600)  # 1 hour
-            if not image_url:
-                return self.error_response(
-                    "Image not accessible",
-                    status_code=status.HTTP_404_NOT_FOUND
-                )
-
-            # Return the image URL or serve the image directly
-            return Response({
-                "image_url": image_url,
-                "figure_id": str(image.figure_id),
-                "caption": image.image_caption,
-                "content_type": image.content_type,
-                "file_size": image.file_size
-            })
-
+        except PermissionDenied as e:
+            return self.error_response(str(e), status_code=status.HTTP_403_FORBIDDEN)
+        except Http404 as e:
+            return self.error_response(str(e), status_code=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return self.error_response(
-                "Failed to access image",
+                "Image access failed",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details={"error": str(e)},
-            ) 
+            )
+    
+    def _serve_image_from_minio(self, image_record):
+        """Serve image from MinIO using database record."""
+        try:
+            from django.http import HttpResponseRedirect
+            
+            # Get pre-signed URL for the image
+            image_url = image_record.get_image_url(expires=3600)  # 1 hour expiration
+            
+            if not image_url:
+                raise Http404("Image file not accessible in storage")
+            
+            # Return redirect to pre-signed URL
+            return HttpResponseRedirect(image_url)
+            
+        except Exception as e:
+            logger.error(f"Error serving image from MinIO: {e}")
+            raise Http404("Image file not accessible")
+    
+    def _serve_file_from_minio_by_filename(self, kb_item, filename):
+        """Serve file from MinIO by searching for object keys that contain the filename."""
+        try:
+            from ..utils.storage_adapter import get_storage_adapter
+            from django.http import HttpResponseRedirect, Http404
+            
+            storage_adapter = get_storage_adapter()
+            backend = storage_adapter.storage_service.minio_backend
+            
+            # Search for objects that match the knowledge base item and filename pattern
+            # The object key pattern is: user_id/kb/file_id/subfolder/filename (for video extraction files)
+            prefix = f"{kb_item.user.id}/kb/{kb_item.id}/images/"
+            
+            try:
+                # List objects with the prefix for this knowledge base item
+                objects = backend.client.list_objects(backend.bucket_name, prefix=prefix)
+                
+                # Find the object that ends with our filename
+                for obj in objects:
+                    if obj.object_name.endswith(filename):
+                        # Generate pre-signed URL
+                        file_url = backend.get_file_url(obj.object_name, expires=3600)
+                        
+                        # Return redirect to pre-signed URL
+                        return HttpResponseRedirect(file_url)
+                
+                # If no object found, try alternative prefix patterns
+                # For backward compatibility with different object key structures
+                alternative_prefixes = [
+                    f"{kb_item.user.id}/kb/{kb_item.id}/",  # Files in root kb folder (no subfolder)
+                    f"kb/{kb_item.user.id}/{kb_item.id}/images/",  # Alternative structure 1
+                    f"kb/images/{kb_item.user.id}/{kb_item.id}/",  # Alternative structure 2
+                ]
+                
+                for alt_prefix in alternative_prefixes:
+                    try:
+                        objects = backend.client.list_objects(backend.bucket_name, prefix=alt_prefix)
+                        for obj in objects:
+                            if obj.object_name.endswith(filename):
+                                file_url = backend.get_file_url(obj.object_name, expires=3600)
+                                return HttpResponseRedirect(file_url)
+                    except Exception:
+                        continue
+                
+                raise Http404(f"File not found in MinIO: {filename}")
+                
+            except Exception as e:
+                logger.error(f"Error searching for file in MinIO: {filename} - {e}")
+                raise Http404(f"File not accessible: {filename}")
+            
+        except Exception as e:
+            logger.error(f"Error serving file from MinIO: {filename} - {e}")
+            raise Http404(f"File not accessible: {filename}")
+    
+    def _serve_image_from_filesystem(self, kb_item, image_file):
+        """Fallback method to serve image from filesystem (legacy support)."""
+        try:
+            from django.http import Http404, FileResponse
+            import mimetypes
+            
+            # Import inside the method to avoid potential circular dependencies
+            from reports.core.figure_service import FigureDataService
+
+            images_dir = FigureDataService._get_knowledge_base_images_path(
+                user_id=kb_item.user.id,
+                file_id=str(kb_item.id),
+            )
+
+            if not images_dir:
+                raise Http404(f"Image not found: {image_file}")
+            
+            image_path = Path(images_dir) / image_file
+            
+            # Check if image exists
+            if not image_path.exists():
+                raise Http404(f"Image not found: {image_file}")
+            
+            # Serve the image file
+            return self._serve_image(image_path, image_file)
+
+        except Exception as e:
+            logger.error(f"Error serving image from filesystem: {e}")
+            raise Http404(f"Image not found: {image_file}")
+
+    def _serve_image(self, image_path: Path, image_file: str):
+        """Serve an image file through Django's FileResponse."""
+        try:
+            from django.http import FileResponse, Http404
+            import mimetypes
+            
+            response = FileResponse(
+                open(image_path, 'rb'),
+                as_attachment=False,
+            )
+            
+            # Set content type based on file extension
+            content_type, _ = mimetypes.guess_type(str(image_path))
+            if not content_type:
+                content_type = "application/octet-stream"
+            
+            response["Content-Type"] = content_type
+            response["Content-Disposition"] = f'inline; filename="{image_file}"'
+            response["Cache-Control"] = "public, max-age=3600"  # Cache for 1 hour
+            response["X-Content-Type-Options"] = "nosniff"
+            
+            return response
+        except Exception as e:
+            raise Http404(f"Image not accessible: {str(e)}") 
