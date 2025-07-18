@@ -465,10 +465,11 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
     """Serve raw file content (PDFs, videos, audio, etc.)."""
 
     def get(self, request, notebook_id, file_id):
-        """Serve raw file through notebook context."""
+        """Serve raw file through notebook context by streaming file content."""
         try:
-            from django.http import Http404, FileResponse
+            from django.http import Http404, StreamingHttpResponse
             from django.core.exceptions import PermissionDenied
+            import requests
             import mimetypes
             
             # Validate access through notebook
@@ -476,15 +477,40 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
                 notebook_id, file_id, request.user
             )
 
-            # Try to serve original file first
+            # Try to get original file URL first
+            file_url = None
             if kb_item.original_file_object_key:
-                return self._serve_minio_file(kb_item.original_file_object_key, kb_item.title)
-
+                file_url = kb_item.get_original_file_url()
+            
             # Fallback to processed file
-            if kb_item.file_object_key:
-                return self._serve_minio_file(kb_item.file_object_key, kb_item.title)
+            if not file_url and kb_item.file_object_key:
+                file_url = kb_item.get_file_url()
+            
+            if not file_url:
+                raise Http404("Raw file not found")
 
-            raise Http404("Raw file not found")
+            # Get file metadata
+            original_filename = kb_item.metadata.get('original_filename', 'file') if kb_item.metadata else 'file'
+            content_type, _ = mimetypes.guess_type(original_filename)
+            
+            # For video files, stream the content directly
+            if content_type and content_type.startswith('video/'):
+                def file_iterator():
+                    response = requests.get(file_url, stream=True)
+                    response.raise_for_status()
+                    for chunk in response.iter_content(chunk_size=8192):
+                        yield chunk
+                
+                streaming_response = StreamingHttpResponse(
+                    file_iterator(),
+                    content_type=content_type
+                )
+                streaming_response['Content-Disposition'] = f'inline; filename="{original_filename}"'
+                streaming_response['Accept-Ranges'] = 'bytes'
+                return streaming_response
+            else:
+                # For non-video files, return pre-signed URL (existing behavior)
+                return Response({"file_url": file_url}, status=status.HTTP_200_OK)
 
         except PermissionDenied as e:
             return self.error_response(str(e), status_code=status.HTTP_403_FORBIDDEN)
@@ -496,35 +522,6 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details={"error": str(e)},
             )
-
-    def _serve_minio_file(self, object_key, title):
-        """Serve a file from MinIO through Django's FileResponse."""
-        try:
-            from ..utils.minio_backend import get_minio_backend
-            from io import BytesIO
-            from django.http import FileResponse, Http404
-            import mimetypes
-            
-            minio_backend = get_minio_backend()
-            file_content = minio_backend.get_file_content(object_key)
-            
-            # Guess content type from the title/filename
-            content_type, _ = mimetypes.guess_type(title)
-            if not content_type:
-                content_type = "application/octet-stream"
-
-            # Create a BytesIO stream from the content
-            file_stream = BytesIO(file_content)
-            
-            response = FileResponse(
-                file_stream, content_type=content_type, as_attachment=False
-            )
-            response["Content-Disposition"] = f'inline; filename="{title}"'
-            response["X-Content-Type-Options"] = "nosniff"
-            response["X-Frame-Options"] = "DENY"
-            return response
-        except Exception as e:
-            raise Http404(f"File not accessible: {str(e)}")
 
 
 class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
@@ -734,7 +731,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
 class FileImageView(StandardAPIView, FileAccessValidatorMixin):
     """Serve individual images from knowledge base items."""
 
-    def get(self, request, notebook_id, file_id, figure_name):
+    def get(self, request, notebook_id, file_id, figure_id):
         """Serve an individual image file."""
         try:
             # Validate access through notebook
@@ -742,17 +739,17 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
                 notebook_id, file_id, request.user
             )
 
-            # Find the image by figure name
+            # Find the image by figure ID
             from ..models import KnowledgeBaseImage
             
             try:
                 image = KnowledgeBaseImage.objects.get(
                     knowledge_base_item=kb_item,
-                    figure_name=figure_name
+                    figure_id=figure_id
                 )
             except KnowledgeBaseImage.DoesNotExist:
                 return self.error_response(
-                    f"Image '{figure_name}' not found in file",
+                    f"Image '{figure_id}' not found in file",
                     status_code=status.HTTP_404_NOT_FOUND
                 )
 
@@ -767,7 +764,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             # Return the image URL or serve the image directly
             return Response({
                 "image_url": image_url,
-                "figure_name": figure_name,
+                "figure_id": str(image.figure_id),
                 "caption": image.image_caption,
                 "content_type": image.content_type,
                 "file_size": image.file_size

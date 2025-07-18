@@ -124,7 +124,7 @@ class KnowledgeBaseService:
             from ..models import KnowledgeBaseImage
             images = KnowledgeBaseImage.objects.filter(
                 knowledge_base_item=kb_item
-            ).order_by('figure_name')
+            ).order_by('created_at')
             
             # Serialize image data
             image_data = []
@@ -133,7 +133,7 @@ class KnowledgeBaseService:
                 if image_url:
                     image_data.append({
                         'id': str(image.id),
-                        'figure_name': image.figure_name,
+                        'figure_id': str(image.figure_id),
                         'image_caption': image.image_caption,
                         'image_url': image_url,
                         'content_type': image.content_type,

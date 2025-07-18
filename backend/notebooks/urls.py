@@ -88,7 +88,7 @@ urlpatterns = [
     path("<str:notebook_id>/files/<str:file_id>/content/", FileContentView.as_view(), name="file-content"),
     path("<str:notebook_id>/files/<str:file_id>/content/minio/", FileContentMinIOView.as_view(), name="file-content-minio"),
     path("<str:notebook_id>/files/<str:file_id>/raw/", FileRawView.as_view(), name="file-raw"),
-    path("<str:notebook_id>/files/<str:file_id>/images/<str:image_file>", FileImageView.as_view(), name="file-image"),
+    path("<str:notebook_id>/files/<str:file_id>/images/<str:figure_id>", FileImageView.as_view(), name="file-image"),
     
     # General file pattern (MUST come last to avoid conflicts)
     path("<str:notebook_id>/files/<str:file_or_upload_id>/", FileDeleteView.as_view(), name="file-delete"),
