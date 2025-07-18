@@ -330,7 +330,7 @@ class JobService:
             # Fallback: Save processed report content directly to MinIO if no generated files
             elif "report_content" in result and result["report_content"]:
                 try:
-                    from notebooks.utils.minio_backend import get_minio_backend
+                    from notebooks.utils.storage import get_minio_backend
                     import io
                     
                     filename = f"report_{report.id}.md"

@@ -1,131 +1,181 @@
 """
-Storage adapter for MinIO file storage.
-Provides a simplified interface for MinIO operations only.
+Storage adapter module that provides unified access to storage services.
 """
 
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Optional
 
-from django.conf import settings
+from .storage import StorageAdapter as BaseStorageAdapter, FileStorageService
 
-# Import unified storage service only
-try:
-    from .file_storage import FileStorageService
-except ImportError:
-    FileStorageService = None
+
+logger = logging.getLogger(__name__)
+
+
+def get_storage_adapter():
+    """Get the configured storage adapter instance."""
+    return StorageAdapter()
 
 
 class StorageAdapter:
     """
-    Adapter that provides MinIO storage operations only.
+    Enhanced storage adapter that provides all methods expected by views.
     """
     
     def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.storage_adapter")
-        
-        # Initialize unified storage service
-        if FileStorageService is None:
-            self.logger.error("FileStorageService not available")
-            raise ImportError("Storage backend not available")
-        self.storage_service = FileStorageService()
-        self.logger.info("Initialized MinIO storage backend")
+        self.storage_service = EnhancedFileStorageService()
+        self.logger.info("Initialized enhanced storage adapter")
     
     @property
     def file_storage(self):
-        """Compatibility property for legacy code that expects file_storage instead of storage_service."""
+        """Compatibility property for legacy code."""
         return self.storage_service
     
     def is_minio_backend(self) -> bool:
         """Check if currently using MinIO backend."""
         return True  # Always MinIO now
     
-    def store_processed_file(
-        self,
-        content: str,
-        metadata: Dict[str, Any],
-        processing_result: Dict[str, Any],
-        user_id: int,
-        notebook_id: int,
-        source_id: Optional[int] = None,
-        original_file_path: Optional[str] = None,
-    ) -> str:
-        """Store processed file content in user's knowledge base."""
-        return self.storage_service.store_processed_file(
-            content=content,
-            metadata=metadata,
-            processing_result=processing_result,
-            user_id=user_id,
-            notebook_id=notebook_id,
-            source_id=source_id,
-            original_file_path=original_file_path,
-        )
+    def store_processed_file(self, *args, **kwargs):
+        """Store processed file using the service."""
+        return self.storage_service.store_processed_file(*args, **kwargs)
     
-    def get_file_content(self, file_id: str, user_id: int = None) -> Optional[str]:
-        """Retrieve file content by knowledge base item ID."""
-        return self.storage_service.get_file_content(file_id, user_id)
+    def get_file_content(self, *args, **kwargs):
+        """Get file content using the service."""
+        return self.storage_service.get_file_content(*args, **kwargs)
     
-    def get_file_url(self, file_id: str, user_id: int = None, expires: int = 3600) -> Optional[str]:
-        """Get URL for file access."""
-        return self.storage_service.get_file_url(file_id, user_id, expires)
+    def get_file_url(self, *args, **kwargs):
+        """Get file URL using the service."""
+        return self.storage_service.get_file_url(*args, **kwargs)
     
-    def get_original_file_url(self, file_id: str, user_id: int = None, expires: int = 3600) -> Optional[str]:
-        """Get URL for original file access."""
-        return self.storage_service.get_original_file_url(file_id, user_id, expires)
+    def get_original_file_url(self, file_id: str, user_id: int) -> Optional[str]:
+        """Get original file URL."""
+        return self.storage_service.get_file_url(file_id, user_id, file_type='original')
     
-    def get_user_knowledge_base(
-        self, user_id: int, content_type: str = None, limit: int = 50, offset: int = 0
-    ) -> List[Dict[str, Any]]:
-        """Get all knowledge base items for a user."""
-        return self.storage_service.get_user_knowledge_base(user_id, content_type, limit, offset)
+    def delete_file(self, *args, **kwargs):
+        """Delete file using the service."""
+        return self.storage_service.delete_file(*args, **kwargs)
+
+
+class EnhancedFileStorageService(FileStorageService):
+    """
+    Enhanced file storage service with additional methods needed by views.
+    """
     
-    def link_knowledge_item_to_notebook(
-        self, kb_item_id: str, notebook_id: int, user_id: int, notes: str = ""
-    ) -> bool:
-        """Link an existing knowledge base item to a notebook."""
-        return self.storage_service.link_knowledge_item_to_notebook(
-            kb_item_id, notebook_id, user_id, notes
-        )
-    
-    def delete_knowledge_base_item(self, kb_item_id: str, user_id: int) -> bool:
-        """Delete a knowledge base item and its files."""
-        return self.storage_service.delete_knowledge_base_item(kb_item_id, user_id)
-    
-    def unlink_knowledge_item_from_notebook(
-        self, kb_item_id: str, notebook_id: int, user_id: int
-    ) -> bool:
-        """Remove a knowledge item link from a specific notebook."""
-        return self.storage_service.unlink_knowledge_item_from_notebook(
-            kb_item_id, notebook_id, user_id
-        )
-    
-    def get_storage_info(self) -> Dict[str, Any]:
-        """Get information about the current storage backend."""
-        info = {
-            'backend': 'minio',
-            'service_class': self.storage_service.__class__.__name__,
-            'is_minio': True,
-        }
+    def get_content_with_minio_urls(self, file_id: str, user_id: int = None, expires: int = 86400) -> Optional[str]:
+        """
+        Retrieve file content with all image links converted to direct MinIO pre-signed URLs.
         
-        # Add MinIO-specific information
+        Args:
+            file_id: Knowledge base item ID
+            user_id: User ID for access control
+            expires: URL expiration time in seconds (default: 24 hours)
+            
+        Returns:
+            Content with MinIO URLs for images
+        """
         try:
-            minio_config = getattr(settings, 'MINIO_SETTINGS', {})
-            info['minio_endpoint'] = minio_config.get('ENDPOINT', 'not configured')
-            info['minio_bucket'] = minio_config.get('BUCKET_NAME', 'not configured')
-            info['minio_secure'] = minio_config.get('SECURE', False)
+            # Import here to avoid circular imports
+            from ..models import KnowledgeBaseItem, KnowledgeBaseImage
+            
+            # Query the database for the knowledge base item
+            kb_query = KnowledgeBaseItem.objects.filter(id=file_id)
+            if user_id:
+                kb_query = kb_query.filter(user=user_id)
+
+            kb_item = kb_query.first()
+            if not kb_item:
+                return None
+
+            # Get base content - prioritize database field first
+            content = None
+            if kb_item.content:
+                content = kb_item.content
+            elif kb_item.file_object_key:
+                try:
+                    content_bytes = self.minio_backend.get_file(kb_item.file_object_key)
+                    if content_bytes:
+                        content = content_bytes.decode('utf-8')
+                except Exception as e:
+                    self.log_operation(
+                        "get_content_minio_error",
+                        f"kb_item_id={file_id}, object_key={kb_item.file_object_key}, error={str(e)}",
+                        "error",
+                    )
+                    return None
+            
+            if not content:
+                return None
+            
+            # Get all images for this knowledge base item
+            images = KnowledgeBaseImage.objects.filter(knowledge_base_item=kb_item)
+            
+            # Create mapping of filenames to MinIO URLs
+            image_url_mapping = {}
+            for image in images:
+                try:
+                    presigned_url = self.minio_backend.get_presigned_url(image.minio_object_key, expires)
+                    # Extract filename from object key or use figure_name as fallback
+                    import os
+                    filename = os.path.basename(image.minio_object_key) if image.minio_object_key else f"{image.figure_name}.jpg"
+                    image_url_mapping[filename] = presigned_url
+                except Exception as e:
+                    self.log_operation(
+                        "get_image_url_error",
+                        f"Failed to generate URL for image {image.figure_name}: {e}",
+                        "error"
+                    )
+            
+            # Update content with MinIO URLs
+            if image_url_mapping:
+                content = self._update_image_links_to_minio_urls(content, image_url_mapping)
+                self.log_operation(
+                    "get_content_with_minio_urls_success",
+                    f"Retrieved content with {len(image_url_mapping)} MinIO image URLs",
+                )
+            
+            return content
+            
         except Exception as e:
-            info['minio_error'] = str(e)
+            self.log_operation(
+                "get_content_with_minio_urls_error",
+                f"file_id={file_id}, user_id={user_id}, error={str(e)}",
+                "error",
+            )
+            return None
+
+    def _update_image_links_to_minio_urls(self, content: str, image_url_mapping: dict) -> str:
+        """
+        Update all image links in content to use MinIO pre-signed URLs.
         
-        return info
-    
-
-
-
-# Global singleton instance
-_storage_adapter = None
-
-def get_storage_adapter() -> StorageAdapter:
-    """Get the global storage adapter instance."""
-    global _storage_adapter
-    if _storage_adapter is None:
-        _storage_adapter = StorageAdapter()
-    return _storage_adapter
+        Args:
+            content: Original content with image references
+            image_url_mapping: Dictionary mapping filenames to MinIO URLs
+            
+        Returns:
+            Updated content with MinIO URLs
+        """
+        import re
+        
+        # Pattern to match markdown image syntax: ![alt](filename)
+        pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+        
+        def replace_image_url(match):
+            alt_text = match.group(1)
+            original_filename = match.group(2)
+            
+            # Extract just the filename (remove path if present)
+            import os
+            filename = os.path.basename(original_filename)
+            
+            # Get MinIO URL for this filename
+            minio_url = image_url_mapping.get(filename)
+            if minio_url:
+                return f'![{alt_text}]({minio_url})'
+            else:
+                # Keep original if no mapping found
+                return match.group(0)
+        
+        # Replace all image URLs
+        updated_content = re.sub(pattern, replace_image_url, content)
+        
+        return updated_content 

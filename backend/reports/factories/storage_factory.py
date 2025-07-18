@@ -221,7 +221,7 @@ class MinIOFileStorage(FileStorageInterface):
     
     def __init__(self):
         """Initialize MinIO storage"""
-        from notebooks.utils.minio_backend import get_minio_backend
+        from notebooks.utils.storage import get_minio_backend
         self.minio_backend = get_minio_backend()
     
     def create_output_directory(self, user_id: int, report_id: str, notebook_id: Optional[int] = None) -> Path:

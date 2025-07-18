@@ -126,7 +126,7 @@ class Command(BaseCommand):
     def test_minio_backend_direct(self):
         """Test MinIO backend directly."""
         try:
-            from notebooks.utils.minio_backend import get_minio_backend
+            from notebooks.utils.storage import get_minio_backend
             
             self.stdout.write("Testing MinIO backend directly...")
             
