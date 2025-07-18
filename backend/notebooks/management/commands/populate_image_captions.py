@@ -8,8 +8,8 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from notebooks.models import KnowledgeBaseImage, KnowledgeBaseItem
 
-# Import the extract_figure_data function
-from agents.report_agent.utils.paper_processing import extract_figure_data
+# Import the extract_figure_data_from_markdown function
+from reports.image_utils import extract_figure_data_from_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -157,8 +157,8 @@ class Command(BaseCommand):
                 temp_file_path = temp_file.name
             
             try:
-                # Extract figure data using the paper processing function
-                figure_data = extract_figure_data(temp_file_path)
+                # Extract figure data using the image_utils function
+                figure_data = extract_figure_data_from_markdown(temp_file_path)
                 return figure_data or []
             finally:
                 # Clean up temporary file

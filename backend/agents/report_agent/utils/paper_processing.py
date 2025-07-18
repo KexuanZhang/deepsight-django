@@ -4,6 +4,14 @@ import glob
 import shutil
 import logging
 import json
+import sys
+
+# Add backend to path for common utilities
+backend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
+
+from reports.image_utils import clean_title_text
 
 if not logging.getLogger().hasHandlers():
     logging.basicConfig(
@@ -276,245 +284,15 @@ def copy_paper_images(paper_md_path: str, report_output_dir: str) -> None:
         )
 
 
-def insert_figure_images(
-    article_content: str, figures: list[dict], reorder: bool = False, report_id: str = None
-) -> str:
-    """
-    Inserts image captions into the article content at placeholders in the format <figure_id>.
-    Only inserts at the first occurrence of each image placeholder, and skips images that have already been inserted.
-    Note: image_path is no longer required - only figure_id and caption are used.
-    
-    Args:
-        article_content: The article content with figure placeholders
-        figures: List of figure dictionaries with figure_id and caption
-        reorder: Whether to reorder figures (unused parameter)
-        report_id: The report ID to query images from ReportImage table
-    """
-    figure_dict = {
-        fig["figure_id"]: fig["caption"] for fig in figures
-    }
-    
-    # Check which figures have already been inserted by looking for existing img tags
-    already_inserted = set()
-    for figure_id in figure_dict:
-        # Check if there's already an img tag with this figure_id
-        existing_img_pattern = rf'<img\s+[^>]*src="[^"]*{re.escape(str(figure_id))}[^"]*"[^>]*>'
-        if re.search(existing_img_pattern, article_content, re.IGNORECASE):
-            already_inserted.add(figure_id)
-            logging.info(f"Figure ID '{figure_id}' already inserted, skipping.")
-    
-    # Look for figure placeholders in format <figure uuid> on standalone lines
-    # UUID pattern: 8-4-4-4-12 hexadecimal characters
-    uuid_pattern = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
-    pattern = rf"^\s*<({uuid_pattern})>\s*$"
-    matches = list(re.finditer(pattern, article_content, re.MULTILINE))
-
-    # Initialize as empty dict first
-    first_occurrences = {}
-    # Then add each match if it's not already in the dict
-    for match in matches:
-        # Extract figure_id from <figure_id> placeholder
-        figure_id = match.group(1).strip()
-        
-        # Skip if this figure has already been inserted
-        if figure_id in already_inserted:
-            continue
-        
-        # Only include if we have this figure in our figure_dict
-        if figure_id in figure_dict:
-            if figure_id not in first_occurrences:
-                first_occurrences[figure_id] = match.start()
-
-    # No need to filter since we already checked figure_dict membership above
-    valid_occurrences = first_occurrences
-
-    # Sort insertion points by position in text
-    insertion_points = [
-        (pos, figure_id) for figure_id, pos in valid_occurrences.items()
-    ]
-    insertion_points.sort(key=lambda x: x[0])
-
-    output_segments = []
-    prev_end = 0
-    # Define the max height for the images to half a page
-    max_image_height = "500px"
-
-    # Find and replace each placeholder with figure content
-    for pos, figure_id in insertion_points:
-        # Find the end of the placeholder line
-        placeholder_match = re.search(
-            r"^\s*<" + re.escape(figure_id) + r">\s*$",
-            article_content[pos:],
-            re.MULTILINE,
-        )
-        if placeholder_match:
-            placeholder_end = pos + placeholder_match.end()
-
-            # Add content before placeholder
-            output_segments.append(article_content[prev_end:pos])
-
-            # Add figure content
-            caption = figure_dict[figure_id]
-            # Get image URL from database using figure_id and report_id
-            image_url = _get_figure_url_from_db(figure_id, report_id) if report_id else None
-            if image_url:
-                insertion_text = f'<img src="{image_url}" style="max-height: {max_image_height};">\n\n{caption}\n\n'
-            else:
-                # Fallback if image URL not found
-                insertion_text = f'<div style="padding: 20px; border: 1px dashed #ccc; text-align: center;">Image not found (ID: {figure_id})</div>\n\n{caption}\n\n'
-            output_segments.append(insertion_text)
-
-            prev_end = placeholder_end
-
-    output_segments.append(article_content[prev_end:])
-    result = "".join(output_segments)
-    return re.sub(r"\n{3,}", "\n\n", result)
+# insert_figure_images function removed - use reports.utils.image_utils.ImageInsertionService directly
 
 
-def preserve_figure_formatting(content: str) -> str:
-    """
-    Ensures that all figure image embeds are in HTML format <img src="..."> and properly formatted with
-    consistent spacing around images and captions.
-    """
-
-    # First convert any Markdown images to HTML format
-    def md_to_html(match):
-        # Extract image path from ![...](...)
-        md_img = match.group(0)
-        path_match = re.search(r"\]\(([^)]+)\)", md_img)
-        if path_match:
-            path = path_match.group(1)
-            alt_match = re.search(r"\!\[(.*?)\]", md_img)
-            alt = alt_match.group(1) if alt_match else "Figure"
-            # Convert to HTML format with max-height
-            return f'<img src="{path}" alt="{alt}" style="max-height: 500px;">'
-        return md_img
-
-    # Convert standalone Markdown images to HTML
-    content = re.sub(r"\!\[(?:Figure|图)?\s*\d*\]\([^\)]+\)", md_to_html, content)
-
-    # Match HTML image tag + caption (ASCII ':' or full-width '：')
-    html_figure_pattern = (
-        r"(<img\s+[^>]*?(?:src|alt)=[\"'][^>]*?>)"  # HTML img tag
-        r"\s*(?:\r?\n)*\s*"  # any whitespace/newlines
-        r"((?:Figure|图)\s*\d+[:：].+?)[ \t]*\r?\n"  # caption line
-    )
-    content = re.sub(html_figure_pattern, r"\n\n\1\n\n\2\n\n", content, flags=re.DOTALL)
-
-    # Wrap any standalone HTML images with proper spacing
-    def wrap_html_img(m):
-        return f"\n\n{m.group(1)}\n\n"
-
-    content = re.sub(r"(<img\s+[^>]*?(?:src|alt)=[\"'][^>]*?>)", wrap_html_img, content)
-
-    # Collapse more than two newlines into exactly two
-    content = re.sub(r"\n{3,}", "\n\n", content)
-
-    # Ensure each caption line is followed by exactly two newlines
-    caption_pattern = re.compile(
-        r"^((?:Figure|图)\s*\d+[:：].*?)(?:\r?\n)(?!\r?\n)", flags=re.MULTILINE
-    )
-    content = caption_pattern.sub(r"\1\n\n", content)
-
-    return content
+# preserve_figure_formatting_local function removed - using common utility instead
 
 
 
 
-def extract_figure_data(file_path):
-    """
-    Extracts figure information (image path, figure name, caption) from a Markdown file.
-
-    Args:
-        file_path (str): The path to the Markdown file.
-
-    Returns:
-        list: A list of dictionaries, where each dictionary represents a figure
-              and contains 'image_path' and 'caption'.
-              Returns an empty list if the file_path is empty, or a ValueError
-              if the file cannot be read. Returns an empty list if no figures are found.
-    """
-    if not file_path:
-        return []
-
-    # Original markdown processing
-    figures = []
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-    except Exception as e:
-        raise ValueError(f"Error reading file {file_path}: {e}")
-
-    # Regex to find image path: Allow optional HTML tags around ![](<image_path>)
-    image_regex = re.compile(
-        r"^(?:<[^>]+>\s*)*!\[\]\((.*?)\)\s*(?:<[^>]+>)*$", re.IGNORECASE
-    )
-
-    # Regex to find HTML img tag with src attribute
-    html_img_regex = re.compile(
-        r'^<img\s+[^>]*?src=["\'](.*?)["\'][^>]*?>$', re.IGNORECASE
-    )
-
-    # Regex to find figure line: Allow optional HTML tags before "Figure X..." or "Fig. X |"
-    # Captures figure number and caption. Handles both "Figure X:" and "Fig. X |" formats.
-    figure_line_regex = re.compile(
-        r"^(?:<[^>]+>\s*)*\*{0,2}(?:Figure|Fig\.?|图)\s+(\d+)\.?[\s:|]+(.+?)(?:\*{0,2})?$", re.IGNORECASE
-    )
-
-    # First pass: collect all images
-    image_locations = []
-    for i, line in enumerate(lines):
-        line_cleaned = line.strip()
-        image_match = image_regex.match(line_cleaned)
-        html_img_match = None if image_match else html_img_regex.match(line_cleaned)
-
-        if image_match or html_img_match:
-            image_path = (
-                image_match.group(1) if image_match else html_img_match.group(1)
-            )
-            image_locations.append((i, image_path))
-
-    # Second pass: look for captions and associate with the nearest preceding image
-    for i, line in enumerate(lines):
-        caption_candidate_line = line.lstrip("\ufeff").strip()
-        figure_match = figure_line_regex.match(caption_candidate_line)
-
-        if figure_match:
-            figure_number = figure_match.group(1)
-            caption = figure_match.group(2).strip()
-            
-            # Clean up markdown formatting in caption
-            caption = re.sub(r'\*{2,}', '', caption)  # Remove ** markdown bold
-            caption = caption.strip()
-
-            # Find the nearest preceding image
-            preceding_images = [
-                (img_idx, img_path)
-                for img_idx, img_path in image_locations
-                if img_idx < i
-            ]
-            if preceding_images:
-                # Get the closest image above this caption
-                closest_img_idx, image_path = max(preceding_images, key=lambda x: x[0])
-
-                # Check if the distance between image and caption is reasonable (within 10 lines)
-                if i - closest_img_idx <= 10:
-                    figures.append(
-                        {
-                            "image_path": image_path,
-                            "caption": caption,
-                        }
-                    )
-
-    # Remove duplicates while preserving order (based on image_path)
-    unique_figures = []
-    seen = set()
-    for fig in figures:
-        if fig["image_path"] not in seen:
-            seen.add(fig["image_path"])
-            unique_figures.append(fig)
-
-    return unique_figures
+# extract_figure_data function removed - use reports.utils.image_utils.extract_figure_data_from_markdown directly
 
 
 def format_author_affiliations(json_path):
@@ -548,3 +326,6 @@ def format_author_affiliations(json_path):
     affiliation_str = ", ".join(aff_entries)
 
     return {"author": author_str, "affiliation": affiliation_str}
+
+
+# preserve_figure_formatting function removed - use reports.utils.image_utils.preserve_figure_formatting directly

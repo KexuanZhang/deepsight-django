@@ -126,6 +126,14 @@ def cancel_report_generation(self, job_id: str):
         except Exception as e:
             logger.warning(f"Failed to cleanup during cancellation for job {job_id}: {e}")
 
+        # Cleanup ReportImage records for cancelled jobs
+        try:
+            from .core.job_service import JobService
+            job_service = JobService()
+            job_service._cleanup_report_images_on_cancellation(report)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup ReportImage records for cancelled job {job_id}: {e}")
+
         # Update job status in database to 'cancelled'
         report.update_status(Report.STATUS_CANCELLED, progress="Job cancelled by user")
         

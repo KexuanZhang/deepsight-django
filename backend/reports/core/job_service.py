@@ -245,23 +245,26 @@ class JobService:
                 # Use the processed content from the report generator
                 content = result["report_content"]
                 
-                # Process images if include_image is enabled
+                # Update image URLs in content if include_image is enabled
+                # Note: ReportImage records should already exist from prepare_report_images
                 if report.include_image:
                     try:
                         from .report_image_service import ReportImageService
                         image_service = ReportImageService()
                         
-                        # Process report images - extract figure IDs, copy images, and update content
-                        report_images, updated_content = image_service.process_report_images(report, content)
+                        # Get existing ReportImage records and update content with proper URLs
+                        from ..models import ReportImage
+                        report_images = list(ReportImage.objects.filter(report=report))
                         
                         if report_images:
-                            logger.info(f"Processed {len(report_images)} images for report {report.id}")
-                            content = updated_content
+                            # Update content with proper image tags using existing ReportImage records
+                            content = image_service.insert_figure_images(content, report_images, report.id)
+                            logger.info(f"Updated content with {len(report_images)} existing images for report {report.id}")
                         else:
-                            logger.info(f"No images processed for report {report.id}")
+                            logger.info(f"No existing ReportImage records found for report {report.id}")
                             
                     except Exception as e:
-                        logger.error(f"Error processing report images: {e}")
+                        logger.error(f"Error updating image URLs in content: {e}")
                         # Continue without failing the report generation
                 
                 report.result_content = content
@@ -445,6 +448,10 @@ class JobService:
             self.error_detector.reset_job_errors(job_id)
             
             report = Report.objects.get(job_id=job_id)
+            
+            # Cleanup ReportImage records for failed jobs
+            self._cleanup_report_images_on_failure(report)
+            
             report.update_status(
                 Report.STATUS_FAILED, 
                 progress=f"Job failed: {error}", 
@@ -802,3 +809,85 @@ class JobService:
                 logger.info(f"Sent terminate signal to Celery task {celery_task_id}")
         except Exception as e:
             logger.error(f"Error terminating Celery task {celery_task_id}: {e}")
+    
+    def prepare_report_images(self, report: Report) -> bool:
+        """Prepare ReportImage records before report generation starts.
+        
+        This creates ReportImage records early so they're available during figure insertion.
+        
+        Args:
+            report: Report instance
+            
+        Returns:
+            bool: True if preparation was successful, False otherwise
+        """
+        if not report.include_image:
+            logger.info(f"Image processing disabled for report {report.id}")
+            return True
+        
+        try:
+            from .report_image_service import ReportImageService
+            from .figure_service import FigureDataService
+            
+            # Get figure data from cache or direct upload
+            figure_data = FigureDataService.get_cached_figure_data(
+                report.user.pk, f"direct_{report.id}"
+            ) or FigureDataService.get_cached_figure_data(
+                report.user.pk, report.notebooks.id if report.notebooks else None
+            )
+            
+            if figure_data and "figures" in figure_data:
+                # Extract figure IDs from cached figure data
+                figure_ids = [fig.get("figure_id") for fig in figure_data["figures"] if fig.get("figure_id")]
+                
+                if figure_ids:
+                    image_service = ReportImageService()
+                    
+                    # Find corresponding images in knowledge base
+                    kb_images = image_service.find_images_by_figure_ids(figure_ids, report.user.id)
+                    
+                    if kb_images:
+                        # Copy images to report folder and create ReportImage records
+                        report_images = image_service.copy_images_to_report(report, kb_images)
+                        logger.info(f"Prepared {len(report_images)} ReportImage records for report {report.id}")
+                        return True
+                    else:
+                        logger.warning(f"No images found for figure IDs: {figure_ids}")
+                else:
+                    logger.info(f"No figure IDs found in cached figure data for report {report.id}")
+            else:
+                logger.info(f"No cached figure data found for report {report.id}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error preparing report images for report {report.id}: {e}")
+            return False
+    
+    def _cleanup_report_images_on_failure(self, report: Report):
+        """Clean up ReportImage records when a job fails.
+        
+        Args:
+            report: Report instance
+        """
+        try:
+            from .report_image_service import ReportImageService
+            image_service = ReportImageService()
+            image_service.cleanup_report_images(report)
+            logger.info(f"Cleaned up ReportImage records for failed report {report.id}")
+        except Exception as e:
+            logger.error(f"Error cleaning up ReportImage records for failed report {report.id}: {e}")
+    
+    def _cleanup_report_images_on_cancellation(self, report: Report):
+        """Clean up ReportImage records when a job is cancelled.
+        
+        Args:
+            report: Report instance
+        """
+        try:
+            from .report_image_service import ReportImageService
+            image_service = ReportImageService()
+            image_service.cleanup_report_images(report)
+            logger.info(f"Cleaned up ReportImage records for cancelled report {report.id}")
+        except Exception as e:
+            logger.error(f"Error cleaning up ReportImage records for cancelled report {report.id}: {e}")

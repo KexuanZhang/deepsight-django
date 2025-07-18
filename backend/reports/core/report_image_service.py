@@ -1,15 +1,12 @@
 import logging
 import os
-import re
-import shutil
-from pathlib import Path
-from typing import List, Dict, Optional, Tuple
-from uuid import UUID
+from typing import List, Tuple
 
 from django.db import transaction
 from notebooks.models import KnowledgeBaseImage
 from notebooks.utils.minio_backend import get_minio_backend
 from reports.models import Report, ReportImage
+from reports.image_utils import extract_figure_ids_from_content, convert_to_uuid_objects
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +20,7 @@ class ReportImageService:
     def extract_figure_ids_from_content(self, content: str) -> List[str]:
         """
         Extract all figure IDs from report content.
-        Looks for UUID patterns that represent figure IDs.
+        Uses common utility function.
         
         Args:
             content: Report content with figure ID placeholders
@@ -31,22 +28,7 @@ class ReportImageService:
         Returns:
             List of figure ID strings (UUIDs)
         """
-        # UUID pattern: 8-4-4-4-12 hexadecimal characters
-        uuid_pattern = r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
-        
-        # Find all UUIDs in the content (these should be figure IDs)
-        figure_ids = re.findall(uuid_pattern, content)
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_figure_ids = []
-        for fig_id in figure_ids:
-            if fig_id not in seen:
-                seen.add(fig_id)
-                unique_figure_ids.append(fig_id)
-        
-        logger.info(f"Extracted {len(unique_figure_ids)} unique figure IDs from content")
-        return unique_figure_ids
+        return extract_figure_ids_from_content(content)
     
     def find_images_by_figure_ids(self, figure_ids: List[str], user_id: int) -> List[KnowledgeBaseImage]:
         """
@@ -62,14 +44,8 @@ class ReportImageService:
         if not figure_ids:
             return []
         
-        # Convert strings to UUIDs
-        uuid_figure_ids = []
-        for fig_id in figure_ids:
-            try:
-                uuid_figure_ids.append(UUID(fig_id))
-            except ValueError:
-                logger.warning(f"Invalid UUID format for figure_id: {fig_id}")
-                continue
+        # Convert strings to UUIDs using common utility
+        uuid_figure_ids = convert_to_uuid_objects(figure_ids)
         
         # Query images by figure_id field and ensure user owns them
         images = KnowledgeBaseImage.objects.filter(
@@ -172,17 +148,19 @@ class ReportImageService:
         report_images = self.copy_images_to_report(report, kb_images)
         
         # Update content with proper image tags
-        updated_content = self.insert_figure_images(content, report_images)
+        updated_content = self.insert_figure_images(content, report_images, report.id)
         
         return report_images, updated_content
     
-    def insert_figure_images(self, content: str, report_images: List[ReportImage]) -> str:
+    def insert_figure_images(self, content: str, report_images: List[ReportImage], report_id=None) -> str:
         """
         Replace figure ID placeholders in content with proper HTML image tags.
+        Uses the unified ImageInsertionService.
         
         Args:
             content: Report content with figure ID placeholders
             report_images: List of ReportImage objects
+            report_id: Optional report ID to use for image lookup
             
         Returns:
             Updated content with HTML image tags
@@ -190,53 +168,25 @@ class ReportImageService:
         if not report_images:
             return content
         
-        # Create mapping of figure_id to ReportImage
-        figure_map = {str(img.figure_id): img for img in report_images}
+        # Convert ReportImage objects to standard format for unified service
+        figures = [
+            {
+                "figure_id": str(img.figure_id),
+                "caption": img.image_caption or f"Figure {img.figure_id}"
+            }
+            for img in report_images
+        ]
         
-        # UUID pattern
-        uuid_pattern = r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+        # Use unified service - Django adapts to agents format
+        from reports.image_utils import ImageInsertionService, DatabaseUrlProvider
+        service = ImageInsertionService(DatabaseUrlProvider())
         
-        def replace_figure_id(match):
-            figure_id = match.group(0) if hasattr(match, 'group') else match
-            
-            if figure_id in figure_map:
-                report_image = figure_map[figure_id]
-                # Get MinIO URL for the image from ReportImage (not KnowledgeBaseImage)
-                image_url = report_image.get_image_url(expires=86400)  # 24 hour expiry
-                
-                if image_url:
-                    # Create simple HTML img tag without alt text, only with src and style
-                    img_tag = f'<img src="{image_url}" style="max-height: 500px;">'
-                    return img_tag
-                else:
-                    logger.warning(f"Could not get URL for figure {figure_id}")
-                    return f"[Figure {figure_id} - URL unavailable]"
-            else:
-                logger.warning(f"Figure {figure_id} not found in report images")
-                return match.group(0) if hasattr(match, 'group') else match  # Keep original if not found
-        
-        # Replace all figure IDs with image tags (both standalone and in angle brackets)
-        # First handle angle brackets <uuid>
-        bracket_pattern = rf'<({uuid_pattern})>'
-        
-        def replace_bracket_figure_id(match):
-            figure_id = match.group(1)
-            return replace_figure_id(figure_id)
-        
-        updated_content = re.sub(bracket_pattern, replace_bracket_figure_id, content)
-        
-        # Then handle standalone UUIDs, but avoid replacing UUIDs that are already inside img tags
-        # Use negative lookbehind to avoid matching UUIDs inside src attributes
-        standalone_pattern = rf'(?<!src=")({uuid_pattern})(?![^<]*>)'
-        
-        def replace_standalone_figure_id(match):
-            figure_id = match.group(1)
-            return replace_figure_id(figure_id)
-        
-        updated_content = re.sub(standalone_pattern, replace_standalone_figure_id, updated_content)
-        
-        logger.info(f"Replaced {len(figure_map)} figure placeholders with image tags")
-        return updated_content
+        # Django adapts: use passed report_id or get from first image (all should have same report_id)
+        if report_id is None:
+            report_id = str(report_images[0].report_id) if report_images else None
+        else:
+            report_id = str(report_id)
+        return service.insert_figure_images(content, figures, report_id=report_id)
     
     def cleanup_report_images(self, report: Report):
         """

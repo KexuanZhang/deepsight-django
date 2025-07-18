@@ -16,10 +16,10 @@ import os
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 )
-from utils.paper_processing import (
-    preserve_figure_formatting,
-    format_author_affiliations,
-)
+# Import image utilities and other functions directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..', '..')))
+from reports.image_utils import preserve_figure_formatting
+from utils.paper_processing import format_author_affiliations
 
 
 class GenerateKeySection(dspy.Signature):

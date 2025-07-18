@@ -357,7 +357,7 @@ class KnowledgeBaseImageService:
         """
         try:
             from ..models import KnowledgeBaseItem, KnowledgeBaseImage
-            from agents.report_agent.utils.paper_processing import extract_figure_data
+            from reports.image_utils import extract_figure_data_from_markdown
             
             # Validate access to knowledge base item
             kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
@@ -416,7 +416,7 @@ class KnowledgeBaseImageService:
         """Extract figure data from markdown content using a temporary file."""
         try:
             # Import here to avoid circular imports
-            from agents.report_agent.utils.paper_processing import extract_figure_data
+            from reports.image_utils import extract_figure_data_from_markdown
             
             # Create a temporary markdown file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as temp_file:
@@ -425,7 +425,7 @@ class KnowledgeBaseImageService:
             
             try:
                 # Extract figure data using the paper processing function
-                figure_data = extract_figure_data(temp_file_path)
+                figure_data = extract_figure_data_from_markdown(temp_file_path)
                 return figure_data or []
             finally:
                 # Clean up temporary file

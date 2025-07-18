@@ -42,6 +42,13 @@ class GenerationService:
             
             logger.info(f"Starting report generation for report {report_id}")
             
+            # Prepare ReportImage records before generation starts (fixes timing issue)
+            if report.include_image:
+                from .job_service import JobService
+                job_service = JobService()
+                if not job_service.prepare_report_images(report):
+                    logger.warning(f"Failed to prepare ReportImage records for report {report_id}, continuing anyway")
+            
             # Create output directory
             output_dir = self.file_storage.create_output_directory(
                 user_id=report.user.pk,

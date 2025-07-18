@@ -7,8 +7,8 @@ from django.conf import settings
 from datetime import datetime
 import logging
 
-# Import extract_figure_data from paper_processing
-from agents.report_agent.utils.paper_processing import extract_figure_data
+# Import extract_figure_data_from_markdown from image_utils
+from reports.image_utils import extract_figure_data_from_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -229,8 +229,8 @@ class FigureDataService:
             md_file_path = md_files[0]
             logger.info(f"Extracting figure data from {md_file_path}")
             
-            # Extract figure data using paper_processing function
-            figure_data = extract_figure_data(md_file_path)
+            # Extract figure data using image_utils function
+            figure_data = extract_figure_data_from_markdown(md_file_path)
             
             if figure_data:
                 from notebooks.utils.knowledge_base_image_service import KnowledgeBaseImageService

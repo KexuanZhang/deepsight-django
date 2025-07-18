@@ -23,7 +23,9 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
 )
 from utils.hyperlink_citations import add_hyperlinks_to_citations
-from utils.paper_processing import insert_figure_images, preserve_figure_formatting
+# Import image utilities directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..')))
+from reports.image_utils import ImageInsertionService, DatabaseUrlProvider, preserve_figure_formatting
 
 
 class TopicGenerator(dspy.Signature):
@@ -200,6 +202,7 @@ class STORMWikiRunnerArguments:
     text_input: Optional[str] = field(default=None, metadata={"help": "Text input content."})
     speakers: Optional[List[str]] = field(default=None, metadata={"help": "Speakers in the article."})
     author_json: Optional[str] = field(default=None, metadata={"help": "Author JSON for the article."})
+    report_id: Optional[str] = field(default=None, metadata={"help": "Report ID for image insertion."})
     max_conv_turn: int = field(
         default=3,
         metadata={
@@ -322,6 +325,64 @@ class STORMWikiRunner(Engine):
         self.lm_configs.init_check()
         self.apply_decorators()
         self.report_id = getattr(args, 'report_id', None)  # Store report_id from config
+    
+    def _ensure_report_images_exist(self):
+        """
+        Ensure that ReportImage records exist for all figures in figure_data.
+        This creates the database records needed for image URL lookup during insertion.
+        """
+        if not self.figure_data or not self.report_id:
+            return
+            
+        try:
+            # Import Django models (with proper initialization)
+            import os
+            import django
+            from django.conf import settings as django_settings
+            
+            # Initialize Django if not already done
+            if not django_settings.configured:
+                os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+                django.setup()
+            
+            from reports.models import Report, ReportImage
+            from notebooks.models import KnowledgeBaseImage
+            from reports.core.report_image_service import ReportImageService
+            
+            # Get the report instance
+            try:
+                report = Report.objects.get(id=self.report_id)
+            except Report.DoesNotExist:
+                print(f"Warning: Report {self.report_id} not found")
+                return
+            
+            # Extract figure IDs from figure_data
+            figure_ids = []
+            for fig in self.figure_data:
+                if isinstance(fig, dict) and 'figure_id' in fig:
+                    figure_ids.append(fig['figure_id'])
+            
+            if not figure_ids:
+                print("No figure IDs found in figure_data")
+                return
+            
+            # Use ReportImageService to create the records
+            image_service = ReportImageService()
+            
+            # Find corresponding images in knowledge base
+            kb_images = image_service.find_images_by_figure_ids(figure_ids, report.user.id)
+            
+            if kb_images:
+                # Copy images to report folder and create ReportImage records
+                report_images = image_service.copy_images_to_report(report, kb_images)
+                print(f"Created {len(report_images)} ReportImage records for report {report.id}")
+            else:
+                print(f"No knowledge base images found for figure IDs: {figure_ids}")
+                
+        except Exception as e:
+            print(f"Error ensuring ReportImage records exist: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _get_formatted_inputs(self) -> str:
         """Returns the text_input or 'N/A' if not available."""
@@ -437,10 +498,14 @@ class STORMWikiRunner(Engine):
             article_text_before_figs = draft_article.to_string()
             original_references = draft_article.reference  # Preserve references
 
-            modified_text_with_figs = insert_figure_images(
-                article_content=article_text_before_figs,
+            # Ensure ReportImage records exist for figure insertion
+            self._ensure_report_images_exist()
+            
+            # Use unified image insertion service
+            image_service = ImageInsertionService(DatabaseUrlProvider())
+            modified_text_with_figs = image_service.insert_figure_images(
+                content=article_text_before_figs,
                 figures=self.figure_data,
-                reorder=False,
                 report_id=self.report_id,
             )
 

@@ -738,6 +738,7 @@ class DeepReportGenerator:
                 reranker_threshold=config.reranker_threshold,
                 time_range=config.time_range.value if config.time_range else None,
                 text_input=config.text_input,
+                report_id=config.report_id,
             )
 
             # Setup retriever
