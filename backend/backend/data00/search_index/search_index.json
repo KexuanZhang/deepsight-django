@@ -3680,6 +3680,27 @@
       "content_length": 0,
       "content_type": ".pdf",
       "filename": "Aghzal_Evaluating_Vision-Language_Models_as_Evaluators_in_Path_Planning_CVPR_2025_paper.pdf"
+    },
+    "35": {
+      "file_id": "35",
+      "content": "",
+      "searchable_content": "",
+      "keywords": [],
+      "metadata": {
+        "filename": "Abbasi_CLIP_Under_the_Microscope_A_Fine-Grained_Analysis_of_Multi-Object_Representation_CVPR_2025_paper.pdf",
+        "original_filename": "Abbasi_CLIP_Under_the_Microscope_A_Fine-Grained_Analysis_of_Multi-Object_Representation_CVPR_2025_paper.pdf",
+        "file_extension": ".pdf",
+        "content_type": "application/pdf",
+        "file_size": 1583559,
+        "upload_file_id": "upload_1752844834179_eimjgbntj",
+        "upload_timestamp": "2025-07-18T13:20:34.332004",
+        "parsing_status": "completed"
+      },
+      "processing_stage": "immediate",
+      "indexed_at": "2025-07-18T13:22:09.389421+00:00",
+      "content_length": 0,
+      "content_type": ".pdf",
+      "filename": "Abbasi_CLIP_Under_the_Microscope_A_Fine-Grained_Analysis_of_Multi-Object_Representation_CVPR_2025_paper.pdf"
     }
   },
   "file_index": {
@@ -3899,7 +3920,14 @@
       "indexed_at": "2025-07-11T14:37:15.317385+00:00",
       "content_length": 0,
       "processing_stage": "immediate"
+    },
+    "35": {
+      "filename": "Abbasi_CLIP_Under_the_Microscope_A_Fine-Grained_Analysis_of_Multi-Object_Representation_CVPR_2025_paper.pdf",
+      "content_type": ".pdf",
+      "indexed_at": "2025-07-18T13:22:09.389421+00:00",
+      "content_length": 0,
+      "processing_stage": "immediate"
     }
   },
-  "last_updated": "2025-07-11T14:37:15.317413+00:00"
+  "last_updated": "2025-07-18T13:22:09.389868+00:00"
 }
