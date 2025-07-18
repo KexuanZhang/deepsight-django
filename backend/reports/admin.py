@@ -162,8 +162,7 @@ class ReportImageInline(admin.TabularInline):
     readonly_fields = (
         'figure_id', 
         'image_caption', 
-        'minio_object_key', 
-        'source_minio_object_key',
+        'report_figure_minio_object_key',
         'content_type',
         'file_size',
         'created_at'
@@ -197,12 +196,11 @@ class ReportImageAdmin(admin.ModelAdmin):
         'figure_id',
         'image_caption',
         'report__article_title',
-        'minio_object_key'
+        'report_figure_minio_object_key'
     )
     readonly_fields = (
         'figure_id',
-        'minio_object_key',
-        'source_minio_object_key',
+        'report_figure_minio_object_key',
         'image_metadata',
         'created_at',
         'updated_at',
@@ -217,7 +215,7 @@ class ReportImageAdmin(admin.ModelAdmin):
     
     def get_image_preview(self, obj):
         """Display image preview in admin."""
-        if obj.minio_object_key:
+        if obj.report_figure_minio_object_key:
             url = obj.get_image_url(expires=3600)
             if url:
                 from django.utils.html import format_html

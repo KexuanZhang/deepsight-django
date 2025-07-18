@@ -312,11 +312,13 @@ class ReportImage(models.Model):
     """
     Store image metadata for report items, similar to KnowledgeBaseImage but for reports.
     Each image is linked to a report and stored in the report's MinIO folder.
-    Uses figure_id as the primary key for direct lookup.
     """
     
-    # Use figure_id as primary key instead of auto-generated id
-    figure_id = models.UUIDField(primary_key=True, editable=False, help_text="Unique figure identifier from knowledge base")
+    # Use standard auto-generated id as primary key to match database
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Separate figure_id field (not primary key)
+    figure_id = models.UUIDField(default=uuid.uuid4, editable=False, help_text="Unique figure identifier from knowledge base")
     
     # Link to report instead of knowledge_base_item
     report = models.ForeignKey(
@@ -332,8 +334,8 @@ class ReportImage(models.Model):
         help_text="Description or caption for the image"
     )
     
-    # MinIO storage fields
-    minio_object_key = models.CharField(
+    # MinIO storage fields - use correct field name from database
+    report_figure_minio_object_key = models.CharField(
         max_length=255,
         db_index=True,
         help_text="MinIO object key for the image file in report folder"
@@ -354,13 +356,6 @@ class ReportImage(models.Model):
         help_text="File size in bytes"
     )
     
-    # Source tracking
-    source_minio_object_key = models.CharField(
-        max_length=255,
-        blank=True,
-        help_text="Original MinIO object key from knowledge base"
-    )
-    
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -371,7 +366,7 @@ class ReportImage(models.Model):
         verbose_name_plural = "Report Images"
         indexes = [
             models.Index(fields=["report", "created_at"]),
-            models.Index(fields=["minio_object_key"]),
+            models.Index(fields=["report_figure_minio_object_key"]),
         ]
     
     def __str__(self):
@@ -379,22 +374,22 @@ class ReportImage(models.Model):
     
     def get_image_url(self, expires=86400):
         """Get pre-signed URL for image access"""
-        if self.minio_object_key:
+        if self.report_figure_minio_object_key:
             try:
                 from notebooks.utils.minio_backend import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_url(self.minio_object_key, expires)
+                return backend.get_file_url(self.report_figure_minio_object_key, expires)
             except Exception:
                 return None
         return None
     
     def get_image_content(self):
         """Get image content as bytes from MinIO"""
-        if self.minio_object_key:
+        if self.report_figure_minio_object_key:
             try:
                 from notebooks.utils.minio_backend import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_content(self.minio_object_key)
+                return backend.get_file_content(self.report_figure_minio_object_key)
             except Exception:
                 return None
         return None

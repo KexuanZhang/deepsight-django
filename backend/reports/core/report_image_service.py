@@ -124,11 +124,10 @@ class ReportImageService:
                         figure_id=kb_image.figure_id,
                         report=report,
                         image_caption=kb_image.image_caption,
-                        minio_object_key=dest_key,
+                        report_figure_minio_object_key=dest_key,
                         image_metadata=kb_image.image_metadata,
                         content_type=kb_image.content_type,
-                        file_size=kb_image.file_size,
-                        source_minio_object_key=source_key
+                        file_size=kb_image.file_size
                     )
                     
                     report_images.append(report_image)
@@ -205,7 +204,7 @@ class ReportImageService:
                 
                 if image_url:
                     # Create simple HTML img tag without alt text, only with src, data-figure-id and style
-                    img_tag = f'<img src="{image_url}" data-figure-id="{figure_id}" style="max-width: 100%; height: auto;">'
+                    img_tag = f'<img src="{image_url}" data-figure-id="{figure_id}" style="max-height: 500px;">'
                     return img_tag
                 else:
                     logger.warning(f"Could not get URL for figure {figure_id}")
@@ -251,9 +250,9 @@ class ReportImageService:
             # Delete files from MinIO
             for img in report_images:
                 try:
-                    self.minio_backend.delete_file(img.minio_object_key)
+                    self.minio_backend.delete_file(img.report_figure_minio_object_key)
                 except Exception as e:
-                    logger.error(f"Error deleting image {img.minio_object_key}: {e}")
+                    logger.error(f"Error deleting image {img.report_figure_minio_object_key}: {e}")
             
             # Delete database records
             count = report_images.count()

@@ -16,7 +16,7 @@ def _get_figure_url_from_db(figure_id: str) -> str:
     Get the MinIO URL for an image from the database using the figure_id.
     
     Args:
-        figure_id: The figure_id of the KnowledgeBaseImage
+        figure_id: The figure_id of the ReportImage
         
     Returns:
         The MinIO URL for the image, or None if not found
@@ -32,15 +32,15 @@ def _get_figure_url_from_db(figure_id: str) -> str:
             os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
             django.setup()
         
-        from notebooks.models import KnowledgeBaseImage
+        from reports.models import ReportImage
         
         try:
-            image = KnowledgeBaseImage.objects.get(figure_id=figure_id)
+            image = ReportImage.objects.get(figure_id=figure_id)
             url = image.get_image_url()
-            logging.info(f"Successfully retrieved image URL for figure_id {figure_id}")
+            logging.info(f"Successfully retrieved image URL for figure_id {figure_id} from ReportImage")
             return url
-        except KnowledgeBaseImage.DoesNotExist:
-            logging.warning(f"Image with figure_id {figure_id} not found in database")
+        except ReportImage.DoesNotExist:
+            logging.warning(f"Image with figure_id {figure_id} not found in ReportImage database")
             return None
         except ValueError as ve:
             logging.warning(f"Invalid figure_id format {figure_id}: {ve}")
