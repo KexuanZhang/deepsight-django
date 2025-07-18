@@ -114,14 +114,14 @@ class EnhancedFileStorageService(FileStorageService):
             for image in images:
                 try:
                     presigned_url = self.minio_backend.get_presigned_url(image.minio_object_key, expires)
-                    # Extract filename from object key or use figure_name as fallback
+                    # Extract filename from object key or use figure_id as fallback
                     import os
-                    filename = os.path.basename(image.minio_object_key) if image.minio_object_key else f"{image.figure_name}.jpg"
+                    filename = os.path.basename(image.minio_object_key) if image.minio_object_key else f"{image.figure_id}.jpg"
                     image_url_mapping[filename] = presigned_url
                 except Exception as e:
                     self.log_operation(
                         "get_image_url_error",
-                        f"Failed to generate URL for image {image.figure_name}: {e}",
+                        f"Failed to generate URL for image {image.figure_id}: {e}",
                         "error"
                     )
             

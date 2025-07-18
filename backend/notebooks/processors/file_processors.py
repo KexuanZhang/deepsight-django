@@ -59,7 +59,7 @@ class FileProcessor:
             try:
                 import faster_whisper
                 device = self._detect_device()
-                self._whisper_model = faster_whisper.WhisperModel("base", device=device)
+                self._whisper_model = faster_whisper.WhisperModel("large-v3-turbo", device=device)
                 self.logger.info(f"Loaded Whisper model on {device}")
             except ImportError:
                 self.logger.warning("faster-whisper not available")
