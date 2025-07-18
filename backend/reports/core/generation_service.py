@@ -65,25 +65,17 @@ class GenerationService:
                     from .figure_service import FigureDataService
                     selected_file_ids = content_data.get("selected_file_ids", [])
                     if selected_file_ids:
-                        figure_data_ref = FigureDataService.create_combined_figure_data(
+                        # Create combined figure data and cache it in the report instance
+                        FigureDataService.create_combined_figure_data(
                             report, selected_file_ids
                         )
-                        if figure_data_ref:
-                            # Store the database reference instead of file path
-                            report.figure_data_object_key = figure_data_ref
-                            report.save(update_fields=['figure_data_object_key'])
             
             # Load figure data if available
             figure_data = []
-            if report.include_image and report.figure_data_object_key:
-                from .figure_service import FigureDataService
-                
-                # Check if we have cached figure data
+            if report.include_image:
+                # Check if we have cached figure data from earlier processing
                 if hasattr(report, '_cached_figure_data'):
                     figure_data = report._cached_figure_data
-                else:
-                    # Load from database or fallback to file
-                    figure_data = FigureDataService.load_combined_figure_data(report.figure_data_object_key)
 
             # Create configuration for report generation
             config_dict = report.get_configuration_dict()

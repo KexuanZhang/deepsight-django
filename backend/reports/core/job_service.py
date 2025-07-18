@@ -109,13 +109,11 @@ class JobService:
             # Handle figure_data if provided
             if figure_data:
                 from .figure_service import FigureDataService
-                figure_data_path = FigureDataService.create_knowledge_base_figure_data(
+                # Create knowledge base figure data for direct upload
+                # This will store the figure data in the report's cached data
+                FigureDataService.create_knowledge_base_figure_data(
                     user.pk, f"direct_{report.id}", figure_data
                 )
-                if figure_data_path:
-                    report.figure_data_object_key = figure_data_path
-            
-            report.save(update_fields=["figure_data_object_key"])
             
             # Create job metadata for caching
             job_metadata = {

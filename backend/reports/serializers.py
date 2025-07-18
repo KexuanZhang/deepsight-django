@@ -43,7 +43,6 @@ class ReportSerializer(serializers.ModelSerializer):
             "result_content",
             "error_message",
             "main_report_object_key",
-            "figure_data_object_key",
             "file_metadata",
             "generated_files",
             "processing_logs",
@@ -239,7 +238,7 @@ class ReportGenerationRequestSerializer(serializers.Serializer):
     )
 
     # New flag to specify whether to include images (figure_data)
-    include_image = serializers.BooleanField(default=False)
+    include_image = serializers.BooleanField(default=True)
 
     # Content inputs from knowledge base
     selected_files_paths = serializers.ListField(
