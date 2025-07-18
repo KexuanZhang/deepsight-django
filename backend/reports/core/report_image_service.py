@@ -6,7 +6,12 @@ from django.db import transaction
 from notebooks.models import KnowledgeBaseImage
 from notebooks.utils.minio_backend import get_minio_backend
 from reports.models import Report, ReportImage
-from reports.image_utils import extract_figure_ids_from_content, convert_to_uuid_objects
+from reports.image_utils import (
+    extract_figure_ids_from_content, 
+    convert_to_uuid_objects,
+    ImageInsertionService, 
+    DatabaseUrlProvider
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,18 +22,6 @@ class ReportImageService:
     def __init__(self):
         self.minio_backend = get_minio_backend()
     
-    def extract_figure_ids_from_content(self, content: str) -> List[str]:
-        """
-        Extract all figure IDs from report content.
-        Uses common utility function.
-        
-        Args:
-            content: Report content with figure ID placeholders
-            
-        Returns:
-            List of figure ID strings (UUIDs)
-        """
-        return extract_figure_ids_from_content(content)
     
     def find_images_by_figure_ids(self, figure_ids: List[str], user_id: int) -> List[KnowledgeBaseImage]:
         """
@@ -131,7 +124,7 @@ class ReportImageService:
             Tuple of (list of ReportImage objects, updated content)
         """
         # Extract figure IDs from content
-        figure_ids = self.extract_figure_ids_from_content(content)
+        figure_ids = extract_figure_ids_from_content(content)
         
         if not figure_ids:
             logger.info("No figure IDs found in report content")
@@ -148,14 +141,13 @@ class ReportImageService:
         report_images = self.copy_images_to_report(report, kb_images)
         
         # Update content with proper image tags
-        updated_content = self.insert_figure_images(content, report_images, report.id)
+        updated_content = self._insert_figure_images(content, report_images, report.id)
         
         return report_images, updated_content
     
-    def insert_figure_images(self, content: str, report_images: List[ReportImage], report_id=None) -> str:
+    def _insert_figure_images(self, content: str, report_images: List[ReportImage], report_id=None) -> str:
         """
         Replace figure ID placeholders in content with proper HTML image tags.
-        Uses the unified ImageInsertionService.
         
         Args:
             content: Report content with figure ID placeholders
@@ -177,11 +169,10 @@ class ReportImageService:
             for img in report_images
         ]
         
-        # Use unified service - Django adapts to agents format
-        from reports.image_utils import ImageInsertionService, DatabaseUrlProvider
+        # Use unified service
         service = ImageInsertionService(DatabaseUrlProvider())
         
-        # Django adapts: use passed report_id or get from first image (all should have same report_id)
+        # Django adapts: use passed report_id or get from first image
         if report_id is None:
             report_id = str(report_images[0].report_id) if report_images else None
         else:
