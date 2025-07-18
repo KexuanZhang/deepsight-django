@@ -672,6 +672,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                 if result.get('success') and os.path.exists(final_images_dir):
                     self._upload_extracted_images_to_minio(final_images_dir, kb_item)
                     self._process_local_caption_data(final_images_dir, kb_item)
+                    self._update_content_with_extracted_images(kb_item)
 
                 # Clean up temp files
                 os.unlink(video_file_path)
@@ -717,15 +718,215 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
             'generate_captions': validated_data.get('generate_captions', True),
         }
 
-    def _upload_extracted_images_to_minio(self, final_images_dir, kb_item):
-        """Upload extracted images to MinIO storage."""
-        # Implementation would go here
-        pass
+    def _upload_extracted_images_to_minio(self, local_images_dir: str, kb_item):
+        """Upload extracted images from local directory to MinIO with proper structure."""
+        try:
+            import glob
+            import os
+            from ..models import KnowledgeBaseImage
+            from ..utils.storage_adapter import get_storage_adapter
+            
+            storage_adapter = get_storage_adapter()
+            
+            # First, delete any existing images for this knowledge base item to avoid duplicates
+            existing_images = KnowledgeBaseImage.objects.filter(knowledge_base_item=kb_item)
+            if existing_images.exists():
+                logger.info(f"Deleting {existing_images.count()} existing images for kb_item {kb_item.id}")
+                
+                # Delete files from MinIO first
+                for img in existing_images:
+                    if img.minio_object_key:
+                        try:
+                            storage_adapter.storage_service.minio_backend.delete_file(img.minio_object_key)
+                            logger.info(f"Deleted existing image from MinIO: {img.minio_object_key}")
+                        except Exception as e:
+                            logger.warning(f"Failed to delete existing image from MinIO: {e}")
+                
+                # Delete database records
+                existing_images.delete()
+                logger.info(f"Deleted existing image records for kb_item {kb_item.id}")
+            
+            # Find all image files in the local directory
+            image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.gif', '*.svg']
+            image_files = []
+            for ext in image_extensions:
+                image_files.extend(glob.glob(os.path.join(local_images_dir, ext)))
+            
+            # Note: JSON files are now processed locally and stored in database, not uploaded to MinIO
+            all_files = image_files
+            
+            if not all_files:
+                logger.info(f"No images or data files found in {local_images_dir}")
+                return
+            
+            logger.info(f"Uploading {len(all_files)} files from {local_images_dir} to MinIO")
+            
+            # Upload each file to MinIO
+            figure_sequence = 1
+            for file_path in all_files:
+                try:
+                    filename = os.path.basename(file_path)
+                    
+                    # Read file content
+                    with open(file_path, 'rb') as f:
+                        file_content = f.read()
+                    
+                    # Determine content type
+                    import mimetypes
+                    content_type, _ = mimetypes.guess_type(filename)
+                    content_type = content_type or 'application/octet-stream'
+                    
+                    # Create and save KnowledgeBaseImage record first to get UUID
+                    kb_image = KnowledgeBaseImage(
+                        knowledge_base_item=kb_item,
+                        image_caption="",  # Will be populated from caption data if available
+                        content_type=content_type,
+                        file_size=len(file_content),
+                        image_metadata={
+                            'original_filename': filename,
+                            'file_size': len(file_content),
+                            'content_type': content_type,
+                            'kb_item_id': str(kb_item.id),
+                            'source': 'video_extraction',
+                            'extracted_from': 'video_processing',
+                        }
+                    )
+                    # Save to get UUID for MinIO object key
+                    kb_image.save()
+                    
+                    # Store in MinIO using file ID structure with images subfolder and UUID
+                    object_key = storage_adapter.storage_service.minio_backend.save_file_with_auto_key(
+                        content=file_content,
+                        filename=filename,
+                        prefix="kb",
+                        content_type=content_type,
+                        metadata={
+                            'kb_item_id': str(kb_item.id),
+                            'user_id': str(kb_item.user.id),
+                            'file_type': 'video_extracted_image',
+                            'extracted_from': 'video_processing',
+                        },
+                        user_id=str(kb_item.user.id),
+                        file_id=str(kb_item.id),
+                        subfolder="images",
+                        subfolder_uuid=str(kb_image.id)
+                    )
+                    
+                    # Update the record with MinIO object key
+                    kb_image.minio_object_key = object_key
+                    kb_image.save(update_fields=['minio_object_key'])
+                    
+                    logger.info(f"Uploaded {filename} to MinIO: {object_key}")
+                    figure_sequence += 1
+                    
+                except Exception as e:
+                    logger.error(f"Failed to upload {filename} to MinIO: {str(e)}")
+                    continue
+            
+            logger.info(f"Successfully uploaded {len(all_files)} files to MinIO for kb_item {kb_item.id}")
+            
+        except Exception as e:
+            logger.error(f"Error uploading extracted images to MinIO: {str(e)}")
 
-    def _process_local_caption_data(self, final_images_dir, kb_item):
-        """Process caption data locally."""
-        # Implementation would go here
-        pass
+    def _process_local_caption_data(self, local_images_dir: str, kb_item):
+        """Process caption data from local JSON files and update KnowledgeBaseImage records."""
+        try:
+            import json
+            import glob
+            import os
+            from ..models import KnowledgeBaseImage
+            
+            # Find JSON files with caption data
+            json_files = glob.glob(os.path.join(local_images_dir, '*.json'))
+            
+            for json_file in json_files:
+                try:
+                    with open(json_file, 'r', encoding='utf-8') as f:
+                        caption_data = json.load(f)
+                    
+                    # Process caption data and update database records
+                    if isinstance(caption_data, list):
+                        for item in caption_data:
+                            if isinstance(item, dict) and 'caption' in item:
+                                caption = item['caption']
+                                
+                                # Find image by matching existing caption or create new one
+                                image_record = KnowledgeBaseImage.objects.filter(
+                                    knowledge_base_item=kb_item,
+                                    image_caption=""  # Find images without captions to update
+                                ).first()
+                                
+                                if image_record:
+                                    image_record.image_caption = caption
+                                    image_record.save(update_fields=['image_caption'])
+                                    logger.info(f"Updated caption: {caption[:50]}...")
+                    
+                    logger.info(f"Processed caption data from {json_file}")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing caption file {json_file}: {str(e)}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Error processing local caption data: {str(e)}")
+
+    def _update_content_with_extracted_images(self, kb_item):
+        """Update the knowledge base item's content to include extracted images."""
+        try:
+            from ..models import KnowledgeBaseImage
+            
+            # Get all images for this knowledge base item
+            images = KnowledgeBaseImage.objects.filter(
+                knowledge_base_item=kb_item,
+                image_metadata__source="video_extraction"
+            ).order_by('created_at')
+            
+            if not images.exists():
+                logger.warning(f"No extracted images found for KB item {kb_item.id}")
+                return
+            
+            # Build content with extracted images
+            content_parts = []
+            
+            # Add header
+            content_parts.append("# Extracted Images from Video\n")
+            content_parts.append(f"**Video:** {kb_item.title}\n")
+            content_parts.append(f"**Total Images:** {images.count()}\n\n")
+            
+            # Add each image with its caption
+            for i, image in enumerate(images, 1):
+                # Use the API endpoint that serves images through the notebook context
+                image_url = f"/api/notebooks/{{notebook_id}}/files/{kb_item.id}/images/{image.figure_id}"
+                
+                content_parts.append(f"## Image {i}\n")
+                content_parts.append(f"![Figure {i}]({image_url})\n")
+                
+                if image.image_caption:
+                    content_parts.append(f"**Caption:** {image.image_caption}\n")
+                
+                # Add metadata if available
+                if image.image_metadata:
+                    extraction_method = image.image_metadata.get('extraction_method', 'unknown')
+                    content_parts.append(f"**Extraction Method:** {extraction_method}\n")
+                
+                content_parts.append("\n---\n\n")
+            
+            # Update the knowledge base item's content
+            new_content = "".join(content_parts)
+            
+            # Append to existing content or replace it
+            if kb_item.content:
+                kb_item.content += f"\n\n{new_content}"
+            else:
+                kb_item.content = new_content
+            
+            kb_item.save(update_fields=['content'])
+            
+            logger.info(f"Updated content for KB item {kb_item.id} with {images.count()} extracted images")
+            
+        except Exception as e:
+            logger.error(f"Error updating content with extracted images: {str(e)}")
+            raise
 
 
 class FileImageView(StandardAPIView, FileAccessValidatorMixin):
@@ -735,7 +936,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
         """Serve an individual image file."""
         try:
             # Validate access through notebook
-            notebook, kb_item, knowledge_item = self.validate_notebook_file_access(
+            _, kb_item, _ = self.validate_notebook_file_access(
                 notebook_id, file_id, request.user
             )
 

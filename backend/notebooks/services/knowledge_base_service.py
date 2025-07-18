@@ -131,14 +131,22 @@ class KnowledgeBaseService:
             for image in images:
                 image_url = image.get_image_url(expires=3600)  # 1 hour
                 if image_url:
+                    # Get the original filename from metadata for display
+                    original_filename = "unknown"
+                    if image.image_metadata and 'original_filename' in image.image_metadata:
+                        original_filename = image.image_metadata['original_filename']
+                    
                     image_data.append({
                         'id': str(image.id),
                         'figure_id': str(image.figure_id),
+                        'name': str(image.figure_id),  # Use figure_id as name for API compatibility
                         'image_caption': image.image_caption,
                         'image_url': image_url,
+                        'imageUrl': image_url,  # Also include imageUrl for frontend compatibility
                         'content_type': image.content_type,
                         'file_size': image.file_size,
                         'created_at': image.created_at.isoformat(),
+                        'original_filename': original_filename,
                     })
             
             return {
