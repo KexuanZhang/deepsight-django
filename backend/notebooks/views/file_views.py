@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from asgiref.sync import async_to_sync
 from django.core.exceptions import ValidationError
-from django.http import Http404
+from django.http import Http404, FileResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status, permissions, authentication
 from rest_framework.views import APIView
@@ -467,52 +467,22 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
     """Serve raw file content (PDFs, videos, audio, etc.)."""
 
     def get(self, request, notebook_id, file_id):
-        """Serve raw file through notebook context by streaming file content."""
+        """Serve raw file through notebook context."""
         try:
-            from django.http import Http404, StreamingHttpResponse
-            from django.core.exceptions import PermissionDenied
-            import requests
-            import mimetypes
-            
             # Validate access through notebook
             notebook, kb_item, knowledge_item = self.validate_notebook_file_access(
                 notebook_id, file_id, request.user
             )
 
-            # Try to get original file URL first
-            file_url = None
+            # Try to serve original file first
             if kb_item.original_file_object_key:
-                file_url = kb_item.get_original_file_url()
-            
-            # Fallback to processed file
-            if not file_url and kb_item.file_object_key:
-                file_url = kb_item.get_file_url()
-            
-            if not file_url:
-                raise Http404("Raw file not found")
+                return self._serve_minio_file(kb_item.original_file_object_key, kb_item.title)
 
-            # Get file metadata
-            original_filename = kb_item.metadata.get('original_filename', 'file') if kb_item.metadata else 'file'
-            content_type, _ = mimetypes.guess_type(original_filename)
-            
-            # For video files, stream the content directly
-            if content_type and content_type.startswith('video/'):
-                def file_iterator():
-                    response = requests.get(file_url, stream=True)
-                    response.raise_for_status()
-                    for chunk in response.iter_content(chunk_size=8192):
-                        yield chunk
-                
-                streaming_response = StreamingHttpResponse(
-                    file_iterator(),
-                    content_type=content_type
-                )
-                streaming_response['Content-Disposition'] = f'inline; filename="{original_filename}"'
-                streaming_response['Accept-Ranges'] = 'bytes'
-                return streaming_response
-            else:
-                # For non-video files, return pre-signed URL (existing behavior)
-                return Response({"file_url": file_url}, status=status.HTTP_200_OK)
+            # Fallback to processed file
+            if kb_item.file_object_key:
+                return self._serve_minio_file(kb_item.file_object_key, kb_item.title)
+
+            raise Http404("Raw file not found")
 
         except PermissionDenied as e:
             return self.error_response(str(e), status_code=status.HTTP_403_FORBIDDEN)
@@ -524,6 +494,34 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details={"error": str(e)},
             )
+
+    def _serve_minio_file(self, object_key, title):
+        """Serve a file from MinIO through Django's FileResponse."""
+        try:
+            from ..utils.storage import get_minio_backend
+            from io import BytesIO
+            import mimetypes
+            
+            minio_backend = get_minio_backend()
+            file_content = minio_backend.get_file(object_key)
+            
+            # Guess content type from the title/filename
+            content_type, _ = mimetypes.guess_type(title)
+            if not content_type:
+                content_type = "application/octet-stream"
+
+            # Create a BytesIO stream from the content
+            file_stream = BytesIO(file_content)
+            
+            response = FileResponse(
+                file_stream, content_type=content_type, as_attachment=False
+            )
+            response["Content-Disposition"] = f'inline; filename="{title}"'
+            response["X-Content-Type-Options"] = "nosniff"
+            response["X-Frame-Options"] = "DENY"
+            return response
+        except Exception as e:
+            raise Http404(f"File not accessible: {str(e)}")
 
 
 class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
@@ -537,27 +535,50 @@ class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
 
             # Try to serve original file first
             if kb_item.original_file_object_key:
-                file_url = kb_item.get_original_file_url()
-                if file_url:
-                    return Response({"file_url": file_url}, status=status.HTTP_200_OK)
+                return self._serve_minio_file(kb_item.original_file_object_key, kb_item.title)
 
             # Fallback to processed file
             if kb_item.file_object_key:
-                file_url = kb_item.get_file_url()
-                if file_url:
-                    return Response({"file_url": file_url}, status=status.HTTP_200_OK)
+                return self._serve_minio_file(kb_item.file_object_key, kb_item.title)
 
-            return self.error_response(
-                "File not found",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+            raise Http404("Raw file not found")
 
+        except Http404 as e:
+            return self.error_response(str(e), status_code=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-                         return self.error_response(
-                "Failed to get file URL",
+            return self.error_response(
+                "File access failed",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 details={"error": str(e)},
             )
+
+    def _serve_minio_file(self, object_key, title):
+        """Helper to serve a file from MinIO with proper headers."""
+        try:
+            from ..utils.storage import get_minio_backend
+            from io import BytesIO
+            import mimetypes
+            
+            minio_backend = get_minio_backend()
+            file_content = minio_backend.get_file(object_key)
+            
+            # Guess content type from the title/filename
+            content_type, _ = mimetypes.guess_type(title)
+            if not content_type:
+                content_type = "application/octet-stream"
+
+            # Create a BytesIO stream from the content
+            file_stream = BytesIO(file_content)
+            
+            response = FileResponse(
+                file_stream, content_type=content_type, as_attachment=False
+            )
+            response["Content-Disposition"] = f'inline; filename="{title}"'
+            response["X-Content-Type-Options"] = "nosniff"
+            response["X-Frame-Options"] = "DENY"
+            return response
+        except Exception as e:
+            raise Http404(f"File not accessible: {str(e)}")
 
 
 class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
