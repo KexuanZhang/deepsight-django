@@ -568,7 +568,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
         try:
             from ..serializers import VideoImageExtractionSerializer
             from ..utils.storage_adapter import get_storage_adapter
-            from ..utils.media_extractor import MediaFeatureExtractor
+            from ..processors.media_processors import MediaProcessor
             from ..utils.image_processing import clean_title
             from pathlib import Path
             import tempfile
@@ -576,7 +576,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
             import os
             
             storage_adapter = get_storage_adapter()
-            media_extractor = MediaFeatureExtractor()
+            media_extractor = MediaProcessor()
             
             # Validate request data
             serializer = VideoImageExtractionSerializer(data=request.data)
