@@ -61,20 +61,22 @@ export const COLORS = {
   },
   // Panel-specific color schemes
   panels: {
+    // Common background for all panels
+    commonBackground: 'bg-white',
     sources: {
-      background: 'bg-gray-100',
+      background: 'bg-white',
       ring: '',
       text: 'text-gray-700',
       textHover: 'hover:text-gray-800'
     },
     chat: {
-      background: 'bg-gray-100',
+      background: 'bg-white',
       ring: '',
       text: 'text-gray-700',
       textHover: 'hover:text-gray-800'
     },
     studio: {
-      background: 'bg-gray-100',
+      background: 'bg-white',
       ring: '',
       text: 'text-gray-700',
       textHover: 'hover:text-gray-800'
@@ -125,7 +127,7 @@ export const TYPOGRAPHY = {
 
 // Panel header configurations for consistency
 export const PANEL_HEADERS = {
-  container: 'flex-shrink-0 px-6 py-4 bg-white/95 backdrop-blur-sm',
+  container: 'flex-shrink-0 px-6 py-4 bg-gray-100/95 backdrop-blur-sm',
   separator: '',
   layout: 'flex items-center justify-between',
   iconContainer: 'w-8 h-8 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center shadow-sm',

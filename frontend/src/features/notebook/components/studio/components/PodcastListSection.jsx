@@ -7,6 +7,7 @@ import {
   ChevronDown, 
   ChevronUp
 } from 'lucide-react';
+import { COLORS } from '../../../config/uiConfig';
 import PodcastAudioPlayer from './PodcastAudioPlayer';
 
 
@@ -27,7 +28,7 @@ const PodcastListSection = ({
     <div className="bg-transparent">
       {/* ====== SINGLE RESPONSIBILITY: Header rendering ====== */}
       <div 
-        className="px-6 py-5 bg-white/80 backdrop-blur-sm cursor-pointer hover:bg-white/90 transition-all duration-200 border-b border-gray-100/50"
+        className={`px-6 py-5 ${COLORS.panels.commonBackground}/80 backdrop-blur-sm cursor-pointer hover:${COLORS.panels.commonBackground}/90 transition-all duration-200 border-b border-gray-100/50`}
         onClick={onToggleCollapse}
       >
         <div className="flex items-center justify-between">
@@ -56,7 +57,7 @@ const PodcastListSection = ({
 
       {/* ====== SINGLE RESPONSIBILITY: Content rendering ====== */}
       {!isCollapsed && (
-        <div className="px-6 py-5 bg-white/50 backdrop-blur-sm">
+        <div className={`px-6 py-5 ${COLORS.panels.commonBackground}/50 backdrop-blur-sm`}>
           {loading && (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto"></div>

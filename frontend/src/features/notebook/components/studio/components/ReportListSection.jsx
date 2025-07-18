@@ -3,14 +3,15 @@
 
 import React from 'react';
 import { 
-  FileText, 
+  FileText,
   ChevronDown, 
-  ChevronUp, 
+  ChevronUp,
   ExternalLink,
   Edit,
   Trash2,
   Clock
 } from 'lucide-react';
+import { COLORS } from '../../../config/uiConfig';
 import { Button } from '@/common/components/ui/button';
 import { Badge } from '@/common/components/ui/badge';
 
@@ -51,7 +52,7 @@ const ReportFileItem = React.memo(({
   };
 
   return (
-    <div className="p-4 bg-white/60 backdrop-blur-sm hover:bg-white/80 transition-colors cursor-pointer border-b border-gray-100/50 last:border-b-0">
+    <div className={`p-4 ${COLORS.panels.commonBackground}/60 backdrop-blur-sm hover:${COLORS.panels.commonBackground}/80 transition-colors cursor-pointer border-b border-gray-100/50 last:border-b-0`}>
       <div className="flex items-start justify-between">
         <div 
           className="flex-1 min-w-0" 
@@ -143,7 +144,7 @@ const ReportListSection = ({
     <div className="bg-transparent">
       {/* ====== SINGLE RESPONSIBILITY: Header rendering ====== */}
       <div 
-        className="px-6 py-5 bg-white/80 backdrop-blur-sm cursor-pointer hover:bg-white/90 transition-all duration-200 border-b border-gray-100/50"
+        className={`px-6 py-5 ${COLORS.panels.commonBackground}/80 backdrop-blur-sm cursor-pointer hover:${COLORS.panels.commonBackground}/90 transition-all duration-200 border-b border-gray-100/50`}
         onClick={onToggleCollapse}
       >
         <div className="flex items-center justify-between">

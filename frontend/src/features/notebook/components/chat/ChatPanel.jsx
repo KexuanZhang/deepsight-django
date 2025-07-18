@@ -14,7 +14,7 @@ import rehypeRaw from "rehype-raw";
 import "highlight.js/styles/github.css";
 import { useFileSelection } from "@/features/notebook/hooks";
 import { config } from "@/config";
-import { PANEL_HEADERS } from "../../config/uiConfig";
+import { PANEL_HEADERS, COLORS } from "../../config/uiConfig";
 
 function getCookie(name) {
   const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
@@ -36,7 +36,7 @@ const MarkdownContent = React.memo(({ content }) => (
         ol: ({children}) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
         li: ({children}) => <li className="text-gray-700 text-sm">{children}</li>,
         blockquote: ({children}) => <blockquote className="border-l-2 border-red-200 pl-3 italic text-gray-600 my-2">{children}</blockquote>,
-        code: ({children}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono text-gray-800">{children}</code>,
+        code: ({children}) => <code className="bg-white px-1 py-0.5 rounded text-xs font-mono text-gray-800 border border-gray-200">{children}</code>,
         pre: ({children}) => <pre className="bg-gray-900 text-gray-100 p-3 rounded-lg overflow-x-auto my-2 text-xs">{children}</pre>,
         a: ({href, children}) => (
           <a 
@@ -49,7 +49,7 @@ const MarkdownContent = React.memo(({ content }) => (
           </a>
         ),
         table: ({children}) => <table className="min-w-full border-collapse border border-gray-300 my-2">{children}</table>,
-        th: ({children}) => <th className="border border-gray-300 px-2 py-1 bg-gray-100 text-xs font-medium">{children}</th>,
+        th: ({children}) => <th className="border border-gray-300 px-2 py-1 bg-white text-xs font-medium">{children}</th>,
         td: ({children}) => <td className="border border-gray-300 px-2 py-1 text-xs">{children}</td>,
       }}
     >
@@ -93,7 +93,7 @@ const SuggestionButton = React.memo(({ suggestion, hasFiles, onSendMessage, inde
       <div className="flex items-start space-x-4 w-full">
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 ${
           !hasFiles 
-            ? 'bg-gray-100/50' 
+            ? 'bg-white/50' 
             : 'bg-gradient-to-br from-red-100 to-rose-100 group-hover:from-red-200 group-hover:to-rose-200'
         }`}>
           <suggestion.icon className={`h-5 w-5 ${!hasFiles ? 'text-gray-400/75' : 'text-red-600'}`} />
@@ -378,7 +378,7 @@ useEffect(() => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className={`h-full flex flex-col ${COLORS.panels.commonBackground}`}>
       <div className={`${PANEL_HEADERS.container} ${PANEL_HEADERS.separator}`}>
         <div className={PANEL_HEADERS.layout}>
           <div className={PANEL_HEADERS.titleContainer}>
@@ -475,7 +475,7 @@ useEffect(() => {
               className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div className={`flex space-x-2 max-w-[80%] ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
-                <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center flex-shrink-0">
                   {message.type === 'user' ? (
                     <User className="h-3 w-3 text-gray-600" />
                   ) : (
@@ -483,7 +483,7 @@ useEffect(() => {
                   )}
                 </div>
                 <div className={`px-3 py-2 rounded-lg text-sm ${
-                  message.type === 'user' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'
+                  message.type === 'user' ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 border border-gray-200'
                 }`}>
                   {message.type === 'user' ? message.content : <MarkdownContent content={message.content} />}
                 </div>
@@ -499,10 +499,10 @@ useEffect(() => {
             className="flex justify-start"
           >
             <div className="flex space-x-2">
-              <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center">
+              <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
                 <Bot className="h-3 w-3 text-gray-600" />
               </div>
-              <div className="bg-gray-100 rounded-lg px-3 py-2 flex items-center space-x-1">
+              <div className="bg-white rounded-lg px-3 py-2 flex items-center space-x-1 border border-gray-200">
                 <Loader2 className="h-3 w-3 animate-spin text-gray-500" />
                 <span className="text-xs text-gray-500">typing...</span>
               </div>
@@ -657,8 +657,8 @@ useEffect(() => {
       )}
 
 
-      <div className="flex-shrink-0 p-6 bg-white/80 backdrop-blur-sm">
-        <div className="flex items-end space-x-3 bg-white/90 backdrop-blur-sm rounded-2xl p-4 shadow-lg border border-gray-200/50">
+      <div className={`flex-shrink-0 p-6 ${COLORS.panels.commonBackground}/80 backdrop-blur-sm`}>
+        <div className={`flex items-end space-x-3 ${COLORS.panels.commonBackground}/90 backdrop-blur-sm rounded-2xl p-4 shadow-lg border border-gray-200/50`}>
           <div className="flex-1">
             <textarea
               ref={inputRef}

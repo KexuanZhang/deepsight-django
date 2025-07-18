@@ -11,6 +11,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
+import { COLORS } from '../../../config/uiConfig';
 import StatusDisplay from './StatusDisplay';
 import { GenerationState } from '../types';
 
@@ -30,8 +31,7 @@ const PodcastGenerationForm = ({
   selectedFiles,
   selectedSources,
   
-  // Additional handlers
-  onShowAdvancedSettings
+
 }) => {
   // ====== SINGLE RESPONSIBILITY: Validation logic ======
   const hasSelectedFiles = selectedFiles.length > 0;
@@ -43,7 +43,7 @@ const PodcastGenerationForm = ({
   return (
     <div className="bg-transparent">
       {/* ====== SINGLE RESPONSIBILITY: Header rendering ====== */}
-      <div className="px-6 py-4 bg-orange-50/80 backdrop-blur-sm border-b border-orange-100/50">
+      <div className="px-6 py-4 bg-white/95 backdrop-blur-sm border-b border-gray-200/60">
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center shadow-sm">
             <Play className="h-4 w-4 text-white" />
@@ -56,7 +56,7 @@ const PodcastGenerationForm = ({
       </div>
       
       {/* ====== SINGLE RESPONSIBILITY: Form content rendering ====== */}
-      <div className="px-6 py-4 bg-orange-50/30 backdrop-blur-sm space-y-4">
+      <div className="px-6 py-6 space-y-6">
           {/* Status display */}
           {(generationState.state !== GenerationState.IDLE) && (
             <StatusDisplay
@@ -69,78 +69,62 @@ const PodcastGenerationForm = ({
             />
           )}
 
-          {/* Panel Topic input */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="block text-sm font-medium text-gray-700">
+          {/* Panel Topic input and action buttons */}
+          <div className="space-y-3">
+            <div className="flex items-center space-x-2">
+              <label className="block text-sm font-semibold text-gray-800">
                 Panel Topic
               </label>
+              <div className="relative">
+                <div 
+                  className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200 cursor-help"
+                  onMouseEnter={() => setShowTooltip(true)}
+                  onMouseLeave={() => setShowTooltip(false)}
+                >
+                  <HelpCircle className="h-3 w-3 text-gray-500" />
+                </div>
+                {showTooltip && (
+                  <div className="absolute bottom-full mb-2 left-0 z-10">
+                    <div className="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 whitespace-nowrap shadow-xl">
+                      Select files from Sources to generate discussion
+                      <div className="absolute top-full left-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-            <input
-              type="text"
-              placeholder="Enter panel discussion topic (e.g., 'Future of AI Technology')"
-              className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent shadow-sm"
-              value={config.topic || ''}
-              onChange={(e) => onConfigChange({ topic: e.target.value })}
-            />
-          </div>
+            <div className="flex items-center space-x-3">
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  placeholder="Enter panel discussion topic (e.g., 'Future of AI Technology')"
+                  className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 shadow-sm transition-all duration-200 bg-white"
+                  value={config.topic || ''}
+                  onChange={(e) => onConfigChange({ topic: e.target.value })}
+                />
 
-          {/* Action buttons */}
-          <div className="flex items-center justify-between space-x-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onShowAdvancedSettings}
-              className="text-sm text-gray-500 hover:text-gray-700 flex items-center hover:bg-gray-100/50 px-3 py-2 rounded-lg"
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              Advanced Settings
-            </Button>
-            
-            <div className="flex items-center space-x-2">
+              </div>
               <Button
-                className={`font-medium px-5 py-2.5 rounded-lg transition-all duration-200 shadow-sm ${
+                className={`font-medium px-4 py-2.5 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md flex-shrink-0 text-sm ${
                   !canGenerate
-                    ? 'bg-gray-400 hover:bg-gray-500 text-white cursor-not-allowed'
-                    : 'bg-orange-600 hover:bg-orange-700 text-white hover:shadow-md'
+                    ? 'bg-gray-300 hover:bg-gray-400 text-gray-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white hover:scale-105'
                 }`}
                 onClick={onGenerate}
                 disabled={!canGenerate}
               >
                 {generationState.state === GenerationState.GENERATING ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                     Generating...
-                  </>
-                ) : !hasSelectedFiles ? (
-                  <>
-                    <Play className="mr-2 h-4 w-4" />
-                    Generate Podcast
                   </>
                 ) : (
                   <>
-                    <Play className="mr-2 h-4 w-4" />
-                    Generate Podcast
+                    <Play className="mr-1.5 h-3.5 w-3.5" />
+                    Generate
                   </>
                 )}
               </Button>
-              <div className="relative">
-                <div 
-                  className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors cursor-help"
-                  onMouseEnter={() => setShowTooltip(true)}
-                  onMouseLeave={() => setShowTooltip(false)}
-                >
-                  <HelpCircle className="h-4 w-4 text-gray-500" />
-                </div>
-                {showTooltip && (
-                  <div className="absolute bottom-full mb-2 right-0 z-10">
-                    <div className="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 whitespace-nowrap shadow-lg">
-                      Please select at least one file from the Sources panel to generate a panel discussion.
-                      <div className="absolute top-full right-6 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         </div>

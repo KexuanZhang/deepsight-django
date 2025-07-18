@@ -14,7 +14,7 @@ import apiService from '@/common/utils/api';
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused custom hooks for specific concerns
 import { config } from '@/config';
-import { PANEL_HEADERS } from "../../config/uiConfig";
+import { PANEL_HEADERS, COLORS } from "../../config/uiConfig";
 import { useStudioData, useGenerationState, useJobStatus } from '@/features/notebook/hooks';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
@@ -56,7 +56,6 @@ const StudioPanel = ({
     podcasts: false
   });
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
-  const [showPodcastAdvancedSettings, setShowPodcastAdvancedSettings] = useState(false);
 
   // ====== SINGLE RESPONSIBILITY: File Selection State ======
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -566,7 +565,7 @@ const StudioPanel = ({
   // ====== OPEN/CLOSED PRINCIPLE (OCP) ======
   // Render method that can be extended without modification
   return (
-    <div className={`flex flex-col h-full ${isExpanded ? 'fixed inset-0 z-50 bg-white' : ''}`}>
+    <div className={`flex flex-col h-full ${isExpanded ? `fixed inset-0 z-50 ${COLORS.panels.commonBackground}` : ''}`}>
       {/* ====== SINGLE RESPONSIBILITY: Header rendering ====== */}
       <div className={`${PANEL_HEADERS.container} ${PANEL_HEADERS.separator}`}>
         <div className={PANEL_HEADERS.layout}>
@@ -596,6 +595,15 @@ const StudioPanel = ({
             <Button
               variant="ghost"
               size="sm"
+              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+              onClick={() => setShowAdvancedSettings(true)}
+              title="Advanced Settings"
+            >
+              <Settings className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
               onClick={toggleExpanded}
             >
@@ -606,7 +614,7 @@ const StudioPanel = ({
       </div>
 
       {/* ====== SINGLE RESPONSIBILITY: Main content area ====== */}
-      <div className="flex-1 overflow-auto space-y-0">
+      <div className="flex-1 overflow-auto">
         {/* ====== LISKOV SUBSTITUTION PRINCIPLE (LSP) ====== */}
         {/* Both forms follow the same interface contract */}
         
@@ -618,31 +626,35 @@ const StudioPanel = ({
           onGenerate={handleGenerateReport}
           onCancel={handleCancelReport}
           selectedFiles={selectedFiles}
-          onShowCustomize={() => setShowAdvancedSettings(true)}
         />
 
         {/* ====== INLINE REPORT LISTINGS ====== */}
         {studioData.reports.length > 0 && (
-          <div className="px-6 py-2 space-y-1">
-            {studioData.reports.map((report, index) => (
-              <div
-                key={report.id || index}
-                className="flex items-center space-x-3 px-3 py-2 bg-blue-50/60 hover:bg-blue-100/70 rounded-lg transition-all duration-200 cursor-pointer group"
-                onClick={() => handleSelectReport(report)}
-              >
-                <div className="w-5 h-5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-md flex items-center justify-center">
-                  <FileText className="h-3 w-3 text-white" />
+          <div className="px-6 py-4">
+            <div className="space-y-2">
+              {studioData.reports.map((report, index) => (
+                <div
+                  key={report.id || index}
+                  className="flex items-center space-x-4 p-4 bg-gradient-to-r from-blue-50 to-blue-100/50 hover:from-blue-100 hover:to-blue-200/50 rounded-xl transition-all duration-200 cursor-pointer group border border-blue-200/30"
+                  onClick={() => handleSelectReport(report)}
+                >
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shadow-sm">
+                    <FileText className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-semibold text-gray-900 truncate group-hover:text-blue-700">
+                      {report.title || 'Research Report'}
+                    </h4>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {report.created_at ? new Date(report.created_at).toLocaleDateString() : 'Generated'}
+                    </p>
+                  </div>
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 truncate group-hover:text-blue-700">
-                    {report.title || 'Research Report'}
-                  </h4>
-                </div>
-                <div className="text-xs text-gray-500">
-                  {report.created_at ? new Date(report.created_at).toLocaleDateString() : 'Generated'}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
 
@@ -654,36 +666,42 @@ const StudioPanel = ({
           onCancel={handleCancelPodcast}
           selectedFiles={selectedFiles}
           selectedSources={selectedSources}
-          onShowAdvancedSettings={() => setShowPodcastAdvancedSettings(true)}
         />
 
         {/* ====== VISUAL SEPARATOR ====== */}
-        <div className="px-6 py-3">
-          <div className="border-t border-gray-200/50"></div>
-        </div>
+        {studioData.reports.length > 0 && studioData.podcasts.length > 0 && (
+          <div className="px-6 py-4">
+            <div className="border-t border-gray-200/60"></div>
+          </div>
+        )}
 
         {/* ====== INLINE PODCAST LISTINGS ====== */}
         {studioData.podcasts.length > 0 && (
-          <div className="px-6 py-2 space-y-1">
-            {studioData.podcasts.map((podcast, index) => (
-              <div
-                key={podcast.id || index}
-                className="flex items-center space-x-3 px-3 py-2 bg-orange-50/60 hover:bg-orange-100/70 rounded-lg transition-all duration-200 cursor-pointer group"
-                onClick={() => handlePodcastClick(podcast)}
-              >
-                <div className="w-5 h-5 bg-gradient-to-br from-orange-500 to-orange-600 rounded-md flex items-center justify-center">
-                  <Play className="h-3 w-3 text-white" />
+          <div className="px-6 py-4">
+            <div className="space-y-2">
+              {studioData.podcasts.map((podcast, index) => (
+                <div
+                  key={podcast.id || index}
+                  className="flex items-center space-x-4 p-4 bg-gradient-to-r from-orange-50 to-orange-100/50 hover:from-orange-100 hover:to-orange-200/50 rounded-xl transition-all duration-200 cursor-pointer group border border-orange-200/30"
+                  onClick={() => handlePodcastClick(podcast)}
+                >
+                  <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center shadow-sm">
+                    <Play className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-semibold text-gray-900 truncate group-hover:text-orange-700">
+                      {podcast.title || 'Panel Discussion'}
+                    </h4>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {podcast.created_at ? new Date(podcast.created_at).toLocaleDateString() : 'Generated'}
+                    </p>
+                  </div>
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 truncate group-hover:text-orange-700">
-                    {podcast.title || 'Panel Discussion'}
-                  </h4>
-                </div>
-                <div className="text-xs text-gray-500">
-                  {podcast.created_at ? new Date(podcast.created_at).toLocaleDateString() : 'Generated'}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
 
@@ -715,17 +733,10 @@ const StudioPanel = ({
       <AdvancedSettingsModal
         isOpen={showAdvancedSettings}
         onClose={() => setShowAdvancedSettings(false)}
-        config={reportGeneration.config}
-        onConfigChange={reportGeneration.updateConfig}
-        availableModels={studioData.availableModels}
-      />
-
-      {/* ====== SINGLE RESPONSIBILITY: Podcast advanced settings modal ====== */}
-      <AdvancedSettingsModal
-        isOpen={showPodcastAdvancedSettings}
-        onClose={() => setShowPodcastAdvancedSettings(false)}
-        config={podcastGeneration.config}
-        onConfigChange={podcastGeneration.updateConfig}
+        reportConfig={reportGeneration.config}
+        podcastConfig={podcastGeneration.config}
+        onReportConfigChange={reportGeneration.updateConfig}
+        onPodcastConfigChange={podcastGeneration.updateConfig}
         availableModels={studioData.availableModels}
       />
     </div>

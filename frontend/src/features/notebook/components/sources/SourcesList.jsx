@@ -8,7 +8,7 @@ import apiService from "@/common/utils/api";
 import FilePreview from "@/features/notebook/components/shared/FilePreview";
 import { supportsPreview } from "@/features/notebook/utils/filePreview";
 import { config } from '@/config';
-import { PANEL_HEADERS } from "../../config/uiConfig";
+import { PANEL_HEADERS, COLORS } from "../../config/uiConfig";
 
 const fileIcons = {
   pdf: FileIcon,
@@ -596,7 +596,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       >
         <div className="flex items-center space-x-3">
           <div className="flex-shrink-0">
-            <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
               {React.createElement(getPrincipleFileIcon(source), {
                 className: "h-4 w-4 text-gray-600"
               })}
@@ -1378,9 +1378,9 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
 
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className={`h-full flex flex-col ${COLORS.panels.commonBackground} min-h-0`}>
       {/* Header */}
-      <div className={`${PANEL_HEADERS.container} ${PANEL_HEADERS.separator}`}>
+      <div className={`${PANEL_HEADERS.container} ${PANEL_HEADERS.separator} flex-shrink-0`}>
         <div className={PANEL_HEADERS.layout}>
           <div className={PANEL_HEADERS.titleContainer}>
             <div className={PANEL_HEADERS.iconContainer}>
@@ -1496,7 +1496,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto relative">
         <AnimatePresence mode="wait">
           {isGrouped ? (
             // Grouped rendering with unified styling
@@ -1574,7 +1574,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         {/* Empty/Loading States */}
         {!isLoading && sources.length === 0 && (
           <div className="p-8 text-center">
-            <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-3 flex items-center justify-center">
+            <div className="w-12 h-12 bg-white rounded-lg mx-auto mb-3 flex items-center justify-center">
               <Upload className="h-6 w-6 text-gray-400" />
             </div>
             <h3 className="text-sm font-medium text-gray-900 mb-1">No files yet</h3>
@@ -1591,7 +1591,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       </div>
 
       {/* Simple Footer */}
-      <div className="flex-shrink-0 p-4 bg-white">
+      <div className="flex-shrink-0 p-4 bg-white border-t border-gray-200">
         <Button
           variant="default"
           size="sm"
