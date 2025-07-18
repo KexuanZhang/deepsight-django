@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft } from "lucide-react";
 import { Toaster } from "@/common/components/ui/toaster";
-import { LAYOUT_RATIOS } from "../../config/uiConfig";
+import { LAYOUT_RATIOS, COLORS, SHADOWS, RESPONSIVE_PANELS } from "../../config/uiConfig";
 import NotebookHeader from "./NotebookHeader";
 import SidebarMenu from "./SidebarMenu";
 
@@ -35,7 +35,7 @@ const NotebookLayout = ({
   }, []);
 
   return (
-    <div className="h-screen bg-white flex flex-col relative overflow-hidden">
+    <div className="h-screen bg-gradient-to-br from-slate-50 to-blue-50/30 flex flex-col relative overflow-hidden">
       {/* Sidebar Menu */}
       <SidebarMenu 
         isOpen={menuOpen} 
@@ -52,7 +52,7 @@ const NotebookLayout = ({
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-h-0">
         <div 
-          className={`gap-4 p-4 flex-1 min-h-0 ${!isSourcesCollapsed ? 'grid' : 'flex'}`}
+          className={`${RESPONSIVE_PANELS.mobile.gap} ${RESPONSIVE_PANELS.mobile.padding} md:${RESPONSIVE_PANELS.tablet.gap} md:${RESPONSIVE_PANELS.tablet.padding} lg:${RESPONSIVE_PANELS.desktop.gap} lg:${RESPONSIVE_PANELS.desktop.padding} flex-1 min-h-0 ${!isSourcesCollapsed ? 'grid' : 'flex'}`}
           style={!isSourcesCollapsed ? {
             gridTemplateColumns: `${LAYOUT_RATIOS.sources}fr ${LAYOUT_RATIOS.chat}fr ${LAYOUT_RATIOS.studio}fr`
           } : {}}
@@ -63,7 +63,7 @@ const NotebookLayout = ({
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
-              className="border border-gray-200 rounded-lg overflow-auto relative min-h-0"
+              className={`${COLORS.panels.sources.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-auto relative min-h-0 ring-1 ${COLORS.panels.sources.ring}`}
             >
               {React.cloneElement(sourcesPanel, {
                 ref: sourcesListRef,
@@ -81,16 +81,16 @@ const NotebookLayout = ({
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
               onClick={() => setIsSourcesCollapsed(false)}
-              className="w-12 flex-shrink-0 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:border-gray-300 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all duration-200 group shadow-sm hover:shadow-md"
+              className={`w-12 md:w-14 flex-shrink-0 ${COLORS.panels.sources.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} ring-1 ${COLORS.panels.sources.ring} flex items-center justify-center ${COLORS.panels.sources.text} ${COLORS.panels.sources.textHover} transition-all duration-300 group`}
               title="Expand Sources Panel"
             >
               <div className="group-hover:scale-110 transition-transform duration-200">
                 <motion.div
                   animate={{ x: [0, 2, 0] }}
                   transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-                  className="text-gray-500 group-hover:text-gray-600 transition-colors duration-200"
+                  className={`${COLORS.panels.sources.text} ${COLORS.panels.sources.textHover} transition-colors duration-200`}
                 >
-                  <ChevronLeft className="h-5 w-5 transform rotate-180" />
+                  <ChevronLeft className="h-5 w-5 md:h-6 md:w-6 transform rotate-180" />
                 </motion.div>
               </div>
             </motion.button>
@@ -101,7 +101,7 @@ const NotebookLayout = ({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.1 }}
-            className={`border border-gray-200 rounded-lg overflow-auto min-h-0 ${
+            className={`${COLORS.panels.chat.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-auto min-h-0 ring-1 ${COLORS.panels.chat.ring} ${
               isSourcesCollapsed ? "flex-[0.618]" : ""
             }`}
           >
@@ -116,7 +116,7 @@ const NotebookLayout = ({
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3, delay: 0.2 }}
-            className={`border border-gray-200 rounded-lg overflow-auto min-h-0 ${
+            className={`${COLORS.panels.studio.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-auto min-h-0 ring-1 ${COLORS.panels.studio.ring} ${
               isSourcesCollapsed ? "flex-[0.382]" : ""
             }`}
           >

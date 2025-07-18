@@ -58,6 +58,27 @@ export const COLORS = {
       500: 'bg-green-500',
       600: 'bg-green-600'
     }
+  },
+  // Panel-specific color schemes
+  panels: {
+    sources: {
+      background: 'bg-gradient-to-b from-emerald-50 to-teal-50/50',
+      ring: 'ring-emerald-100/50',
+      text: 'text-emerald-600',
+      textHover: 'hover:text-emerald-700'
+    },
+    chat: {
+      background: 'bg-gradient-to-b from-blue-50 to-indigo-50/50',
+      ring: 'ring-blue-100/50',
+      text: 'text-blue-600',
+      textHover: 'hover:text-blue-700'
+    },
+    studio: {
+      background: 'bg-gradient-to-b from-purple-50 to-pink-50/50',
+      ring: 'ring-purple-100/50',
+      text: 'text-purple-600',
+      textHover: 'hover:text-purple-700'
+    }
   }
 };
 
@@ -115,7 +136,13 @@ export const SHADOWS = {
   small: 'shadow-sm',
   normal: 'shadow-md',
   large: 'shadow-lg',
-  xl: 'shadow-xl'
+  xl: 'shadow-xl',
+  // Enhanced panel shadows
+  panel: {
+    base: 'shadow-lg',
+    hover: 'hover:shadow-xl',
+    elevated: 'shadow-xl shadow-blue-100/20'
+  }
 };
 
 // Z-index configurations
@@ -133,6 +160,25 @@ export const BREAKPOINTS = {
   lg: 'lg:',
   xl: 'xl:',
   '2xl': '2xl:'
+};
+
+// Responsive panel configurations
+export const RESPONSIVE_PANELS = {
+  mobile: {
+    gap: 'gap-3',
+    padding: 'p-3',
+    radius: 'rounded-xl'
+  },
+  tablet: {
+    gap: 'gap-4',
+    padding: 'p-4',
+    radius: 'rounded-xl'
+  },
+  desktop: {
+    gap: 'gap-6',
+    padding: 'p-6',
+    radius: 'rounded-2xl'
+  }
 };
 
 // Component size configurations
