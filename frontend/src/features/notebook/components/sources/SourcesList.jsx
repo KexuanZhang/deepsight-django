@@ -8,6 +8,7 @@ import apiService from "@/common/utils/api";
 import FilePreview from "@/features/notebook/components/shared/FilePreview";
 import { supportsPreview } from "@/features/notebook/utils/filePreview";
 import { config } from '@/config';
+import { PANEL_HEADERS } from "../../config/uiConfig";
 
 const fileIcons = {
   pdf: FileIcon,
@@ -54,7 +55,7 @@ const getPrincipleFileIcon = (source) => {
 
 const statusConfig = {
   pending: { icon: Clock, color: "text-yellow-500", bg: "bg-yellow-50", label: "Queued" },
-  parsing: { icon: RefreshCw, color: "text-blue-500", bg: "bg-blue-50", label: "Processing", animate: true },
+  parsing: { icon: RefreshCw, color: "text-red-600", bg: "bg-red-50", label: "Processing", animate: true },
   completed: { icon: CheckCircle, color: "text-green-500", bg: "bg-green-50", label: "Completed" },
   error: { icon: AlertCircle, color: "text-red-500", bg: "bg-red-50", label: "Failed" },
   cancelled: { icon: X, color: "text-gray-500", bg: "bg-gray-50", label: "Cancelled" },
@@ -589,7 +590,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     return (
       <div
         className={`px-4 py-3 border-b border-gray-100 cursor-pointer ${
-          source.selected ? 'bg-blue-50 border-blue-200' : ''
+          source.selected ? 'bg-red-50 border-red-200' : ''
         }`}
         onClick={handleItemClick}
       >
@@ -1231,7 +1232,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
     if (isProcessing) {
       return (
         <div className="mt-1 flex items-center space-x-2">
-          <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
+          <Loader2 className="h-3 w-3 text-red-600 animate-spin" />
           <span className="text-xs text-gray-500">
             {source.parsing_status === 'uploading' ? 'Uploading...' : 
              source.parsing_status === 'pending' ? 'Processing...' : 
@@ -1378,16 +1379,16 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
 
   return (
     <div className="h-full flex flex-col bg-white">
-      {/* Simple Header */}
-      <div className="flex-shrink-0 px-4 py-3 bg-white border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="w-6 h-6 bg-gray-100 rounded-md flex items-center justify-center">
-              <Database className="h-3 w-3 text-gray-600" />
+      {/* Header */}
+      <div className={`${PANEL_HEADERS.container} ${PANEL_HEADERS.separator}`}>
+        <div className={PANEL_HEADERS.layout}>
+          <div className={PANEL_HEADERS.titleContainer}>
+            <div className={PANEL_HEADERS.iconContainer}>
+              <Database className={PANEL_HEADERS.icon} />
             </div>
-            <h3 className="text-sm font-medium text-gray-900">Sources</h3>
+            <h3 className={PANEL_HEADERS.title}>Sources</h3>
           </div>
-          <div className="flex items-center space-x-1">
+          <div className={PANEL_HEADERS.actionsContainer}>
             <Button
               variant="ghost"
               size="sm"
@@ -1590,11 +1591,11 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
       </div>
 
       {/* Simple Footer */}
-      <div className="flex-shrink-0 p-4 bg-white border-t border-gray-200">
+      <div className="flex-shrink-0 p-4 bg-white">
         <Button
-          variant="outline"
+          variant="default"
           size="sm"
-          className="w-full h-9 border-gray-300 text-gray-700"
+          className="w-full h-9 bg-red-600 hover:bg-red-700 text-white"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -1603,7 +1604,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
           disabled={isLoading}
         >
           <Plus className="h-4 w-4 mr-2" />
-          Add Files
+          Add Source
         </Button>
         {Object.keys(uploadProgress).length > 0 && (
           <div className="mt-2 text-center text-xs text-gray-500">
@@ -1620,7 +1621,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[60] p-4"
+            className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[100] p-4"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -1662,7 +1663,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   }}
                   className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                     activeTab === 'file'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-red-600 text-white'
                       : 'text-gray-400 hover:text-white hover:bg-gray-700'
                   }`}
                 >
@@ -1693,7 +1694,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                 <div
                   className={`border-2 border-dashed rounded-xl p-6 mb-6 text-center transition-all duration-200 ${
                     isDragOver 
-                      ? 'border-blue-400 bg-blue-900/20' 
+                      ? 'border-red-400 bg-red-900/20' 
                       : 'border-gray-600 bg-gray-800/50'
                   }`}
                   onDragEnter={handleDragEnter}
@@ -1702,7 +1703,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                   onDrop={handleDrop}
                 >
                   <div className="flex flex-col items-center space-y-2">
-                    <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
+                    <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
                       <Upload className="h-6 w-6 text-white" />
                     </div>
                     <div>
@@ -1715,7 +1716,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                             e.stopPropagation();
                             fileInputRef.current?.click();
                           }}
-                          className="text-blue-400 hover:text-blue-300 underline"
+                          className="text-red-400 hover:text-red-300 underline"
                         >
                           choose file to upload
                         </button>
@@ -1745,7 +1746,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                       <button 
                         className={`flex items-center space-x-2 p-3 rounded-lg transition-colors ${
                           urlProcessingType === 'website' 
-                            ? 'bg-blue-600 hover:bg-blue-700' 
+                            ? 'bg-red-600 hover:bg-red-700' 
                             : 'bg-gray-700 hover:bg-gray-600'
                         }`}
                         onClick={(e) => {
@@ -1817,7 +1818,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                           }
                           value={linkUrl}
                           onChange={(e) => setLinkUrl(e.target.value)}
-                          className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                         />
                         {urlProcessingType === 'document' && (
                           <p className="text-xs text-gray-400">
@@ -1832,7 +1833,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                               ? 'bg-red-600 hover:bg-red-700' 
                               : urlProcessingType === 'document'
                               ? 'bg-orange-600 hover:bg-orange-700'
-                              : 'bg-blue-600 hover:bg-blue-700'
+                              : 'bg-red-600 hover:bg-red-700'
                           }`}
                         >
                           {urlProcessingType === 'media' ? 'Process Media' : 
@@ -1874,7 +1875,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                           onChange={(e) => setPasteText(e.target.value)}
                           maxLength={10000}
                           rows={6}
-                          className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                          className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
                         />
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <span>{pasteText.length} characters</span>
@@ -1883,7 +1884,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                         <Button
                           onClick={handleTextUpload}
                           disabled={!pasteText.trim()}
-                          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                          className="w-full bg-red-600 hover:bg-red-700 text-white"
                         >
                           Upload Text
                         </Button>

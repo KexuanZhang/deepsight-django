@@ -2,7 +2,7 @@
 // This component demonstrates all 5 SOLID principles in action
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, Maximize2, Minimize2 } from 'lucide-react';
+import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
 import { useToast } from '@/common/components/ui/use-toast';
 
@@ -14,6 +14,7 @@ import apiService from '@/common/utils/api';
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused custom hooks for specific concerns
 import { config } from '@/config';
+import { PANEL_HEADERS } from "../../config/uiConfig";
 import { useStudioData, useGenerationState, useJobStatus } from '@/features/notebook/hooks';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
@@ -55,6 +56,7 @@ const StudioPanel = ({
     podcasts: false
   });
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [showPodcastAdvancedSettings, setShowPodcastAdvancedSettings] = useState(false);
 
   // ====== SINGLE RESPONSIBILITY: File Selection State ======
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -81,7 +83,13 @@ const StudioPanel = ({
   // ====== SINGLE RESPONSIBILITY: Podcast generation state ======
   const podcastGeneration = useGenerationState({
     title: '',
-    description: ''
+    description: '',
+    topic: '',
+    expert_names: {
+      host: '杨飞飞',
+      expert1: '奥立昆',
+      expert2: '李特曼'
+    }
   });
 
   // ====== SINGLE RESPONSIBILITY: Report generation completion ======
@@ -381,6 +389,21 @@ const StudioPanel = ({
     }
   }, [studioService, toast]);
 
+  const handlePodcastClick = useCallback(async (podcast) => {
+    try {
+      // For podcasts, we'll expand the audio player inline
+      // This could be implemented as a state change to show player
+      console.log('Playing podcast:', podcast);
+      // TODO: Implement podcast player expansion
+    } catch (error) {
+      console.error('Failed to play podcast:', error);
+      toast({
+        title: "Error",
+        description: "Failed to play podcast: " + error.message,
+        variant: "destructive"
+      });
+    }
+  }, [toast]);
 
   const handleDownloadReport = useCallback(async (report) => {
     try {
@@ -545,39 +568,45 @@ const StudioPanel = ({
   return (
     <div className={`flex flex-col h-full ${isExpanded ? 'fixed inset-0 z-50 bg-white' : ''}`}>
       {/* ====== SINGLE RESPONSIBILITY: Header rendering ====== */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
-        <div className="flex items-center space-x-3">
-          <h2 className="text-xl font-bold text-gray-900">Studio</h2>
-          {(reportGeneration.isGenerating || podcastGeneration.isGenerating) && (
-            <div className="flex items-center space-x-2 text-sm text-blue-600">
-              <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-              <span>Generating...</span>
+      <div className={`${PANEL_HEADERS.container} ${PANEL_HEADERS.separator}`}>
+        <div className={PANEL_HEADERS.layout}>
+          <div className={PANEL_HEADERS.titleContainer}>
+            <div className={PANEL_HEADERS.iconContainer}>
+              <Settings className={PANEL_HEADERS.icon} />
             </div>
-          )}
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={studioData.loading.reports || studioData.loading.podcasts}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${studioData.loading.reports || studioData.loading.podcasts ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={toggleExpanded}
-          >
-            {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </Button>
+            <h3 className={PANEL_HEADERS.title}>Studio</h3>
+            {(reportGeneration.isGenerating || podcastGeneration.isGenerating) && (
+              <div className="flex items-center space-x-2 text-sm text-red-600">
+                <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse"></div>
+                <span>Generating...</span>
+              </div>
+            )}
+          </div>
+          <div className={PANEL_HEADERS.actionsContainer}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+              onClick={handleRefresh}
+              disabled={studioData.loading.reports || studioData.loading.podcasts}
+            >
+              <RefreshCw className={`h-3 w-3 mr-1 ${studioData.loading.reports || studioData.loading.podcasts ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
+              onClick={toggleExpanded}
+            >
+              {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+          </div>
         </div>
       </div>
 
       {/* ====== SINGLE RESPONSIBILITY: Main content area ====== */}
-      <div className="flex-1 overflow-auto p-6 space-y-6">
+      <div className="flex-1 overflow-auto space-y-0">
         {/* ====== LISKOV SUBSTITUTION PRINCIPLE (LSP) ====== */}
         {/* Both forms follow the same interface contract */}
         
@@ -588,11 +617,34 @@ const StudioPanel = ({
           generationState={reportGeneration}
           onGenerate={handleGenerateReport}
           onCancel={handleCancelReport}
-          isCollapsed={collapsedSections.report}
-          onToggleCollapse={() => toggleSection('report')}
           selectedFiles={selectedFiles}
           onShowCustomize={() => setShowAdvancedSettings(true)}
         />
+
+        {/* ====== INLINE REPORT LISTINGS ====== */}
+        {studioData.reports.length > 0 && (
+          <div className="px-6 py-2 space-y-1">
+            {studioData.reports.map((report, index) => (
+              <div
+                key={report.id || index}
+                className="flex items-center space-x-3 px-3 py-2 bg-blue-50/60 hover:bg-blue-100/70 rounded-lg transition-all duration-200 cursor-pointer group"
+                onClick={() => handleSelectReport(report)}
+              >
+                <div className="w-5 h-5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-md flex items-center justify-center">
+                  <FileText className="h-3 w-3 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-gray-900 truncate group-hover:text-blue-700">
+                    {report.title || 'Research Report'}
+                  </h4>
+                </div>
+                <div className="text-xs text-gray-500">
+                  {report.created_at ? new Date(report.created_at).toLocaleDateString() : 'Generated'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <PodcastGenerationForm
           config={podcastGeneration.config}
@@ -600,35 +652,41 @@ const StudioPanel = ({
           generationState={podcastGeneration}
           onGenerate={handleGeneratePodcast}
           onCancel={handleCancelPodcast}
-          isCollapsed={collapsedSections.podcast}
-          onToggleCollapse={() => toggleSection('podcast')}
           selectedFiles={selectedFiles}
           selectedSources={selectedSources}
+          onShowAdvancedSettings={() => setShowPodcastAdvancedSettings(true)}
         />
 
-        {/* ====== SINGLE RESPONSIBILITY: Report list rendering ====== */}
-        <ReportListSection
-          reports={studioData.reports}
-          loading={studioData.loading.reports}
-          error={studioData.errors.reports}
-          isCollapsed={collapsedSections.reports}
-          onToggleCollapse={() => toggleSection('reports')}
-          onSelectReport={handleSelectReport}
-          onDownloadReport={handleDownloadReport}
-          onEditReport={handleSelectReport} // Same as select for now
-          onDeleteReport={handleDeleteReport}
-        />
+        {/* ====== VISUAL SEPARATOR ====== */}
+        <div className="px-6 py-3">
+          <div className="border-t border-gray-200/50"></div>
+        </div>
 
-        {/* ====== SINGLE RESPONSIBILITY: Podcast list rendering ====== */}
-        <PodcastListSection
-          podcasts={studioData.podcasts}
-          loading={studioData.loading.podcasts}
-          error={studioData.errors.podcasts}
-          isCollapsed={collapsedSections.podcasts}
-          onToggleCollapse={() => toggleSection('podcasts')}
-          onDownloadPodcast={handleDownloadPodcast}
-          onDeletePodcast={handleDeletePodcast}
-        />
+        {/* ====== INLINE PODCAST LISTINGS ====== */}
+        {studioData.podcasts.length > 0 && (
+          <div className="px-6 py-2 space-y-1">
+            {studioData.podcasts.map((podcast, index) => (
+              <div
+                key={podcast.id || index}
+                className="flex items-center space-x-3 px-3 py-2 bg-orange-50/60 hover:bg-orange-100/70 rounded-lg transition-all duration-200 cursor-pointer group"
+                onClick={() => handlePodcastClick(podcast)}
+              >
+                <div className="w-5 h-5 bg-gradient-to-br from-orange-500 to-orange-600 rounded-md flex items-center justify-center">
+                  <Play className="h-3 w-3 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-gray-900 truncate group-hover:text-orange-700">
+                    {podcast.title || 'Panel Discussion'}
+                  </h4>
+                </div>
+                <div className="text-xs text-gray-500">
+                  {podcast.created_at ? new Date(podcast.created_at).toLocaleDateString() : 'Generated'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
       </div>
 
       {/* ====== SINGLE RESPONSIBILITY: File viewer overlay ====== */}
@@ -659,6 +717,15 @@ const StudioPanel = ({
         onClose={() => setShowAdvancedSettings(false)}
         config={reportGeneration.config}
         onConfigChange={reportGeneration.updateConfig}
+        availableModels={studioData.availableModels}
+      />
+
+      {/* ====== SINGLE RESPONSIBILITY: Podcast advanced settings modal ====== */}
+      <AdvancedSettingsModal
+        isOpen={showPodcastAdvancedSettings}
+        onClose={() => setShowPodcastAdvancedSettings(false)}
+        config={podcastGeneration.config}
+        onConfigChange={podcastGeneration.updateConfig}
         availableModels={studioData.availableModels}
       />
     </div>

@@ -35,7 +35,7 @@ const NotebookLayout = ({
   }, []);
 
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-50 to-blue-50/30 flex flex-col relative overflow-hidden">
+    <div className="h-screen bg-gradient-to-br from-gray-500 to-gray-600 flex flex-col relative overflow-hidden">
       {/* Sidebar Menu */}
       <SidebarMenu 
         isOpen={menuOpen} 
@@ -63,7 +63,7 @@ const NotebookLayout = ({
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
-              className={`${COLORS.panels.sources.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-auto relative min-h-0 ring-1 ${COLORS.panels.sources.ring}`}
+              className={`${COLORS.panels.sources.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-auto min-h-0`}
             >
               {React.cloneElement(sourcesPanel, {
                 ref: sourcesListRef,
@@ -81,7 +81,7 @@ const NotebookLayout = ({
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
               onClick={() => setIsSourcesCollapsed(false)}
-              className={`w-12 md:w-14 flex-shrink-0 ${COLORS.panels.sources.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} ring-1 ${COLORS.panels.sources.ring} flex items-center justify-center ${COLORS.panels.sources.text} ${COLORS.panels.sources.textHover} transition-all duration-300 group`}
+              className={`w-12 md:w-14 flex-shrink-0 ${COLORS.panels.sources.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} flex items-center justify-center ${COLORS.panels.sources.text} ${COLORS.panels.sources.textHover} transition-all duration-300 group`}
               title="Expand Sources Panel"
             >
               <div className="group-hover:scale-110 transition-transform duration-200">
@@ -101,7 +101,7 @@ const NotebookLayout = ({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.1 }}
-            className={`${COLORS.panels.chat.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-auto min-h-0 ring-1 ${COLORS.panels.chat.ring} ${
+            className={`${COLORS.panels.chat.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-auto min-h-0 ${
               isSourcesCollapsed ? "flex-[0.618]" : ""
             }`}
           >
@@ -116,7 +116,7 @@ const NotebookLayout = ({
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3, delay: 0.2 }}
-            className={`${COLORS.panels.studio.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-auto min-h-0 ring-1 ${COLORS.panels.studio.ring} ${
+            className={`${COLORS.panels.studio.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-auto min-h-0 ${
               isSourcesCollapsed ? "flex-[0.382]" : ""
             }`}
           >

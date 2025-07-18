@@ -24,15 +24,15 @@ const PodcastListSection = ({
   const podcastCount = podcasts.length;
 
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+    <div className="bg-transparent">
       {/* ====== SINGLE RESPONSIBILITY: Header rendering ====== */}
       <div 
-        className="px-6 py-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b border-orange-100 cursor-pointer hover:from-orange-100 hover:to-amber-100 transition-all duration-200"
+        className="px-6 py-5 bg-white/80 backdrop-blur-sm cursor-pointer hover:bg-white/90 transition-all duration-200 border-b border-gray-100/50"
         onClick={onToggleCollapse}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-500 rounded-lg flex items-center justify-center shadow-sm">
+            <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-red-600 rounded-lg flex items-center justify-center shadow-sm">
               <Play className="h-4 w-4 text-white" />
             </div>
             <div>
@@ -56,7 +56,7 @@ const PodcastListSection = ({
 
       {/* ====== SINGLE RESPONSIBILITY: Content rendering ====== */}
       {!isCollapsed && (
-        <div className="p-6">
+        <div className="px-6 py-5 bg-white/50 backdrop-blur-sm">
           {loading && (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto"></div>

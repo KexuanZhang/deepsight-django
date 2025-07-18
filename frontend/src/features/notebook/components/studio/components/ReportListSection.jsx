@@ -51,7 +51,7 @@ const ReportFileItem = React.memo(({
   };
 
   return (
-    <div className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+    <div className="p-4 bg-white/60 backdrop-blur-sm hover:bg-white/80 transition-colors cursor-pointer border-b border-gray-100/50 last:border-b-0">
       <div className="flex items-start justify-between">
         <div 
           className="flex-1 min-w-0" 
@@ -140,15 +140,15 @@ const ReportListSection = ({
   const reportCount = reports.length;
 
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+    <div className="bg-transparent">
       {/* ====== SINGLE RESPONSIBILITY: Header rendering ====== */}
       <div 
-        className="px-6 py-4 bg-gradient-to-r from-green-50 to-emerald-50 border-b border-green-100 cursor-pointer hover:from-green-100 hover:to-emerald-100 transition-all duration-200"
+        className="px-6 py-5 bg-white/80 backdrop-blur-sm cursor-pointer hover:bg-white/90 transition-all duration-200 border-b border-gray-100/50"
         onClick={onToggleCollapse}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center shadow-sm">
+            <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-red-600 rounded-lg flex items-center justify-center shadow-sm">
               <FileText className="h-4 w-4 text-white" />
             </div>
             <div>

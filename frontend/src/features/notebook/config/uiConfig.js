@@ -62,22 +62,22 @@ export const COLORS = {
   // Panel-specific color schemes
   panels: {
     sources: {
-      background: 'bg-gradient-to-b from-emerald-50 to-teal-50/50',
-      ring: 'ring-emerald-100/50',
-      text: 'text-emerald-600',
-      textHover: 'hover:text-emerald-700'
+      background: 'bg-gray-100',
+      ring: '',
+      text: 'text-gray-700',
+      textHover: 'hover:text-gray-800'
     },
     chat: {
-      background: 'bg-gradient-to-b from-blue-50 to-indigo-50/50',
-      ring: 'ring-blue-100/50',
-      text: 'text-blue-600',
-      textHover: 'hover:text-blue-700'
+      background: 'bg-gray-100',
+      ring: '',
+      text: 'text-gray-700',
+      textHover: 'hover:text-gray-800'
     },
     studio: {
-      background: 'bg-gradient-to-b from-purple-50 to-pink-50/50',
-      ring: 'ring-purple-100/50',
-      text: 'text-purple-600',
-      textHover: 'hover:text-purple-700'
+      background: 'bg-gray-100',
+      ring: '',
+      text: 'text-gray-700',
+      textHover: 'hover:text-gray-800'
     }
   }
 };
@@ -123,6 +123,18 @@ export const TYPOGRAPHY = {
   }
 };
 
+// Panel header configurations for consistency
+export const PANEL_HEADERS = {
+  container: 'flex-shrink-0 px-6 py-4 bg-white/95 backdrop-blur-sm',
+  separator: '',
+  layout: 'flex items-center justify-between',
+  iconContainer: 'w-8 h-8 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center shadow-sm',
+  icon: 'h-4 w-4 text-gray-600',
+  title: 'text-lg font-semibold text-gray-900',
+  titleContainer: 'flex items-center space-x-4',
+  actionsContainer: 'flex items-center space-x-2'
+};
+
 // Border radius configurations
 export const RADIUS = {
   small: 'rounded-md',
@@ -147,9 +159,9 @@ export const SHADOWS = {
 
 // Z-index configurations
 export const Z_INDEX = {
-  modal: 'z-50',
-  overlay: 'z-40',
-  dropdown: 'z-30',
+  modal: 'z-[100]',
+  overlay: 'z-[90]',
+  dropdown: 'z-[80]',
   header: 'z-10'
 };
 

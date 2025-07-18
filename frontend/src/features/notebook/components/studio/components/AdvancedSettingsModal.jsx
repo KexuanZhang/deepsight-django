@@ -33,8 +33,54 @@ const AdvancedSettingsModal = ({
         </div>
 
         <div className="space-y-6">
+          {/* Expert Names Section - Only show for podcast generation */}
+          {config.expert_names && (
+            <div className="space-y-4">
+              <h3 className="text-base font-semibold text-gray-900 border-b pb-2">Panel Discussion Experts</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">Host Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., 杨飞飞"
+                    className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    value={config.expert_names?.host || ''}
+                    onChange={(e) => onConfigChange({ 
+                      expert_names: { ...config.expert_names, host: e.target.value }
+                    })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">Expert 1</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., 奥立昆"
+                    className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    value={config.expert_names?.expert1 || ''}
+                    onChange={(e) => onConfigChange({ 
+                      expert_names: { ...config.expert_names, expert1: e.target.value }
+                    })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">Expert 2</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., 李特曼"
+                    className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    value={config.expert_names?.expert2 || ''}
+                    onChange={(e) => onConfigChange({ 
+                      expert_names: { ...config.expert_names, expert2: e.target.value }
+                    })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Model and Search Engine Section */}
           <div className="space-y-4">
+            <h3 className="text-base font-semibold text-gray-900 border-b pb-2">Generation Settings</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">AI Model</label>

@@ -14,6 +14,7 @@ import rehypeRaw from "rehype-raw";
 import "highlight.js/styles/github.css";
 import { useFileSelection } from "@/features/notebook/hooks";
 import { config } from "@/config";
+import { PANEL_HEADERS } from "../../config/uiConfig";
 
 function getCookie(name) {
   const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
@@ -34,7 +35,7 @@ const MarkdownContent = React.memo(({ content }) => (
         ul: ({children}) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
         ol: ({children}) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
         li: ({children}) => <li className="text-gray-700 text-sm">{children}</li>,
-        blockquote: ({children}) => <blockquote className="border-l-2 border-blue-200 pl-3 italic text-gray-600 my-2">{children}</blockquote>,
+        blockquote: ({children}) => <blockquote className="border-l-2 border-red-200 pl-3 italic text-gray-600 my-2">{children}</blockquote>,
         code: ({children}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono text-gray-800">{children}</code>,
         pre: ({children}) => <pre className="bg-gray-900 text-gray-100 p-3 rounded-lg overflow-x-auto my-2 text-xs">{children}</pre>,
         a: ({href, children}) => (
@@ -42,7 +43,7 @@ const MarkdownContent = React.memo(({ content }) => (
             href={href} 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-blue-600 hover:text-blue-800 underline"
+            className="text-red-600 hover:text-red-800 underline"
           >
             {children}
           </a>
@@ -80,7 +81,7 @@ const SuggestionButton = React.memo(({ suggestion, hasFiles, onSendMessage, inde
       className={`w-full text-left justify-start transition-all duration-300 h-auto py-4 px-5 group ${
         !hasFiles 
           ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-50' 
-          : 'bg-white hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 border-gray-200 hover:border-blue-300 text-gray-700 hover:text-blue-700 shadow-sm hover:shadow-md'
+          : 'bg-white hover:bg-gradient-to-r hover:from-red-50 hover:to-rose-50 border-gray-200 hover:border-red-300 text-gray-700 hover:text-red-700 shadow-sm hover:shadow-md'
       }`}
       disabled={!hasFiles}
       onClick={() => {
@@ -93,13 +94,13 @@ const SuggestionButton = React.memo(({ suggestion, hasFiles, onSendMessage, inde
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 ${
           !hasFiles 
             ? 'bg-gray-100/50' 
-            : 'bg-gradient-to-br from-blue-100 to-indigo-100 group-hover:from-blue-200 group-hover:to-indigo-200'
+            : 'bg-gradient-to-br from-red-100 to-rose-100 group-hover:from-red-200 group-hover:to-rose-200'
         }`}>
-          <suggestion.icon className={`h-5 w-5 ${!hasFiles ? 'text-gray-400/75' : 'text-blue-600'}`} />
+          <suggestion.icon className={`h-5 w-5 ${!hasFiles ? 'text-gray-400/75' : 'text-red-600'}`} />
         </div>
         <div className="flex-1 min-h-[2.5rem] flex items-center">
           <span className={`text-sm leading-relaxed font-medium transition-colors duration-200 ${
-            !hasFiles ? 'text-gray-400/75' : 'text-gray-700 group-hover:text-blue-700'
+            !hasFiles ? 'text-gray-400/75' : 'text-gray-700 group-hover:text-red-700'
           }`}>{suggestion.text}</span>
         </div>
       </div>
@@ -378,15 +379,15 @@ useEffect(() => {
 
   return (
     <div className="h-full flex flex-col bg-white">
-      <div className="flex-shrink-0 px-4 py-3 bg-white border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="w-6 h-6 bg-gray-100 rounded-md flex items-center justify-center">
-              <MessageCircle className="h-3 w-3 text-gray-600" />
+      <div className={`${PANEL_HEADERS.container} ${PANEL_HEADERS.separator}`}>
+        <div className={PANEL_HEADERS.layout}>
+          <div className={PANEL_HEADERS.titleContainer}>
+            <div className={PANEL_HEADERS.iconContainer}>
+              <MessageCircle className={PANEL_HEADERS.icon} />
             </div>
-            <h3 className="text-sm font-medium text-gray-900">Chat</h3>
+            <h3 className={PANEL_HEADERS.title}>Chat</h3>
           </div>
-          <div className="flex items-center space-x-1">
+          <div className={PANEL_HEADERS.actionsContainer}>
             <Button
               variant="ghost"
               size="sm"
@@ -524,9 +525,9 @@ useEffect(() => {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="w-24 h-24 bg-gradient-to-br from-blue-100 via-indigo-100 to-purple-100 rounded-3xl mx-auto mb-8 flex items-center justify-center shadow-lg"
+              className="w-24 h-24 bg-gradient-to-br from-red-100 via-rose-100 to-pink-100 rounded-3xl mx-auto mb-8 flex items-center justify-center shadow-lg"
             >
-              <MessageCircle className="h-12 w-12 text-blue-600" />
+              <MessageCircle className="h-12 w-12 text-red-600" />
             </motion.div>
             
             <motion.div
@@ -541,11 +542,11 @@ useEffect(() => {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.4, delay: 0.25 }}
-                className="mb-8 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl shadow-sm"
+                className="mb-8 p-5 bg-gray-50/80 border border-gray-200/60 rounded-xl shadow-sm"
               >
                 <div>
-                  <h4 className="text-sm font-semibold text-blue-900 mb-1">Getting Started</h4>
-                  <p className="text-sm text-blue-700 leading-relaxed">Select at least one document from the <span className="font-medium">sources panel</span> on the left to start exploring your knowledge base with AI-powered conversations.</p>
+                  <h4 className="text-sm font-medium text-gray-800 mb-2">Getting Started</h4>
+                  <p className="text-sm text-gray-600 leading-relaxed">Select at least one document from the <span className="font-medium text-gray-700">sources panel</span> on the left to start exploring your knowledge base with AI-powered conversations.</p>
                 </div>
               </motion.div>
             </motion.div>
@@ -581,11 +582,11 @@ useEffect(() => {
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.3 }}
-              className="border-t border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50"
+              className="border-t border-gray-200 bg-gradient-to-r from-red-50 to-rose-50"
             >
               <div className="px-4 py-4">
                 <div className="flex items-center space-x-2 mb-3">
-                  <div className="w-5 h-5 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                  <div className="w-5 h-5 bg-gradient-to-br from-red-500 to-rose-500 rounded-full flex items-center justify-center">
                     <Sparkles className="h-3 w-3 text-white" />
                   </div>
                   <span className="text-sm font-medium text-gray-700">Continue exploring</span>
@@ -593,7 +594,7 @@ useEffect(() => {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 w-6 p-0 hover:bg-blue-100/50"
+                    className="h-6 w-6 p-0 hover:bg-red-100/50"
                     onClick={() => setIsPanelExpanded(false)}
                   >
                     <ChevronDown className="h-4 w-4 text-gray-500" />
@@ -617,11 +618,11 @@ useEffect(() => {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="w-full text-left justify-start text-xs bg-white/80 backdrop-blur-sm hover:bg-blue-100 border-gray-200 hover:border-blue-300 text-gray-700 hover:text-blue-700 shadow-sm hover:shadow-md transition-all duration-200 h-auto py-2.5 px-3"
+                        className="w-full text-left justify-start text-xs bg-white/80 backdrop-blur-sm hover:bg-red-100 border-gray-200 hover:border-red-300 text-gray-700 hover:text-red-700 shadow-sm hover:shadow-md transition-all duration-200 h-auto py-2.5 px-3"
                         onClick={() => handleSendMessage(question)}
                       >
                         <div className="flex items-start space-x-2 w-full">
-                          <div className="w-1.5 h-1.5 bg-blue-400 rounded-full mt-1.5 flex-shrink-0"></div>
+                          <div className="w-1.5 h-1.5 bg-red-400 rounded-full mt-1.5 flex-shrink-0"></div>
                           <span className="leading-relaxed line-clamp-2">{question}</span>
                         </div>
                       </Button>
@@ -634,10 +635,10 @@ useEffect(() => {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="border-t border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2 flex items-center justify-between"
+              className="border-t border-gray-200 bg-gradient-to-r from-red-50 to-rose-50 px-4 py-2 flex items-center justify-between"
             >
                              <div className="flex items-center space-x-2">
-                 <div className="w-4 h-4 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                 <div className="w-4 h-4 bg-gradient-to-br from-red-500 to-rose-500 rounded-full flex items-center justify-center">
                    <Sparkles className="h-2 w-2 text-white" />
                  </div>
                  <span className="text-xs font-medium text-gray-700">Continue exploring</span>
@@ -645,7 +646,7 @@ useEffect(() => {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 hover:bg-blue-100/50"
+                className="h-6 w-6 p-0 hover:bg-red-100/50"
                 onClick={() => setIsPanelExpanded(true)}
               >
                 <ChevronUp className="h-4 w-4 text-gray-500" />
@@ -656,24 +657,30 @@ useEffect(() => {
       )}
 
 
-      <div className="flex-shrink-0 p-4 border-t border-gray-200">
-        <div className="flex space-x-2">
-          <textarea
-            ref={inputRef}
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyDown={handleKeyPress}
-            placeholder="Ask about your knowledge base..."
-            className="flex-1 min-h-[36px] max-h-32 px-3 py-2 border border-gray-300 rounded-md resize-none text-sm focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent"
-            disabled={isLoading}
-          />
+      <div className="flex-shrink-0 p-6 bg-white/80 backdrop-blur-sm">
+        <div className="flex items-end space-x-3 bg-white/90 backdrop-blur-sm rounded-2xl p-4 shadow-lg border border-gray-200/50">
+          <div className="flex-1">
+            <textarea
+              ref={inputRef}
+              value={inputMessage}
+              onChange={(e) => setInputMessage(e.target.value)}
+              onKeyDown={handleKeyPress}
+              placeholder="Ask about your knowledge base..."
+              className="w-full min-h-[40px] max-h-32 px-0 py-0 border-0 bg-transparent resize-none text-sm placeholder-gray-400 focus:outline-none focus:ring-0"
+              disabled={isLoading}
+            />
+          </div>
           <Button
             onClick={handleSendMessage}
             disabled={!inputMessage.trim() || isLoading}
             size="sm"
-            className="px-3 py-2 bg-gray-900 hover:bg-gray-800 text-white"
+            className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
-            <Send className="h-4 w-4" />
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
           </Button>
         </div>
       </div>

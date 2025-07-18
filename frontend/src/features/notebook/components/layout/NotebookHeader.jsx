@@ -17,44 +17,49 @@ const NotebookHeader = ({
   const { handleLogout } = useAuth();
 
   return (
-    <header className="flex-shrink-0 border-b border-gray-200 p-4 flex justify-between items-center relative z-10">
-      <div className="flex items-center space-x-4">
-        {/* Back Button */}
-        {showBackButton && (
+    <header className="flex-shrink-0 bg-white/95 backdrop-blur-sm border-b border-gray-200/50 shadow-sm relative z-10">
+      <div className="px-6 py-4 flex justify-between items-center">
+        <div className="flex items-center space-x-4">
+          {/* Back Button */}
+          {showBackButton && (
+            <button
+              onClick={() => navigate(backPath)}
+              className="p-2.5 rounded-xl bg-gray-100/80 hover:bg-gray-200/80 transition-all duration-200 hover:scale-105"
+              title={`Back to ${backPath === "/deepdive" ? "DeepDive" : "Previous Page"}`}
+            >
+              <ArrowLeft className="h-5 w-5 text-gray-700" />
+            </button>
+          )}
+
+          {/* Menu Toggle */}
           <button
-            onClick={() => navigate(backPath)}
-            className="p-2 rounded-md hover:bg-gray-100"
-            title={`Back to ${backPath === "/deepdive" ? "DeepDive" : "Previous Page"}`}
+            onClick={onMenuToggle}
+            className="p-2.5 rounded-xl bg-gray-100/80 hover:bg-gray-200/80 transition-all duration-200 hover:scale-105"
           >
-            <ArrowLeft className="h-6 w-6 text-gray-700" />
+            <Menu className="h-5 w-5 text-gray-700" />
           </button>
-        )}
 
-        {/* Menu Toggle */}
-        <button
-          onClick={onMenuToggle}
-          className="p-2 rounded-md hover:bg-gray-100"
-        >
-          <Menu className="h-6 w-6 text-gray-700" />
-        </button>
+          {/* Title with elegant styling */}
+          {notebookTitle && (
+            <div className="ml-4 flex items-center space-x-3">
+              <div className="w-1 h-8 bg-gradient-to-b from-red-500 to-red-600 rounded-full"></div>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-900 bg-clip-text text-transparent">
+                {notebookTitle}
+              </h1>
+            </div>
+          )}
+        </div>
 
-        {/* Title */}
-        {notebookTitle && (
-          <h1 className="text-3xl font-bold text-gray-800">
-            {notebookTitle}
-          </h1>
-        )}
-      </div>
-
-      {/* Logout Button */}
-      <div className="flex items-center space-x-4">
-        <button
-          onClick={handleLogout}
-          className="text-gray-600 hover:text-gray-900"
-          title="Logout"
-        >
-          <LogOut className="h-6 w-6" />
-        </button>
+        {/* Logout Button */}
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={handleLogout}
+            className="p-2.5 rounded-xl bg-red-50/80 hover:bg-red-100/80 text-red-600 hover:text-red-700 transition-all duration-200 hover:scale-105"
+            title="Logout"
+          >
+            <LogOut className="h-5 w-5" />
+          </button>
+        </div>
       </div>
     </header>
   );

@@ -1,14 +1,13 @@
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Component focused solely on report generation configuration
 
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   FileText, 
-  ChevronDown, 
-  ChevronUp, 
   Settings,
   Info,
-  AlertCircle
+  AlertCircle,
+  HelpCircle
 } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
 import StatusDisplay from './StatusDisplay';
@@ -26,10 +25,6 @@ const ReportGenerationForm = ({
   generationState,
   onGenerate,
   onCancel,
-  
-  // UI state props
-  isCollapsed,
-  onToggleCollapse,
   
   // File selection props
   selectedFiles,
@@ -50,34 +45,27 @@ const ReportGenerationForm = ({
   };
 
   const canGenerate = hasValidInput() && generationState.state !== GenerationState.GENERATING;
+  
+  // Tooltip state
+  const [showTooltip, setShowTooltip] = useState(false);
 
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition-all duration-200">
+    <div className="bg-transparent">
       {/* ====== SINGLE RESPONSIBILITY: Header rendering ====== */}
-      <div 
-        className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 cursor-pointer hover:from-blue-100 hover:to-indigo-100 transition-all duration-200 min-h-[72px]"
-        onClick={onToggleCollapse}
-      >
-        <div className="flex items-center justify-between h-full">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
-              <FileText className="h-4 w-4 text-white" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-900">Generate Research Report</h3>
-              <p className="text-xs text-gray-600">Comprehensive AI-powered research analysis</p>
-            </div>
+      <div className="px-6 py-4 bg-red-50/80 backdrop-blur-sm border-b border-red-100/50">
+        <div className="flex items-center space-x-3">
+          <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-red-600 rounded-lg flex items-center justify-center shadow-sm">
+            <FileText className="h-4 w-4 text-white" />
           </div>
-          {isCollapsed ? 
-            <ChevronDown className="h-4 w-4 text-gray-500" /> : 
-            <ChevronUp className="h-4 w-4 text-gray-500" />
-          }
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">Generate Research Report</h3>
+            <p className="text-xs text-gray-600">Comprehensive AI-powered research analysis</p>
+          </div>
         </div>
       </div>
 
       {/* ====== SINGLE RESPONSIBILITY: Form content rendering ====== */}
-      {!isCollapsed && (
-        <div className="p-6 space-y-5">
+      <div className="px-6 py-4 bg-red-50/30 backdrop-blur-sm space-y-4">
           {/* Status display */}
           {(generationState.state !== GenerationState.IDLE) && (
             <StatusDisplay
@@ -90,78 +78,67 @@ const ReportGenerationForm = ({
             />
           )}
 
-          {/* Research topic input */}
+          {/* Research topic input - Main field */}
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Research Topic
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium text-gray-700">
+                Research Topic
+              </label>
+            </div>
             <input
               type="text"
               placeholder="Enter research topic (e.g., 'AI in healthcare')"
-              className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent shadow-sm"
               value={config.topic || ''}
               onChange={(e) => onConfigChange({ topic: e.target.value })}
             />
-            <p className="text-xs text-gray-500 flex items-center">
-              <Info className="h-3 w-3 mr-1" />
-              You can also upload PDF, transcript, or paper files in the Sources panel for analysis.
-            </p>
           </div>
 
-          {/* Prompt Style selection */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">Prompt Style</label>
-            <select
-              className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              value={config.prompt_type || 'general'}
-              onChange={(e) => onConfigChange({ prompt_type: e.target.value })}
-            >
-              <option value="general">General</option>
-              <option value="paper">Paper</option>
-              <option value="financial">Financial Report</option>
-            </select>
-          </div>
-
-
-          {/* Advanced settings button */}
-          <div className="flex justify-center">
+          {/* Action buttons */}
+          <div className="flex items-center justify-between space-x-4">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={onShowCustomize}
-              className="text-sm border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300 transition-all duration-200"
+              className="text-sm text-gray-500 hover:text-gray-700 flex items-center hover:bg-gray-100/50 px-3 py-2 rounded-lg"
             >
-              <Settings className="mr-2 h-4 w-4" />
+              <Settings className="h-4 w-4 mr-2" />
               Advanced Settings
             </Button>
-          </div>
-
-          {/* Validation warning */}
-          {!hasValidInput() && (
-            <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
-              <p className="text-sm text-yellow-800 flex items-center font-medium">
-                <AlertCircle className="h-4 w-4 mr-2 flex-shrink-0" />
-                Please enter a research topic or select files from the Sources panel.
-              </p>
+            
+            <div className="flex items-center space-x-2">
+              <Button
+                className={`font-medium px-5 py-2.5 rounded-lg transition-all duration-200 shadow-sm ${
+                  !canGenerate
+                    ? 'bg-gray-400 hover:bg-gray-500 text-white cursor-not-allowed'
+                    : 'bg-red-600 hover:bg-red-700 text-white hover:shadow-md'
+                }`}
+                onClick={onGenerate}
+                disabled={!canGenerate}
+              >
+                <FileText className="mr-2 h-4 w-4" />
+                Generate Report
+              </Button>
+              <div className="relative">
+                <div 
+                  className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors cursor-help"
+                  onMouseEnter={() => setShowTooltip(true)}
+                  onMouseLeave={() => setShowTooltip(false)}
+                >
+                  <HelpCircle className="h-4 w-4 text-gray-500" />
+                </div>
+                {showTooltip && (
+                  <div className="absolute bottom-full mb-2 right-0 z-10">
+                    <div className="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 whitespace-nowrap shadow-lg">
+                      Please enter a research topic or select files from the Sources panel.
+                      <div className="absolute top-full right-6 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-
-          {/* Generate button */}
-          <Button
-            className={`w-full font-medium py-3 transition-all duration-200 ${
-              !canGenerate
-                ? 'bg-gray-400 hover:bg-gray-500 text-white cursor-not-allowed'
-                : 'bg-gray-900 hover:bg-gray-800 text-white'
-            }`}
-            onClick={onGenerate}
-            disabled={!canGenerate}
-            title={!hasValidInput() ? "Please enter a topic or select files first" : "Generate research report"}
-          >
-            <FileText className="mr-2 h-4 w-4" />
-            Generate Report
-          </Button>
+          </div>
         </div>
-      )}
     </div>
   );
 };
