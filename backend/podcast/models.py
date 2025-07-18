@@ -83,7 +83,7 @@ class PodcastJob(models.Model):
         """Get pre-signed URL for audio access"""
         if self.audio_object_key:
             try:
-                from notebooks.utils.minio_backend import get_minio_backend
+                from notebooks.utils.storage import get_minio_backend
                 backend = get_minio_backend()
                 return backend.get_file_url(self.audio_object_key, expires)
             except Exception:

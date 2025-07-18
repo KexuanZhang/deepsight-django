@@ -148,7 +148,7 @@ class JobService:
             # Delete associated audio file if it exists
             if job.audio_object_key:
                 try:
-                    from notebooks.utils.minio_backend import get_minio_backend
+                    from notebooks.utils.storage import get_minio_backend
                     minio_backend = get_minio_backend()
                     minio_backend.delete_file(job.audio_object_key)
                 except Exception as e:

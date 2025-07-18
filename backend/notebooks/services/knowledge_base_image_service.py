@@ -10,7 +10,7 @@ import tempfile
 from typing import Dict, List, Optional, Any
 from django.db import transaction
 
-from .minio_backend import get_minio_backend
+from ..utils.storage import get_minio_backend
 
 
 class KnowledgeBaseImageService:

@@ -1,22 +1,15 @@
+"""
+File upload and processing serializers for the notebooks module.
+"""
+
 from rest_framework import serializers
-from .models import (
-    Notebook,
+from ..models import (
     Source,
-    URLProcessingResult,
     ProcessingJob,
     KnowledgeBaseItem,
     KnowledgeBaseImage,
     KnowledgeItem,
-    BatchJob,
-    BatchJobItem,
 )
-
-
-class NotebookSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Notebook
-        fields = ["id", "name", "description", "created_at"]
-        read_only_fields = ["id", "created_at"]
 
 
 class FileUploadSerializer(serializers.Serializer):
@@ -24,37 +17,6 @@ class FileUploadSerializer(serializers.Serializer):
 
     file = serializers.FileField()
     upload_file_id = serializers.CharField(required=False)
-
-
-class URLParseSerializer(serializers.Serializer):
-    """Serializer for URL parsing requests."""
-    
-    url = serializers.URLField()
-    upload_url_id = serializers.CharField(required=False)
-
-
-class URLParseWithMediaSerializer(serializers.Serializer):
-    """Serializer for URL parsing with media extraction requests."""
-    url = serializers.URLField(
-        help_text="URL to parse and extract media from"
-    )
-    upload_url_id = serializers.CharField(
-        max_length=64,
-        required=False,
-        help_text="Custom upload ID for tracking"
-    )
-
-
-class URLParseDocumentSerializer(serializers.Serializer):
-    """Serializer for document URL parsing requests."""
-    url = serializers.URLField(
-        help_text="URL to download and validate document from"
-    )
-    upload_url_id = serializers.CharField(
-        max_length=64,
-        required=False,
-        help_text="Custom upload ID for tracking"
-    )
 
 
 class VideoImageExtractionSerializer(serializers.Serializer):
@@ -100,27 +62,30 @@ class VideoImageExtractionSerializer(serializers.Serializer):
     )
 
 
-class URLProcessingResultSerializer(serializers.ModelSerializer):
-    """Serializer for URL processing results with MinIO object key support."""
+class BatchFileUploadSerializer(serializers.Serializer):
+    """Serializer for batch file upload requests."""
     
-    downloaded_file_url = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = URLProcessingResult
-        fields = [
-            "id", 
-            "content_md", 
-            "downloaded_file_object_key",
-            "downloaded_file_url",
-            "file_metadata", 
-            "error_message", 
-            "created_at"
-        ]
-        read_only_fields = ["id", "created_at"]
-    
-    def get_downloaded_file_url(self, obj):
-        """Get pre-signed URL for downloaded file."""
-        return obj.get_downloaded_file_url() if obj.downloaded_file_object_key else None
+    # Accept either a single file or multiple files
+    file = serializers.FileField(required=False)
+    files = serializers.ListField(
+        child=serializers.FileField(),
+        required=False,
+        allow_empty=False
+    )
+    upload_file_id = serializers.CharField(required=False)
+
+    def validate(self, data):
+        """Ensure either file or files is provided."""
+        file = data.get('file')
+        files = data.get('files')
+        
+        if not file and not files:
+            raise serializers.ValidationError("Either 'file' or 'files' must be provided.")
+        
+        if file and files:
+            raise serializers.ValidationError("Provide either 'file' or 'files', not both.")
+        
+        return data
 
 
 class ProcessingJobSerializer(serializers.ModelSerializer):
@@ -259,7 +224,7 @@ class KnowledgeItemSerializer(serializers.ModelSerializer):
 class SourceSerializer(serializers.ModelSerializer):
     """Serializer for source models with related data."""
 
-    url_result = URLProcessingResultSerializer(read_only=True)
+    from .url_serializers import URLProcessingResultSerializer  # Import to avoid circular imports
     jobs = ProcessingJobSerializer(many=True, read_only=True)
     knowledge_items = KnowledgeItemSerializer(many=True, read_only=True)
 
@@ -283,101 +248,10 @@ class SourceSerializer(serializers.ModelSerializer):
             "needs_processing",
             "processing_status",
         ]
-
-
-class BatchURLParseSerializer(serializers.Serializer):
-    """Serializer for batch URL parsing requests."""
     
-    # Accept either a single URL or a list of URLs
-    url = serializers.CharField(required=False)
-    urls = serializers.ListField(
-        child=serializers.URLField(),
-        required=False,
-        allow_empty=False
-    )
-    upload_url_id = serializers.CharField(required=False)
-
-    def validate(self, data):
-        """Ensure either url or urls is provided."""
-        url = data.get('url')
-        urls = data.get('urls')
-        
-        if not url and not urls:
-            raise serializers.ValidationError("Either 'url' or 'urls' must be provided.")
-        
-        if url and urls:
-            raise serializers.ValidationError("Provide either 'url' or 'urls', not both.")
-        
-        return data
-
-
-class BatchURLParseWithMediaSerializer(serializers.Serializer):
-    """Serializer for batch URL parsing with media extraction requests."""
-    
-    # Accept either a single URL or a list of URLs
-    url = serializers.CharField(required=False)
-    urls = serializers.ListField(
-        child=serializers.URLField(),
-        required=False,
-        allow_empty=False
-    )
-    upload_url_id = serializers.CharField(required=False)
-
-    def validate(self, data):
-        """Ensure either url or urls is provided."""
-        url = data.get('url')
-        urls = data.get('urls')
-        
-        if not url and not urls:
-            raise serializers.ValidationError("Either 'url' or 'urls' must be provided.")
-        
-        if url and urls:
-            raise serializers.ValidationError("Provide either 'url' or 'urls', not both.")
-        
-        return data
-
-
-class BatchFileUploadSerializer(serializers.Serializer):
-    """Serializer for batch file upload requests."""
-    
-    # Accept either a single file or multiple files
-    file = serializers.FileField(required=False)
-    files = serializers.ListField(
-        child=serializers.FileField(),
-        required=False,
-        allow_empty=False
-    )
-    upload_file_id = serializers.CharField(required=False)
-
-    def validate(self, data):
-        """Ensure either file or files is provided."""
-        file = data.get('file')
-        files = data.get('files')
-        
-        if not file and not files:
-            raise serializers.ValidationError("Either 'file' or 'files' must be provided.")
-        
-        if file and files:
-            raise serializers.ValidationError("Provide either 'file' or 'files', not both.")
-        
-        return data
-
-
-class BatchJobSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = BatchJob
-        fields = [
-            'id', 'job_type', 'status', 'total_items', 
-            'completed_items', 'failed_items', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
-
-
-class BatchJobItemSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = BatchJobItem
-        fields = [
-            'id', 'item_data', 'upload_id', 'status', 
-            'result_data', 'error_message', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Dynamically add URLProcessingResultSerializer to avoid circular imports
+        if 'url_result' in self.fields:
+            from .url_serializers import URLProcessingResultSerializer
+            self.fields['url_result'] = URLProcessingResultSerializer(read_only=True) 

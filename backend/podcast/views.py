@@ -44,8 +44,24 @@ class NotebookPodcastJobListCreateView(APIView):
                 notebooks=notebook
             ).order_by('-created_at')
             
+            # Calculate last modified time for caching
+            last_modified = None
+            if jobs:
+                last_modified = max(job.updated_at for job in jobs)
+            
             serializer = PodcastJobListSerializer(jobs, many=True)
-            return Response(serializer.data)
+            response = Response(serializer.data)
+            
+            # Add caching headers
+            if last_modified:
+                response['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            
+            # Cache for 30 seconds if no active jobs, otherwise 5 seconds
+            has_active_jobs = any(job_data.get('status') in ['pending', 'generating'] for job_data in serializer.data)
+            cache_timeout = 5 if has_active_jobs else 30
+            response['Cache-Control'] = f'max-age={cache_timeout}, must-revalidate'
+            
+            return response
         except Exception as e:
             logger.error(f"Error listing podcast-jobs for notebook {notebook_id}: {e}")
             return Response(
@@ -137,7 +153,7 @@ class NotebookPodcastJobDetailView(APIView):
             # Delete the podcast audio file from MinIO
             if job.audio_object_key:
                 try:
-                    from notebooks.utils.minio_backend import get_minio_backend
+                    from notebooks.utils.storage import get_minio_backend
                     minio_backend = get_minio_backend()
                     minio_backend.delete_file(job.audio_object_key)
                     logger.info(f"Successfully deleted podcast audio file for job {job_id}")

@@ -241,13 +241,23 @@ class Report(models.Model):
         """Get pre-signed URL for report access"""
         if self.main_report_object_key:
             try:
-                from notebooks.utils.minio_backend import get_minio_backend
+                from notebooks.utils.storage import get_minio_backend
                 backend = get_minio_backend()
                 return backend.get_file_url(self.main_report_object_key, expires)
             except Exception:
                 return None
         return None
     
+    def get_figure_data_url(self, expires=86400):
+        """Get pre-signed URL for figure data access"""
+        if self.figure_data_object_key:
+            try:
+                from notebooks.utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_file_url(self.figure_data_object_key, expires)
+            except Exception:
+                return None
+        return None
 
     def get_configuration_dict(self):
         """Return configuration as a dictionary for passing to the report generator."""
