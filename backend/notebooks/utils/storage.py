@@ -100,6 +100,16 @@ class MinIOBackend:
             self.logger.error(f"Error retrieving file {object_key}: {e}")
             return None
     
+    def delete_file(self, object_key: str) -> bool:
+        """Delete a single file from MinIO."""
+        try:
+            self.client.remove_object(self.bucket_name, object_key)
+            self.logger.debug(f"Deleted file: {object_key}")
+            return True
+        except S3Error as e:
+            self.logger.error(f"Error deleting file {object_key}: {e}")
+            return False
+    
     def delete_folder(self, folder_prefix: str) -> bool:
         """
         Delete all files in a folder (prefix) from MinIO.

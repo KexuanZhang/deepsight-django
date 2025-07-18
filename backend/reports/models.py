@@ -243,7 +243,7 @@ class Report(models.Model):
             try:
                 from notebooks.utils.storage import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_url(self.main_report_object_key, expires)
+                return backend.get_presigned_url(self.main_report_object_key, expires)
             except Exception:
                 return None
         return None
@@ -254,7 +254,7 @@ class Report(models.Model):
             try:
                 from notebooks.utils.storage import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_url(self.figure_data_object_key, expires)
+                return backend.get_presigned_url(self.figure_data_object_key, expires)
             except Exception:
                 return None
         return None
@@ -371,7 +371,7 @@ class ReportImage(models.Model):
             try:
                 from notebooks.utils.minio_backend import get_minio_backend
                 backend = get_minio_backend()
-                return backend.get_file_url(self.report_figure_minio_object_key, expires)
+                return backend.get_presigned_url(self.report_figure_minio_object_key, expires)
             except Exception:
                 return None
         return None
