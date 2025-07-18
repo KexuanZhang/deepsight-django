@@ -11,12 +11,13 @@ if not logging.getLogger().hasHandlers():
     )
 
 
-def _get_figure_url_from_db(figure_id: str) -> str:
+def _get_figure_url_from_db(figure_id: str, report_id: str) -> str:
     """
-    Get the MinIO URL for an image from the database using the figure_id.
+    Get the MinIO URL for an image from the database using the figure_id and report_id.
     
     Args:
         figure_id: The figure_id of the ReportImage
+        report_id: The report_id to uniquely identify the image
         
     Returns:
         The MinIO URL for the image, or None if not found
@@ -35,19 +36,19 @@ def _get_figure_url_from_db(figure_id: str) -> str:
         from reports.models import ReportImage
         
         try:
-            image = ReportImage.objects.get(figure_id=figure_id)
+            image = ReportImage.objects.get(figure_id=figure_id, report_id=report_id)
             url = image.get_image_url()
-            logging.info(f"Successfully retrieved image URL for figure_id {figure_id} from ReportImage")
+            logging.info(f"Successfully retrieved image URL for figure_id {figure_id} and report_id {report_id} from ReportImage")
             return url
         except ReportImage.DoesNotExist:
-            logging.warning(f"Image with figure_id {figure_id} not found in ReportImage database")
+            logging.warning(f"Image with figure_id {figure_id} and report_id {report_id} not found in ReportImage database")
             return None
         except ValueError as ve:
             logging.warning(f"Invalid figure_id format {figure_id}: {ve}")
             return None
             
     except Exception as e:
-        logging.error(f"Error getting image URL for figure_id {figure_id}: {e}")
+        logging.error(f"Error getting image URL for figure_id {figure_id} and report_id {report_id}: {e}")
         import traceback
         logging.error(f"Traceback: {traceback.format_exc()}")
         return None
@@ -276,22 +277,28 @@ def copy_paper_images(paper_md_path: str, report_output_dir: str) -> None:
 
 
 def insert_figure_images(
-    article_content: str, figures: list[dict], reorder: bool = False
+    article_content: str, figures: list[dict], reorder: bool = False, report_id: str = None
 ) -> str:
     """
     Inserts image captions into the article content at placeholders in the format <figure_id>.
     Only inserts at the first occurrence of each image placeholder, and skips images that have already been inserted.
     Note: image_path is no longer required - only figure_id and caption are used.
+    
+    Args:
+        article_content: The article content with figure placeholders
+        figures: List of figure dictionaries with figure_id and caption
+        reorder: Whether to reorder figures (unused parameter)
+        report_id: The report ID to query images from ReportImage table
     """
     figure_dict = {
         fig["figure_id"]: fig["caption"] for fig in figures
     }
     
-    # Check which figures have already been inserted by looking for existing img tags with data-figure-id
+    # Check which figures have already been inserted by looking for existing img tags
     already_inserted = set()
     for figure_id in figure_dict:
         # Check if there's already an img tag with this figure_id
-        existing_img_pattern = rf'<img\s+[^>]*data-figure-id=["\']' + re.escape(str(figure_id)) + r'["\'][^>]*>'
+        existing_img_pattern = rf'<img\s+[^>]*src="[^"]*{re.escape(str(figure_id))}[^"]*"[^>]*>'
         if re.search(existing_img_pattern, article_content, re.IGNORECASE):
             already_inserted.add(figure_id)
             logging.info(f"Figure ID '{figure_id}' already inserted, skipping.")
@@ -348,13 +355,13 @@ def insert_figure_images(
 
             # Add figure content
             caption = figure_dict[figure_id]
-            # Get image URL from database using figure_id
-            image_url = _get_figure_url_from_db(figure_id)
+            # Get image URL from database using figure_id and report_id
+            image_url = _get_figure_url_from_db(figure_id, report_id) if report_id else None
             if image_url:
-                insertion_text = f'<img src="{image_url}" data-figure-id="{figure_id}" style="max-height: {max_image_height};">\n\n{caption}\n\n'
+                insertion_text = f'<img src="{image_url}" style="max-height: {max_image_height};">\n\n{caption}\n\n'
             else:
                 # Fallback if image URL not found
-                insertion_text = f'<div data-figure-id="{figure_id}" style="padding: 20px; border: 1px dashed #ccc; text-align: center;">Image not found (ID: {figure_id})</div>\n\n{caption}\n\n'
+                insertion_text = f'<div style="padding: 20px; border: 1px dashed #ccc; text-align: center;">Image not found (ID: {figure_id})</div>\n\n{caption}\n\n'
             output_segments.append(insertion_text)
 
             prev_end = placeholder_end

@@ -866,22 +866,6 @@ class DeepReportGenerator:
                         with open(polished_article_path, "r", encoding="utf-8") as f:
                             content = f.read()
 
-                        # Apply image path fixing to ensure final Report content has correct paths
-                        try:
-                            from agents.report_agent.utils.post_processing import (
-                                fix_image_paths,
-                            )
-
-                            content = fix_image_paths(
-                                content,
-                                knowledge_base_items=config.selected_files_paths,
-                                user_id=config.user_id,
-                                figure_data=config.figure_data if hasattr(config, 'figure_data') else None,
-                            )
-                        except Exception as e:
-                            self.logger.warning(
-                                f"Failed to fix image paths in Report content: {e}"
-                            )
 
                         # Apply other post-processing (citations, captions, placeholders)
                         from agents.report_agent.utils.post_processing import (

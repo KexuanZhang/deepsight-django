@@ -441,6 +441,7 @@ class STORMWikiRunner(Engine):
                 article_content=article_text_before_figs,
                 figures=self.figure_data,
                 reorder=False,
+                report_id=self.report_id,
             )
 
             # Apply figure formatting preservation to ensure proper newlines around figures
@@ -467,24 +468,6 @@ class STORMWikiRunner(Engine):
         article_content = draft_article.to_string()
         article_content = preserve_figure_formatting(article_content)
 
-        # Apply image path fixing if we have selected_files_paths and user_id
-        if (hasattr(self, "selected_files_paths") and self.selected_files_paths and 
-            hasattr(self, "user_id") and self.user_id):
-            try:
-                from agents.report_agent.utils.post_processing import (
-                    fix_image_paths,
-                )
-
-                article_content = fix_image_paths(
-                    article_content,
-                    knowledge_base_items=self.selected_files_paths,
-                    user_id=self.user_id,
-                    figure_data=self.figure_data,
-                )
-            except Exception as e:
-                logging.warning(
-                    f"Failed to fix image paths in storm_gen_article.md: {e}"
-                )
 
         # Save with preserved formatting and fixed image paths
         with open(
@@ -542,27 +525,6 @@ class STORMWikiRunner(Engine):
         # Apply a second time to catch any edge cases
         hyperlinked_content_str = preserve_figure_formatting(hyperlinked_content_str)
 
-        # Apply image path fixing if we have selected_files_paths and user_id
-        if (hasattr(self, "selected_files_paths") and self.selected_files_paths and 
-            hasattr(self, "user_id") and self.user_id):
-            try:
-                from agents.report_agent.utils.post_processing import (
-                    fix_image_paths,
-                )
-
-                hyperlinked_content_str = fix_image_paths(
-                    hyperlinked_content_str,
-                    knowledge_base_items=self.selected_files_paths,
-                    user_id=self.user_id,
-                    figure_data=self.figure_data,
-                )
-                logging.info(
-                    "Applied image path fixing to storm_gen_article_polished.md"
-                )
-            except Exception as e:
-                logging.warning(
-                    f"Failed to fix image paths in storm_gen_article_polished.md: {e}"
-                )
 
         FileIOHelper.write_str(
             hyperlinked_content_str,

@@ -119,19 +119,21 @@ class ReportImageService:
                         logger.error(f"Failed to copy image {source_key} to {dest_key}")
                         continue
                     
-                    # Create ReportImage record
-                    report_image = ReportImage.objects.create(
+                    # Create ReportImage record using get_or_create to respect unique constraint
+                    report_image, created = ReportImage.objects.get_or_create(
                         figure_id=kb_image.figure_id,
                         report=report,
-                        image_caption=kb_image.image_caption,
-                        report_figure_minio_object_key=dest_key,
-                        image_metadata=kb_image.image_metadata,
-                        content_type=kb_image.content_type,
-                        file_size=kb_image.file_size
+                        defaults={
+                            'image_caption': kb_image.image_caption,
+                            'report_figure_minio_object_key': dest_key,
+                            'image_metadata': kb_image.image_metadata,
+                            'content_type': kb_image.content_type,
+                            'file_size': kb_image.file_size
+                        }
                     )
                     
                     report_images.append(report_image)
-                    logger.debug(f"Created ReportImage for figure_id: {kb_image.figure_id}")
+                    logger.debug(f"{'Created' if created else 'Found existing'} ReportImage for figure_id: {kb_image.figure_id}")
                     
                 except Exception as e:
                     logger.error(f"Error copying image {kb_image.figure_id}: {e}")
@@ -203,8 +205,8 @@ class ReportImageService:
                 image_url = report_image.get_image_url(expires=86400)  # 24 hour expiry
                 
                 if image_url:
-                    # Create simple HTML img tag without alt text, only with src, data-figure-id and style
-                    img_tag = f'<img src="{image_url}" data-figure-id="{figure_id}" style="max-height: 500px;">'
+                    # Create simple HTML img tag without alt text, only with src and style
+                    img_tag = f'<img src="{image_url}" style="max-height: 500px;">'
                     return img_tag
                 else:
                     logger.warning(f"Could not get URL for figure {figure_id}")
@@ -224,8 +226,8 @@ class ReportImageService:
         updated_content = re.sub(bracket_pattern, replace_bracket_figure_id, content)
         
         # Then handle standalone UUIDs, but avoid replacing UUIDs that are already inside img tags
-        # Use negative lookbehind to avoid matching UUIDs inside data-figure-id attributes
-        standalone_pattern = rf'(?<!data-figure-id=")({uuid_pattern})(?![^<]*>)'
+        # Use negative lookbehind to avoid matching UUIDs inside src attributes
+        standalone_pattern = rf'(?<!src=")({uuid_pattern})(?![^<]*>)'
         
         def replace_standalone_figure_id(match):
             figure_id = match.group(1)
