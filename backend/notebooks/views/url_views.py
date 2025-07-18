@@ -363,11 +363,90 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
 
 
 class URLParseDocumentView(StandardAPIView, NotebookPermissionMixin):
-    """Handle document URL parsing - for PDFs and other document types."""
-    
+    """Parse document URLs and validate file format (PDF/PPTX only)."""
+
     parser_classes = [JSONParser]
 
     def post(self, request, notebook_id):
-        """Parse document URL content."""
-        # This is a placeholder - implement document URL parsing if needed
-        return Response({"message": "URLParseDocumentView POST working", "notebook_id": notebook_id})
+        """Parse a document URL and validate its format."""
+        try:
+            # Verify notebook access
+            notebook = self.get_user_notebook(notebook_id, request.user)
+            
+            # Validate input
+            serializer = URLParseDocumentSerializer(data=request.data)
+            if not serializer.is_valid():
+                return self.error_response(
+                    "Invalid input data",
+                    details=serializer.errors,
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+            
+            validated_data = serializer.validated_data
+            url = validated_data['url']
+            upload_url_id = validated_data.get('upload_url_id')
+            
+            # Process document URL asynchronously
+            result = async_to_sync(url_extractor.process_url_document_only)(
+                url=url,
+                upload_url_id=upload_url_id,
+                user_id=request.user.pk,
+                notebook_id=notebook.id
+            )
+            
+            return Response({
+                'success': True,
+                'file_id': result['file_id'],
+                'url': result['url'],
+                'status': result['status'],
+                'title': result['title'],
+                'processing_type': result['processing_type'],
+                'file_extension': result['file_extension'],
+                'file_size': result['file_size'],
+                'content_preview': result.get('content_preview', ''),
+                'upload_url_id': upload_url_id
+            }, status=status.HTTP_201_CREATED)
+            
+        except ValueError as e:
+            # File format validation errors - provide user-friendly messages
+            error_msg = str(e)
+            if "Invalid document format" in error_msg:
+                if "text/html" in error_msg:
+                    error_msg = "This URL points to a webpage, not a document file. Please use a direct link to a PDF or PowerPoint file instead."
+                elif "Unknown" in error_msg:
+                    error_msg = "This URL does not point to a valid PDF or PowerPoint file. Please check the URL and ensure it links directly to a document file."
+                else:
+                    error_msg = f"Invalid file format. The document URL processor only accepts PDF and PowerPoint files. {error_msg}"
+            elif "Invalid URL" in error_msg:
+                error_msg = "Please enter a valid URL that starts with http:// or https://"
+            
+            return self.error_response(
+                error_msg,
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            # Other processing errors (download failures, etc.)
+            import traceback
+            logger.error(f"Document URL processing failed for {validated_data.get('url', 'unknown URL')}: {str(e)}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            
+            # Provide user-friendly error messages for common issues
+            error_msg = str(e)
+            if "Failed to download document" in error_msg:
+                if "HTTP 404" in error_msg:
+                    error_msg = "Document not found at this URL. Please check the URL and try again."
+                elif "HTTP 403" in error_msg:
+                    error_msg = "Access denied. The document may require authentication or may not be publicly accessible."
+                else:
+                    error_msg = "Unable to download the document from this URL. Please check if the URL is accessible and try again."
+            elif "connection" in error_msg.lower() or "timeout" in error_msg.lower():
+                error_msg = "Network connection issue. Please check your internet connection and try again."
+            elif "You cannot call this from an async context" in error_msg:
+                error_msg = "Internal server error. Please try again in a moment."
+            else:
+                error_msg = f"Failed to process document URL: {error_msg}"
+            
+            return self.error_response(
+                error_msg,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
