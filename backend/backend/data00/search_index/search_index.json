@@ -3112,6 +3112,48 @@
       "content_length": 0,
       "content_type": ".pdf",
       "filename": "2503.06433v1.pdf"
+    },
+    "36": {
+      "file_id": "36",
+      "content": "",
+      "searchable_content": "",
+      "keywords": [],
+      "metadata": {
+        "filename": "Abdelsamad_Multi-Scale_Neighborhood_Occupancy_Masked_Autoencoder_for_Self-Supervised_Learning_in_LiDAR_CVPR_2025_paper.pdf",
+        "original_filename": "Abdelsamad_Multi-Scale_Neighborhood_Occupancy_Masked_Autoencoder_for_Self-Supervised_Learning_in_LiDAR_CVPR_2025_paper.pdf",
+        "file_extension": ".pdf",
+        "content_type": "application/pdf",
+        "file_size": 4046168,
+        "upload_file_id": "upload_1752845184394_nlu4baazp",
+        "upload_timestamp": "2025-07-18T13:26:24.432766",
+        "parsing_status": "completed"
+      },
+      "processing_stage": "immediate",
+      "indexed_at": "2025-07-18T13:26:56.289924+00:00",
+      "content_length": 0,
+      "content_type": ".pdf",
+      "filename": "Abdelsamad_Multi-Scale_Neighborhood_Occupancy_Masked_Autoencoder_for_Self-Supervised_Learning_in_LiDAR_CVPR_2025_paper.pdf"
+    },
+    "37": {
+      "file_id": "37",
+      "content": "",
+      "searchable_content": "",
+      "keywords": [],
+      "metadata": {
+        "filename": "Aghzal_Evaluating_Vision-Language_Models_as_Evaluators_in_Path_Planning_CVPR_2025_paper.pdf",
+        "original_filename": "Aghzal_Evaluating_Vision-Language_Models_as_Evaluators_in_Path_Planning_CVPR_2025_paper.pdf",
+        "file_extension": ".pdf",
+        "content_type": "application/pdf",
+        "file_size": 1520642,
+        "upload_file_id": "upload_1752845817297_op39xjgvm",
+        "upload_timestamp": "2025-07-18T13:36:57.370139",
+        "parsing_status": "completed"
+      },
+      "processing_stage": "immediate",
+      "indexed_at": "2025-07-18T13:37:19.836853+00:00",
+      "content_length": 0,
+      "content_type": ".pdf",
+      "filename": "Aghzal_Evaluating_Vision-Language_Models_as_Evaluators_in_Path_Planning_CVPR_2025_paper.pdf"
     }
   },
   "file_index": {
@@ -3310,7 +3352,21 @@
       "indexed_at": "2025-07-17T14:44:22.802450+00:00",
       "content_length": 0,
       "processing_stage": "immediate"
+    },
+    "36": {
+      "filename": "Abdelsamad_Multi-Scale_Neighborhood_Occupancy_Masked_Autoencoder_for_Self-Supervised_Learning_in_LiDAR_CVPR_2025_paper.pdf",
+      "content_type": ".pdf",
+      "indexed_at": "2025-07-18T13:26:56.289924+00:00",
+      "content_length": 0,
+      "processing_stage": "immediate"
+    },
+    "37": {
+      "filename": "Aghzal_Evaluating_Vision-Language_Models_as_Evaluators_in_Path_Planning_CVPR_2025_paper.pdf",
+      "content_type": ".pdf",
+      "indexed_at": "2025-07-18T13:37:19.836853+00:00",
+      "content_length": 0,
+      "processing_stage": "immediate"
     }
   },
-  "last_updated": "2025-07-17T14:44:22.802473+00:00"
+  "last_updated": "2025-07-18T13:37:19.836895+00:00"
 }

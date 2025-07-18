@@ -126,7 +126,6 @@ def add_user_files(
     user_id: int,
     kb_items: List,  # now take model instances, not paths
 ) -> None:
-    print("!!!Add")
     coll_name = user_collection(user_id)
     store = Milvus(
         embedding_function=OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY),
@@ -136,6 +135,7 @@ def add_user_files(
     )
 
     docs = []
+    print("!!!items!!!", kb_items)
     for item in kb_items:
         # open in binary, then decode
         with item.file.open(mode="rb") as f:
