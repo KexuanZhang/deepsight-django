@@ -100,18 +100,59 @@ class MinIOBackend:
             self.logger.error(f"Error retrieving file {object_key}: {e}")
             return None
     
-    def delete_file(self, object_key: str) -> bool:
-        """Delete file from MinIO."""
+    def delete_folder(self, folder_prefix: str) -> bool:
+        """
+        Delete all files in a folder (prefix) from MinIO.
+        
+        Args:
+            folder_prefix: Folder prefix to delete (e.g., "user_123/kb/uuid-folder/")
+            
+        Returns:
+            True if deletion was successful (or folder was empty)
+        """
         try:
-            self.client.remove_object(self.bucket_name, object_key)
-            self.logger.debug(f"Deleted file: {object_key}")
-            return True
-        except S3Error as e:
-            # Check if error is due to file not existing (NoSuchKey)
-            if 'NoSuchKey' in str(e) or 'Not Found' in str(e):
-                self.logger.warning(f"File {object_key} not found in MinIO, treating as already deleted")
+            # List all objects with the given prefix
+            objects = self.client.list_objects(
+                self.bucket_name,
+                prefix=folder_prefix,
+                recursive=True
+            )
+            
+            # Collect object names to delete
+            object_names = [obj.object_name for obj in objects]
+            
+            if not object_names:
+                self.logger.info(f"No objects found to delete with prefix: {folder_prefix}")
                 return True
-            self.logger.error(f"Error deleting file {object_key}: {e}")
+            
+            # Delete objects in batches (MinIO supports batch deletion)
+            from minio.deleteobjects import DeleteObject
+            delete_objects = [DeleteObject(name) for name in object_names]
+            
+            # Perform batch deletion
+            delete_result = self.client.remove_objects(self.bucket_name, delete_objects)
+            
+            # Check for any errors in deletion
+            deleted_count = 0
+            errors = []
+            for delete_error in delete_result:
+                if hasattr(delete_error, 'error_message'):
+                    errors.append(f"{delete_error.object_name}: {delete_error.error_message}")
+                else:
+                    deleted_count += 1
+            
+            if errors:
+                self.logger.error(f"Errors deleting objects from folder {folder_prefix}: {errors}")
+                return False
+            else:
+                self.logger.info(f"Successfully deleted {deleted_count} objects from folder: {folder_prefix}")
+                return True
+            
+        except S3Error as e:
+            self.logger.error(f"Failed to delete folder {folder_prefix}: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Unexpected error deleting folder {folder_prefix}: {e}")
             return False
     
     def get_presigned_url(self, object_key: str, expires: int = 3600) -> Optional[str]:
@@ -349,9 +390,30 @@ class FileStorageService:
                 self.log_operation("duplicate_content", f"Content already exists: {existing_item.id}")
                 return str(existing_item.id)
             
-            # Generate object keys for MinIO storage
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            base_key = f"users/{user_id}/notebooks/{notebook_id}/{timestamp}"
+            # Create database record first to get the ID
+            knowledge_item = KnowledgeBaseItem.objects.create(
+                user=user,
+                title=metadata.get('original_filename', 'Untitled'),
+                content_type=metadata.get('source_type', 'document'),  # Map source_type to content_type
+                content=content,  # Store the actual content in the database
+                source_hash=content_hash,
+                metadata={
+                    'file_extension': metadata.get('file_extension', ''),
+                    'file_size': metadata.get('file_size', len(content.encode('utf-8'))),
+                    'content_type': metadata.get('content_type', ''),
+                    'processing_status': 'completed',
+                    'original_filename': metadata.get('original_filename', 'Untitled'),
+                    **metadata  # Include all other metadata
+                },
+                file_metadata={
+                    'file_size': metadata.get('file_size', len(content.encode('utf-8'))),
+                    'content_type': metadata.get('content_type', ''),
+                    'processing_result': processing_result
+                }
+            )
+            
+            # Generate object keys for MinIO storage using kb pattern with actual item ID
+            base_key = f"{user_id}/kb/{knowledge_item.id}"
             
             # Store main content
             content_filename = processing_result.get('content_filename', 'extracted_content.md')
@@ -359,6 +421,8 @@ class FileStorageService:
             
             content_bytes = content.encode('utf-8')
             if not self.minio_backend.store_file(content_key, content_bytes, 'text/markdown'):
+                # If storage fails, clean up the database record
+                knowledge_item.delete()
                 raise Exception("Failed to store content file")
             
             # Store original file if provided
@@ -368,34 +432,15 @@ class FileStorageService:
                     original_content = f.read()
                 
                 original_filename = metadata.get('original_filename', os.path.basename(original_file_path))
-                original_file_key = f"{base_key}/original/{original_filename}"
+                original_file_key = f"{base_key}/{original_filename}"
                 
                 if not self.minio_backend.store_file(original_file_key, original_content, metadata.get('content_type')):
                     self.log_operation("original_file_storage_failed", f"Failed to store original file: {original_filename}", "warning")
             
-            # Create database record
-            knowledge_item = KnowledgeBaseItem.objects.create(
-                user=user,
-                title=metadata.get('original_filename', 'Untitled'),
-                content_type=metadata.get('source_type', 'document'),  # Map source_type to content_type
-                content=content,  # Store the actual content in the database
-                source_hash=content_hash,
-                file_object_key=content_key,  # Map minio_content_key to file_object_key
-                original_file_object_key=original_file_key,  # Map minio_original_key to original_file_object_key
-                metadata={
-                    'file_extension': metadata.get('file_extension', ''),
-                    'file_size': metadata.get('file_size', len(content_bytes)),
-                    'content_type': metadata.get('content_type', ''),
-                    'processing_status': 'completed',
-                    'original_filename': metadata.get('original_filename', 'Untitled'),
-                    **metadata  # Include all other metadata
-                },
-                file_metadata={
-                    'file_size': metadata.get('file_size', len(content_bytes)),
-                    'content_type': metadata.get('content_type', ''),
-                    'processing_result': processing_result
-                }
-            )
+            # Update database record with the object keys
+            knowledge_item.file_object_key = content_key
+            knowledge_item.original_file_object_key = original_file_key
+            knowledge_item.save()
             
             # Link to notebook
             try:
@@ -468,43 +513,6 @@ class FileStorageService:
             self.log_operation("get_url_error", f"Failed to get URL for {file_id}: {e}", "error")
             return None
     
-    def delete_file(self, file_id: str, user_id: int) -> bool:
-        """Delete file and its storage objects."""
-        try:
-            from ..models import KnowledgeBaseItem
-            from django.contrib.auth import get_user_model
-            
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-            
-            knowledge_item = KnowledgeBaseItem.objects.get(id=file_id, user=user)
-            
-            # Try to delete from MinIO (don't fail if files are missing)
-            file_deletion_issues = []
-            if knowledge_item.minio_content_key:
-                if not self.minio_backend.delete_file(knowledge_item.minio_content_key):
-                    file_deletion_issues.append(f"content file: {knowledge_item.minio_content_key}")
-            
-            if knowledge_item.minio_original_key:
-                if not self.minio_backend.delete_file(knowledge_item.minio_original_key):
-                    file_deletion_issues.append(f"original file: {knowledge_item.minio_original_key}")
-            
-            # Always delete database record regardless of file deletion status
-            knowledge_item.delete()
-            
-            if file_deletion_issues:
-                self.log_operation("file_deleted_with_issues", 
-                    f"Deleted file: {file_id}, but had file deletion issues: {', '.join(file_deletion_issues)}", 
-                    "warning")
-            else:
-                self.log_operation("file_deleted", f"Deleted file: {file_id}")
-            
-            # Return True as long as database deletion succeeded
-            return True
-            
-        except Exception as e:
-            self.log_operation("delete_error", f"Failed to delete file {file_id}: {e}", "error")
-            return False
     
     def get_user_knowledge_base(self, user_id: int, content_type: str = None, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
         """Get all knowledge base items for a user."""
@@ -585,7 +593,7 @@ class FileStorageService:
             return False
     
     def delete_knowledge_base_item(self, kb_item_id: str, user_id: int) -> bool:
-        """Delete a knowledge base item and its files."""
+        """Delete a knowledge base item and its entire folder from MinIO."""
         try:
             from ..models import KnowledgeBaseItem
             from django.contrib.auth import get_user_model
@@ -596,25 +604,19 @@ class FileStorageService:
             # Get the knowledge base item
             kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
             
-            # Try to delete from MinIO (don't fail if files are missing)
-            file_deletion_issues = []
-            if kb_item.file_object_key:
-                if not self.minio_backend.delete_file(kb_item.file_object_key):
-                    file_deletion_issues.append(f"content file: {kb_item.file_object_key}")
-            
-            if kb_item.original_file_object_key:
-                if not self.minio_backend.delete_file(kb_item.original_file_object_key):
-                    file_deletion_issues.append(f"original file: {kb_item.original_file_object_key}")
+            # Delete entire folder by prefix (using trailing slash to indicate prefix)
+            prefix = f"{user_id}/kb/{kb_item_id}/"
+            folder_deletion_success = self.minio_backend.delete_folder(prefix)
             
             # Always delete database record regardless of file deletion status
             kb_item.delete()
             
-            if file_deletion_issues:
+            if not folder_deletion_success:
                 self.log_operation("kb_item_deleted_with_issues", 
-                    f"Deleted KB item: {kb_item_id}, but had file deletion issues: {', '.join(file_deletion_issues)}", 
+                    f"Deleted KB item: {kb_item_id}, but had issues deleting folder: {prefix}", 
                     "warning")
             else:
-                self.log_operation("kb_item_deleted", f"Deleted KB item: {kb_item_id}")
+                self.log_operation("kb_item_deleted", f"Deleted KB item: {kb_item_id} and entire folder: {prefix}")
             
             # Return True as long as database deletion succeeded
             return True
@@ -684,9 +686,6 @@ class StorageAdapter:
         """Get file URL using the unified service."""
         return self.storage_service.get_file_url(*args, **kwargs)
     
-    def delete_file(self, *args, **kwargs):
-        """Delete file using the unified service."""
-        return self.storage_service.delete_file(*args, **kwargs)
     
     def get_user_knowledge_base(self, *args, **kwargs):
         """Get user knowledge base using the unified service."""
