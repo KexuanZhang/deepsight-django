@@ -1072,11 +1072,6 @@ class UploadProcessor:
                         elif file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg')):
                             image_files.append(file_path_full)
 
-                if not markdown_content:
-                    # If no markdown file found, create basic content
-                    file_ext = file_metadata.get('file_extension', '').lower()
-                    markdown_content = f"# {clean_title_name}\n\nProcessed {file_ext} document using marker_single.\n"
-
                 # Get file metadata
                 processing_metadata = {
                     'processing_method': 'marker_single',
@@ -1084,7 +1079,7 @@ class UploadProcessor:
                     'generated_files_count': len(generated_files),
                     'image_files_count': len(image_files),
                     'has_images': len(image_files) > 0,
-                    'temp_output_dir': temp_output_dir
+                    'has_marker_extraction': temp_output_dir is not None
                 }
 
                 end_time = time.time()
@@ -1092,19 +1087,40 @@ class UploadProcessor:
                 self.log_operation("parse_files_completed", 
                     f"marker_single processing completed in {duration:.2f} seconds, generated {len(generated_files)} files")
 
-                # Clean up temp directory since we've already extracted the content
-                if temp_output_dir and os.path.exists(temp_output_dir):
-                    import shutil
-                    shutil.rmtree(temp_output_dir, ignore_errors=True)
-                
-                return {
-                    'content': markdown_content,
-                    'content_filename': f"{clean_title_name}.md",
+                # For marker_single files, we don't store content separately since marker files contain everything
+                summary_content = ""
+
+                result = {
+                    'content': summary_content,
+                    'content_filename': f"{clean_title_name}.md", 
                     'metadata': processing_metadata,
-                    'features_available': ['text_extraction', 'image_extraction', 'document_parsing'],
+                    'features_available': ['text_extraction', 'image_extraction', 'document_parsing', 'advanced_document_extraction'],
                     'processing_time': f'{duration:.2f}s',
-                    # Don't include marker_extraction_result to avoid duplicate processing
+                    'skip_content_file': True  # Flag to skip creating extracted_content.md since marker provides better content
                 }
+
+                # Add marker extraction result for post-processing (preserve temp directory)
+                if temp_output_dir and generated_files:
+                    result['marker_extraction_result'] = {
+                        'success': True,
+                        'temp_marker_dir': temp_output_dir,
+                        'clean_title': clean_title_name
+                    }
+                else:
+                    # Clean up temp directory if no files were generated
+                    if temp_output_dir and os.path.exists(temp_output_dir):
+                        import shutil
+                        shutil.rmtree(temp_output_dir, ignore_errors=True)
+                    
+                    # Fallback content if marker_single failed to generate files
+                    if not markdown_content:
+                        file_ext = file_metadata.get('file_extension', '').lower()
+                        markdown_content = f"# {clean_title_name}\n\nProcessed {file_ext} document using marker_single.\n"
+                    
+                    result['content'] = markdown_content
+                    result['skip_content_file'] = False
+
+                return result
 
             except subprocess.TimeoutExpired:
                 raise Exception("marker_single processing timed out after 5 minutes")
@@ -1265,7 +1281,8 @@ class UploadProcessor:
                         # Determine file type and store in appropriate MinIO prefix
                         if file.endswith(('.md', '.json')):
                             # Content files go to 'kb' prefix
-                            if file == "markdown.md":
+                            if file.endswith('.md'):
+                                # For any markdown file (from marker_single or marker_pdf), use clean title
                                 target_filename = f"{clean_title}.md"
                             else:
                                 target_filename = file
@@ -1292,8 +1309,8 @@ class UploadProcessor:
                                 'object_key': object_key
                             })
                             
-                            # Update the knowledge base item's file_object_key if this is the main markdown file
-                            if file == "markdown.md":
+                            # Update the knowledge base item's file_object_key if this is a markdown file
+                            if file.endswith('.md'):
                                 kb_item.file_object_key = object_key
                                 # Also store markdown content inline for RAG system compatibility
                                 markdown_content = file_content.decode('utf-8', errors='ignore')
