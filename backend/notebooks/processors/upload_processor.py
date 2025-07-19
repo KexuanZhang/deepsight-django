@@ -4,6 +4,7 @@ Handles immediate processing of uploaded files with MinIO object storage only.
 """
 
 import os
+import sys
 import tempfile
 import subprocess
 import asyncio
@@ -619,7 +620,7 @@ class UploadProcessor:
             return self._process_markdown_direct(file_path, file_metadata)
         elif file_extension == ".txt":
             return self._process_text_immediate(file_path, file_metadata)
-        elif file_extension in [".ppt", ".pptx"]:
+        elif file_extension in [".ppt", ".pptx", ".doc", ".docx"]:
             return self._process_presentation_immediate(file_path, file_metadata)
         else:
             return {
@@ -668,7 +669,7 @@ class UploadProcessor:
                 
                 # List what was created
                 created_files = []
-                for root, dirs, files in os.walk(temp_marker_dir):
+                for root, _, files in os.walk(temp_marker_dir):
                     for file in files:
                         created_files.append(os.path.join(root, file))
                 self.log_operation("pdf_marker_files", f"Created {len(created_files)} files: {[os.path.basename(f) for f in created_files]}")
@@ -996,29 +997,157 @@ class UploadProcessor:
         except Exception as e:
             raise Exception(f"Text processing failed: {str(e)}")
 
+    def parse_files(self, file_path: str, file_metadata: Dict) -> Dict[str, Any]:
+        """
+        Parse various file types using marker_single CLI command.
+        Supports PPTX, DOCX, and other document formats.
+        Returns markdown content and extracted images.
+        """
+        try:
+            self.log_operation("parse_files_start", f"Starting marker_single processing of {file_path}")
+            start_time = time.time()
+
+            # Generate clean filename for output
+            original_filename = file_metadata.get('filename', 'document')
+            base_title = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
+            clean_title_name = clean_title(base_title)
+
+            # Create temporary output directory
+            temp_output_dir = tempfile.mkdtemp(suffix='_marker_single_output')
+            
+            try:
+                # Set up environment for marker_single command
+                env = os.environ.copy()
+                
+                # Add conda/pip bin directory to PATH if marker_single is installed there
+                import shutil
+                marker_path = shutil.which('marker_single')
+                if marker_path:
+                    marker_dir = os.path.dirname(marker_path)
+                    if marker_dir not in env.get('PATH', ''):
+                        env['PATH'] = f"{marker_dir}:{env.get('PATH', '')}"
+                
+                # Add library paths for macOS (for WeasyPrint dependencies)
+                if sys.platform == "darwin":
+                    # Add Homebrew library paths
+                    homebrew_lib = "/opt/homebrew/lib"
+                    if os.path.exists(homebrew_lib):
+                        env['DYLD_LIBRARY_PATH'] = f"{homebrew_lib}:{env.get('DYLD_LIBRARY_PATH', '')}"
+                
+                # Run marker_single command
+                cmd = [
+                    'marker_single',
+                    file_path,
+                    '--output_format', 'markdown',
+                    '--output_dir', temp_output_dir
+                ]
+                
+                self.log_operation("parse_files_command", f"Running: {' '.join(cmd)}")
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,  # 5 minute timeout
+                    env=env
+                )
+                
+                if result.returncode != 0:
+                    error_msg = f"marker_single failed with return code {result.returncode}"
+                    if result.stderr:
+                        error_msg += f": {result.stderr}"
+                    raise Exception(error_msg)
+
+                # Find generated markdown file
+                markdown_content = ""
+                generated_files = []
+                image_files = []
+                
+                for root, _, files in os.walk(temp_output_dir):
+                    for file in files:
+                        file_path_full = os.path.join(root, file)
+                        generated_files.append(file_path_full)
+                        
+                        if file.endswith('.md'):
+                            with open(file_path_full, 'r', encoding='utf-8') as f:
+                                markdown_content = f.read()
+                        elif file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg')):
+                            image_files.append(file_path_full)
+
+                if not markdown_content:
+                    # If no markdown file found, create basic content
+                    file_ext = file_metadata.get('file_extension', '').lower()
+                    markdown_content = f"# {clean_title_name}\n\nProcessed {file_ext} document using marker_single.\n"
+
+                # Get file metadata
+                processing_metadata = {
+                    'processing_method': 'marker_single',
+                    'file_type': file_metadata.get('file_extension', '').lower(),
+                    'generated_files_count': len(generated_files),
+                    'image_files_count': len(image_files),
+                    'has_images': len(image_files) > 0,
+                    'temp_output_dir': temp_output_dir
+                }
+
+                end_time = time.time()
+                duration = end_time - start_time
+                self.log_operation("parse_files_completed", 
+                    f"marker_single processing completed in {duration:.2f} seconds, generated {len(generated_files)} files")
+
+                # Clean up temp directory since we've already extracted the content
+                if temp_output_dir and os.path.exists(temp_output_dir):
+                    import shutil
+                    shutil.rmtree(temp_output_dir, ignore_errors=True)
+                
+                return {
+                    'content': markdown_content,
+                    'content_filename': f"{clean_title_name}.md",
+                    'metadata': processing_metadata,
+                    'features_available': ['text_extraction', 'image_extraction', 'document_parsing'],
+                    'processing_time': f'{duration:.2f}s',
+                    # Don't include marker_extraction_result to avoid duplicate processing
+                }
+
+            except subprocess.TimeoutExpired:
+                raise Exception("marker_single processing timed out after 5 minutes")
+            except FileNotFoundError:
+                raise Exception("marker_single command not found. Please ensure marker-pdf is installed.")
+            except Exception as e:
+                # Clean up temp directory on error
+                if temp_output_dir and os.path.exists(temp_output_dir):
+                    import shutil
+                    shutil.rmtree(temp_output_dir, ignore_errors=True)
+                raise Exception(f"marker_single processing failed: {str(e)}")
+
+        except Exception as e:
+            self.log_operation("parse_files_error", f"Parse files failed: {e}", "error")
+            raise Exception(f"File parsing failed: {str(e)}")
+
     def _process_presentation_immediate(
         self, file_path: str, file_metadata: Dict
     ) -> Dict[str, Any]:
-        """Process presentation files."""
+        """Process presentation files using marker_single."""
         try:
-            # For now, return placeholder - would need python-pptx for full implementation
-            ppt_metadata = {"file_type": "presentation", "supported_extraction": False}
+            # Use the new parse_files function for presentations
+            return self.parse_files(file_path, file_metadata)
 
-            content = f"Presentation file '{file_metadata['filename']}' uploaded successfully. Content extraction requires additional processing."
+        except Exception as e:
+            # Fallback to placeholder if marker_single fails
+            self.log_operation("presentation_marker_fallback", f"marker_single failed, using fallback: {e}", "warning")
+            
+            ppt_metadata = {"file_type": "presentation", "supported_extraction": False}
+            content = f"Presentation file '{file_metadata['filename']}' uploaded successfully. Content extraction requires marker_single installation."
 
             return {
                 "content": content,
                 "metadata": ppt_metadata,
                 "features_available": [
                     "slide_extraction",
-                    "text_extraction",
+                    "text_extraction", 
                     "image_extraction",
                 ],
                 "processing_time": "immediate",
             }
-
-        except Exception as e:
-            raise Exception(f"Presentation processing failed: {str(e)}")
 
     def _get_audio_metadata(self, file_path: str) -> Dict:
         """Extract audio metadata using ffprobe."""
@@ -1123,12 +1252,12 @@ class UploadProcessor:
                 image_files = []
                 markdown_content = None  # Store markdown content for figure name extraction
                 
-                for root, dirs, files in os.walk(temp_marker_dir):
+                for root, _, files in os.walk(temp_marker_dir):
                     for file in files:
                         source_file = os.path.join(root, file)
                         
-                        # Skip markdown_meta.json file generated by marker-pdf
-                        if file == 'markdown_meta.json':
+                        # Skip all JSON metadata files generated by marker-pdf
+                        if file.endswith('.json'):
                             continue
                         
                         # Read file content
@@ -1183,7 +1312,6 @@ class UploadProcessor:
                             
                             # Create KnowledgeBaseImage record first to get ID
                             from ..models import KnowledgeBaseImage
-                            import uuid
                             
                             # Process images without figure names
                             

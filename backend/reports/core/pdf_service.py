@@ -57,9 +57,6 @@ class PdfService:
             after_src = match.group(3)
             
             try:
-                logger.debug(f"Downloading image: {img_url}")
-                
-                # Download the image
                 response = requests.get(img_url, timeout=30)
                 response.raise_for_status()
                 
@@ -72,8 +69,6 @@ class PdfService:
                 
                 # Create data URL
                 data_url = f"data:{content_type};base64,{img_base64}"
-                
-                logger.info(f"Converted image to base64: {len(img_data):,} bytes")
                 
                 # Return the updated img tag
                 return f'<img{before_src}src="{data_url}"{after_src}>'
@@ -154,7 +149,7 @@ class PdfService:
             body {
                 font-family: 'Georgia', 'Times New Roman', serif;
                 line-height: 1.6;
-                color: #333;
+                color: black;
                 margin: 0;
                 padding: 20px;
                 padding-bottom: 60px; /* Space for page numbers */
@@ -206,7 +201,7 @@ class PdfService:
             }
             img {
                 max-width: 100%;
-                height: auto;
+                height: 500px;
                 display: block;
                 margin: 16px auto;
             }
@@ -226,11 +221,6 @@ class PdfService:
             
             # Save the PDF
             pdf.save(str(output_file))
-            
-            # Log success
-            output_size = output_file.stat().st_size
-            logger.info(f"Successfully converted to PDF: {output_file}")
-            logger.info(f"Output size: {output_size:,} bytes")
             
             return str(output_file)
             

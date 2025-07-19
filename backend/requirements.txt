@@ -67,3 +67,5 @@ django-storages
 boto3
 PyPDF2
 minio
+python-pptx
+weasyprint
