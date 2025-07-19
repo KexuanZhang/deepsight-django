@@ -30,9 +30,8 @@ try:
     from ..utils.helpers import ContentIndexingService, config as settings
     from ..utils.validators import FileValidator
     from ..utils.image_processing.utils import clean_title
-    # Import caption generation dependencies
+    # Import markdown caption extraction only (no AI generation)
     from reports.image_utils import extract_figure_data_from_markdown
-    from notebooks.utils.image_processing.caption_generator import generate_caption_for_image
 except ImportError:
     # Fallback classes to prevent import errors
     FileStorageService = None
@@ -41,7 +40,6 @@ except ImportError:
     settings = None
     clean_title = None
     extract_figure_data_from_markdown = None
-    generate_caption_for_image = None
 
 # Marker imports with lazy loading
 marker_imports = {}
@@ -1512,25 +1510,17 @@ class UploadProcessor:
             
             # Process each image
             updated_count = 0
-            ai_generated_count = 0
             
             for image in images_needing_captions:
                 try:
                     caption = None
                     caption_source = None
                     
-                    # Try to find caption from markdown first
+                    # Try to find caption from markdown only (no AI fallback)
                     if figure_data:
                         caption = self._find_caption_for_image_in_upload(image, figure_data, images_needing_captions)
                         if caption:
                             caption_source = "markdown"
-                    
-                    # Use AI generation as fallback if no caption found from markdown
-                    if not caption and generate_caption_for_image:
-                        caption = self._generate_ai_caption_for_upload(image)
-                        if caption and not caption.startswith("Caption generation failed"):
-                            caption_source = "AI"
-                            ai_generated_count += 1
                     
                     # Update the image with the caption
                     if caption:
@@ -1549,7 +1539,7 @@ class UploadProcessor:
                         
             # Log summary
             self.log_operation("caption_population_summary", 
-                f"Updated {updated_count} images with captions ({ai_generated_count} AI-generated)")
+                f"Updated {updated_count} images with markdown captions (no AI generation during upload)")
                 
         except Exception as e:
             self.log_operation("caption_population_error", 
@@ -1627,78 +1617,6 @@ class UploadProcessor:
                 f"Error finding caption for image {image.id}: {e}", "error")
             return None
     
-    def _generate_ai_caption_for_upload(self, image, api_key=None):
-        """Generate AI caption for an image using OpenAI vision model."""
-        try:
-            # Download image from MinIO to a temporary file
-            temp_image_path = self._download_image_to_temp_for_caption(image)
-            
-            if not temp_image_path:
-                self.log_operation("ai_caption_download_error", 
-                    f"Could not download image {image.id} from MinIO for AI captioning", "error")
-                return None
-            
-            try:
-                # Generate caption using AI
-                caption = generate_caption_for_image(temp_image_path, api_key=api_key)
-                return caption
-            
-            finally:
-                # Clean up temporary file
-                if os.path.exists(temp_image_path):
-                    os.unlink(temp_image_path)
-            
-        except Exception as e:
-            self.log_operation("ai_caption_generation_error", 
-                f"Error generating AI caption for image {image.id}: {e}", "error")
-            return None
-    
-    def _download_image_to_temp_for_caption(self, image):
-        """Download image from MinIO to a temporary file for caption generation."""
-        try:
-            # Get image content from MinIO
-            image_content = image.get_image_content()
-            
-            if not image_content:
-                return None
-            
-            # Determine file extension from content type or object key
-            file_extension = '.png'  # default
-            if image.content_type:
-                if 'jpeg' in image.content_type or 'jpg' in image.content_type:
-                    file_extension = '.jpg'
-                elif 'png' in image.content_type:
-                    file_extension = '.png'
-                elif 'gif' in image.content_type:
-                    file_extension = '.gif'
-                elif 'webp' in image.content_type:
-                    file_extension = '.webp'
-            elif image.minio_object_key:
-                # Try to get extension from object key
-                object_key_lower = image.minio_object_key.lower()
-                if object_key_lower.endswith('.jpg') or object_key_lower.endswith('.jpeg'):
-                    file_extension = '.jpg'
-                elif object_key_lower.endswith('.png'):
-                    file_extension = '.png'
-                elif object_key_lower.endswith('.gif'):
-                    file_extension = '.gif'
-                elif object_key_lower.endswith('.webp'):
-                    file_extension = '.webp'
-            
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(
-                suffix=file_extension, 
-                delete=False
-            ) as temp_file:
-                temp_file.write(image_content)
-                temp_file_path = temp_file.name
-            
-            return temp_file_path
-            
-        except Exception as e:
-            self.log_operation("download_image_temp_error", 
-                f"Error downloading image {image.id} to temp file: {e}", "error")
-            return None
 
 
 # Global singleton instance

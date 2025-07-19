@@ -257,8 +257,18 @@ class JobService:
                         report_images = list(ReportImage.objects.filter(report=report))
                         
                         if report_images:
+                            # Generate AI captions for images with empty captions
+                            try:
+                                from .ai_caption_service import ReportAICaptionService
+                                ai_caption_service = ReportAICaptionService()
+                                enhanced_count = ai_caption_service.enhance_report_image_captions(report)
+                                if enhanced_count > 0:
+                                    logger.info(f"Generated AI captions for {enhanced_count} images in report {report.id}")
+                            except Exception as e:
+                                logger.error(f"Error generating AI captions for report {report.id}: {e}")
+                            
                             # Update content with proper image tags using existing ReportImage records
-                            content = image_service.insert_figure_images(content, report_images, report.id)
+                            content = image_service._insert_figure_images(content, report_images, report.id)
                             logger.info(f"Updated content with {len(report_images)} existing images for report {report.id}")
                         else:
                             logger.info(f"No existing ReportImage records found for report {report.id}")
