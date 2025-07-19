@@ -341,8 +341,6 @@ class FileStorageService:
         
         # Initialize MinIO backend lazily
         self._minio_backend = None
-        
-        self.logger.info("File storage service initialized")
     
     @property
     def minio_backend(self):

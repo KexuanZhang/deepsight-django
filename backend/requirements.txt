@@ -69,3 +69,4 @@ PyPDF2
 minio
 python-pptx
 weasyprint
+mammoth

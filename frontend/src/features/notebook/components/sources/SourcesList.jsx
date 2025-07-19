@@ -8,13 +8,14 @@ import apiService from "@/common/utils/api";
 import FilePreview from "@/features/notebook/components/shared/FilePreview";
 import { supportsPreview } from "@/features/notebook/utils/filePreview";
 import { config } from '@/config';
+import { VALIDATION_CONFIG } from "@/features/notebook/config/fileConfig";
 
 const fileIcons = {
   pdf: FileIcon,
   txt: FileText,
   md: FileText, 
-  ppt: Presentation,
   pptx: Presentation,
+  docx: FileText,
   mp3: Music,
   mp4: Video,
   wav: Music,
@@ -1034,7 +1035,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
   };
 
   const validateFile = (file) => {
-    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav", "m4a", "avi", "mov", "mkv", "webm", "wmv", "m4v"];
+    const allowedExtensions = VALIDATION_CONFIG.allowedExtensions;
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
     const maxSize = 100 * 1024 * 1024; // 100MB
     const minSize = 100; // 100 bytes minimum
@@ -1723,7 +1724,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
                     </div>
                   </div>
                   <p className="text-xs text-gray-500 mt-3">
-                    Supported file types: PDF, .txt, Markdown, PPT/PPTX, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
+                    Supported file types: PDF, .txt, Markdown, PPTX, DOCX, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
                   </p>
                 </div>
               )}
@@ -2090,7 +2091,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         type="file"
         onChange={handleFileChange}
         style={{ display: 'none' }}
-        accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav,.m4a,.avi,.mov,.mkv,.webm,.wmv,.m4v"
+        accept={VALIDATION_CONFIG.acceptString}
       />
 
       {/* File Preview Modal */}

@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { VALIDATION_CONFIG } from '@/features/notebook/config/fileConfig';
 
 /**
  * Custom hook for file upload and validation
@@ -7,31 +8,6 @@ import { useState, useCallback } from 'react';
 export const useFileUpload = () => {
   const [uploadProgress, setUploadProgress] = useState({});
   const [isDragOver, setIsDragOver] = useState(false);
-
-  // File validation configuration
-  const VALIDATION_CONFIG = {
-    allowedExtensions: ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav", "m4a", "avi", "mov", "mkv", "webm", "flv", "wmv", "3gp", "ogv", "m4v"],
-    maxSize: 100 * 1024 * 1024, // 100MB
-    minSize: 100, // 100 bytes
-    expectedMimeTypes: {
-      "pdf": "application/pdf",
-      "txt": "text/plain",
-      "md": "text/markdown",
-      "mp3": "audio/mpeg",
-      "mp4": "video/mp4",
-      "wav": "audio/wav",
-      "m4a": "audio/mp4",
-      "avi": "video/x-msvideo",
-      "mov": "video/quicktime",
-      "mkv": "video/x-matroska",
-      "webm": "video/webm",
-      "flv": "video/x-flv",
-      "wmv": "video/x-ms-wmv",
-      "3gp": "video/3gpp",
-      "ogv": "video/ogg",
-      "m4v": "video/x-m4v"
-    }
-  };
 
   // Validate file
   const validateFile = useCallback((file) => {

@@ -86,8 +86,6 @@ class UploadProcessor:
         # Track upload statuses in memory (in production, use Redis or database)
         self._upload_statuses = {}
 
-        self.logger.info("MinIO-based upload processor service initialized")
-
     def log_operation(self, operation: str, details: str = "", level: str = "info"):
         """Log service operations with consistent formatting."""
         message = f"[{self.service_name}] {operation}"

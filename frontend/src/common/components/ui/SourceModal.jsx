@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import { Button } from "@/common/components/ui/button";
 import { UploadCloud } from "lucide-react";
+import { VALIDATION_CONFIG } from "@/features/notebook/config/fileConfig";
 
 const SourceModal = ({ onClose, onAddSources }) => {
   const [files, setFiles] = useState([]);
@@ -73,7 +74,7 @@ const SourceModal = ({ onClose, onAddSources }) => {
           <p className="text-sm font-medium text-gray-700">Upload Source</p>
           <p className="text-xs text-gray-500 mb-2">Drag and drop or click to select files</p>
           <p className="text-xs text-red-600 font-semibold">
-            Supported file types: PDF, .txt, Markdown, audio (e.g., mp3)
+            Supported file types: PDF, .txt, Markdown, PPTX, DOCX, Audio, Video
           </p>
           <p className="text-xs text-gray-500 mt-2">
             {files.length} file{files.length !== 1 ? "s" : ""} selected
@@ -82,7 +83,7 @@ const SourceModal = ({ onClose, onAddSources }) => {
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".pdf,.txt,.md,.ppt,.mp3,.mp4"
+            accept={VALIDATION_CONFIG.acceptString}
             onChange={handleFileSelect}
             className="hidden"
           />
