@@ -81,6 +81,12 @@ class FigureDataService:
                 logger.info("No figure data found in database for selected files")
                 return None
             
+            # Generate AI captions for empty captions before passing to report agent
+            if report.include_image:
+                combined_figure_data = FigureDataService._enhance_figure_data_with_ai_captions(
+                    combined_figure_data, report.user.pk
+                )
+            
             # Store the figure data directly in the report instance for immediate use
             # This avoids the need to create temporary files
             report._cached_figure_data = combined_figure_data
@@ -195,6 +201,177 @@ class FigureDataService:
         except Exception as e:
             logger.error(f"Error getting figure data for kb_item {file_id}: {e}")
             return []
+    
+    @staticmethod
+    def get_cached_figure_data(user_id: int, cache_key: str) -> Optional[Dict]:
+        """
+        Get cached figure data using user_id and cache_key.
+        This retrieves figure data from the database for prepare_report_images.
+        
+        Args:
+            user_id: User ID
+            cache_key: Cache key (direct_{report_id} or notebook_id)
+            
+        Returns:
+            Dict with figures list or None if not found
+        """
+        try:
+            logger.info(f"get_cached_figure_data called with user_id={user_id}, cache_key={cache_key}")
+            
+            # Extract relevant information from cache_key
+            if cache_key.startswith("direct_"):
+                # This is for direct report processing - try to get from report configuration
+                report_id = cache_key.replace("direct_", "")
+                try:
+                    from reports.models import Report
+                    report = Report.objects.get(id=report_id)
+                    if hasattr(report, '_cached_figure_data'):
+                        figures = report._cached_figure_data
+                        logger.info(f"Found {len(figures)} cached figures for report {report_id}")
+                        return {"figures": figures}
+                except Exception:
+                    pass
+            
+            # For notebook-based cache keys or if direct lookup failed
+            # This is a fallback - the prepare step is optional anyway
+            logger.info(f"No cached figure data found for cache_key={cache_key}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error in get_cached_figure_data: {e}")
+            return None
+    
+    @staticmethod
+    def _enhance_figure_data_with_ai_captions(figure_data: List[Dict], user_id: int) -> List[Dict]:
+        """
+        Enhance figure data by generating AI captions for images with empty captions.
+        This ensures the report agent sees filled captions instead of empty ones.
+        
+        Args:
+            figure_data: List of figure data dictionaries
+            user_id: User ID for accessing images
+            
+        Returns:
+            Enhanced figure data with AI-generated captions
+        """
+        try:
+            enhanced_figure_data = []
+            enhanced_count = 0
+            
+            for figure in figure_data:
+                figure_id = figure.get('figure_id')
+                caption = figure.get('caption', '')
+                
+                # If caption is empty, generate AI caption
+                if not caption.strip() and figure_id:
+                    try:
+                        # Get the KnowledgeBaseImage to access the actual image
+                        from notebooks.models import KnowledgeBaseImage
+                        kb_image = KnowledgeBaseImage.objects.filter(
+                            figure_id=figure_id,
+                            knowledge_base_item__user_id=user_id
+                        ).first()
+                        
+                        if kb_image:
+                            # Generate AI caption using the same service
+                            from notebooks.utils.image_processing.caption_generator import generate_caption_for_image
+                            
+                            # Download image temporarily for AI processing
+                            temp_image_path = FigureDataService._download_kb_image_to_temp(kb_image)
+                            
+                            if temp_image_path:
+                                try:
+                                    ai_caption = generate_caption_for_image(temp_image_path)
+                                    
+                                    if ai_caption and not ai_caption.startswith("Caption generation failed"):
+                                        # Update both the figure data and the database
+                                        figure['caption'] = ai_caption
+                                        kb_image.image_caption = ai_caption
+                                        kb_image.save(update_fields=['image_caption', 'updated_at'])
+                                        enhanced_count += 1
+                                        
+                                        logger.info(f"Generated AI caption for figure {figure_id}: {ai_caption[:50]}...")
+                                    else:
+                                        logger.warning(f"Failed to generate AI caption for figure {figure_id}")
+                                
+                                finally:
+                                    # Clean up temp file
+                                    import os
+                                    if os.path.exists(temp_image_path):
+                                        os.unlink(temp_image_path)
+                        
+                    except Exception as e:
+                        logger.error(f"Error generating AI caption for figure {figure_id}: {e}")
+                
+                enhanced_figure_data.append(figure)
+            
+            if enhanced_count > 0:
+                logger.info(f"Enhanced {enhanced_count} figures with AI-generated captions")
+            
+            return enhanced_figure_data
+            
+        except Exception as e:
+            logger.error(f"Error enhancing figure data with AI captions: {e}")
+            return figure_data  # Return original data if enhancement fails
+    
+    @staticmethod
+    def _download_kb_image_to_temp(kb_image) -> Optional[str]:
+        """
+        Download KnowledgeBaseImage from MinIO to a temporary file for AI processing.
+        
+        Args:
+            kb_image: KnowledgeBaseImage instance
+            
+        Returns:
+            str: Path to temporary file or None if failed
+        """
+        try:
+            import tempfile
+            import os
+            
+            # Get image content from MinIO
+            image_content = kb_image.get_image_content()
+            
+            if not image_content:
+                return None
+            
+            # Determine file extension from content type or object key
+            file_extension = '.png'  # default
+            if kb_image.content_type:
+                if 'jpeg' in kb_image.content_type or 'jpg' in kb_image.content_type:
+                    file_extension = '.jpg'
+                elif 'png' in kb_image.content_type:
+                    file_extension = '.png'
+                elif 'gif' in kb_image.content_type:
+                    file_extension = '.gif'
+                elif 'webp' in kb_image.content_type:
+                    file_extension = '.webp'
+            elif kb_image.minio_object_key:
+                # Try to get extension from object key
+                object_key_lower = kb_image.minio_object_key.lower()
+                if object_key_lower.endswith('.jpg') or object_key_lower.endswith('.jpeg'):
+                    file_extension = '.jpg'
+                elif object_key_lower.endswith('.png'):
+                    file_extension = '.png'
+                elif object_key_lower.endswith('.gif'):
+                    file_extension = '.gif'
+                elif object_key_lower.endswith('.webp'):
+                    file_extension = '.webp'
+            
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(
+                suffix=file_extension, 
+                delete=False,
+                prefix=f"kb_image_{kb_image.id}_"
+            ) as temp_file:
+                temp_file.write(image_content)
+                temp_file_path = temp_file.name
+            
+            return temp_file_path
+            
+        except Exception as e:
+            logger.error(f"Error downloading KB image {kb_image.id} to temp file: {e}")
+            return None
     
     @staticmethod
     def migrate_existing_figure_data_to_database(user_id: int, file_id: str) -> bool:
