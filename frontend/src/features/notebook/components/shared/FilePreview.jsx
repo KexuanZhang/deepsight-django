@@ -243,12 +243,12 @@ const FilePreview = ({ source, isOpen, onClose, notebookId, useMinIOUrls = false
       
       // Check if we should use MinIO URLs for text content (but NOT for PDFs)
       if (useMinIOUrls && source.metadata?.file_extension && 
-          ['.md', '.txt'].includes(source.metadata.file_extension.toLowerCase())) {
+          ['.md', '.txt', '.ppt', '.pptx', '.doc', '.docx'].includes(source.metadata.file_extension.toLowerCase())) {
         console.log('FilePreview: Using MinIO URLs for text preview generation');
         previewData = await generateTextPreviewWithMinIOUrls(source.file_id, source.metadata, source);
       } else {
         console.log('FilePreview: Using regular preview generation');
-        // Pass useMinIOUrls flag to generatePreview so PDFs can use MinIO URLs properly
+        // Pass useMinIOUrls flag to generatePreview so PDFs and other files can use MinIO URLs properly
         previewData = await generatePreview(source, notebookId, useMinIOUrls);
       }
       

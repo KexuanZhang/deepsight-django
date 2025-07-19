@@ -129,7 +129,7 @@ export async function generatePreview(source, notebookId = null, useMinIOUrls = 
     
     switch (previewType) {
       case PREVIEW_TYPES.TEXT_CONTENT:
-        return await generateTextPreview(file_id, metadata, source);
+        return await generateTextPreview(file_id, metadata, source, useMinIOUrls);
       
       case PREVIEW_TYPES.PDF_VIEWER:
         return await generatePdfPreview(file_id, metadata, notebookId, source, useMinIOUrls);
@@ -161,13 +161,32 @@ export async function generatePreview(source, notebookId = null, useMinIOUrls = 
 /**
  * Generate text content preview
  */
-async function generateTextPreview(fileId, metadata, source = null) {
+async function generateTextPreview(fileId, metadata, source = null, useMinIOUrls = false) {
   try {
     let content = '';
     
     // Check if text content is stored directly in the source (for pasted text)
     if (source && source.textContent) {
       content = source.textContent;
+    } else if (useMinIOUrls) {
+      // Use MinIO content endpoint if available (for files with images like PPTX)
+      try {
+        const response = await apiService.getFileContentWithMinIOUrls(fileId);
+        if (response.success && response.data.content) {
+          content = response.data.content;
+          console.log('Text content: Using MinIO URLs for content with images');
+        } else {
+          throw new Error('MinIO content not available');
+        }
+      } catch (minioError) {
+        console.log('MinIO content not available, trying regular endpoint:', minioError);
+        // Fall back to regular endpoint
+        const response = await apiService.getParsedFile(fileId);
+        if (!response.success) {
+          throw new Error('Failed to fetch file content');
+        }
+        content = response.data.content || '';
+      }
     } else {
       // Fetch from API for regular files
       const response = await apiService.getParsedFile(fileId);
@@ -186,7 +205,8 @@ async function generateTextPreview(fileId, metadata, source = null) {
       lines: content.split('\n').length,
       fileSize: formatFileSize(metadata.file_size),
       format: (metadata.file_extension || '').toUpperCase().replace('.', ''),
-      uploadedAt: metadata.upload_timestamp
+      uploadedAt: metadata.upload_timestamp,
+      usesMinIOUrls: useMinIOUrls
     };
   } catch (error) {
     throw new Error(`Failed to load text preview: ${error.message}`);
