@@ -1,6 +1,6 @@
 """
-Management command to populate missing content in KnowledgeBaseItem records.
-This fixes items that have MinIO files but no content in the database.
+One-time repair command to fix missing content in KnowledgeBaseItem records.
+This repairs items that have MinIO files but no content in the database.
 """
 
 from django.core.management.base import BaseCommand
@@ -10,7 +10,7 @@ from notebooks.utils.storage import get_minio_backend
 
 
 class Command(BaseCommand):
-    help = "Populate missing content in KnowledgeBaseItem records from MinIO files"
+    help = "One-time repair: fix missing content in KnowledgeBaseItem records from MinIO files"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -29,7 +29,7 @@ class Command(BaseCommand):
         dry_run = options['dry_run']
         limit = options['limit']
         
-        self.stdout.write("Starting content population process...")
+        self.stdout.write("Starting one-time content repair process...")
         
         # Find KB items that have MinIO files but no database content
         all_with_files = KnowledgeBaseItem.objects.filter(
@@ -98,7 +98,7 @@ class Command(BaseCommand):
                     )
 
         self.stdout.write("")
-        self.stdout.write(self.style.SUCCESS(f"Content population completed!"))
+        self.stdout.write(self.style.SUCCESS(f"Content repair completed!"))
         self.stdout.write(f"Updated: {updated_count} items")
         if error_count > 0:
             self.stdout.write(self.style.WARNING(f"Errors: {error_count} items")) 
