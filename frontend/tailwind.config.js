@@ -2,10 +2,10 @@
 module.exports = {
 	darkMode: ['class'],
 	content: [
-		'./pages/**/*.{js,jsx}',
-		'./components/**/*.{js,jsx}',
-		'./app/**/*.{js,jsx}',
-		'./src/**/*.{js,jsx}',
+		'./pages/**/*.{js,jsx,ts,tsx}',
+		'./components/**/*.{js,jsx,ts,tsx}',
+		'./app/**/*.{js,jsx,ts,tsx}',
+		'./src/**/*.{js,jsx,ts,tsx}',
 	],
 	theme: {
 		container: {
@@ -72,5 +72,50 @@ module.exports = {
 			},
 		},
 	},
-	plugins: [require('tailwindcss-animate'), require('@tailwindcss/typography'),],
+	plugins: [
+		require('tailwindcss-animate'), 
+		require('@tailwindcss/typography'),
+		function({ addUtilities }) {
+			addUtilities({
+				'.scrollbar-hide': {
+					/* IE and Edge */
+					'-ms-overflow-style': 'none',
+					/* Firefox */
+					'scrollbar-width': 'none',
+					/* Safari and Chrome */
+					'&::-webkit-scrollbar': {
+						display: 'none'
+					}
+				},
+				'.scrollbar-overlay': {
+					/* Create a thin, unobtrusive scrollbar */
+					'overflow-y': 'auto',
+					'overflow-x': 'hidden',
+					
+					/* Firefox */
+					'scrollbar-width': 'thin',
+					'scrollbar-color': 'rgba(156, 163, 175, 0.3) transparent',
+					
+					/* Webkit browsers */
+					'&::-webkit-scrollbar': {
+						width: '6px'
+					},
+					'&::-webkit-scrollbar-track': {
+						background: 'transparent'
+					},
+					'&::-webkit-scrollbar-thumb': {
+						background: 'rgba(156, 163, 175, 0.3)',
+						borderRadius: '2px',
+						transition: 'all 0.2s ease'
+					},
+					'&::-webkit-scrollbar-thumb:hover': {
+						background: 'rgba(107, 114, 128, 0.5)'
+					},
+					'&::-webkit-scrollbar-corner': {
+						background: 'transparent'
+					}
+				}
+			})
+		}
+	],
 };

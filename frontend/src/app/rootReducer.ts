@@ -1,10 +1,10 @@
 import { combineReducers } from '@reduxjs/toolkit';
-import authSlice from '../features/auth/authSlice';
-import dashboardSlice from '../features/dashboard/dashboardSlice';
-import conferenceSlice from '../features/conference/conferenceSlice';
-import notebookSlice from '../features/notebook/notebookSlice';
-import podcastSlice from '../features/podcast/podcastSlice';
-import reportSlice from '../features/report/reportSlice';
+import authSlice from '@/features/auth/authSlice';
+import dashboardSlice from '@/features/dashboard/dashboardSlice';
+import conferenceSlice from '@/features/conference/conferenceSlice';
+import notebookSlice from '@/features/notebook/notebookSlice';
+import podcastSlice from '@/features/podcast/podcastSlice';
+import reportSlice from '@/features/report/reportSlice';
 
 const rootReducer = combineReducers({
   auth: authSlice.reducer,
