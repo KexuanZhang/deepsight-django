@@ -2,12 +2,19 @@
 
 /**
  * Script to help identify and fix common TypeScript errors
- * Run with: node scripts/fix-typescript-errors.js
+ * Run with: tsx scripts/fix-typescript-errors.ts
  */
 
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+
+interface TypeScriptError {
+  code: string;
+  message: string;
+  file: string;
+  line: number;
+}
 
 console.log('🔍 Checking for TypeScript errors...\n');
 
@@ -20,18 +27,18 @@ try {
   
   console.log('✅ No TypeScript errors found!');
   
-} catch (error) {
-  const errorOutput = error.stdout || error.stderr || '';
+} catch (error: any) {
+  const errorOutput: string = error.stdout || error.stderr || '';
   
   if (errorOutput.includes('error TS7031')) {
     console.log('🚨 Found binding elements with implicit "any" type:\n');
     
-    const implicitAnyErrors = errorOutput
+    const implicitAnyErrors: string[] = errorOutput
       .split('\n')
-      .filter(line => line.includes('error TS7031'))
+      .filter((line: string) => line.includes('error TS7031'))
       .slice(0, 10); // Show first 10 errors
     
-    implicitAnyErrors.forEach(error => {
+    implicitAnyErrors.forEach((error: string) => {
       console.log(`   ${error}`);
     });
     
@@ -49,12 +56,12 @@ try {
   if (errorOutput.includes('error TS7006')) {
     console.log('🚨 Found parameters with implicit "any" type:\n');
     
-    const parameterErrors = errorOutput
+    const parameterErrors: string[] = errorOutput
       .split('\n')
-      .filter(line => line.includes('error TS7006'))
+      .filter((line: string) => line.includes('error TS7006'))
       .slice(0, 5); // Show first 5 errors
     
-    parameterErrors.forEach(error => {
+    parameterErrors.forEach((error: string) => {
       console.log(`   ${error}`);
     });
     
@@ -68,12 +75,12 @@ try {
   if (errorOutput.includes('error TS2339')) {
     console.log('🚨 Found property access errors:\n');
     
-    const propertyErrors = errorOutput
+    const propertyErrors: string[] = errorOutput
       .split('\n')
-      .filter(line => line.includes('error TS2339'))
+      .filter((line: string) => line.includes('error TS2339'))
       .slice(0, 5); // Show first 5 errors
     
-    propertyErrors.forEach(error => {
+    propertyErrors.forEach((error: string) => {
       console.log(`   ${error}`);
     });
     
