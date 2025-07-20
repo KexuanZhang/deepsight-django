@@ -8,8 +8,8 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from notebooks.models import KnowledgeBaseImage, KnowledgeBaseItem
 
-# Import the extract_figure_data function
-from agents.report_agent.utils.paper_processing import extract_figure_data
+# Import the extract_figure_data_from_markdown function
+from reports.image_utils import extract_figure_data_from_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class Command(BaseCommand):
         if not options['force']:
             query = query.filter(image_caption__in=['', None])
         
-        images_to_process = query.order_by('knowledge_base_item_id', 'figure_name')
+        images_to_process = query.order_by('knowledge_base_item_id', 'created_at')
         
         self.stdout.write(f"Found {images_to_process.count()} images to process")
         
@@ -96,12 +96,12 @@ class Command(BaseCommand):
                     else:
                         image.image_caption = caption
                         image.save(update_fields=['image_caption', 'updated_at'])
-                        self.stdout.write(f"Updated image {image.id} ({image.figure_name})")
+                        self.stdout.write(f"Updated image {image.id}")
                     
                     updated_count += 1
                 else:
                     self.stdout.write(
-                        self.style.WARNING(f"No caption found for image {image.id} ({image.figure_name})")
+                        self.style.WARNING(f"No caption found for image {image.id}")
                     )
                 
             except Exception as e:
@@ -157,8 +157,8 @@ class Command(BaseCommand):
                 temp_file_path = temp_file.name
             
             try:
-                # Extract figure data using the paper processing function
-                figure_data = extract_figure_data(temp_file_path)
+                # Extract figure data using the image_utils function
+                figure_data = extract_figure_data_from_markdown(temp_file_path)
                 return figure_data or []
             finally:
                 # Clean up temporary file
@@ -172,11 +172,7 @@ class Command(BaseCommand):
     def _find_caption_for_image(self, image, figure_data):
         """Find matching caption for an image from figure data."""
         try:
-            # Try to match by figure name first
-            if image.figure_name:
-                for figure in figure_data:
-                    if figure.get('figure_name') == image.figure_name:
-                        return figure.get('caption', '')
+            # Try to match by image name from object key first
             
             # Try to match by image name from object key
             if image.minio_object_key:
@@ -189,12 +185,19 @@ class Command(BaseCommand):
                         if figure_basename == image_basename:
                             return figure.get('caption', '')
             
-            # Try to match by figure_name/figure number  
-            if image.figure_name:
-                for figure in figure_data:
-                    figure_name = figure.get('figure_name', '')
-                    if image.figure_name in figure_name or figure_name in image.figure_name:
-                        return figure.get('caption', '')
+            # Fallback: match by index in the figure data list
+            # Use the creation order as an approximation
+            if figure_data:
+                images_in_kb = KnowledgeBaseImage.objects.filter(
+                    knowledge_base_item=image.knowledge_base_item
+                ).order_by('created_at')
+                
+                try:
+                    image_index = list(images_in_kb).index(image)
+                    if image_index < len(figure_data):
+                        return figure_data[image_index].get('caption', '')
+                except (ValueError, IndexError):
+                    pass
             
             return None
             

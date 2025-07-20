@@ -11,7 +11,7 @@ class InputProcessorInterface(ABC):
     """Interface for processing input data from knowledge base"""
     
     @abstractmethod
-    def process_selected_files(self, file_paths: List[str]) -> Dict[str, Any]:
+    def process_selected_files(self, file_paths: List[str], user_id: int) -> Dict[str, Any]:
         """Process selected files from knowledge base and extract content"""
         pass
     

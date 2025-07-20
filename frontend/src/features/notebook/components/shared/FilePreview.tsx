@@ -297,6 +297,11 @@ const FilePreview: React.FC<FilePreviewComponentProps> = ({ source, isOpen, onCl
   const getPreviewIcon = (type: string) => {
     switch (type) {
       case PREVIEW_TYPES.TEXT_CONTENT:
+        // Check if this is a presentation file
+        const fileExt = source?.metadata?.file_extension?.toLowerCase() || '';
+        if (['.ppt', '.pptx'].includes(fileExt)) {
+          return Presentation;
+        }
         return FileText;
       case PREVIEW_TYPES.URL_INFO:
         return Globe;
@@ -368,10 +373,16 @@ const FilePreview: React.FC<FilePreviewComponentProps> = ({ source, isOpen, onCl
     // Debug: show processed content and image URLs
     const processedContent = processMarkdownContent(state.preview.content, source.file_id || '', notebookId, useMinIOUrls);
     
+    // Determine the appropriate icon based on file extension
+    const fileExt = source?.metadata?.file_extension?.toLowerCase() || '';
+    const isPresentation = ['.ppt', '.pptx'].includes(fileExt);
+    const IconComponent = isPresentation ? Presentation : FileText;
+    const iconColor = isPresentation ? 'text-orange-500' : 'text-blue-500';
+    
     return (
       <div className="space-y-4">
         <div className="flex items-center space-x-2 mb-4">
-          <FileText className="h-5 w-5 text-blue-500" />
+          <IconComponent className={`h-5 w-5 ${iconColor}`} />
           <h3 className="font-medium text-gray-900">{state.preview.title}</h3>
         </div>
         

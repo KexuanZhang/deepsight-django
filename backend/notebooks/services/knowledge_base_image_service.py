@@ -91,12 +91,12 @@ class KnowledgeBaseImageService:
             self.logger.error(f"Error creating combined figure data: {e}")
             return []
     
-    def update_image_caption(self, image_id: int, caption: str, user_id: int = None) -> bool:
+    def update_image_caption(self, figure_id: str, caption: str, user_id: int = None) -> bool:
         """
         Update the caption for a specific image.
         
         Args:
-            image_id: KnowledgeBaseImage ID
+            figure_id: KnowledgeBaseImage figure_id
             caption: New caption text
             user_id: User ID for security check
             
@@ -106,23 +106,23 @@ class KnowledgeBaseImageService:
         try:
             from ..models import KnowledgeBaseImage
             
-            image_query = KnowledgeBaseImage.objects.filter(id=image_id)
+            image_query = KnowledgeBaseImage.objects.filter(figure_id=figure_id)
             if user_id:
                 image_query = image_query.filter(knowledge_base_item__user=user_id)
             
             image = image_query.first()
             if not image:
-                self.logger.warning(f"Image {image_id} not found or access denied")
+                self.logger.warning(f"Image {figure_id} not found or access denied")
                 return False
             
             image.image_caption = caption
             image.save(update_fields=['image_caption', 'updated_at'])
             
-            self.logger.info(f"Updated caption for image {image_id}")
+            self.logger.info(f"Updated caption for image {figure_id}")
             return True
             
         except Exception as e:
-            self.logger.error(f"Error updating caption for image {image_id}: {e}")
+            self.logger.error(f"Error updating caption for image {figure_id}: {e}")
             return False
     
     def update_images_from_figure_data(self, kb_item_id: int, figure_data: List[Dict[str, Any]], user_id: int = None) -> bool:
@@ -155,9 +155,8 @@ class KnowledgeBaseImageService:
             
             with transaction.atomic():
                 for figure in figure_data:
-                    # Try to match by image file name or figure name
+                    # Try to match by image file name
                     image_file = figure.get('image_file', '')
-                    figure_name = figure.get('figure_name', '')
                     caption = figure.get('caption', '')
                     
                     if not image_file and 'image_path' in figure:
@@ -172,17 +171,9 @@ class KnowledgeBaseImageService:
                             minio_object_key__icontains=image_file
                         ).first()
                     
-                    if not matching_image and figure_name:
-                        matching_image = KnowledgeBaseImage.objects.filter(
-                            knowledge_base_item=kb_item,
-                            figure_name=figure_name
-                        ).first()
-                    
                     if matching_image:
                         # Update existing image
                         matching_image.image_caption = caption
-                        if figure_name and not matching_image.figure_name:
-                            matching_image.figure_name = figure_name
                         
                         # Update metadata
                         matching_image.image_metadata.update({
@@ -240,12 +231,12 @@ class KnowledgeBaseImageService:
             self.logger.error(f"Error migrating figure_data.json to database: {e}")
             return False
     
-    def delete_image(self, image_id: int, user_id: int = None, delete_from_minio: bool = True) -> bool:
+    def delete_image(self, figure_id: str, user_id: int = None, delete_from_minio: bool = True) -> bool:
         """
         Delete an image record and optionally its file from MinIO.
         
         Args:
-            image_id: KnowledgeBaseImage ID
+            figure_id: KnowledgeBaseImage figure_id
             user_id: User ID for security check
             delete_from_minio: Whether to also delete the file from MinIO
             
@@ -255,13 +246,13 @@ class KnowledgeBaseImageService:
         try:
             from ..models import KnowledgeBaseImage
             
-            image_query = KnowledgeBaseImage.objects.filter(id=image_id)
+            image_query = KnowledgeBaseImage.objects.filter(figure_id=figure_id)
             if user_id:
                 image_query = image_query.filter(knowledge_base_item__user=user_id)
             
             image = image_query.first()
             if not image:
-                self.logger.warning(f"Image {image_id} not found or access denied")
+                self.logger.warning(f"Image {figure_id} not found or access denied")
                 return False
             
             object_key = image.minio_object_key
@@ -277,20 +268,20 @@ class KnowledgeBaseImageService:
                 except Exception as e:
                     self.logger.warning(f"Failed to delete image file from MinIO {object_key}: {e}")
             
-            self.logger.info(f"Deleted image record {image_id}")
+            self.logger.info(f"Deleted image record {figure_id}")
             return True
             
         except Exception as e:
-            self.logger.error(f"Error deleting image {image_id}: {e}")
+            self.logger.error(f"Error deleting image {figure_id}: {e}")
             return False
     
     
-    def get_image_url(self, image_id: int, user_id: int = None, expires: int = 3600) -> Optional[str]:
+    def get_image_url(self, figure_id: str, user_id: int = None, expires: int = 3600) -> Optional[str]:
         """
         Get pre-signed URL for image access.
         
         Args:
-            image_id: KnowledgeBaseImage ID
+            figure_id: KnowledgeBaseImage figure_id
             user_id: User ID for security check
             expires: URL expiration time in seconds
             
@@ -300,7 +291,7 @@ class KnowledgeBaseImageService:
         try:
             from ..models import KnowledgeBaseImage
             
-            image_query = KnowledgeBaseImage.objects.filter(id=image_id)
+            image_query = KnowledgeBaseImage.objects.filter(figure_id=figure_id)
             if user_id:
                 image_query = image_query.filter(knowledge_base_item__user=user_id)
             
@@ -311,7 +302,7 @@ class KnowledgeBaseImageService:
             return image.get_image_url(expires)
             
         except Exception as e:
-            self.logger.error(f"Error getting image URL for {image_id}: {e}")
+            self.logger.error(f"Error getting image URL for {figure_id}: {e}")
             return None
     
     def get_stats_for_knowledge_base_item(self, kb_item_id: int, user_id: int = None) -> Dict[str, Any]:
@@ -366,7 +357,7 @@ class KnowledgeBaseImageService:
         """
         try:
             from ..models import KnowledgeBaseItem, KnowledgeBaseImage
-            from agents.report_agent.utils.paper_processing import extract_figure_data
+            from reports.image_utils import extract_figure_data_from_markdown
             
             # Validate access to knowledge base item
             kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
@@ -425,7 +416,7 @@ class KnowledgeBaseImageService:
         """Extract figure data from markdown content using a temporary file."""
         try:
             # Import here to avoid circular imports
-            from agents.report_agent.utils.paper_processing import extract_figure_data
+            from reports.image_utils import extract_figure_data_from_markdown
             
             # Create a temporary markdown file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as temp_file:
@@ -434,7 +425,7 @@ class KnowledgeBaseImageService:
             
             try:
                 # Extract figure data using the paper processing function
-                figure_data = extract_figure_data(temp_file_path)
+                figure_data = extract_figure_data_from_markdown(temp_file_path)
                 return figure_data or []
             finally:
                 # Clean up temporary file

@@ -84,7 +84,7 @@ const GallerySection: React.FC<GallerySectionProps> = ({ videoFileId, notebookId
           return { name: item, caption: '' };
         }
         
-        // New API returns objects with figure_name, image_caption, image_url, minio_object_key, etc.
+        // New API returns objects with image_caption, image_url, minio_object_key, etc.
         let filename = item.file_name || item.filename || item.name;
         
         // Try to extract filename from minio_object_key (best option)
@@ -92,13 +92,9 @@ const GallerySection: React.FC<GallerySectionProps> = ({ videoFileId, notebookId
           filename = item.minio_object_key.split('/').pop();
         }
         
-        // Fallback to image_path or figure_name
+        // Fallback to image_path
         if (!filename && item.image_path) {
           filename = item.image_path.split('/').pop();
-        }
-        if (!filename && item.figure_name) {
-          // assume jpg extension if not provided (video frames are usually jpg)
-          filename = `${item.figure_name}.jpg`;
         }
         
         return {

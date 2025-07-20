@@ -164,7 +164,6 @@ class KnowledgeBaseImageSerializer(serializers.ModelSerializer):
             "id",
             "knowledge_base_item",
             "image_caption",
-            "figure_name",
             "minio_object_key",
             "image_url",
             "content_type",
@@ -189,6 +188,19 @@ class KnowledgeBaseImageSerializer(serializers.ModelSerializer):
     def get_figure_data_dict(self, obj):
         """Get figure_data.json compatible dictionary"""
         return obj.to_figure_data_dict()
+
+
+class KnowledgeBaseImageCreateUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for creating/updating knowledge base images."""
+    
+    class Meta:
+        model = KnowledgeBaseImage
+        fields = [
+            "knowledge_base_item",
+            "image_caption",
+        ]
+    
+    # validate_figure_name method removed as field no longer exists
 
 
 class KnowledgeItemSerializer(serializers.ModelSerializer):

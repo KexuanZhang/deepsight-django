@@ -498,6 +498,7 @@ class KnowledgeBaseImage(models.Model):
     """
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    figure_id = models.UUIDField(default=uuid.uuid4, editable=False, help_text="Unique figure identifier, different from primary key")
     knowledge_base_item = models.ForeignKey(
         KnowledgeBaseItem,
         on_delete=models.CASCADE,
@@ -506,11 +507,6 @@ class KnowledgeBaseImage(models.Model):
     )
     
     # Image identification and metadata
-    figure_name = models.CharField(
-        max_length=100,
-        default="Figure 1",
-        help_text="Figure name like 'Figure 1', 'Figure 2', extracted from PDF or auto-generated"
-    )
     image_caption = models.TextField(
         blank=True,
         help_text="Description or caption for the image"
@@ -544,19 +540,17 @@ class KnowledgeBaseImage(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        ordering = ["knowledge_base_item", "figure_name"]
+        ordering = ["knowledge_base_item", "created_at"]
         verbose_name = "Knowledge Base Image"
         verbose_name_plural = "Knowledge Base Images"
         indexes = [
-            models.Index(fields=["knowledge_base_item", "figure_name"]),
+            models.Index(fields=["knowledge_base_item", "created_at"]),
             models.Index(fields=["minio_object_key"]),
         ]
-        unique_together = [
-            ["knowledge_base_item", "figure_name"],  # Unique figure_name per knowledge base item
-        ]
+        unique_together = []
     
     def __str__(self):
-        return f"{self.figure_name} - {self.knowledge_base_item.title}"
+        return f"Image for {self.knowledge_base_item.title} - {self.id}"
     
     def get_image_url(self, expires=86400):
         """Get pre-signed URL for image access"""
@@ -586,7 +580,7 @@ class KnowledgeBaseImage(models.Model):
         This maintains compatibility with existing code that expects figure_data structure.
         """
         return {
-            'image_id': str(self.id),
+            'figure_id': str(self.figure_id),
             'caption': self.image_caption,
         }
     
@@ -596,13 +590,9 @@ class KnowledgeBaseImage(models.Model):
         Create KnowledgeBaseImage instance from figure_data.json dictionary format.
         This helps migrate from the old figure_data.json system.
         """
-        # Extract figure_name from figure_data_dict
-        figure_name = figure_data_dict.get('figure_name', 'Figure 1')
-        
         return cls.objects.create(
             knowledge_base_item=knowledge_base_item,
             image_caption=figure_data_dict.get('caption', ''),
-            figure_name=figure_name,
             minio_object_key=minio_object_key or '',
             content_type=figure_data_dict.get('content_type', ''),
             file_size=figure_data_dict.get('file_size', 0),

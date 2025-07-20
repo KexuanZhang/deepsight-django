@@ -310,6 +310,7 @@ class DeepReportGeneratorAdapter(ReportGeneratorInterface):
                 search_depth=config.get('search_depth', 'basic'),
                 old_outline_path=old_outline_path,
                 selected_files_paths=config.get('selected_files_paths', []),
+                user_id=config.get('user_id'),
                 csv_session_code=config.get('csv_session_code', ''),
                 csv_date_filter=config.get('csv_date_filter', ''),
             )

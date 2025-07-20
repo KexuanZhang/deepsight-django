@@ -78,7 +78,7 @@ export function getPreviewType(fileExtension: string, metadata: FileMetadata = {
   }
   
   if (FILE_CATEGORIES.PRESENTATION.includes(ext)) {
-    return PREVIEW_TYPES.METADATA;
+    return PREVIEW_TYPES.TEXT_CONTENT;
   }
   
   if (FILE_CATEGORIES.AUDIO.includes(ext)) {

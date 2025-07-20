@@ -531,7 +531,7 @@ class WriteSection(dspy.Signature):
     outline = dspy.InputField(prefix="Outline:\n", format=str)
     topic = dspy.InputField(prefix="The topic of the report:\n", format=str)
     figure_data = dspy.InputField(
-        prefix="Available figures (list of dictionaries with 'image_id', 'caption', or 'N/A' if no figures):\n",
+        prefix="Available figures (list of dictionaries with 'figure_id', 'caption', or 'N/A' if no figures):\n",
         format=str,
         optional=True,
     )
