@@ -9,7 +9,7 @@ import { supportsPreview } from "@/features/notebook/utils/filePreview";
 import { PANEL_HEADERS, COLORS } from "@/features/notebook/config/uiConfig";
 import { FileIcons } from "@/types";
 import { Source, FileMetadata, SourcesListProps, SourceItemProps } from "@/features/notebook/type";
-import { useFileUploadStatus, FileUploadStatus } from "@/features/notebook/hooks/generation/useFileUploadStatus";
+import { useFileUploadStatus } from "@/features/notebook/hooks/generation/useFileUploadStatus";
 import AddSourceModal from "./AddSourceModal";
 
 const fileIcons: FileIcons = {
@@ -72,44 +72,8 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
   // Group state
   const [isGrouped, setIsGrouped] = useState(false);
 
-  // File upload status tracking
-  const fileUploadStatus = useFileUploadStatus(
-    notebookId,
-    (statusUpdate: FileUploadStatus) => {
-      // Update the source status in real-time
-      setSources(prev => prev.map(source => {
-        if (source.upload_file_id === statusUpdate.uploadFileId) {
-          return {
-            ...source,
-            parsing_status: statusUpdate.status,
-            error_message: statusUpdate.error
-          };
-        }
-        return source;
-      }));
-    },
-    (fileId: string, uploadFileId: string) => {
-      // File processing completed - refresh the sources list
-      console.log(`File upload completed: ${uploadFileId} -> ${fileId}`);
-      loadParsedFiles();
-    },
-    (error: string, uploadFileId: string) => {
-      // File processing failed
-      console.error(`File upload failed for ${uploadFileId}:`, error);
-      setError(`Upload failed: ${error}`);
-      // Update the source with error status
-      setSources(prev => prev.map(source => {
-        if (source.upload_file_id === uploadFileId) {
-          return {
-            ...source,
-            parsing_status: 'failed',
-            error_message: error
-          };
-        }
-        return source;
-      }));
-    }
-  );
+  // Simple file upload status tracking (no SSE)
+  const fileUploadStatus = useFileUploadStatus();
 
   // Load parsed files on component mount (only once)
   useEffect(() => {
@@ -150,6 +114,9 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
         }));
         
         setSources(parsedSources);
+        
+        // Clear all upload tracking since we have fresh data from backend
+        fileUploadStatus.stopAllTracking();
       } else {
         throw new Error(response.error || "Failed to load files");
       }
@@ -513,13 +480,13 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
               id: uploadFileId,
               name: filename,
               title: filename,
-              authors: `${fileType.toUpperCase()} • Uploading...`,
+              authors: `${fileType.toUpperCase()} • Processing...`,
               ext: fileType,
               selected: false,
               type: "parsed" as const,
               createdAt: new Date().toISOString(),
               upload_file_id: uploadFileId,
-              parsing_status: 'uploading',
+              parsing_status: 'processing',
               metadata: {
                 filename: filename,
                 file_extension: `.${fileType}`
@@ -528,7 +495,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
             
             setSources(prev => [tempSource, ...prev]);
             
-            // Start tracking upload status
+            // Simple tracking (no SSE)
             fileUploadStatus.startTracking(uploadFileId);
           }}
           onKnowledgeBaseItemsDeleted={(deletedItemIds: string[]) => {

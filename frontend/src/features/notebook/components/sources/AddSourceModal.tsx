@@ -85,11 +85,14 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
         onUploadStarted(uploadFileId, file.name, validation.extension);
       }
       
+      // Close modal immediately after upload starts
+      handleClose();
+      
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
+        // Refresh sources list (modal is already closed)
         onSourcesAdded();
-        handleClose();
       } else {
         throw new Error(response.error || 'Upload failed');
       }
@@ -123,6 +126,9 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
         onUploadStarted(uploadFileId, displayName, 'url');
       }
       
+      // Close modal immediately after upload starts
+      handleClose();
+      
       let response;
       if (urlProcessingType === 'media') {
         response = await apiService.parseUrlWithMedia(linkUrl, notebookId, 'cosine', uploadFileId);
@@ -133,8 +139,8 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       }
       
       if (response.success) {
+        // Refresh sources list (modal is already closed)
         onSourcesAdded();
-        handleClose();
       } else {
         throw new Error(response.error || 'URL parsing failed');
       }
@@ -173,14 +179,17 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
         onUploadStarted(uploadFileId, filename, 'md');
       }
       
+      // Close modal immediately after upload starts
+      handleClose();
+      
       const blob = new Blob([pasteText], { type: 'text/markdown' });
       const file = new File([blob], filename, { type: 'text/markdown' });
       
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
+        // Refresh sources list (modal is already closed)
         onSourcesAdded();
-        handleClose();
       } else {
         throw new Error(response.error || 'Text upload failed');
       }
@@ -244,6 +253,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       const failedLinks = results.filter(result => !result.success);
 
       if (failedLinks.length === 0) {
+        // Refresh sources list and close modal immediately
         onSourcesAdded();
         handleClose();
       } else {

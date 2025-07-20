@@ -239,29 +239,12 @@ class ApiService {
     };
   }
 
+  // Legacy method - deprecated in favor of fetchEventSource in hooks
   // createParsingStatusStream(uploadFileId, notebookId, onMessage, onError, onClose) {
   //   const url = `${this.baseUrl}/${notebookId}/files/${uploadFileId}/status/stream`;
   //   const es  = new EventSource(url, { withCredentials: true });
   //   // …
   // }
-  createParsingStatusStream(notebookId: string, uploadFileId: string, onMessage: StreamCallback, onError: StreamErrorCallback, onClose: StreamCloseCallback): EventSource {
-    const url = `${this.baseUrl}/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
-    const eventSource = new EventSource(url);
-
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      onMessage(data);
-    };
-
-    eventSource.onerror = (err) => {
-      onError(err);
-      eventSource.close();
-      onClose();
-    };
-
-
-    return eventSource;
-  }
 
   async deleteFile(fileId: string, notebookId: string): Promise<any> {
     return this.request(`/notebooks/${notebookId}/files/${fileId}/`, {
@@ -342,26 +325,12 @@ class ApiService {
     return this.request(`/notebooks/${notebookId}/files/${uploadFileId}/status/`);
   }
 
-  createStatusStream(uploadFileId: string, notebookId: string, onMessage: StreamCallback, onError?: StreamErrorCallback, onClose?: StreamCloseCallback): EventSource {
-    const url = `${this.baseUrl}/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
-    const es = new EventSource(url, { withCredentials: true }); // include session
-
-    es.onmessage = e => {
-      try {
-        onMessage(JSON.parse(e.data));
-      } catch (err) {
-        console.error('SSE parse error', err);
-        onError?.(err);
-      }
-    };
-    es.onerror = err => {
-      console.error('SSE error', err);
-      onError?.(err);
-      es.close();
-      onClose?.();
-    };
-    return es;
-  }
+  // Legacy method - deprecated in favor of fetchEventSource in hooks
+  // createStatusStream(uploadFileId: string, notebookId: string, onMessage: StreamCallback, onError?: StreamErrorCallback, onClose?: StreamCloseCallback): EventSource {
+  //   const url = `${this.baseUrl}/notebooks/${notebookId}/files/${uploadFileId}/status/stream`;
+  //   const es = new EventSource(url, { withCredentials: true }); // include session
+  //   ...
+  // }
 
   // ─── URL PARSING ─────────────────────────────────────────────────────────
 

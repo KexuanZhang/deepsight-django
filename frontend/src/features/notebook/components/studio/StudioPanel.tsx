@@ -655,7 +655,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       </div>
 
       {/* ====== SINGLE RESPONSIBILITY: Main content area ====== */}
-      <div className="flex-1 overflow-auto p-6 space-y-6">
+      <div className="flex-1 overflow-auto p-6 space-y-6 scrollbar-overlay">
         {/* ====== LISKOV SUBSTITUTION PRINCIPLE (LSP) ====== */}
         {/* Both forms follow the same interface contract */}
         
