@@ -1,6 +1,6 @@
 import path from 'node:path';
 import react from '@vitejs/plugin-react';
-import { createLogger, defineConfig } from 'vite';
+import { createLogger, defineConfig, PluginOption } from 'vite';
 
 const configHorizonsViteErrorHandler = `
 const observer = new MutationObserver((mutations) => {
@@ -133,9 +133,9 @@ window.fetch = function(...args) {
 };
 `;
 
-const addTransformIndexHtml = {
+const addTransformIndexHtml: PluginOption = {
 	name: 'add-transform-index-html',
-	transformIndexHtml(html) {
+	transformIndexHtml(html: string) {
 		return {
 			html,
 			tags: [
@@ -170,16 +170,16 @@ const addTransformIndexHtml = {
 
 console.warn = () => {};
 
-const logger = createLogger()
-const loggerError = logger.error
+const logger = createLogger();
+const loggerError = logger.error;
 
-logger.error = (msg, options) => {
+logger.error = (msg: string, options?: { error?: Error }) => {
 	if (options?.error?.toString().includes('CssSyntaxError: [postcss]')) {
 		return;
 	}
 
 	loggerError(msg, options);
-}
+};
 
 export default defineConfig({
 	customLogger: logger,
