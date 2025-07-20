@@ -1,8 +1,7 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { Provider, useDispatch } from 'react-redux';
-import { store } from './store';
-import { checkCurrentUser } from '../features/auth/authSlice';
+import { Provider } from 'react-redux';
+import { store } from '@/app/store';
 import HomePage from '@/common/components/HomePage';
 import DatasetPage from '@/common/components/DatasetPage';
 import DeepdivePage from '@/features/notebook/DeepdivePage';
@@ -13,6 +12,7 @@ import NotebookListPage from '@/features/notebook/NotebookListPage';
 import ConferencePage from '@/features/conference/ConferencePage';
 import ReportPage from '@/features/report/ReportPage';
 import OrganizationPage from '@/common/components/OrganizationPage';
+import { Toaster } from '@/common/components/ui/toaster';
 
 function AppRoutes() {
   // Let individual pages handle their own authentication checks
@@ -38,6 +38,7 @@ function App() {
   return (
     <Provider store={store}>
       <AppRoutes />
+      <Toaster />
     </Provider>
   );
 }

@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { config } from '../../config';
+import { config } from '@/config';
 
 interface DashboardStats {
   notebooksCount: number;
