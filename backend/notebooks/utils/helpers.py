@@ -38,7 +38,7 @@ class NotebooksConfig:
         self.ALLOWED_FILE_TYPES = getattr(
             django_settings,
             "NOTEBOOKS_ALLOWED_FILE_TYPES",
-            [".txt", ".md", ".pdf", ".mp3", ".wav", ".m4a", ".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".3gp", ".ogv", ".m4v", ".ppt", ".pptx"],
+            [".txt", ".md", ".pdf", ".mp3", ".wav", ".m4a", ".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".3gp", ".ogv", ".m4v", ".pptx", ".docx"],
         )
 
         # Processing settings
@@ -334,8 +334,8 @@ def get_mime_type_from_extension(extension: str) -> str:
         '.mp4': 'video/mp4',
         '.avi': 'video/x-msvideo',
         '.mov': 'video/quicktime',
-        '.ppt': 'application/vnd.ms-powerpoint',
-        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     }
     return mime_types.get(extension.lower(), 'application/octet-stream')
 

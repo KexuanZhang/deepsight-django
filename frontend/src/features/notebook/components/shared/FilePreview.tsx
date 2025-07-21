@@ -274,16 +274,15 @@ const FilePreview: React.FC<FilePreviewComponentProps> = ({ source, isOpen, onCl
       let previewData;
       
       // Check if we should use MinIO URLs for text content (but NOT for PDFs)
-      if (useMinIOUrls && source.metadata?.file_extension && 
-          ['.md', '.txt'].includes(source.metadata.file_extension.toLowerCase()) &&
-          source.file_id && source.metadata) {
+      if (useMinIOUrls && source.metadata?.file_extension && source.file_id && source.metadata &&
+          ['.md', '.txt', '.ppt', '.pptx', '.doc', '.docx'].includes(source.metadata.file_extension.toLowerCase())) {
         console.log('FilePreview: Using MinIO URLs for text preview generation');
         const fileSource: FileSource = source as FileSource;
         previewData = await generateTextPreviewWithMinIOUrls(source.file_id, source.metadata, fileSource);
       } else {
         console.log('FilePreview: Using regular preview generation');
-        // Pass useMinIOUrls flag to generatePreview so PDFs can use MinIO URLs properly
-        previewData = await generatePreview(source as any, notebookId, useMinIOUrls);
+        // Pass useMinIOUrls flag to generatePreview so PDFs and other files can use MinIO URLs properly
+        previewData = await generatePreview(source as FileSource, notebookId, useMinIOUrls);
       }
       
       console.log('FilePreview: Preview data loaded:', previewData);
