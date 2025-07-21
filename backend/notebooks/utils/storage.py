@@ -341,8 +341,6 @@ class FileStorageService:
         
         # Initialize MinIO backend lazily
         self._minio_backend = None
-        
-        self.logger.info("File storage service initialized")
     
     @property
     def minio_backend(self):
@@ -425,15 +423,17 @@ class FileStorageService:
             # Generate object keys for MinIO storage using kb pattern with actual item ID
             base_key = f"{user_id}/kb/{knowledge_item.id}"
             
-            # Store main content
-            content_filename = processing_result.get('content_filename', 'extracted_content.md')
-            content_key = f"{base_key}/{content_filename}"
-            
-            content_bytes = content.encode('utf-8')
-            if not self.minio_backend.store_file(content_key, content_bytes, 'text/markdown'):
-                # If storage fails, clean up the database record
-                knowledge_item.delete()
-                raise Exception("Failed to store content file")
+            # Store main content only if not skipped (for marker processing that provides better content)
+            content_key = None
+            if not processing_result.get('skip_content_file', False):
+                content_filename = processing_result.get('content_filename', 'extracted_content.md')
+                content_key = f"{base_key}/{content_filename}"
+                
+                content_bytes = content.encode('utf-8')
+                if not self.minio_backend.store_file(content_key, content_bytes, 'text/markdown'):
+                    # If storage fails, clean up the database record
+                    knowledge_item.delete()
+                    raise Exception("Failed to store content file")
             
             # Store original file if provided
             original_file_key = None
