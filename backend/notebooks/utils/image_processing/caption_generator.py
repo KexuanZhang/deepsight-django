@@ -51,7 +51,7 @@ def generate_caption_for_image(
         data_url = to_data_url(image_path)
         
         chat = client.chat.completions.create(
-            model="gpt-4.1-nano",
+            model="gpt-4.1-mini",  # Using the latest vision model
             messages=[{
                 "role": "user",
                 "content": [

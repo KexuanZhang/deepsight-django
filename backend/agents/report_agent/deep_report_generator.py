@@ -279,6 +279,7 @@ class DeepReportGenerator:
         conversation_model_name = "gpt-4.1-mini"
         outline_gen_model_name = "gpt-4.1"
         generation_model_name = "gpt-4.1"
+        conceptualize_model_name = "gpt-4.1-nano"
 
         # Configure OpenAI language models
         conv_simulator_lm = OpenAIModel(
