@@ -369,7 +369,7 @@ class ReportImage(models.Model):
         """Get pre-signed URL for image access"""
         if self.report_figure_minio_object_key:
             try:
-                from notebooks.utils.minio_backend import get_minio_backend
+                from notebooks.utils.storage import get_minio_backend
                 backend = get_minio_backend()
                 return backend.get_presigned_url(self.report_figure_minio_object_key, expires)
             except Exception:
@@ -380,7 +380,7 @@ class ReportImage(models.Model):
         """Get image content as bytes from MinIO"""
         if self.report_figure_minio_object_key:
             try:
-                from notebooks.utils.minio_backend import get_minio_backend
+                from notebooks.utils.storage import get_minio_backend
                 backend = get_minio_backend()
                 return backend.get_file_content(self.report_figure_minio_object_key)
             except Exception:
