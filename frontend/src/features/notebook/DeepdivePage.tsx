@@ -26,6 +26,7 @@ export default function DeepdivePage() {
 
   // State for component props
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [sourcesRemovedTrigger, setSourcesRemovedTrigger] = useState(0);
   const sourcesListRef = useRef(null);
 
   // Handler functions
@@ -43,6 +44,11 @@ export default function DeepdivePage() {
 
   const handleCloseModal = (modalType: string) => {
     // Handle modal closing logic if needed
+  };
+
+  const handleSourcesRemoved = () => {
+    // Increment trigger to notify components that sources have been removed
+    setSourcesRemovedTrigger(prev => prev + 1);
   };
 
   // Prime CSRF on mount
@@ -108,6 +114,7 @@ export default function DeepdivePage() {
   return (
     <NotebookLayout
       notebookTitle={currentNotebook?.name}
+      sourcesRemovedTrigger={sourcesRemovedTrigger}
       sourcesPanel={
         <SourcesPanel 
           notebookId={notebookId}
@@ -116,6 +123,7 @@ export default function DeepdivePage() {
           isCollapsed={isCollapsed}
           onOpenModal={handleOpenModal}
           onCloseModal={handleCloseModal}
+          onSourcesRemoved={handleSourcesRemoved}
           ref={sourcesListRef}
         />
       }

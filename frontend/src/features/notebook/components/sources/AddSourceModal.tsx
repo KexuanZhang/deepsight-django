@@ -13,6 +13,7 @@ interface AddSourceModalProps {
   onSourcesAdded: () => void;
   onUploadStarted?: (uploadFileId: string, filename: string, fileType: string) => void;
   onKnowledgeBaseItemsDeleted?: (deletedItemIds: string[]) => void;
+  onSourcesRemoved?: number;
 }
 
 const AddSourceModal: React.FC<AddSourceModalProps> = ({
@@ -20,7 +21,8 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
   notebookId,
   onSourcesAdded,
   onUploadStarted,
-  onKnowledgeBaseItemsDeleted
+  onKnowledgeBaseItemsDeleted,
+  onSourcesRemoved
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
@@ -221,6 +223,14 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
     }
   };
 
+  // Listen for sources removal to refresh knowledge base
+  React.useEffect(() => {
+    if (onSourcesRemoved && onSourcesRemoved > 0 && activeTab === 'knowledge') {
+      // Refresh knowledge base when sources are removed
+      loadKnowledgeBase();
+    }
+  }, [onSourcesRemoved, activeTab]);
+
   // Handle knowledge item selection
   const handleKnowledgeItemSelect = (itemId: string) => {
     setSelectedKnowledgeItems(prev => {
@@ -402,10 +412,8 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
               e.preventDefault();
               e.stopPropagation();
               setActiveTab('knowledge');
-              // Load knowledge base only when switching to this tab
-              if (knowledgeBaseItems.length === 0 && !isLoadingKnowledgeBase) {
-                loadKnowledgeBase();
-              }
+              // Always reload knowledge base when switching to this tab to ensure fresh data
+              loadKnowledgeBase();
             }}
             className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
               activeTab === 'knowledge'

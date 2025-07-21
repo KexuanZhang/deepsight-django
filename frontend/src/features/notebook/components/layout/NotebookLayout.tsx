@@ -28,6 +28,7 @@ interface NotebookLayoutProps {
   chatPanel: ReactElement;
   studioPanel: ReactElement;
   onSourcesSelectionChange?: () => void;
+  sourcesRemovedTrigger?: number;
 }
 
 /**
@@ -39,7 +40,8 @@ const NotebookLayout: React.FC<NotebookLayoutProps> = ({
   sourcesPanel,
   chatPanel,
   studioPanel,
-  onSourcesSelectionChange 
+  onSourcesSelectionChange,
+  sourcesRemovedTrigger
 }) => {
   const [isSourcesCollapsed, setIsSourcesCollapsed] = useState(false);
   const [isStudioExpanded, setIsStudioExpanded] = useState(false);
@@ -95,7 +97,8 @@ const NotebookLayout: React.FC<NotebookLayoutProps> = ({
     sourcesListRef,
     onSelectionChange: registerSelectionCallback,
     onOpenModal: openModal,
-    onCloseModal: closeModal
+    onCloseModal: closeModal,
+    sourcesRemovedTrigger
   };
 
   return (
