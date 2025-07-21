@@ -1,72 +1,94 @@
-aiofiles>=23.2.1
-anthropic
-backoff
-diskcache
+# === Web Frameworks & API ===
 Django
 django-cors-headers
 djangorestframework
-drf_yasg
-dspy_ai==2.4.9
-duckduckgo_search
-easyocr
+drf_yasg                  # Swagger/OpenAPI docs for DRF
 fastapi
-ffmpeg-python
-PyMuPDF
-google-generativeai
-google_api_python_client
-httpx
-imagehash
-langchain_huggingface
-langchain_qdrant
-langchain_text_splitters
-langchain_milvus==0.1.6
-litellm==1.59.3
-markdown-pdf
+uvicorn                   # ASGI server for FastAPI
+whitenoise>=6.0           # Static file serving for Django
+gunicorn                  # Production WSGI server
+playwright
+
+# === Database, Caching, & Queues ===
+psycopg2-binary           # PostgreSQL client
+redis                     # Redis cache/queue backend
+rq                        # Redis Queue
+diskcache                 # File-based cache
+qdrant_client             # Vector database client
+celery                    # Distributed task queue
+django-celery-beat
+pymilvus==2.4.8           # Milvus vector database
+langchain_milvus==0.1.6   # LangChain Milvus integration
+
+# === Machine Learning, AI, & NLP ===
+anthropic                      # Anthropic Claude API
+crawl4ai                       # Web crawl for AI
+dspy_ai==2.4.9                 # DSPy LLM orchestration
+easyocr                        # OCR library
+faster-whisper                 # Fast Whisper ASR
+faiss-cpu                      # Vector search/indexing
+google-generativeai            # Google Gemini API
+google_api_python_client       # Google API client library
+langchain_community            # LangChain: community integrations
+langchain_huggingface          # LangChain: Huggingface integration
+langchain_qdrant               # LangChain: Qdrant integration
+langchain_text_splitters       # LangChain: text chunking
+langchain-openai               # LangChain: OpenAI integration
+litellm==1.59.3                # Unified LLM API
+marker-pdf==1.7.5              # PDF marker/highlighter
+open-clip-torch                # CLIP model
+openai                         # OpenAI API
+sentence_transformers          # Sentence-level embeddings
+torch                          # PyTorch ML framework
+transformers                   # Huggingface Transformers
+whisper                        # OpenAI Whisper ASR
+
+# === Data Processing & Utilities ===
 numpy>=2.0.0
-pymilvus==2.4.8
-open-clip-torch
-openai
 pandas
-Pillow
+PyMuPDF                        # PDF manipulation
+PyPDF2                         # Alternative PDF library
 protobuf
-pydantic
-pydantic_settings
-pytesseract
-python-dotenv
-python-magic
-pytz
-qdrant_client
-rank_bm25
-redis
-regex
-Requests
-rq
-scikit_learn
-sentence_transformers
 tabulate
-tavily-python
-toml
-torch
 tqdm
-trafilatura
-transformers
 ujson
-uvicorn
-whisper
-faster-whisper
-wikipedia==1.4.0
-yt_dlp
-celery
-langchain_community
-langchain-openai
-faiss-cpu
-crawl4ai
+Requests
+httpx
+backoff
+rank_bm25                      # BM25 text ranking
+regex
 toml
-marker-pdf==1.7.5
-django-storages
-boto3
-PyPDF2
-minio
-python-pptx
-weasyprint
-mammoth
+pytz
+scikit_learn
+
+# === Image, Audio & Video Processing ===
+ffmpeg-python                  # FFmpeg bindings for Python
+yt_dlp                         # YouTube/video downloader
+imagehash                      # Image similarity
+Pillow                         # Imaging library
+pytesseract                    # OCR (Google Tesseract wrapper)
+
+# === Document Processing ===
+python-pptx                    # PowerPoint processing
+weasyprint                     # HTML to PDF conversion
+mammoth                        # DOCX to HTML conversion
+markdown-pdf                   # Markdown to PDF conversion
+
+# === File Storage ===
+django-storages                # Django storage backends
+boto3                          # AWS SDK
+minio                          # MinIO client
+
+# === Configuration & Environment ===
+python-dotenv                  # .env config loader
+pydantic                       # Data validation
+pydantic_settings              # Settings management
+python-magic                   # File type detection
+libmagic                       # System dependency for python-magic
+aiofiles>=23.2.1               # Async file I/O
+
+# === Search, Web, NLP & Miscellaneous ===
+duckduckgo_search
+trafilatura                    # Web extraction
+wikipedia==1.4.0
+tavily-python                  # Tavily API

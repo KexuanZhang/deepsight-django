@@ -10,33 +10,32 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-from pathlib import Path
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# load_dotenv()  # loads .env from project root
+# ============================================================================
+# BASE CONFIGURATION
+# ============================================================================
 
-
-# # Build paths inside the project like this: BASE_DIR / 'subdir'.
-# BASE_DIR = Path(__file__).resolve().parent.parent
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+# ============================================================================
+# SECURITY & DEBUG SETTINGS
+# ============================================================================
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv(
-    "SECRET_KEY", "django-insecure-b3_n&4f$_bldflhyvw3%5@afxen*grlmhuk^*oan#*swy0znk+"
+    "SECRET_KEY", 
+    "django-insecure-b3_n&4f$_bldflhyvw3%5@afxen*grlmhuk^*oan#*swy0znk+"
 )
 
-# SECURITY WARNING: don't run with debug turned on in production!
-# DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
 
-# Host Configuration - Set HOST_IP environment variable for server deployment
+# ============================================================================
+# HOST & NETWORK CONFIGURATION
+# ============================================================================
+
 HOST_IP = os.getenv("HOST_IP", "localhost")
 BACKEND_PORT = os.getenv("BACKEND_PORT", "8000")
 FRONTEND_PORT = os.getenv("FRONTEND_PORT", "5173")
@@ -45,33 +44,32 @@ ALLOWED_HOSTS = [
     HOST_IP,
     "localhost",
     "127.0.0.1",
-    "*",
-]  # '*' allows all hosts (be careful in production)
+]
 
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        # enable session cookies
-        "rest_framework.authentication.SessionAuthentication",
-        # keep this if you still want browsable API login
-        "rest_framework.authentication.BasicAuthentication",
-    ],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
-    ],
-}
+# ============================================================================
+# APPLICATION DEFINITION
+# ============================================================================
 
-
-# Application definition
-
-INSTALLED_APPS = [
+# Django Core Apps
+DJANGO_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+]
+
+# Third Party Apps
+THIRD_PARTY_APPS = [
     "rest_framework",
     "corsheaders",
+    "drf_yasg",
+    "storages",
+]
+
+# Local Apps
+LOCAL_APPS = [
     "users",
     "notebooks",
     "reports",
@@ -80,10 +78,14 @@ INSTALLED_APPS = [
     "people",
     "podcast",
     "tags",
-    "drf_yasg",
-    "storages",
     "blogs",
 ]
+
+INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+
+# ============================================================================
+# MIDDLEWARE CONFIGURATION
+# ============================================================================
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -96,91 +98,45 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-
-# MinIO Configuration
-MINIO_SETTINGS = {
-    'ENDPOINT': os.getenv('MINIO_ENDPOINT', 'localhost:9000'),
-    'ACCESS_KEY': os.getenv('MINIO_ACCESS_KEY', 'minioadmin'),
-    'SECRET_KEY': os.getenv('MINIO_SECRET_KEY', 'minioadmin'),
-    'BUCKET_NAME': os.getenv('MINIO_BUCKET_NAME', 'deepsight-users'),
-    'SECURE': os.getenv('MINIO_SECURE', 'False').lower() == 'true',
-    'REGION': os.getenv('MINIO_REGION', 'us-east-1'),
-}
-
-# Storage Backend - MinIO only
-DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-
-# AWS S3 settings configured for MinIO
-AWS_ACCESS_KEY_ID = MINIO_SETTINGS['ACCESS_KEY']
-AWS_SECRET_ACCESS_KEY = MINIO_SETTINGS['SECRET_KEY']
-AWS_STORAGE_BUCKET_NAME = MINIO_SETTINGS['BUCKET_NAME']
-AWS_S3_ENDPOINT_URL = f"{'https' if MINIO_SETTINGS['SECURE'] else 'http'}://{MINIO_SETTINGS['ENDPOINT']}"
-AWS_S3_REGION_NAME = MINIO_SETTINGS['REGION']
-AWS_S3_USE_SSL = MINIO_SETTINGS['SECURE']
-AWS_S3_VERIFY = MINIO_SETTINGS['SECURE']
-
-
-CORS_ALLOW_CREDENTIALS = True
-
-
-CORS_ALLOWED_ORIGINS = [
-    f"http://{HOST_IP}:{FRONTEND_PORT}",  # Configurable frontend server
-    f"http://localhost:{FRONTEND_PORT}",  # Keep localhost for local development
-]
-
-CSRF_TRUSTED_ORIGINS = [
-    f"http://{HOST_IP}:{FRONTEND_PORT}",  # Configurable frontend server
-    f"http://localhost:{FRONTEND_PORT}",  # Keep localhost for local development
-]
-
-# Additional CORS settings for SSE
-CORS_ALLOW_ALL_ORIGINS = False  # Keep this False for security
-CORS_ALLOW_HEADERS = [
-    "accept",
-    "accept-encoding",
-    "authorization",
-    "content-type",
-    "dnt",
-    "origin",
-    "user-agent",
-    "x-csrftoken",
-    "x-requested-with",
-    "cache-control",
-]
-
-MIDDLEWARE.insert(0, "corsheaders.middleware.CorsMiddleware")
-
 ROOT_URLCONF = "backend.urls"
-
-AUTH_USER_MODEL = "users.User"
-
-TEMPLATES = [
-    {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
-        "APP_DIRS": True,
-        "OPTIONS": {
-            "context_processors": [
-                "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
-                "django.contrib.messages.context_processors.messages",
-            ],
-        },
-    },
-]
-
 WSGI_APPLICATION = "backend.wsgi.application"
 
+# ============================================================================
+# DATABASE CONFIGURATION
+# ============================================================================
+
+# SQLite Database for development
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.sqlite3",
+#         "NAME": BASE_DIR / "db.sqlite3",
+#     }
+# }
+
+# PostgreSQL Database for production
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "ENGINE": "django.db.backends.postgresql_psycopg2",
+        "NAME": os.getenv("PGDATABASE", "deepsight"),
+        "USER": os.getenv("PGUSER", "deepsight"),
+        "PASSWORD": os.getenv("PGPASSWORD", "deepsight"),
+        "HOST": os.getenv("PGHOST", "localhost"),
+        "PORT": os.getenv("DB_PORT", "5432"),
     }
 }
 
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
+# Vector Database (Milvus)
+MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
+MILVUS_PORT = os.getenv("MILVUS_PORT", "19530")
+MILVUS_COLLECTION_NAME = os.getenv("MILVUS_LOCAL_COLLECTION", "user_vectors")
+
+# ============================================================================
+# AUTHENTICATION & AUTHORIZATION
+# ============================================================================
+
+AUTH_USER_MODEL = "users.User"
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -197,33 +153,116 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# ============================================================================
+# TEMPLATES CONFIGURATION
+# ============================================================================
 
-# Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
+
+# ============================================================================
+# INTERNATIONALIZATION
+# ============================================================================
 
 LANGUAGE_CODE = "en-us"
-
 TIME_ZONE = "UTC"
-
 USE_I18N = True
-
 USE_TZ = True
 
+# ============================================================================
+# STATIC & MEDIA FILES
+# ============================================================================
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.2/howto/static-files/
+STATIC_URL = "/static/"
 
-STATIC_URL = "static/"
-
-# Media files are stored in MinIO object storage only
+# Note: Media files are stored in MinIO object storage
 # MEDIA_ROOT and MEDIA_URL are not used with MinIO backend
 
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
+# ============================================================================
+# FILE STORAGE (MINIO/S3)
+# ============================================================================
 
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+MINIO_SETTINGS = {
+    "ENDPOINT": os.getenv("MINIO_ENDPOINT", "localhost:9000"),
+    "ACCESS_KEY": os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
+    "SECRET_KEY": os.getenv("MINIO_SECRET_KEY", "minioadmin"),
+    "BUCKET_NAME": os.getenv("MINIO_BUCKET_NAME", "deepsight-users"),
+    "SECURE": os.getenv("MINIO_SECURE", "False").lower() == "true",
+    "REGION": os.getenv("MINIO_REGION", "us-east-1"),
+}
 
-# Celery Configuration
+# Storage Backend Configuration
+DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+
+# AWS S3 Settings (configured for MinIO)
+AWS_ACCESS_KEY_ID = MINIO_SETTINGS["ACCESS_KEY"]
+AWS_SECRET_ACCESS_KEY = MINIO_SETTINGS["SECRET_KEY"]
+AWS_STORAGE_BUCKET_NAME = MINIO_SETTINGS["BUCKET_NAME"]
+AWS_S3_ENDPOINT_URL = f"{'https' if MINIO_SETTINGS['SECURE'] else 'http'}://{MINIO_SETTINGS['ENDPOINT']}"
+AWS_S3_REGION_NAME = MINIO_SETTINGS["REGION"]
+AWS_S3_USE_SSL = MINIO_SETTINGS["SECURE"]
+AWS_S3_VERIFY = MINIO_SETTINGS["SECURE"]
+
+# ============================================================================
+# DJANGO REST FRAMEWORK
+# ============================================================================
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.BasicAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+}
+
+# ============================================================================
+# CORS & CSRF CONFIGURATION
+# ============================================================================
+
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = False  # Keep this False for security
+
+CORS_ALLOWED_ORIGINS = [
+    f"http://{HOST_IP}:{FRONTEND_PORT}",
+    f"http://localhost:{FRONTEND_PORT}",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    f"http://{HOST_IP}:{FRONTEND_PORT}",
+    f"http://localhost:{FRONTEND_PORT}",
+]
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+    "cache-control",
+]
+
+# ============================================================================
+# TASK QUEUE (CELERY)
+# ============================================================================
+
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 CELERY_ACCEPT_CONTENT = ["json"]
@@ -231,7 +270,11 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 
-# OpenAI Configuration
+# ============================================================================
+# EXTERNAL SERVICES
+# ============================================================================
+
+# OpenAI API Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ORG = os.getenv("OPENAI_ORG")
 OPENAI_PROJECT = os.getenv("OPENAI_PROJECT")
@@ -240,10 +283,18 @@ OPENAI_PROJECT = os.getenv("OPENAI_PROJECT")
 MINIMAX_GROUP_ID = os.getenv("MINIMAX_GROUP_ID")
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY")
 
-# Logging Configuration
+# ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
+
+# Create logs directory if it doesn't exist
+LOGS_DIR = BASE_DIR / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    
     "formatters": {
         "verbose": {
             "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
@@ -254,11 +305,12 @@ LOGGING = {
             "style": "{",
         },
     },
+    
     "handlers": {
         "file": {
             "level": "INFO",
             "class": "logging.FileHandler",
-            "filename": BASE_DIR / "logs" / "django.log",
+            "filename": LOGS_DIR / "django.log",
             "formatter": "verbose",
         },
         "console": {
@@ -267,10 +319,12 @@ LOGGING = {
             "formatter": "simple",
         },
     },
+    
     "root": {
         "handlers": ["console", "file"],
         "level": "INFO",
     },
+    
     "loggers": {
         "django": {
             "handlers": ["console", "file"],
@@ -289,15 +343,6 @@ LOGGING = {
         },
     },
 }
-
-# Create logs directory if it doesn't exist
-LOGS_DIR = BASE_DIR / "logs"
-LOGS_DIR.mkdir(exist_ok=True)
-
-
-MILVUS_HOST               = os.getenv("MILVUS_HOST", "localhost")
-MILVUS_PORT               = os.getenv("MILVUS_PORT", "19530")
-MILVUS_COLLECTION_NAME    = os.getenv("MILVUS_LOCAL_COLLECTION", "user_vectors")
 
 
 
