@@ -178,6 +178,43 @@ class MinIOBackend:
             self.logger.error(f"Error generating presigned URL for {object_key}: {e}")
             return None
     
+    def copy_file(self, source_key: str, dest_key: str) -> bool:
+        """
+        Copy a file from one MinIO location to another within the same bucket.
+        
+        Args:
+            source_key: Source object key in MinIO
+            dest_key: Destination object key in MinIO
+            
+        Returns:
+            True if copy was successful, False otherwise
+        """
+        try:
+            from minio.commonconfig import CopySource
+            
+            # Create copy source configuration
+            copy_source = CopySource(
+                bucket_name=self.bucket_name,
+                object_name=source_key
+            )
+            
+            # Perform the copy operation
+            self.client.copy_object(
+                bucket_name=self.bucket_name,
+                object_name=dest_key,
+                source=copy_source
+            )
+            
+            self.logger.debug(f"Successfully copied file from {source_key} to {dest_key}")
+            return True
+            
+        except S3Error as e:
+            self.logger.error(f"Error copying file from {source_key} to {dest_key}: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Unexpected error copying file from {source_key} to {dest_key}: {e}")
+            return False
+
     def list_objects(self, prefix: str = "") -> List[str]:
         """List objects in bucket with optional prefix."""
         try:
