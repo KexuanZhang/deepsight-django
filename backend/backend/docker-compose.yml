@@ -1,0 +1,65 @@
+# services:
+#   db:
+#     image: postgres:14
+#     container_name: local_postgres
+#     restart: unless-stopped
+#     env_file:
+#       - .env
+#     environment:
+#       # these should be defined in your .env:
+#       # PGDATABASE=dbtest
+#       # PGUSER=dbuser
+#       # PGPASSWORD=test
+#       - POSTGRES_DB=${PGDATABASE}
+#       - POSTGRES_USER=${PGUSER}
+#       - POSTGRES_PASSWORD=${PGPASSWORD}
+#     ports:
+#       - "5433:5432"        # map host-5433 → container-5432 to avoid clashing with any host PG
+#     volumes:
+#       - pgdata:/var/lib/postgresql/data
+
+#   web:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile
+#     container_name: deepsight_web
+#     restart: unless-stopped
+#     command: >
+#       sh -c "python manage.py migrate &&
+#              python manage.py runserver 0.0.0.0:8000"
+#     volumes:
+#       - .:/app
+#     working_dir: /app/backend
+#     env_file:
+#       - .env
+#     environment:
+#       # inside the container we want to connect to the 'db' service:
+#       - PGHOST=db
+#       - PGPORT=5432
+#       - PGDATABASE=${PGDATABASE}
+#       - PGUSER=${PGUSER}
+#       - PGPASSWORD=${PGPASSWORD}
+#     ports:
+#       - "8000:8000"
+#     depends_on:
+#       - db
+
+# volumes:
+#   pgdata:
+
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14
+    container_name: deepsight-postgres
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
