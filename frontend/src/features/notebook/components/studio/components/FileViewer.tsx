@@ -57,6 +57,7 @@ interface FileViewerProps {
   onContentChange?: (content: string) => void;
   notebookId: string;
   useMinIOUrls?: boolean;
+  hideHeader?: boolean;
 }
 
 // ====== INTERFACE SEGREGATION PRINCIPLE (ISP) ======
@@ -74,7 +75,8 @@ const FileViewer: React.FC<FileViewerProps> = ({
   onToggleViewMode,
   onContentChange,
   notebookId,
-  useMinIOUrls = false
+  useMinIOUrls = false,
+  hideHeader = false
 }) => {
   const [editContent, setEditContent] = useState(content || '');
   const [minioContent, setMinioContent] = useState(null);
@@ -153,61 +155,63 @@ const FileViewer: React.FC<FileViewerProps> = ({
   return (
     <div className={`flex flex-col h-full bg-white ${isExpanded ? 'fixed inset-0 z-50' : ''}`}>
       {/* ====== SINGLE RESPONSIBILITY: Toolbar rendering ====== */}
-      <div className="flex-shrink-0 bg-gray-50 border-b border-gray-200">
-        <div className="flex items-center justify-between p-4">
-          <div className="flex items-center space-x-3">
-            <h3 className="text-lg font-semibold text-gray-900 truncate">
-              {formatFileTitle()}
-            </h3>
-            {isLoadingMinio && (
-              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
-                Loading...
-              </span>
-            )}
-          </div>
+      {!hideHeader && (
+        <div className="flex-shrink-0 bg-gray-50 border-b border-gray-200">
+          <div className="flex items-center justify-between p-4">
+            <div className="flex items-center space-x-3">
+              <h3 className="text-lg font-semibold text-gray-900 truncate">
+                {formatFileTitle()}
+              </h3>
+              {isLoadingMinio && (
+                <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                  Loading...
+                </span>
+              )}
+            </div>
 
-          <div className="flex items-center space-x-2">
-            {viewMode === 'preview' && onEdit && (
-              <Button variant="outline" size="sm" onClick={onEdit}>
-                <Edit className="h-4 w-4 mr-1" />
-                Edit
+            <div className="flex items-center space-x-2">
+              {viewMode === 'preview' && onEdit && (
+                <Button variant="outline" size="sm" onClick={onEdit}>
+                  <Edit className="h-4 w-4 mr-1" />
+                  Edit
+                </Button>
+              )}
+
+              {viewMode === 'edit' && (
+                <Button variant="outline" size="sm" onClick={handleSave}>
+                  <Save className="h-4 w-4 mr-1" />
+                  Save
+                </Button>
+              )}
+
+              {onDownload && (
+                <Button variant="outline" size="sm" onClick={onDownload}>
+                  <Download className="h-4 w-4 mr-1" />
+                  Download
+                </Button>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onToggleExpand}
+                title={isExpanded ? "Minimize" : "Expand"}
+              >
+                {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </Button>
-            )}
 
-            {viewMode === 'edit' && (
-              <Button variant="outline" size="sm" onClick={handleSave}>
-                <Save className="h-4 w-4 mr-1" />
-                Save
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onClose}
+                className="text-red-600 border-red-300 hover:bg-red-50"
+              >
+                <X className="h-4 w-4" />
               </Button>
-            )}
-
-            {onDownload && (
-              <Button variant="outline" size="sm" onClick={onDownload}>
-                <Download className="h-4 w-4 mr-1" />
-                Download
-              </Button>
-            )}
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onToggleExpand}
-              title={isExpanded ? "Minimize" : "Expand"}
-            >
-              {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onClose}
-              className="text-red-600 border-red-300 hover:bg-red-50"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ====== SINGLE RESPONSIBILITY: Content rendering ====== */}
       <div className="flex-1 overflow-auto">

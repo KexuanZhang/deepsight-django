@@ -2,7 +2,7 @@
 // This component demonstrates all 5 SOLID principles in action
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown, Trash2 } from 'lucide-react';
+import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown, Trash2, Edit, Download, Save, X } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
 import { useToast } from '@/common/components/ui/use-toast';
 
@@ -57,6 +57,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   const [selectedFileContent, setSelectedFileContent] = useState<string>('');
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
+  const [isReportPreview, setIsReportPreview] = useState<boolean>(false);
   const [collapsedSections, setCollapsedSections] = useState<CollapsedSections>({
     report: false,
     podcast: false,
@@ -399,6 +400,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       setSelectedFile(report);
       setSelectedFileContent(content.content || content.markdown_content || '');
       setViewMode('preview');
+      setIsReportPreview(true);
     } catch (error) {
       console.error('Failed to load report content:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -607,6 +609,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     setSelectedFile(null);
     setSelectedFileContent('');
     setViewMode('preview');
+    setIsReportPreview(false);
   }, []);
 
   // ====== OPEN/CLOSED PRINCIPLE (OCP) ======
@@ -620,7 +623,9 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             <div className={PANEL_HEADERS.iconContainer}>
               <Palette className={PANEL_HEADERS.icon} />
             </div>
-            <h3 className={PANEL_HEADERS.title}>Studio</h3>
+            <h3 className={PANEL_HEADERS.title}>
+              {isReportPreview ? 'Studio/Report' : 'Studio'}
+            </h3>
             {(reportGeneration.isGenerating || podcastGeneration.isGenerating) && (
               <div className="flex items-center space-x-2 text-sm text-red-600">
                 <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse"></div>
@@ -629,59 +634,117 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             )}
           </div>
           <div className={PANEL_HEADERS.actionsContainer}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
-              onClick={handleRefresh}
-              disabled={studioData.loading.reports || studioData.loading.podcasts}
-            >
-              <RefreshCw className={`h-3 w-3 mr-1 ${studioData.loading.reports || studioData.loading.podcasts ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
-              onClick={() => {
-                // Import AdvancedSettingsModal component dynamically
-                import('./components/AdvancedSettingsModal').then(({ default: AdvancedSettingsModal }) => {
-                  const settingsContent = (
-                    <AdvancedSettingsModal
-                      isOpen={true}
-                      onClose={() => onCloseModal('advancedSettings')}
-                      reportConfig={reportGeneration.config}
-                      podcastConfig={podcastGeneration.config}
-                      onReportConfigChange={reportGeneration.updateConfig}
-                      onPodcastConfigChange={podcastGeneration.updateConfig}
-                      availableModels={studioData.availableModels || {}}
-                    />
-                  );
-                  onOpenModal('advancedSettings', settingsContent);
-                });
-              }}
-              title="Advanced Settings"
-            >
-              <Settings className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
-              onClick={toggleExpanded}
-            >
-              {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
+            {isReportPreview && selectedFile ? (
+              // Report preview controls
+              <>
+                {viewMode === 'preview' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                    onClick={() => setViewMode('edit')}
+                  >
+                    <Edit className="h-3 w-3 mr-1" />
+                    Edit
+                  </Button>
+                )}
+                {viewMode === 'edit' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                    onClick={() => handleSaveFile(selectedFileContent)}
+                  >
+                    <Save className="h-3 w-3 mr-1" />
+                    Save
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                  onClick={() => handleDownloadReport(selectedFile)}
+                >
+                  <Download className="h-3 w-3 mr-1" />
+                  Download
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
+                  onClick={toggleExpanded}
+                >
+                  {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
+                  onClick={handleCloseFile}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </>
+            ) : (
+              // Default studio controls
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                  onClick={handleRefresh}
+                  disabled={studioData.loading.reports || studioData.loading.podcasts}
+                >
+                  <RefreshCw className={`h-3 w-3 mr-1 ${studioData.loading.reports || studioData.loading.podcasts ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                  onClick={() => {
+                    // Import AdvancedSettingsModal component dynamically
+                    import('./components/AdvancedSettingsModal').then(({ default: AdvancedSettingsModal }) => {
+                      const settingsContent = (
+                        <AdvancedSettingsModal
+                          isOpen={true}
+                          onClose={() => onCloseModal('advancedSettings')}
+                          reportConfig={reportGeneration.config}
+                          podcastConfig={podcastGeneration.config}
+                          onReportConfigChange={reportGeneration.updateConfig}
+                          onPodcastConfigChange={podcastGeneration.updateConfig}
+                          availableModels={studioData.availableModels || {}}
+                        />
+                      );
+                      onOpenModal('advancedSettings', settingsContent);
+                    });
+                  }}
+                  title="Advanced Settings"
+                >
+                  <Settings className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
+                  onClick={toggleExpanded}
+                >
+                  {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* ====== SINGLE RESPONSIBILITY: Main content area ====== */}
-      <div className="flex-1 overflow-auto p-6 space-y-6 scrollbar-overlay">
-        {/* ====== LISKOV SUBSTITUTION PRINCIPLE (LSP) ====== */}
-        {/* Both forms follow the same interface contract */}
-        
-        <ReportGenerationForm
+      <div className={`flex-1 overflow-auto ${isReportPreview ? 'p-0' : 'p-6 space-y-6'} scrollbar-overlay`}>
+        {!isReportPreview && (
+          <>
+            {/* ====== LISKOV SUBSTITUTION PRINCIPLE (LSP) ====== */}
+            {/* Both forms follow the same interface contract */}
+            
+            <ReportGenerationForm
           config={reportGeneration.config}
           onConfigChange={reportGeneration.updateConfig}
           availableModels={studioData.availableModels || {}}
@@ -845,7 +908,8 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             </div>
           </div>
         )}
-
+          </>
+        )}
       </div>
 
       {/* ====== SINGLE RESPONSIBILITY: File viewer overlay ====== */}
@@ -867,6 +931,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
           onContentChange={setSelectedFileContent}
           notebookId={notebookId}
           useMinIOUrls={config.USE_MINIO_URLS}
+          hideHeader={isReportPreview}
         />
       )}
 
