@@ -136,45 +136,63 @@ def add_user_files(
         text = None
         source_name = None
 
-        # Use MinIO-backed file_object_key if present
-        if getattr(item, "file_object_key", None):
+        # Use inline content if present (from extracted markdown)
+        if getattr(item, "content", None):
+            print(f"[DEBUG] Ingesting inline content for item {item.id}")
+            text = item.content
+            source_name = f"inline_{item.id}"
+        # Fallback to extracted markdown file if present
+        elif getattr(item, "extracted_md_object_key", None):
+            try:
+                from notebooks.utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                content = backend.get_file(item.extracted_md_object_key)
+                print(f"[DEBUG] Ingesting extracted markdown for item {item.id}: key={item.extracted_md_object_key}")
+                print(f"[DEBUG] Extracted markdown content (first 200 chars): {content[:200] if isinstance(content, bytes) else str(content)[:200]}")
+                text = content.decode('utf-8') if isinstance(content, bytes) else content
+                source_name = item.extracted_md_object_key.rsplit("/", 1)[-1]
+            except Exception as e:
+                print(f"[ERROR] Error reading extracted markdown for item {item.id}: {e}")
+                continue
+        # Fallback to processed file
+        elif getattr(item, "file_object_key", None):
             try:
                 from notebooks.utils.storage import get_minio_backend
                 backend = get_minio_backend()
                 content = backend.get_file(item.file_object_key)
+                print(f"[DEBUG] Ingesting processed file for item {item.id}: key={item.file_object_key}")
                 text = content.decode('utf-8') if isinstance(content, bytes) else content
                 source_name = item.file_object_key.rsplit("/", 1)[-1]
             except Exception as e:
-                print(f"Error reading processed file for item {item.id}: {e}")
+                print(f"[ERROR] Error reading processed file for item {item.id}: {e}")
                 continue
         elif getattr(item, "original_file_object_key", None):
             try:
                 from notebooks.utils.storage import get_minio_backend
                 backend = get_minio_backend()
                 content = backend.get_file(item.original_file_object_key)
+                print(f"[DEBUG] Ingesting original file for item {item.id}: key={item.original_file_object_key}")
                 text = content.decode('utf-8') if isinstance(content, bytes) else content
                 source_name = item.original_file_object_key.rsplit("/", 1)[-1]
             except Exception as e:
-                print(f"Error reading original file for item {item.id}: {e}")
+                print(f"[ERROR] Error reading original file for item {item.id}: {e}")
                 continue
-        elif getattr(item, "content", None):
-            text = item.content
-            source_name = f"inline_{item.id}"
         else:
-            print(f"Skipping item {getattr(item, 'id', None)}: no file or content attached.")
+            print(f"[WARN] Skipping item {getattr(item, 'id', None)}: no file or content attached.")
             continue
 
         docs.append(Document(
             page_content=text,
             metadata={
-                "user_id": str(user_id),  # <-- ensure string
+                "user_id": str(user_id),
                 "source": source_name,
                 "kb_item_id": str(item.id),
             }
         ))
 
+    print(f"[DEBUG] Total docs to ingest for user {user_id}: {len(docs)}")
     if not docs:
-        print("No valid files or content to add for user", user_id)
+        print("[WARN] No valid files or content to add for user", user_id)
         return
 
     # split into chunks and add
@@ -183,12 +201,14 @@ def add_user_files(
         chunk_overlap=100
     ).split_documents(docs)
 
+    print(f"[DEBUG] Total chunks to ingest for user {user_id}: {len(chunks)}")
     store.add_documents(chunks)
 
     # make sure Milvus is up to date
     coll = Collection(coll_name)
     coll.flush()
     coll.load()
+    print(f"[DEBUG] Milvus collection '{coll_name}' flushed and loaded after ingest.")
 
 
 # Remove helper to delete vectors by source
