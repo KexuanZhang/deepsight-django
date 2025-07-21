@@ -122,7 +122,7 @@ export function supportsPreview(fileExtension, metadata = {}) {
 /**
  * Generate preview data for different file types
  */
-export async function generatePreview(source, notebookId = null) {
+export async function generatePreview(source, notebookId = null, useMinIOUrls = false) {
   try {
     const { metadata, file_id } = source;
     const previewType = getPreviewType(metadata.file_extension || '', metadata);
@@ -132,7 +132,7 @@ export async function generatePreview(source, notebookId = null) {
         return await generateTextPreview(file_id, metadata, source);
       
       case PREVIEW_TYPES.PDF_VIEWER:
-        return await generatePdfPreview(file_id, metadata, notebookId, source);
+        return await generatePdfPreview(file_id, metadata, notebookId, source, useMinIOUrls);
       
       case PREVIEW_TYPES.URL_INFO:
         return await generateUrlPreview(metadata);
@@ -391,11 +391,13 @@ async function generateVideoPreview(fileId, metadata, notebookId = null) {
 /**
  * Generate PDF file preview
  */
-async function generatePdfPreview(fileId, metadata, notebookId = null, source = null) {
-  // Use the raw endpoint to serve the actual PDF binary file - prefer notebook-specific if available
+async function generatePdfPreview(fileId, metadata, notebookId = null, source = null, useMinIOUrls = false) {
+  // Generate PDF URL - use the raw endpoint which will redirect to MinIO if enabled
   const pdfUrl = notebookId ? 
     `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/raw/` : 
     `${API_BASE_URL}/notebooks/files/${fileId}/raw/`;
+  
+  console.log('PDF: Generated PDF URL:', pdfUrl, 'useMinIOUrls:', useMinIOUrls);
   
   // Check if we have parsed PDF content
   let pdfContent = null;
@@ -409,6 +411,26 @@ async function generatePdfPreview(fileId, metadata, notebookId = null, source = 
       pdfContent = source.textContent;
       hasParsedContent = pdfContent.trim().length > 0;
       wordCount = pdfContent.split(/\s+/).filter(word => word.length > 0).length;
+    } else if (useMinIOUrls) {
+      // Use MinIO content endpoint if available
+      try {
+        const response = await apiService.getFileContentWithMinIOUrls(fileId);
+        if (response.success && response.data.content) {
+          pdfContent = response.data.content;
+          hasParsedContent = pdfContent.trim().length > 0;
+          wordCount = pdfContent.split(/\s+/).filter(word => word.length > 0).length;
+          console.log('PDF: Using MinIO content for PDF text');
+        }
+      } catch (minioError) {
+        console.log('MinIO content not available for PDF, trying regular endpoint:', minioError);
+        // Fall back to regular endpoint
+        const response = await apiService.getParsedFile(fileId);
+        if (response.success && response.data.content) {
+          pdfContent = response.data.content;
+          hasParsedContent = pdfContent.trim().length > 0;
+          wordCount = pdfContent.split(/\s+/).filter(word => word.length > 0).length;
+        }
+      }
     } else {
       const response = await apiService.getParsedFile(fileId);
       if (response.success && response.data.content) {
@@ -424,19 +446,20 @@ async function generatePdfPreview(fileId, metadata, notebookId = null, source = 
   
   // Return appropriate preview type based on content availability
   if (hasParsedContent) {
-          return {
-        type: PREVIEW_TYPES.TEXT_CONTENT,
-        isPdfPreview: true,
-        title: metadata.original_filename || 'PDF Document',
-        content: pdfContent,
-        fullLength: pdfContent.length,
+    return {
+      type: PREVIEW_TYPES.TEXT_CONTENT,
+      isPdfPreview: true,
+      title: metadata.original_filename || 'PDF Document',
+      content: pdfContent,
+      fullLength: pdfContent.length,
       wordCount: wordCount,
       fileSize: formatFileSize(metadata.file_size),
       format: 'PDF',
       uploadedAt: metadata.upload_timestamp,
       pageCount: metadata.page_count || 'Unknown',
       pdfUrl: pdfUrl,
-      fileId: fileId
+      fileId: fileId,
+      usesMinIOUrls: useMinIOUrls
     };
   } else {
     return {
@@ -450,7 +473,8 @@ async function generatePdfPreview(fileId, metadata, notebookId = null, source = 
       pageCount: metadata.page_count || 'Unknown',
       pdfUrl: pdfUrl,
       fileId: fileId,
-      error: error
+      error: error,
+      usesMinIOUrls: useMinIOUrls
     };
   }
 }
@@ -512,5 +536,55 @@ export function formatDate(dateString) {
     });
   } catch (error) {
     return 'Invalid date';
+  }
+} 
+
+/**
+ * Fetch file content with direct MinIO URLs for images
+ */
+export async function getFileContentWithMinIOUrls(fileId, expires = 86400) {
+  try {
+    const response = await apiService.getFileContentWithMinIOUrls(fileId, expires);
+    if (response.success) {
+      return response.data;
+    } else {
+      throw new Error('Failed to fetch content with MinIO URLs');
+    }
+  } catch (error) {
+    console.error('Error fetching content with MinIO URLs:', error);
+    throw error;
+  }
+}
+
+/**
+ * Generate text content preview with MinIO URLs
+ */
+export async function generateTextPreviewWithMinIOUrls(fileId, metadata, source = null) {
+  try {
+    let content = '';
+    
+    // Check if text content is stored directly in the source (for pasted text)
+    if (source && source.textContent) {
+      content = source.textContent;
+    } else {
+      // Fetch content with MinIO URLs from API
+      const contentData = await getFileContentWithMinIOUrls(fileId);
+      content = contentData.content || '';
+    }
+    
+    return {
+      type: PREVIEW_TYPES.TEXT_CONTENT,
+      title: metadata.original_filename || 'Text Content',
+      content: content,
+      fullLength: content.length,
+      wordCount: content.split(/\s+/).filter(word => word.length > 0).length,
+      lines: content.split('\n').length,
+      fileSize: formatFileSize(metadata.file_size),
+      format: (metadata.file_extension || '').toUpperCase().replace('.', ''),
+      uploadedAt: metadata.upload_timestamp,
+      usesMinIOUrls: true
+    };
+  } catch (error) {
+    throw new Error(`Failed to load text preview with MinIO URLs: ${error.message}`);
   }
 } 

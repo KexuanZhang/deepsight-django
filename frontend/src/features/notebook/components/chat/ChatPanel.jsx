@@ -10,6 +10,7 @@ import { useToast } from "@/common/components/ui/use-toast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import rehypeRaw from "rehype-raw";
 import "highlight.js/styles/github.css";
 import { useFileSelection } from "@/features/notebook/hooks";
 import { config } from "@/config";
@@ -24,7 +25,7 @@ const MarkdownContent = React.memo(({ content }) => (
   <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-code:text-gray-800 prose-pre:bg-gray-900 prose-pre:text-gray-100">
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
+      rehypePlugins={[rehypeHighlight, rehypeRaw]}
       components={{
         h1: ({children}) => <h1 className="text-lg font-bold text-gray-900 mb-3 pb-2 border-b">{children}</h1>,
         h2: ({children}) => <h2 className="text-base font-semibold text-gray-800 mt-4 mb-2">{children}</h2>,
@@ -272,7 +273,7 @@ useEffect(() => {
     }
 
     try {
-      const response = await fetch(`${config.API_BASE_URL}/notebooks/chat/`, {
+      const response = await fetch(`${config.API_BASE_URL}/notebooks/${notebookId}/chat/`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -282,7 +283,6 @@ useEffect(() => {
         body: JSON.stringify({
           file_ids: selectedFileIds,
           question: messageToSend,
-          notebook_id: notebookId,
         }),
       });
       if (!response.ok) {

@@ -152,7 +152,7 @@ class NotebookService {
 
   // Send chat message
   async sendChatMessage(notebookId, fileIds, question) {
-    const response = await fetch(`${this.baseUrl}/notebooks/chat/`, {
+    const response = await fetch(`${this.baseUrl}/notebooks/${notebookId}/chat/`, {
       method: "POST",
       credentials: 'include',
       headers: {
@@ -161,8 +161,7 @@ class NotebookService {
       },
       body: JSON.stringify({
         file_ids: fileIds,
-        question: question,
-        notebook_id: notebookId
+        question: question
       })
     });
     

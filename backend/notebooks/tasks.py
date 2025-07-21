@@ -1,348 +1,272 @@
 """
-Celery tasks for async processing of notebook content.
+Simplified Celery tasks for async processing of notebook content.
 """
 
 import logging
 from celery import shared_task
-from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.core.exceptions import ObjectDoesNotExist
 from asgiref.sync import async_to_sync
 from uuid import uuid4
 
 from .models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook, BatchJob, BatchJobItem
-from .utils.url_extractor import URLExtractor
-from .utils.media_extractor import MediaFeatureExtractor
-from .utils.upload_processor import UploadProcessor
+from .exceptions import (
+    FileProcessingError,
+    URLProcessingError,
+    NotebookNotFoundError,
+    ValidationError
+)
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
-# Initialize processors
-url_extractor = URLExtractor()
-media_extractor = MediaFeatureExtractor()
-upload_processor = UploadProcessor()
+# Services will be initialized lazily inside functions to avoid circular imports
 
 
 @shared_task(bind=True)
 def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_job_id=None, batch_item_id=None):
     """Process a single URL asynchronously."""
     try:
+        # Import services lazily to avoid circular imports
+        from .services.url_service import URLService
+        from .services.notebook_service import NotebookService
+        
+        url_service = URLService()
+        notebook_service = NotebookService()
+        
+        # Validate inputs
+        if not url or not notebook_id or not user_id:
+            raise ValidationError("Missing required parameters")
+        
         # Get required objects
-        notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
         user = User.objects.get(id=user_id)
+        notebook = notebook_service.get_notebook_or_404(notebook_id, user)
         
         # Update batch item status if this is part of a batch
         if batch_item_id:
-            batch_item = BatchJobItem.objects.get(id=batch_item_id)
-            batch_item.status = 'processing'
-            batch_item.save()
+            _update_batch_item_status(batch_item_id, 'processing')
         
-        # Process the URL using async function
-        async def process_url_async():
-            return await url_extractor.process_url(
-                url=url,
-                upload_url_id=upload_url_id or uuid4().hex,
-                user_id=user_id,
-                notebook_id=notebook_id
-            )
-
-        # Run async processing
-        result = async_to_sync(process_url_async)()
-
-        # Create source record
-        source = Source.objects.create(
-            notebook=notebook,
-            source_type="url",
-            title=url,
-            needs_processing=False,
-            processing_status="done",
+        # Process the URL using service
+        result = url_service.process_url(
+            url=url,
+            upload_url_id=upload_url_id or uuid4().hex,
+            user=user,
+            notebook=notebook
         )
-
-        # Create URL processing result
-        URLProcessingResult.objects.create(
-            source=source,
-            content_md=result.get("content_preview", ""),
-        )
-
-        # Link to knowledge base
-        kb_item_id = result['file_id']
-        kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
         
-        ki, created = KnowledgeItem.objects.get_or_create(
-            notebook=notebook,
-            knowledge_base_item=kb_item,
-            defaults={
-                'source': source,
-                'notes': f"Processed from URL: {url}"
-            }
-        )
-
-        # Update batch item if this is part of a batch
+        # Update batch item status on success
         if batch_item_id:
-            batch_item.status = 'completed'
-            batch_item.result_data = {
-                'file_id': kb_item_id,
-                'knowledge_item_id': ki.id,
-                'source_id': source.id
-            }
-            batch_item.save()
-            
-            # Check if batch is complete
+            _update_batch_item_status(batch_item_id, 'completed', result_data=result)
+        
+        # Check if batch is complete
+        if batch_job_id:
             _check_batch_completion(batch_job_id)
-
-        return {
-            'success': True,
-            'file_id': kb_item_id,
-            'knowledge_item_id': ki.id,
-            'source_id': source.id
-        }
-
+        
+        logger.info(f"Successfully processed URL: {url}")
+        return result
+        
     except Exception as e:
-        logger.error(f"Error processing URL {url}: {str(e)}")
+        logger.error(f"Error processing URL {url}: {e}")
         
-        # Update batch item status on error
+        # Update batch item status on failure
         if batch_item_id:
-            try:
-                batch_item = BatchJobItem.objects.get(id=batch_item_id)
-                batch_item.status = 'failed'
-                batch_item.error_message = str(e)
-                batch_item.save()
-                _check_batch_completion(batch_job_id)
-            except:
-                pass
+            _update_batch_item_status(batch_item_id, 'failed', error_message=str(e))
         
-        raise
+        # Check if batch is complete
+        if batch_job_id:
+            _check_batch_completion(batch_job_id)
+        
+        raise URLProcessingError(f"Failed to process URL: {str(e)}")
 
 
 @shared_task(bind=True)
 def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, batch_job_id=None, batch_item_id=None):
     """Process a single URL with media extraction asynchronously."""
     try:
+        # Import services lazily to avoid circular imports
+        from .services.url_service import URLService
+        from .services.notebook_service import NotebookService
+        
+        url_service = URLService()
+        notebook_service = NotebookService()
+        
+        # Validate inputs
+        if not url or not notebook_id or not user_id:
+            raise ValidationError("Missing required parameters")
+        
         # Get required objects
-        notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
         user = User.objects.get(id=user_id)
+        notebook = notebook_service.get_notebook_or_404(notebook_id, user)
         
         # Update batch item status if this is part of a batch
         if batch_item_id:
-            batch_item = BatchJobItem.objects.get(id=batch_item_id)
-            batch_item.status = 'processing'
-            batch_item.save()
+            _update_batch_item_status(batch_item_id, 'processing')
         
-        # Process the URL using async function
-        async def process_url_media_async():
-            return await url_extractor.process_url_media_only(
-                url=url,
-                upload_url_id=upload_url_id or uuid4().hex,
-                user_id=user_id,
-                notebook_id=notebook_id
-            )
-
-        # Run async processing
-        result = async_to_sync(process_url_media_async)()
-
-        # Create source record
-        source = Source.objects.create(
-            notebook=notebook,
-            source_type="url",
-            title=url,
-            needs_processing=False,
-            processing_status="done",
+        # Process the URL with media using service
+        result = url_service.process_url_with_media(
+            url=url,
+            upload_url_id=upload_url_id or uuid4().hex,
+            user=user,
+            notebook=notebook
         )
-
-        # Create URL processing result
-        URLProcessingResult.objects.create(
-            source=source,
-            content_md=result.get("content_preview", ""),
-        )
-
-        # Link to knowledge base
-        kb_item_id = result['file_id']
-        kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
         
-        ki, created = KnowledgeItem.objects.get_or_create(
-            notebook=notebook,
-            knowledge_base_item=kb_item,
-            defaults={
-                'source': source,
-                'notes': f"Processed from URL with media: {url}"
-            }
-        )
-
-        # Update batch item if this is part of a batch
+        # Update batch item status on success
         if batch_item_id:
-            batch_item.status = 'completed'
-            batch_item.result_data = {
-                'file_id': kb_item_id,
-                'knowledge_item_id': ki.id,
-                'source_id': source.id
-            }
-            batch_item.save()
-            
-            # Check if batch is complete
+            _update_batch_item_status(batch_item_id, 'completed', result_data=result)
+        
+        # Check if batch is complete
+        if batch_job_id:
             _check_batch_completion(batch_job_id)
-
-        return {
-            'success': True,
-            'file_id': kb_item_id,
-            'knowledge_item_id': ki.id,
-            'source_id': source.id
-        }
-
+        
+        logger.info(f"Successfully processed URL with media: {url}")
+        return result
+        
     except Exception as e:
-        logger.error(f"Error processing URL with media {url}: {str(e)}")
+        logger.error(f"Error processing URL with media {url}: {e}")
         
-        # Update batch item status on error
+        # Update batch item status on failure
         if batch_item_id:
-            try:
-                batch_item = BatchJobItem.objects.get(id=batch_item_id)
-                batch_item.status = 'failed'
-                batch_item.error_message = str(e)
-                batch_item.save()
-                _check_batch_completion(batch_job_id)
-            except:
-                pass
+            _update_batch_item_status(batch_item_id, 'failed', error_message=str(e))
         
-        raise
+        # Check if batch is complete
+        if batch_job_id:
+            _check_batch_completion(batch_job_id)
+        
+        raise URLProcessingError(f"Failed to process URL with media: {str(e)}")
 
 
 @shared_task(bind=True)
 def process_file_upload_task(self, file_data, filename, notebook_id, user_id, upload_file_id=None, batch_job_id=None, batch_item_id=None):
     """Process a single file upload asynchronously."""
     try:
+        # Import services lazily to avoid circular imports
+        from .services.file_service import FileService
+        from .services.notebook_service import NotebookService
+        
+        file_service = FileService()
+        notebook_service = NotebookService()
+        
+        # Validate inputs
+        if not file_data or not filename or not notebook_id or not user_id:
+            raise ValidationError("Missing required parameters")
+        
         # Get required objects
-        notebook = Notebook.objects.get(id=notebook_id, user_id=user_id)
         user = User.objects.get(id=user_id)
+        notebook = notebook_service.get_notebook_or_404(notebook_id, user)
         
         # Update batch item status if this is part of a batch
         if batch_item_id:
-            batch_item = BatchJobItem.objects.get(id=batch_item_id)
-            batch_item.status = 'processing'
-            batch_item.save()
+            _update_batch_item_status(batch_item_id, 'processing')
         
         # Create a temporary file-like object from the file data
         from django.core.files.base import ContentFile
         temp_file = ContentFile(file_data, name=filename)
         
-        # Process the upload using async function
-        async def process_upload_async():
-            return await upload_processor.process_upload(
-                temp_file,
-                upload_file_id or uuid4().hex,
-                user_pk=user_id,
-                notebook_id=notebook_id,
-            )
-
-        # Run async processing
-        result = async_to_sync(process_upload_async)()
-
-        # Create source record
-        source = Source.objects.create(
-            notebook=notebook,
-            source_type="file",
-            title=filename,
-            needs_processing=False,
-            processing_status="done",
+        # Process the upload using service
+        result = file_service.upload_file(
+            file=temp_file,
+            upload_file_id=upload_file_id or uuid4().hex,
+            user=user,
+            notebook=notebook
         )
-
-        # Link to knowledge base
-        kb_item_id = result["file_id"]
-        kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
-
-        ki, created = KnowledgeItem.objects.get_or_create(
-            notebook=notebook,
-            knowledge_base_item=kb_item,
-            defaults={
-                "source": source,
-                "notes": f"Processed from {filename}",
-            },
-        )
-
-        # Update source if needed
-        if not created and not ki.source:
-            ki.source = source
-            ki.save(update_fields=["source"])
-
-        # Update batch item if this is part of a batch
+        
+        # Update batch item status on success
         if batch_item_id:
-            batch_item.status = 'completed'
-            batch_item.result_data = {
-                'file_id': kb_item_id,
-                'knowledge_item_id': ki.id,
-                'source_id': source.id
-            }
-            batch_item.save()
-            
-            # Check if batch is complete
+            _update_batch_item_status(batch_item_id, 'completed', result_data=result)
+        
+        # Check if batch is complete
+        if batch_job_id:
             _check_batch_completion(batch_job_id)
-
-        return {
-            'success': True,
-            'file_id': kb_item_id,
-            'knowledge_item_id': ki.id,
-            'source_id': source.id
-        }
-
-    except ValidationError as e:
-        logger.warning(f"File validation failed for {filename}: {str(e)}")
         
-        # Update batch item status on validation error
-        if batch_item_id:
-            try:
-                batch_item = BatchJobItem.objects.get(id=batch_item_id)
-                batch_item.status = 'failed'
-                batch_item.error_message = f"File validation failed: {str(e)}"
-                batch_item.save()
-                _check_batch_completion(batch_job_id)
-            except:
-                pass
+        logger.info(f"Successfully processed file upload: {filename}")
+        return result
         
-        raise
     except Exception as e:
-        logger.error(f"Error processing file upload {filename}: {str(e)}")
+        logger.error(f"Error processing file upload {filename}: {e}")
         
-        # Update batch item status on error
+        # Update batch item status on failure
         if batch_item_id:
-            try:
-                batch_item = BatchJobItem.objects.get(id=batch_item_id)
-                batch_item.status = 'failed'
-                batch_item.error_message = str(e)
-                batch_item.save()
-                _check_batch_completion(batch_job_id)
-            except:
-                pass
+            _update_batch_item_status(batch_item_id, 'failed', error_message=str(e))
         
-        raise
+        # Check if batch is complete
+        if batch_job_id:
+            _check_batch_completion(batch_job_id)
+        
+        raise FileProcessingError(f"Failed to process file upload: {str(e)}")
+
+
+def _update_batch_item_status(batch_item_id, status, result_data=None, error_message=None):
+    """Update the status of a batch job item."""
+    try:
+        batch_item = BatchJobItem.objects.get(id=batch_item_id)
+        batch_item.status = status
+        
+        if result_data:
+            batch_item.result_data = result_data
+        
+        if error_message:
+            batch_item.error_message = error_message
+        
+        batch_item.save()
+        
+    except ObjectDoesNotExist:
+        logger.warning(f"Batch item {batch_item_id} not found")
 
 
 def _check_batch_completion(batch_job_id):
     """Check if a batch job is complete and update its status."""
-    if not batch_job_id:
-        return
-        
     try:
         batch_job = BatchJob.objects.get(id=batch_job_id)
         items = batch_job.items.all()
         
-        if items.filter(status='pending').exists():
-            return  # Still has pending items
-            
-        if items.filter(status='processing').exists():
-            return  # Still has processing items
-            
+        # Check if any items are still pending or processing
+        if items.filter(status__in=['pending', 'processing']).exists():
+            return  # Still has items in progress
+        
         # All items are either completed or failed
         completed_count = items.filter(status='completed').count()
         failed_count = items.filter(status='failed').count()
         
+        # Update batch job status
         if failed_count == 0:
             batch_job.status = 'completed'
         elif completed_count == 0:
             batch_job.status = 'failed'
         else:
             batch_job.status = 'partially_completed'
-            
+        
         batch_job.completed_items = completed_count
         batch_job.failed_items = failed_count
         batch_job.save()
         
+        logger.info(f"Batch job {batch_job_id} completed: {completed_count} successful, {failed_count} failed")
+        
     except ObjectDoesNotExist:
-        pass 
+        logger.warning(f"Batch job {batch_job_id} not found")
+
+
+@shared_task
+def cleanup_old_batch_jobs():
+    """Cleanup old completed batch jobs (older than 7 days)."""
+    from datetime import datetime, timedelta
+    
+    cutoff_date = datetime.now() - timedelta(days=7)
+    
+    # Delete old completed batch jobs
+    old_jobs = BatchJob.objects.filter(
+        status__in=['completed', 'failed', 'partially_completed'],
+        updated_at__lt=cutoff_date
+    )
+    
+    count = old_jobs.count()
+    old_jobs.delete()
+    
+    logger.info(f"Cleaned up {count} old batch jobs")
+    return count
+
+
+@shared_task
+def health_check_task():
+    """Simple health check task for monitoring Celery workers."""
+    logger.info("Celery health check completed")
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()} 

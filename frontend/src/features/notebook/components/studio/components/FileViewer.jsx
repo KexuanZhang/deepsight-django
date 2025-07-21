@@ -1,7 +1,7 @@
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Component focused solely on displaying file content
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, 
   Edit, 
@@ -14,15 +14,16 @@ import { Button } from '@/common/components/ui/button';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import rehypeRaw from 'rehype-raw';
 import AuthenticatedImage from './AuthenticatedImage';
-import { processReportMarkdownContent } from '../utils';
+import { processReportMarkdownContent, getFileContentWithMinIOUrls } from '../utils';
 
 // ====== SINGLE RESPONSIBILITY: Markdown content renderer ======
-const MarkdownContent = React.memo(({ content, notebookId }) => (
+const MarkdownContent = React.memo(({ content, notebookId, useMinIOUrls = false }) => (
   <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-a:text-blue-600 prose-strong:text-gray-900 prose-code:text-red-600 prose-pre:bg-gray-50">
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
+      rehypePlugins={[rehypeHighlight, rehypeRaw]}
       components={{
         img: ({ src, alt, title }) => (
           <AuthenticatedImage src={src} alt={alt} title={title} />
@@ -50,15 +51,64 @@ const FileViewer = ({
   onToggleExpand,
   onToggleViewMode,
   onContentChange,
-  notebookId
+  notebookId,
+  useMinIOUrls = false
 }) => {
   const [editContent, setEditContent] = useState(content || '');
+  const [minioContent, setMinioContent] = useState(null);
+  const [isLoadingMinio, setIsLoadingMinio] = useState(false);
 
   // Process the content for display with proper image URLs
   const processedContent = useMemo(() => {
-    if (!content || !notebookId) return content;
-    return processReportMarkdownContent(content, notebookId);
-  }, [content, notebookId]);
+    console.log('FileViewer: Processing content', {
+      useMinIOUrls,
+      hasMinioContent: !!minioContent,
+      hasRegularContent: !!content,
+      notebookId
+    });
+    
+    // If using MinIO URLs and we have MinIO content, use that
+    if (useMinIOUrls && minioContent) {
+      console.log('FileViewer: Using MinIO content with direct URLs');
+      return processReportMarkdownContent(minioContent, notebookId, true);
+    }
+    
+    // Otherwise use regular content processing
+    if (!content || !notebookId) {
+      console.log('FileViewer: No content or notebook ID available');
+      return content;
+    }
+    
+    console.log('FileViewer: Using regular content processing');
+    return processReportMarkdownContent(content, notebookId, false);
+  }, [content, notebookId, useMinIOUrls, minioContent]);
+
+  // Load MinIO content when useMinIOUrls is enabled
+  useEffect(() => {
+    console.log('FileViewer: useEffect triggered', { 
+      useMinIOUrls, 
+      fileId: file?.id, 
+      hasMinioContent: !!minioContent, 
+      isLoadingMinio 
+    });
+    
+    if (useMinIOUrls && file?.id && !minioContent && !isLoadingMinio) {
+      console.log('FileViewer: Loading MinIO content for file:', file.id);
+      setIsLoadingMinio(true);
+      getFileContentWithMinIOUrls(file.id)
+        .then(data => {
+          console.log('FileViewer: MinIO content loaded successfully:', data);
+          setMinioContent(data.content);
+        })
+        .catch(error => {
+          console.error('FileViewer: Failed to load MinIO content:', error);
+          // Fall back to regular content
+        })
+        .finally(() => {
+          setIsLoadingMinio(false);
+        });
+    }
+  }, [useMinIOUrls, file?.id, minioContent, isLoadingMinio]);
 
   const handleSave = () => {
     onSave(editContent);
@@ -81,64 +131,50 @@ const FileViewer = ({
   return (
     <div className={`flex flex-col h-full bg-white ${isExpanded ? 'fixed inset-0 z-50' : ''}`}>
       {/* ====== SINGLE RESPONSIBILITY: Toolbar rendering ====== */}
-      <div className="flex-shrink-0 border-b border-gray-200 p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3 min-w-0 flex-1">
-            <h2 className="text-lg font-semibold text-gray-900 truncate">
+      <div className="flex-shrink-0 bg-gray-50 border-b border-gray-200">
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center space-x-3">
+            <h3 className="text-lg font-semibold text-gray-900 truncate">
               {formatFileTitle()}
-            </h2>
-            {file.topic && (
-              <span className="text-sm text-gray-500 truncate">
-                • {file.topic}
+            </h3>
+            {isLoadingMinio && (
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                Loading...
               </span>
             )}
           </div>
-          
+
           <div className="flex items-center space-x-2">
-            {viewMode === 'preview' ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onEdit}
-                className="flex items-center space-x-1"
-              >
-                <Edit className="h-4 w-4" />
-                <span>Edit</span>
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSave}
-                className="flex items-center space-x-1 text-green-600 border-green-300 hover:bg-green-50"
-              >
-                <Save className="h-4 w-4" />
-                <span>Save</span>
+            {viewMode === 'preview' && onEdit && (
+              <Button variant="outline" size="sm" onClick={onEdit}>
+                <Edit className="h-4 w-4 mr-1" />
+                Edit
               </Button>
             )}
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onDownload}
-              className="flex items-center space-x-1"
-            >
-              <Download className="h-4 w-4" />
-              <span>Download</span>
-            </Button>
-            
+
+            {viewMode === 'edit' && (
+              <Button variant="outline" size="sm" onClick={handleSave}>
+                <Save className="h-4 w-4 mr-1" />
+                Save
+              </Button>
+            )}
+
+            {onDownload && (
+              <Button variant="outline" size="sm" onClick={onDownload}>
+                <Download className="h-4 w-4 mr-1" />
+                Download
+              </Button>
+            )}
+
             <Button
               variant="outline"
               size="sm"
               onClick={onToggleExpand}
+              title={isExpanded ? "Minimize" : "Expand"}
             >
-              {isExpanded ? (
-                <Minimize2 className="h-4 w-4" />
-              ) : (
-                <Maximize2 className="h-4 w-4" />
-              )}
+              {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </Button>
-            
+
             <Button
               variant="outline"
               size="sm"
@@ -163,10 +199,16 @@ const FileViewer = ({
         ) : (
           <div className="p-6">
             {processedContent ? (
-              <MarkdownContent content={processedContent} notebookId={notebookId} />
+              <MarkdownContent 
+                content={processedContent} 
+                notebookId={notebookId} 
+                useMinIOUrls={useMinIOUrls} 
+              />
             ) : (
               <div className="text-center py-12">
-                <p className="text-gray-500">No content available</p>
+                <p className="text-gray-500">
+                  {isLoadingMinio ? 'Loading content with MinIO URLs...' : 'No content available'}
+                </p>
               </div>
             )}
           </div>

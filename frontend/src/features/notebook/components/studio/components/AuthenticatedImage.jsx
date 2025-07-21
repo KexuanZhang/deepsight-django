@@ -4,7 +4,7 @@ import { config } from '@/config';
 
 const API_BASE_URL = config.API_BASE_URL;
 
-// Enhanced Authenticated Image component with multiple fallback strategies
+// Enhanced Authenticated Image component that handles both MinIO URLs and API URLs
 const AuthenticatedImage = ({ src, alt, title }) => {
   const [imgSrc, setImgSrc] = useState(src);
   const [imgError, setImgError] = useState(false);
@@ -12,12 +12,23 @@ const AuthenticatedImage = ({ src, alt, title }) => {
   const [attemptCount, setAttemptCount] = useState(0);
 
   useEffect(() => {
+    console.log('AuthenticatedImage: Processing image with src:', src);
     setImgError(false);
     setIsLoading(true);
     setAttemptCount(0);
     
     // If the src is a blob URL or already a data URL, use it directly
     if (src.startsWith('blob:') || src.startsWith('data:')) {
+      console.log('AuthenticatedImage: Using blob/data URL directly');
+      setImgSrc(src);
+      setIsLoading(false);
+      return;
+    }
+
+    // Check if this is a direct MinIO URL (contains presigned URL patterns)
+    if (isMinIOUrl(src)) {
+      // For MinIO URLs, use directly without authentication
+      console.log('AuthenticatedImage: Detected MinIO URL, using directly');
       setImgSrc(src);
       setIsLoading(false);
       return;
@@ -25,13 +36,30 @@ const AuthenticatedImage = ({ src, alt, title }) => {
 
     // If it's an API URL, try multiple strategies to fetch the image
     if (src.includes('/api/v1/notebooks/') && src.includes('/images/')) {
+      console.log('AuthenticatedImage: Detected API URL, fetching with credentials');
       fetchImageWithFallbacks(src);
     } else {
       // For external URLs, use directly
+      console.log('AuthenticatedImage: Using external URL directly');
       setImgSrc(src);
       setIsLoading(false);
     }
   }, [src]);
+
+  const isMinIOUrl = (url) => {
+    // Check if URL looks like a MinIO pre-signed URL
+    const isMinIO = (
+      url.includes('X-Amz-Algorithm') ||
+      url.includes('X-Amz-Credential') ||
+      url.includes('X-Amz-Signature') ||
+      url.includes('?AWSAccessKeyId=') ||
+      url.includes('&Signature=') ||
+      (url.includes('localhost:9000') || url.includes('minio')) && url.includes('?')
+    );
+    
+    console.log('AuthenticatedImage: isMinIOUrl check for', url.substring(0, 100), '... Result:', isMinIO);
+    return isMinIO;
+  };
 
   const fetchImageWithFallbacks = async (originalSrc) => {
     const strategies = [
@@ -200,7 +228,10 @@ const AuthenticatedImage = ({ src, alt, title }) => {
           style={{ maxHeight: '500px' }}
           onError={(e) => {
             console.error('Image failed to load after processing:', { src: imgSrc, alt, title });
-            // Don't set error here as we've already tried all strategies
+            // For MinIO URLs, if they fail, mark as error since they should work directly
+            if (isMinIOUrl(imgSrc)) {
+              setImgError(true);
+            }
           }}
           onLoad={(e) => {
             console.log('Image loaded successfully:', { src: imgSrc, alt });
@@ -216,7 +247,9 @@ const AuthenticatedImage = ({ src, alt, title }) => {
           </div>
           {alt && <p className="text-xs mt-1 text-gray-400">{alt}</p>}
           <p className="text-xs mt-1 text-gray-400 break-all">URL: {src}</p>
-          <p className="text-xs mt-1 text-gray-400">Tried {attemptCount} loading strategies</p>
+          <p className="text-xs mt-1 text-gray-400">
+            {isMinIOUrl(src) ? 'MinIO URL may have expired' : `Tried ${attemptCount} loading strategies`}
+          </p>
         </div>
       )}
     </div>

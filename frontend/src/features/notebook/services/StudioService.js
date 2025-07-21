@@ -55,10 +55,19 @@ export class ApiStudioService extends IStudioService {
     // For now, we'll determine the type and call the appropriate cancel method
     // This could be improved by storing job type metadata
     try {
-      return await this.api.post(`/notebooks/${this.notebookId}/report-jobs/${jobId}/cancel/`);
+      // Try report cancel first
+      const reportUrl = `/notebooks/${this.notebookId}/report-jobs/${jobId}/cancel/`;
+      const result = await this.api.post(reportUrl);
+      return result;
     } catch (error) {
       // If report cancel fails, try podcast cancel
-      return await this.api.post(`/notebooks/${this.notebookId}/podcast-jobs/${jobId}/cancel/`);
+      try {
+        const podcastUrl = `/notebooks/${this.notebookId}/podcast-jobs/${jobId}/cancel/`;
+        const result = await this.api.post(podcastUrl);
+        return result;
+      } catch (podcastError) {
+        throw podcastError;
+      }
     }
   }
 
@@ -87,20 +96,17 @@ export class ApiStudioService extends IStudioService {
 
   async downloadFile(fileId, filename) {
     try {
-      // Download report as PDF instead of markdown
+      // Open report PDF in browser instead of downloading
       const blob = await this.api.downloadReportPdf(fileId, this.notebookId);
       const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      // Change file extension to .pdf
-      const pdfFilename = filename.replace(/\.[^/.]+$/, '') + '.pdf';
-      link.download = pdfFilename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      // Open PDF in new tab/window
+      window.open(url, '_blank');
+      // Clean up the blob URL after a short delay to allow browser to load it
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 1000);
     } catch (error) {
-      console.error('PDF download failed:', error);
+      console.error('PDF open failed:', error);
       throw error;
     }
   }

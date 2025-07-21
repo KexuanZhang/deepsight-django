@@ -151,9 +151,9 @@ prompts:
     A strong financial report demonstrates depth, critical thinking, and insight into the company's core financial position and strategic outlook. Avoid simply restating objective figures or summarizing content. Use the outline or text input headings as a springboard to explore the financial implications and present thought-provoking insights about the company's financial performance, risks, and growth opportunities.
 
     AVAILABLE FIGURES:
-    If 'Available figures' is provided (i.e., not 'N/A'), it will be a list of dictionaries, each containing 'image_path', 'figure_name', and 'caption'. 
+    If 'Available figures' is provided (i.e., not 'N/A'), it will be a list of dictionaries, each containing 'image_id' and 'caption'. 
     Figure Selection Rules:
-    	1.	Inspect each entry in Available figures (a list of dictionaries with keys image_path, figure_name, and caption).
+    	1.	Inspect each entry in Available figures (a list of dictionaries with keys image_id and caption).
     	2.	Choose one figure whose caption is both:
     	   - Highly relevant to the ideas discussed in the current section, and
     	   - Rich in content, meaning the caption describes data, a chart/graph, or financial performance information.
@@ -161,7 +161,7 @@ prompts:
     	4. Must refer to at most one figure in the section.
     Referencing the Chosen Figure:
     	1. Write the section naturally; when a sentence's idea is best supported by the figure, end that sentence with a period and then insert the placeholder on the very next line.
-    	2. The placeholder must be a stand-alone line in the form of <Figure X>, where Figure X is the exact figure_name.
+    	2. The placeholder must be a stand-alone line in the form of <image_id> without any other text, such as <12f86924-df70-48a7-93e9-29f64855a4da>, image_id is in a form of uuid, and it's a unique identifier for the figure. You should use the exact image_id as placeholder without any other text.
        3. Do not mention the figure name inside the section itself. The placeholder is the only reference.
     	4. Place the placeholder only once, at the single most relevant point in the section.
 

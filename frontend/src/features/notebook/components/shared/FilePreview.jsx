@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Eye, FileText, Globe, Music, Video, File, HardDrive, Calendar, ExternalLink, Loader2, AlertCircle, RefreshCw, Trash2, Plus, ChevronLeft, CheckCircle, Clock, Upload, Link2, Youtube, Group, Presentation } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
 import { Badge } from '@/common/components/ui/badge';
-import { generatePreview, supportsPreview, PREVIEW_TYPES, formatDate, getVideoMimeType, getAudioMimeType } from '@/features/notebook/utils/filePreview';
+import { generatePreview, supportsPreview, PREVIEW_TYPES, formatDate, getVideoMimeType, getAudioMimeType, generateTextPreviewWithMinIOUrls } from '@/features/notebook/utils/filePreview';
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import rehypeRaw from "rehype-raw";
 import "highlight.js/styles/github.css";
 import GallerySection from './GallerySection';
 
@@ -113,11 +114,19 @@ const AuthenticatedImage = ({ src, alt, title }) => {
 };
 
 // Function to process markdown content and resolve image URLs
-const processMarkdownContent = (content, fileId, notebookId) => {
+const processMarkdownContent = (content, fileId, notebookId, useMinIOUrls = false) => {
   if (!content) return content;
   
-  console.log('processMarkdownContent called with:', { fileId, notebookId, contentLength: content.length });
+  console.log('processMarkdownContent called with:', { fileId, notebookId, contentLength: content.length, useMinIOUrls });
   
+  // If using MinIO URLs, the content should already have direct MinIO URLs
+  // No processing needed as backend already converted them
+  if (useMinIOUrls) {
+    console.log('Using MinIO URLs - no processing needed');
+    return content;
+  }
+  
+  // Legacy processing for API URLs
   // Pattern to match markdown image syntax: ![alt text](image_path)
   const imagePattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
   
@@ -142,7 +151,7 @@ const MarkdownContent = React.memo(({ content }) => (
   <div className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900">
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
+      rehypePlugins={[rehypeHighlight, rehypeRaw]}
       components={{
         h1: ({children}) => <h1 className="text-3xl font-bold text-gray-900 mb-6 pb-3 border-b">{children}</h1>,
         h2: ({children}) => <h2 className="text-2xl font-semibold text-gray-800 mt-8 mb-4">{children}</h2>,
@@ -174,7 +183,7 @@ const MarkdownContent = React.memo(({ content }) => (
 
 MarkdownContent.displayName = 'MarkdownContent';
 
-const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
+const FilePreview = ({ source, isOpen, onClose, notebookId, useMinIOUrls = false }) => {
   // Consolidate all state into a single object to avoid hook order issues
   const [state, setState] = useState({
     preview: null,
@@ -212,13 +221,13 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
         URL.revokeObjectURL(state.preview.videoUrl);
       }
     };
-  }, [isOpen, source, notebookId]);
+  }, [isOpen, source, notebookId, useMinIOUrls]);
 
   const loadPreview = async () => {
     if (!source) return;
     
     console.log('FilePreview: Loading preview for source:', source);
-    console.log('FilePreview: Notebook ID:', notebookId);
+    console.log('FilePreview: Notebook ID:', notebookId, 'Use MinIO URLs:', useMinIOUrls);
     
     updateState({
       isLoading: true,
@@ -230,7 +239,19 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
     });
     
     try {
-      const previewData = await generatePreview(source, notebookId);
+      let previewData;
+      
+      // Check if we should use MinIO URLs for text content (but NOT for PDFs)
+      if (useMinIOUrls && source.metadata?.file_extension && 
+          ['.md', '.txt'].includes(source.metadata.file_extension.toLowerCase())) {
+        console.log('FilePreview: Using MinIO URLs for text preview generation');
+        previewData = await generateTextPreviewWithMinIOUrls(source.file_id, source.metadata, source);
+      } else {
+        console.log('FilePreview: Using regular preview generation');
+        // Pass useMinIOUrls flag to generatePreview so PDFs can use MinIO URLs properly
+        previewData = await generatePreview(source, notebookId, useMinIOUrls);
+      }
+      
       console.log('FilePreview: Preview data loaded:', previewData);
       updateState({ preview: previewData, isLoading: false });
     } catch (err) {
@@ -309,7 +330,7 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
 
   const renderTextPreview = () => {
     // Debug: show processed content and image URLs
-    const processedContent = processMarkdownContent(state.preview.content, source.file_id, notebookId);
+    const processedContent = processMarkdownContent(state.preview.content, source.file_id, notebookId, useMinIOUrls);
     
     return (
       <div className="space-y-4">
@@ -827,7 +848,38 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
             <Button
               size="sm"
               variant="default"
-              onClick={() => window.open(state.preview.pdfUrl, '_blank')}
+              onClick={async () => {
+                try {
+                  console.log('Opening PDF with URL:', state.preview.pdfUrl);
+                  
+                  // Open PDF in browser instead of downloading
+                  const response = await fetch(state.preview.pdfUrl, {
+                    credentials: 'include'
+                  });
+                  
+                  if (!response.ok) {
+                    throw new Error(`Failed to load PDF: ${response.status}`);
+                  }
+                  
+                  const blob = await response.blob();
+                  // Create blob with explicit PDF MIME type
+                  const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+                  const url = window.URL.createObjectURL(pdfBlob);
+                  
+                  // Open PDF in new tab/window
+                  window.open(url, '_blank');
+                  
+                  // Clean up the blob URL after a short delay
+                  setTimeout(() => {
+                    window.URL.revokeObjectURL(url);
+                  }, 1000);
+                  
+                } catch (error) {
+                  console.error('PDF open failed:', error);
+                  // Fallback to opening URL directly
+                  window.open(state.preview.pdfUrl, '_blank');
+                }
+              }}
               className="text-xs font-medium"
             >
               <ExternalLink className="h-3 w-3 mr-1.5" />
@@ -840,7 +892,7 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
       {/* Parsed Content Display */}
       <div className="bg-white rounded-lg border border-gray-200">
         <div className="p-6 max-h-[600px] overflow-y-auto">
-          <MarkdownContent content={processMarkdownContent(state.preview.content, source.file_id, notebookId)} />
+          <MarkdownContent content={processMarkdownContent(state.preview.content, source.file_id, notebookId, useMinIOUrls)} />
         </div>
       </div>
     </div>
@@ -863,7 +915,38 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
           <Button
             size="sm"
             variant="default"
-            onClick={() => window.open(state.preview.pdfUrl, '_blank')}
+            onClick={async () => {
+              try {
+                console.log('Opening PDF with URL:', state.preview.pdfUrl);
+                
+                // Open PDF in browser instead of downloading
+                const response = await fetch(state.preview.pdfUrl, {
+                  credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                  throw new Error(`Failed to load PDF: ${response.status}`);
+                }
+                
+                const blob = await response.blob();
+                // Create blob with explicit PDF MIME type
+                const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+                const url = window.URL.createObjectURL(pdfBlob);
+                
+                // Open PDF in new tab/window
+                window.open(url, '_blank');
+                
+                // Clean up the blob URL after a short delay
+                setTimeout(() => {
+                  window.URL.revokeObjectURL(url);
+                }, 1000);
+                
+              } catch (error) {
+                console.error('PDF open failed:', error);
+                // Fallback to opening URL directly
+                window.open(state.preview.pdfUrl, '_blank');
+              }
+            }}
             className="text-xs"
           >
             <ExternalLink className="h-3 w-3 mr-1" />
@@ -873,7 +956,7 @@ const FilePreview = ({ source, isOpen, onClose, notebookId }) => {
         
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
           <p className="text-sm text-yellow-800">
-            {state.preview.error || 'PDF content could not be extracted. Click "Open PDF" to view the original document.'}
+            {state.preview.error || 'PDF content could not be extracted. Click "Download" to view the original document.'}
           </p>
         </div>
       </div>

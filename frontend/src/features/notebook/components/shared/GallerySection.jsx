@@ -33,48 +33,52 @@ const GallerySection = ({ videoFileId, notebookId }) => {
 
   const loadImages = async () => {
     try {
-      // Try to fetch captions / manifest JSON to get ordered list of images
-      const possibleFiles = ['figure_data.json', 'captions.json', 'manifest.json'];
-      
-      // Add cache-busting timestamp to ensure fresh data
+      // Use new REST API endpoint to fetch images from database instead of figure_data.json
       const cacheBuster = Date.now();
-
+      const url = `${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/?t=${cacheBuster}`;
+      
       let imageList = [];
-      for (const filename of possibleFiles) {
-        const url = `${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/${filename}?t=${cacheBuster}`;
-        try {
-          const res = await fetch(url, { 
-            credentials: 'include',
-            cache: 'no-cache' // Ensure fresh data from server
-          });
-          if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
-            const data = await res.json();
-            // data could be an array or object with images key
-            imageList = Array.isArray(data) ? data : data.images || [];
-            if (imageList.length) break;
-          }
-        } catch (err) {
-          // continue trying next filename
+      try {
+        const res = await fetch(url, { 
+          credentials: 'include',
+          cache: 'no-cache' // Ensure fresh data from server
+        });
+        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+          const data = await res.json();
+          // data.images should be an array from the new REST API
+          imageList = Array.isArray(data.images) ? data.images : [];
         }
+      } catch (err) {
+        console.log('Images API not accessible, gallery will be empty');
       }
 
-      // Build filenames list only (blob fetched lazily)
+      // Build filenames list from new REST API response
       const files = imageList.map((item) => {
         if (typeof item === 'string') {
           return { name: item, caption: '' };
         }
-        // If object, try various fields to resolve filename
+        
+        // New API returns objects with figure_name, image_caption, image_url, minio_object_key, etc.
         let filename = item.file_name || item.filename || item.name;
+        
+        // Try to extract filename from minio_object_key (best option)
+        if (!filename && item.minio_object_key) {
+          filename = item.minio_object_key.split('/').pop();
+        }
+        
+        // Fallback to image_path or figure_name
         if (!filename && item.image_path) {
           filename = item.image_path.split('/').pop();
         }
         if (!filename && item.figure_name) {
-          // assume png extension if not provided
-          filename = `${item.figure_name}.png`;
+          // assume jpg extension if not provided (video frames are usually jpg)
+          filename = `${item.figure_name}.jpg`;
         }
+        
         return {
           name: filename,
-          caption: item.caption || ''
+          caption: item.image_caption || item.caption || '',
+          imageUrl: item.image_url || null // Pre-signed URL if available
         };
       });
       setImages(files);
@@ -107,9 +111,17 @@ const GallerySection = ({ videoFileId, notebookId }) => {
         needFetch.map(async (img) => {
           img.loading = true;
           try {
-            // Add cache busting for image files to ensure fresh content
-            const cacheBuster = Date.now();
-            const res = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/${img.name}?t=${cacheBuster}`, { 
+            // Use pre-signed URL if available, otherwise fetch through API
+            let imageUrl;
+            if (img.imageUrl) {
+              imageUrl = img.imageUrl;
+            } else {
+              // Fallback to original API endpoint for direct file serving
+              const cacheBuster = Date.now();
+              imageUrl = `${API_BASE_URL}/notebooks/${notebookId}/files/${videoFileId}/images/${img.name}?t=${cacheBuster}`;
+            }
+            
+            const res = await fetch(imageUrl, { 
               credentials: 'include',
               cache: 'no-cache'
             });
@@ -280,7 +292,7 @@ const GallerySection = ({ videoFileId, notebookId }) => {
                 onClick={() => img.blobUrl && setSelectedImage(img.blobUrl)}
               >
                 <img
-                  src={img.blobUrl || `${API_BASE_URL}/static/placeholder.png`}
+                  src={img.blobUrl || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='128' viewBox='0 0 140 128'%3E%3Crect width='140' height='128' fill='%23f3f4f6'/%3E%3Cg transform='translate(60, 54)'%3E%3Cpath fill='%23d1d5db' d='M10.5 2.5A1.5 1.5 0 0 0 9 4v8a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V4a1.5 1.5 0 0 0-1.5-1.5h-8zM12 5.5a1 1 0 1 1 2 0 1 1 0 0 1-2 0zm-1 4l1.5-1.5L15 10.5h-4V9.5z'/%3E%3C/g%3E%3C/svg%3E"}
                   alt="thumbnail"
                   loading="lazy"
                   className="object-cover w-full h-32 group-hover:opacity-90 transition-opacity"/>

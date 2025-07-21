@@ -54,12 +54,17 @@ class NotebookReportListCreateView(APIView):
                 notebooks=notebook
             ).order_by('-created_at')
             
+            # Calculate last modified time for caching
+            last_modified = None
+            if reports:
+                last_modified = max(report.updated_at for report in reports)
+            
             # Filter out phantom jobs (completed jobs without actual files)
             validated_reports = []
             for report in reports:
                 if report.status == Report.STATUS_COMPLETED:
                     # Check if the job has actual files
-                    if report.main_report_file or report.result_content:
+                    if report.main_report_object_key or report.result_content:
                         validated_reports.append(self._format_report_data(report))
                     else:
                         logger.warning(
@@ -69,7 +74,18 @@ class NotebookReportListCreateView(APIView):
                     # Include non-completed jobs as-is
                     validated_reports.append(self._format_report_data(report))
             
-            return Response({"reports": validated_reports})
+            response = Response({"reports": validated_reports})
+            
+            # Add caching headers
+            if last_modified:
+                response['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            
+            # Cache for 30 seconds if no active jobs, otherwise 5 seconds
+            has_active_jobs = any(report.get('status') in ['pending', 'running'] for report in validated_reports)
+            cache_timeout = 5 if has_active_jobs else 30
+            response['Cache-Control'] = f'max-age={cache_timeout}, must-revalidate'
+            
+            return response
         except Exception as e:
             logger.error(f"Error listing reports for notebook {notebook_id}: {e}")
             return Response(
@@ -130,7 +146,7 @@ class NotebookReportListCreateView(APIView):
             "created_at": report.created_at.isoformat(),
             "updated_at": report.updated_at.isoformat(),
             "error": report.error_message,
-            "has_files": bool(report.main_report_file),
+            "has_files": bool(report.main_report_object_key),
             "has_content": bool(report.result_content),
         }
 
@@ -213,11 +229,16 @@ class NotebookReportDetailView(APIView):
             report.save(update_fields=['result_content', 'updated_at'])
 
             # Also update the main report file if it exists
-            if report.main_report_file:
+            if report.main_report_object_key:
                 try:
-                    # Use the file path directly for text operations
-                    file_path = Path(report.main_report_file.path)
-                    file_path.write_text(content, encoding='utf-8')
+                    # Save content to MinIO using the file storage service
+                    from notebooks.utils.file_storage import FileStorageService
+                    storage_service = FileStorageService()
+                    storage_service.save_file_content(
+                        object_key=report.main_report_object_key,
+                        content=content.encode('utf-8'),
+                        content_type='text/markdown'
+                    )
                     logger.info(f"Updated report file for job {job_id}")
                 except Exception as e:
                     logger.warning(f"Could not update report file for {job_id}: {e}")
@@ -260,23 +281,23 @@ class NotebookReportDetailView(APIView):
             deleted_metadata = False
 
             # Delete generated files if they exist
-            if report.main_report_file:
+            if report.main_report_object_key:
                 try:
-                    # Get the directory containing the report files
-                    report_dir = Path(report.main_report_file.path).parent
-                    if report_dir.exists():
-                        deleted_files = len(list(report_dir.rglob("*")))
-                        shutil.rmtree(report_dir)
-                        logger.info(f"Deleted report directory: {report_dir}")
+                    # Delete from MinIO storage
+                    from notebooks.utils.file_storage import FileStorageService
+                    storage_service = FileStorageService()
+                    storage_service.minio_backend.delete_file(report.main_report_object_key)
+                    deleted_files = 1
+                    logger.info(f"Deleted report file from MinIO storage")
                 except Exception as e:
                     logger.warning(
-                        f"Could not delete report files for {report.id}: {e}"
+                        f"Could not delete report file for {report.id}: {e}"
                     )
 
             # Remove job metadata if exists
             if report.job_id:
                 deleted_metadata = report_orchestrator.delete_report_job(
-                    report.job_id, report.user.user_id
+                    report.job_id, report.user.id
                 )
 
             # Delete the report instance
@@ -388,28 +409,26 @@ class NotebookReportDownloadView(APIView):
 
             filename = request.query_params.get("filename")
 
-            # If filename is specified, return that specific file
+            # If filename is specified, check against stored metadata
             if filename:
-                if report.main_report_file:
-                    report_dir = Path(report.main_report_file.path).parent
-                    file_path = report_dir / filename
-
-                    if file_path.exists() and file_path.is_file():
-                        return FileResponse(
-                            open(file_path, "rb"), as_attachment=True, filename=filename
-                        )
-
+                # Check if filename matches the main report file
+                if (report.main_report_object_key and 
+                    report.file_metadata.get('main_report_filename') == filename):
+                    file_url = report.get_report_url(expires=86400)  # 1 day access
+                    if file_url:
+                        from django.http import HttpResponseRedirect
+                        return HttpResponseRedirect(file_url)
+                
                 return Response(
                     {"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND
                 )
 
             # Otherwise, return the main report file
-            if report.main_report_file:
-                return FileResponse(
-                    report.main_report_file.open("rb"),
-                    as_attachment=True,
-                    filename=Path(report.main_report_file.name).name,
-                )
+            if report.main_report_object_key:
+                file_url = report.get_report_url(expires=86400)  # 1 day access
+                if file_url:
+                    from django.http import HttpResponseRedirect
+                    return HttpResponseRedirect(file_url)
 
             return Response(
                 {"detail": "No downloadable report files found"},
@@ -463,11 +482,16 @@ class NotebookReportPdfDownloadView(APIView):
             # Try to get content from database first
             if report.result_content:
                 markdown_content = report.result_content
-            # Fallback: read from file
-            elif report.main_report_file:
+            # Fallback: read from MinIO storage
+            elif report.main_report_object_key:
                 try:
-                    with report.main_report_file.open("r", encoding="utf-8") as f:
-                        markdown_content = f.read()
+                    from notebooks.utils.file_storage import FileStorageService
+                    storage_service = FileStorageService()
+                    content_bytes = storage_service.get_file_content(report.main_report_object_key)
+                    if isinstance(content_bytes, bytes):
+                        markdown_content = content_bytes.decode('utf-8')
+                    else:
+                        markdown_content = content_bytes
                 except Exception as e:
                     logger.error(f"Error reading report file for {job_id}: {e}")
             
@@ -481,40 +505,15 @@ class NotebookReportPdfDownloadView(APIView):
             report_title = report.article_title or "Research Report"
             filename = f"{report_title.replace(' ', '_')}.pdf"
             
-            # Create PDF in the same directory as the markdown file if available,
-            # otherwise use a temporary location
-            if report.main_report_file:
-                report_dir = Path(report.main_report_file.path).parent
-                pdf_path = report_dir / filename
-                
-                # Use intelligent image root detection based on the report structure
-                # The report directory is like: Users/u_{user_id}/n_{notebook_id}/report/{year_month}/r_{report_id}/
-                # But images are in: Users/u_{user_id}/knowledge_base_item/{year_month}/f_{file_id}/images/
-                # So we need to go up to the Users/u_{user_id}/ level
-                user_data_dir = report_dir.parent.parent.parent  # Go up 3 levels to get to Users/u_{user_id}/
-                image_root = str(user_data_dir)
-                logger.info(f"Using user data directory as image root: {image_root}")
-            else:
-                # Use a temp directory if no main file exists, but still try to find user data directory
-                from django.core.files.storage import default_storage
-                import tempfile
-                temp_dir = Path(tempfile.mkdtemp())
-                pdf_path = temp_dir / filename
-                
-                # Try to determine the user data directory from Django settings
-                try:
-                    from django.conf import settings
-                    data_root = getattr(settings, 'DEEPSIGHT_DATA_ROOT', '/tmp/deepsight_data')
-                    user_data_dir = Path(data_root) / f"Users/u_{report.user.pk}"
-                    if user_data_dir.exists():
-                        image_root = str(user_data_dir)
-                        logger.info(f"Using user data directory from settings: {image_root}")
-                    else:
-                        image_root = None
-                        logger.warning("Could not find user data directory for image resolution")
-                except Exception as e:
-                    logger.warning(f"Error determining user data directory: {e}")
-                    image_root = None
+            # Create PDF in temporary directory since we're using MinIO storage
+            import tempfile
+            temp_dir = Path(tempfile.mkdtemp())
+            pdf_path = temp_dir / filename
+            
+            # With MinIO storage, we can't use local file paths for images
+            # PDF generation will need to work without local image directory
+            image_root = None
+            logger.info("Using MinIO storage - PDF will be generated in temporary location")
 
             try:
                 # Convert markdown to PDF
@@ -523,7 +522,7 @@ class NotebookReportPdfDownloadView(APIView):
                     output_path=str(pdf_path),
                     title=report_title,
                     image_root=image_root,
-                    input_file_path=str(report.main_report_file.path) if report.main_report_file else None
+                    input_file_path=None  # MinIO files don't have local paths
                 )
                 
                 # Return the PDF file
@@ -575,22 +574,22 @@ class NotebookReportFilesView(APIView):
 
             files = []
 
-            if report.main_report_file:
+            if report.main_report_object_key:
                 try:
-                    report_dir = Path(report.main_report_file.path).parent
-
-                    if report_dir.exists():
-                        for file_path in report_dir.rglob("*"):
-                            if file_path.is_file():
-                                relative_path = file_path.relative_to(report_dir)
-                                files.append(
-                                    {
-                                        "filename": str(relative_path),
-                                        "size": file_path.stat().st_size,
-                                        "type": file_path.suffix.lower(),
-                                        "download_url": f"/api/notebooks/{notebook_id}/reports/{job_id}/download?filename={relative_path}",
-                                    }
-                                )
+                    # Return main report file info from metadata
+                    metadata = report.file_metadata or {}
+                    filename = metadata.get('main_report_filename', 'report.md')
+                    size = metadata.get('main_report_size', 0)
+                    file_type = Path(filename).suffix.lower() if filename else '.md'
+                    
+                    files.append(
+                        {
+                            "filename": filename,
+                            "size": size,
+                            "type": file_type,
+                            "download_url": f"/api/notebooks/{notebook_id}/reports/{job_id}/download?filename={filename}",
+                        }
+                    )
                 except Exception as e:
                     logger.warning(f"Error listing files for job {job_id}: {e}")
 
@@ -649,11 +648,16 @@ class NotebookReportContentView(APIView):
                     }
                 )
 
-            # Fallback: read from file
-            if report.main_report_file:
+            # Fallback: read from MinIO storage
+            if report.main_report_object_key:
                 try:
-                    with report.main_report_file.open("r", encoding="utf-8") as f:
-                        content = f.read()
+                    from notebooks.utils.file_storage import FileStorageService
+                    storage_service = FileStorageService()
+                    content_bytes = storage_service.get_file_content(report.main_report_object_key)
+                    if isinstance(content_bytes, bytes):
+                        content = content_bytes.decode('utf-8')
+                    else:
+                        content = content_bytes
 
                     return Response(
                         {
@@ -776,6 +780,7 @@ def notebook_report_status_stream(request, notebook_id, job_id):
                             break
                         status_data = {
                             "job_id": job_id,
+                            "report_id": str(current_report.id),  # Convert UUID to string for JSON serialization
                             "status": current_report.status,
                             "progress": current_report.progress,
                             "error_message": current_report.error_message,

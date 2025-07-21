@@ -13,6 +13,7 @@ import apiService from '@/common/utils/api';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused custom hooks for specific concerns
+import { config } from '@/config';
 import { useStudioData, useGenerationState, useJobStatus } from '@/features/notebook/hooks';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
@@ -106,10 +107,26 @@ const StudioPanel = ({
   }, [podcastGeneration, studioData, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Job status monitoring ======
+  const handleReportError = useCallback((error) => {
+    if (error === 'Job was cancelled') {
+      reportGeneration.cancelGeneration();
+    } else {
+      reportGeneration.failGeneration(error);
+    }
+  }, [reportGeneration]);
+
+  const handlePodcastError = useCallback((error) => {
+    if (error === 'Job was cancelled') {
+      podcastGeneration.cancelGeneration();
+    } else {
+      podcastGeneration.failGeneration(error);
+    }
+  }, [podcastGeneration]);
+
   const reportJobStatus = useJobStatus(
     reportGeneration.currentJobId,
     handleReportComplete,
-    reportGeneration.failGeneration,
+    handleReportError,
     notebookId,
     'report'
   );
@@ -117,7 +134,7 @@ const StudioPanel = ({
   const podcastJobStatus = useJobStatus(
     podcastGeneration.currentJobId,
     handlePodcastComplete,
-    podcastGeneration.failGeneration,
+    handlePodcastError,
     notebookId,
     'podcast'
   );
@@ -248,24 +265,72 @@ const StudioPanel = ({
   // ====== SINGLE RESPONSIBILITY: Cancellation handlers ======
   const handleCancelReport = useCallback(async () => {
     if (reportGeneration.currentJobId) {
-      try {
-        await studioService.cancelGeneration(reportGeneration.currentJobId);
+      // Validate job ID is not empty or invalid
+      if (reportGeneration.currentJobId.trim() === '') {
         reportGeneration.cancelGeneration();
         jobService.clearJob(reportGeneration.currentJobId);
+        toast({
+          title: "Invalid Job",
+          description: "Invalid job detected. Status has been reset.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      try {
+        await studioService.cancelGeneration(reportGeneration.currentJobId);
+        
+        // Don't set local state immediately - let SSE handle the status update
+        jobService.clearJob(reportGeneration.currentJobId);
+        
+        toast({
+          title: "Cancelled",
+          description: "Report generation cancelled successfully."
+        });
       } catch (error) {
-        console.error('Failed to cancel report generation:', error);
+        // Check if it's a 404 (job not found) - clean up state
+        if (error.response?.status === 404) {
+          reportGeneration.cancelGeneration();
+          jobService.clearJob(reportGeneration.currentJobId);
+          toast({
+            title: "Job Not Found",
+            description: "Job no longer exists. Status has been reset.",
+            variant: "destructive"
+          });
+        } else {
+          // Only set local state if API call failed for other reasons
+          reportGeneration.failGeneration('Failed to cancel generation');
+          toast({
+            title: "Cancel Failed",
+            description: "Failed to cancel report generation. Please try again.",
+            variant: "destructive"
+          });
+        }
+      }
+    } else {
+      // If there's no job ID but we're in a generating state, reset the state
+      if (reportGeneration.state === 'generating') {
+        reportGeneration.cancelGeneration();
+        toast({
+          title: "Invalid State",
+          description: "Invalid generation state detected. Status has been reset.",
+          variant: "destructive"
+        });
       }
     }
-  }, [reportGeneration]);
+  }, [reportGeneration, studioService, jobService, toast]);
 
   const handleCancelPodcast = useCallback(async () => {
     if (podcastGeneration.currentJobId) {
       try {
         await studioService.cancelGeneration(podcastGeneration.currentJobId);
-        podcastGeneration.cancelGeneration();
+        // Don't set local state immediately - let SSE handle the status update
+        // podcastGeneration.cancelGeneration();
         jobService.clearJob(podcastGeneration.currentJobId);
       } catch (error) {
         console.error('Failed to cancel podcast generation:', error);
+        // Only set local state if API call failed
+        podcastGeneration.failGeneration('Failed to cancel generation');
       }
     }
   }, [podcastGeneration]);
@@ -563,7 +628,6 @@ const StudioPanel = ({
           onToggleCollapse={() => toggleSection('podcasts')}
           onDownloadPodcast={handleDownloadPodcast}
           onDeletePodcast={handleDeletePodcast}
-          studioService={studioService}
         />
       </div>
 
@@ -585,6 +649,7 @@ const StudioPanel = ({
           onToggleViewMode={toggleViewMode}
           onContentChange={setSelectedFileContent}
           notebookId={notebookId}
+          useMinIOUrls={config.USE_MINIO_URLS}
         />
       )}
 

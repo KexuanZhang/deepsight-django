@@ -3,11 +3,18 @@ import { config } from '@/config';
 const API_BASE_URL = config.API_BASE_URL;
 
 // Function to process report markdown content and fix image URLs
-export const processReportMarkdownContent = (content, notebookId) => {
+export const processReportMarkdownContent = (content, notebookId, useMinIOUrls = false) => {
   if (!content) return content;
   
-  console.log('processReportMarkdownContent called with:', { notebookId, contentLength: content.length });
+  console.log('processReportMarkdownContent called with:', { notebookId, contentLength: content.length, useMinIOUrls });
   
+  // If using MinIO URLs, content should already have direct MinIO URLs from backend
+  if (useMinIOUrls) {
+    console.log('Using MinIO URLs - content should already have direct URLs');
+    return content;
+  }
+  
+  // Legacy processing for API URLs
   // Convert HTML img tags with knowledge_base_item paths to markdown syntax
   // Pattern: <img src="../../../../knowledge_base_item/2025-06/f_3/images/_page_6_Figure_0.jpeg" alt="Figure 2" style="max-height: 500px;">
   const htmlImagePattern = /<img\s+src="([^"]*knowledge_base_item[^"]*)"(?:\s+alt="([^"]*)")?[^>]*>/g;
@@ -77,4 +84,30 @@ export const processReportMarkdownContent = (content, notebookId) => {
   });
 
   return processedContent;
+};
+
+// Function to get file content with MinIO URLs
+export const getFileContentWithMinIOUrls = async (fileId, expires = 86400) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/notebooks/files/${fileId}/content/minio/?expires=${expires}`, {
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json',
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (data.success) {
+      return data.data;
+    } else {
+      throw new Error(data.error || 'Failed to fetch content with MinIO URLs');
+    }
+  } catch (error) {
+    console.error('Error fetching content with MinIO URLs:', error);
+    throw error;
+  }
 };

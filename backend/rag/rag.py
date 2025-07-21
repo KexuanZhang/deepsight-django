@@ -41,30 +41,33 @@ def ensure_user_collection(coll_name: str):
     logger.debug("Checking Milvus collection %r exists? %s", coll_name, exists)
     if not exists:
         logger.info("Creating Milvus collection %r via Collection constructor", coll_name)
-        # Define schema fields
+        # Define schema fields (using LangChain compatible field names)
         fields = [
             FieldSchema(name="pk",        dtype=DataType.INT64,        is_primary=True, auto_id=True),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=1536),
-            FieldSchema(name="user_id",   dtype=DataType.INT64),
+            FieldSchema(name="vector",    dtype=DataType.FLOAT_VECTOR, dim=1536),
+            FieldSchema(name="text",      dtype=DataType.VARCHAR,     max_length=65535),  # LangChain stores document content here
+            FieldSchema(name="user_id",   dtype=DataType.VARCHAR,     max_length=64),
             FieldSchema(name="source",    dtype=DataType.VARCHAR,     max_length=512),
         ]
         schema = CollectionSchema(fields, description="Per-user file embeddings")
         # Create collection using the ORM Collection constructor
         coll = Collection(name=coll_name, schema=schema, using="default")
-        # Create index on the embedding field for efficient similarity search
+        # Create index on the vector field for efficient similarity search
         index_params = {
             "index_type": "IVF_FLAT",
             "metric_type": "L2",
             "params": {"nlist": 128}
         }
-        coll.create_index(field_name="embedding", index_params=index_params, using="default")
+        coll.create_index(field_name="vector", index_params=index_params, using="default")
         # Load the collection into memory
         coll.load()
         logger.info("Collection %r created, indexed, and loaded", coll_name)
 
 # Helper to derive a user-specific collection name
-def user_collection(user_id: int) -> str:
-    return f"{BASE_COLLECTION}_{user_id}"
+def user_collection(user_id) -> str:
+    # Convert UUID to string and remove hyphens for valid Milvus collection name
+    user_id_str = str(user_id).replace('-', '')
+    return f"{BASE_COLLECTION}_{user_id_str}"
 
 # SSE-based streaming helper
 def _pdf_to_text(path: str) -> str:
@@ -100,7 +103,7 @@ class SSEStreamer(BaseCallbackHandler):
         yield None
 
 # Ingest helper (called on file upload, kept here if needed)
-def add_user_content_documents(user_id: int, docs: List[Document]) -> None:
+def add_user_content_documents(user_id, docs: List[Document]) -> None:
     coll_name = user_collection(user_id)
     ensure_user_collection(coll_name)
 
@@ -114,6 +117,7 @@ def add_user_content_documents(user_id: int, docs: List[Document]) -> None:
         collection_name=coll_name,
         connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
         drop_old=False,
+        auto_id=True,
     )
     store.add_documents(chunks)
 
@@ -123,7 +127,7 @@ def add_user_content_documents(user_id: int, docs: List[Document]) -> None:
     coll.load()
 
 def add_user_files(
-    user_id: int,
+    user_id,
     kb_items: List,  # now take model instances, not paths
 ) -> None:
     coll_name = user_collection(user_id)
@@ -132,33 +136,61 @@ def add_user_files(
         collection_name=coll_name,
         connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
         drop_old=False,
+        auto_id=True,
     )
 
     docs = []
     print("!!!items!!!", kb_items)
     for item in kb_items:
-        # open in binary, then decode
-        with item.file.open(mode="rb") as f:
-            raw_bytes = f.read()
-        text = raw_bytes.decode("utf-8", errors="ignore")
+        # Use the model's get_file_content method which handles both MinIO and local storage
+        text = item.get_file_content()
+        
+        # If no processed content, try to get from inline content field
+        if not text:
+            text = item.content
+            
+        if not text:
+            # Skip items without any content
+            print(f"!!!Skipping item {item.id} - no content available")
+            continue
+
+        # Get source name from metadata or title
+        source_name = item.title
+        if item.file_metadata and 'original_filename' in item.file_metadata:
+            source_name = item.file_metadata['original_filename']
+        elif item.metadata and 'original_filename' in item.metadata:
+            source_name = item.metadata['original_filename']
+        elif item.metadata and 'filename' in item.metadata:
+            source_name = item.metadata['filename']
 
         docs.append(Document(
             page_content=text,
             metadata={
-                "user_id": user_id,
-                "source": item.file.name.rsplit("/", 1)[-1],
-                "kb_item_id": item.id,
+                "user_id": str(user_id),
+                "source": source_name,
+                "kb_item_id": str(item.id),
             }
         ))
 
     print("!!!docs", docs)
+    
+    # Only proceed if we have documents
+    if not docs:
+        print("!!!No documents to add to Milvus")
+        return
+    
     # split into chunks and add
     chunks = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=100
     ).split_documents(docs)
-
-    store.add_documents(chunks)
+    
+    # Only add to Milvus if we have chunks
+    if chunks:
+        store.add_documents(chunks)
+        print(f"!!!Added {len(chunks)} chunks to Milvus")
+    else:
+        print("!!!No chunks generated from documents")
 
     # make sure Milvus is up to date
     coll = Collection(coll_name)
@@ -167,16 +199,58 @@ def add_user_files(
 
 
 # Remove helper to delete vectors by source
-def delete_user_file(user_id: int, source: str) -> None:
+def delete_user_file(user_id, source: str) -> None:
     coll_name = user_collection(user_id)
-    store = Milvus(
-        embedding_function=OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY),
-        collection_name=coll_name,
-        connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
-        drop_old=False,
-    )
-    expr = f'user_id=={user_id} && source=="{source}"'
-    store.delete(expr=expr)
+    
+    # Check if collection exists
+    if not utility.has_collection(coll_name, using="default"):
+        logger.info(f"Collection {coll_name} does not exist, skipping deletion")
+        return
+    
+    # Get the collection to query for primary keys
+    coll = Collection(coll_name, using="default")
+    
+    try:
+        # First, query to get the primary keys of vectors to delete
+        # Use string literals for proper escaping in Milvus query
+        user_id_escaped = str(user_id).replace('"', '\\"')
+        source_escaped = source.replace('"', '\\"')
+        expr = f'user_id == "{user_id_escaped}" && source == "{source_escaped}"'
+        
+        logger.info(f"Querying Milvus collection {coll_name} with expression: {expr}")
+        
+        # Query to get primary keys
+        results = coll.query(
+            expr=expr,
+            output_fields=["pk"],
+            consistency_level="Strong"
+        )
+        
+        if not results:
+            logger.info(f"No vectors found for user_id={user_id}, source={source}")
+            return
+        
+        # Extract primary keys
+        pks = [result["pk"] for result in results]
+        logger.info(f"Found {len(pks)} vectors to delete for source: {source}")
+        
+        # Delete by primary keys using simple pk-based expression
+        if pks:
+            # Create pk-based deletion expression
+            pk_list = ",".join(str(pk) for pk in pks)
+            pk_expr = f"pk in [{pk_list}]"
+            
+            logger.info(f"Deleting vectors with expression: {pk_expr}")
+            coll.delete(expr=pk_expr)
+            
+            # Flush to ensure deletion is persisted
+            coll.flush()
+            logger.info(f"Successfully deleted {len(pks)} vectors for source: {source}")
+        
+    except Exception as e:
+        logger.error(f"Error deleting vectors for user_id={user_id}, source={source}: {str(e)}")
+        # Re-raise to let the caller handle the error appropriately
+        raise
 
 
 from typing import List, Optional
@@ -247,7 +321,7 @@ class RAGChatbot:
     """
     def __init__(
         self,
-        user_id: int,
+        user_id,
         k_local: int = 7,
         k_global: int = 3,
         extra_collections: Optional[List[str]] = None,
@@ -295,7 +369,7 @@ class RAGChatbot:
     ) -> Generator[str, None, None]:
         history = history or []
         # build local retriever with Milvus expr including filter_sources
-        clauses = [f"user_id=={self.user_id}"]
+        clauses = [f'user_id=="{self.user_id}"']
         if filter_sources:
             quoted = ",".join(f'\"{s}\"' for s in filter_sources)
             clauses.append(f"source in [{quoted}]")

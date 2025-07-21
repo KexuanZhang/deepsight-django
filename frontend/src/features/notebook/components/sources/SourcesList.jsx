@@ -7,6 +7,7 @@ import { Badge } from "@/common/components/ui/badge";
 import apiService from "@/common/utils/api";
 import FilePreview from "@/features/notebook/components/shared/FilePreview";
 import { supportsPreview } from "@/features/notebook/utils/filePreview";
+import { config } from '@/config';
 
 const fileIcons = {
   pdf: FileIcon,
@@ -2098,6 +2099,7 @@ const SourcesList = forwardRef(({ notebookId, onSelectionChange, onToggleCollaps
         isOpen={isPreviewOpen}
         onClose={handleClosePreview}
         notebookId={notebookId}
+        useMinIOUrls={config.USE_MINIO_URLS}
       />
     </div>
   );

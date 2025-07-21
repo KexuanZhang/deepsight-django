@@ -164,6 +164,11 @@ class ApiService {
     return this.request(`/notebooks/files/${fileId}/content/`);
   }
 
+  async getFileContentWithMinIOUrls(fileId, expires = 86400) {
+    // Get file content with direct MinIO pre-signed URLs for images
+    return this.request(`/notebooks/files/${fileId}/content/minio/?expires=${expires}`);
+  }
+
   async getFileRaw(fileId, notebookId) {
     // Serve raw file content (for PDFs, videos, audio, etc.)
     const url = `${this.baseUrl}/notebooks/${notebookId}/files/${fileId}/raw/`;
@@ -677,6 +682,7 @@ class ApiService {
       credentials: 'include', // This includes session cookies for authentication
       headers: {
         'X-CSRFToken': getCookie('csrftoken'),
+        'Accept': 'application/json',
       },
     });
 
@@ -692,7 +698,18 @@ class ApiService {
       throw new Error(errorMessage);
     }
 
-    return response.blob();
+    const data = await response.json();
+    if (!data.audio_url) {
+      throw new Error('No audio URL returned from server');
+    }
+    
+    // Download the file from the pre-signed URL
+    const audioResponse = await fetch(data.audio_url);
+    if (!audioResponse.ok) {
+      throw new Error('Failed to download audio file');
+    }
+    
+    return audioResponse.blob();
   }
 
   async deletePodcast(jobId, notebookId) {
@@ -781,7 +798,7 @@ class ApiService {
 
   // New method for getting batch job status
   async getBatchJobStatus(notebookId, batchJobId) {
-    return this.request(`/${notebookId}/batch-jobs/${batchJobId}/status/`);
+    return this.request(`/notebooks/${notebookId}/batch-jobs/${batchJobId}/status/`);
   }
 
   async extractVideoImages(notebookId, data = {}) {

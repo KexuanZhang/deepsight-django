@@ -16,7 +16,18 @@ const getConfig = () => {
   };
 };
 
-export const config = getConfig();
+export const config = {
+  API_BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
+  // Feature flags
+  USE_MINIO_URLS: import.meta.env.VITE_USE_MINIO_URLS === 'true' || true, // Enable MinIO URLs by default for testing
+};
+
+// Debug logging to verify configuration
+console.log('Configuration loaded:', {
+  API_BASE_URL: config.API_BASE_URL,
+  USE_MINIO_URLS: config.USE_MINIO_URLS,
+  VITE_USE_MINIO_URLS: import.meta.env.VITE_USE_MINIO_URLS
+});
 
 // For backward compatibility, export the API_BASE_URL directly
 export const API_BASE_URL = config.API_BASE_URL;

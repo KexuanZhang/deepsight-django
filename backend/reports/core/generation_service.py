@@ -49,6 +49,9 @@ class GenerationService:
                 notebook_id=report.notebooks.pk if report.notebooks else None
             )
             
+            # Log the output directory path to track MinIO vs temp paths
+            logger.info(f"Output directory for report {report_id}: {output_dir}")
+            
             # Prepare input data from knowledge base (no temp files - direct content like podcast)
             content_data = {}
             if report.selected_files_paths:
@@ -57,30 +60,37 @@ class GenerationService:
                 )
                 content_data = self.input_processor.get_content_data(processed_data)
                 
-                # Conditionally create combined figure_data.json file based on include_image flag
+                # Conditionally get combined figure data from database based on include_image flag
                 if report.include_image:
                     from .figure_service import FigureDataService
                     selected_file_ids = content_data.get("selected_file_ids", [])
                     if selected_file_ids:
-                        figure_data_path = FigureDataService.create_combined_figure_data(
+                        figure_data_ref = FigureDataService.create_combined_figure_data(
                             report, selected_file_ids
                         )
-                        if figure_data_path:
-                            report.figure_data_path = figure_data_path
-                            report.save(update_fields=['figure_data_path'])
+                        if figure_data_ref:
+                            # Store the database reference instead of file path
+                            report.figure_data_object_key = figure_data_ref
+                            report.save(update_fields=['figure_data_object_key'])
             
             # Load figure data if available
             figure_data = []
-            if report.include_image and report.figure_data_path:
+            if report.include_image and report.figure_data_object_key:
                 from .figure_service import FigureDataService
-                figure_data = FigureDataService.load_combined_figure_data(report.figure_data_path)
+                
+                # Check if we have cached figure data
+                if hasattr(report, '_cached_figure_data'):
+                    figure_data = report._cached_figure_data
+                else:
+                    # Load from database or fallback to file
+                    figure_data = FigureDataService.load_combined_figure_data(report.figure_data_object_key)
 
             # Create configuration for report generation
             config_dict = report.get_configuration_dict()
             config_dict.update({
                 'output_dir': output_dir,
                 'old_outline': report.old_outline,
-                'report_id': report.id,
+                'report_id': str(report.id),  # Convert UUID to string for JSON serialization
                 'figure_data': figure_data,  # Add figure data to config
                 **content_data  # Add content data directly (no file paths)
             })
@@ -98,14 +108,10 @@ class GenerationService:
                 error_msg = result.get('error_message', 'Report generation failed')
                 raise Exception(error_msg)
             
-            # Store generated files
+            # For MinIO storage, files are already uploaded by the report generator
+            # For local storage, we need to ensure files are in the correct location
             generated_files = result.get('generated_files', [])
-            if generated_files:
-                stored_files = self.file_storage.store_generated_files(
-                    generated_files, output_dir
-                )
-            else:
-                stored_files = []
+            stored_files = generated_files  # Files are already in final location
             
             # Find main report file
             main_report_file = self.file_storage.get_main_report_file(stored_files)
@@ -130,6 +136,12 @@ class GenerationService:
             
         except Exception as e:
             logger.error(f"Error in report generation for report {report_id}: {e}")
+            
+            # Cleanup any temp directories on failure
+            try:
+                self.report_generator.cancel_generation(str(report.job_id) if report else "unknown")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup temp directories after error: {cleanup_error}")
             
             raise
     

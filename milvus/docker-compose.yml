@@ -64,7 +64,25 @@ services:
       - POSTGRES_USER=${PGUSER}
       - POSTGRES_PASSWORD=${PGPASSWORD}
     ports:
-      - "5432:5432"
+      - "2379:2379"
+
+  minio:
+    image: minio/minio:latest
+    entrypoint: >
+      /bin/sh -c "
+        /usr/bin/docker-entrypoint.sh server /data --console-address ':9001' &
+        sleep 5 &&
+        mc alias set local http://localhost:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/deepsight-users &&
+        mc policy set public local/deepsight-users
+        wait
+      "
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - pgdata:/var/lib/postgresql/data
 

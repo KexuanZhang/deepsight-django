@@ -3,7 +3,7 @@ from .models import PodcastJob
 
 
 class PodcastJobSerializer(serializers.ModelSerializer):
-    job_id = serializers.UUIDField(read_only=True)
+    job_id = serializers.UUIDField(source='id', read_only=True)
     audio_url = serializers.SerializerMethodField()
     notebook_id = serializers.SerializerMethodField()
 
@@ -22,7 +22,6 @@ class PodcastJobSerializer(serializers.ModelSerializer):
             "error_message",
             "source_file_ids",
             "source_metadata",
-            "duration_seconds",
             "notebook_id",
         ]
         read_only_fields = [
@@ -34,7 +33,6 @@ class PodcastJobSerializer(serializers.ModelSerializer):
             "audio_url",
             "conversation_text",
             "error_message",
-            "duration_seconds",
             "notebook_id",
         ]
 
@@ -69,7 +67,7 @@ class NotebookPodcastJobCreateSerializer(serializers.Serializer):
 
 
 class PodcastJobListSerializer(serializers.ModelSerializer):
-    job_id = serializers.UUIDField(read_only=True)
+    job_id = serializers.UUIDField(source='id', read_only=True)
     audio_url = serializers.SerializerMethodField()
     notebook_id = serializers.SerializerMethodField()
 
@@ -85,7 +83,6 @@ class PodcastJobListSerializer(serializers.ModelSerializer):
             "updated_at",
             "audio_url",
             "error_message",
-            "duration_seconds",
             "notebook_id",
         ]
 

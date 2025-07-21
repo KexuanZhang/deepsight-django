@@ -1,8 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 import uuid
-from storages.backends.s3boto3 import S3Boto3Storage
-import json
 
 User = get_user_model()
 
@@ -16,7 +14,7 @@ class PodcastJob(models.Model):
         ("cancelled", "Cancelled"),
     ]
 
-    job_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, unique=True, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     
     # Required linking to a notebook - breaking change for dev phase
@@ -44,8 +42,22 @@ class PodcastJob(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # MinIO-native storage (replaces Django FileField)
+    audio_object_key = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        db_index=True,
+        help_text="MinIO object key for generated audio file"
+    )
+    
+    # File metadata stored in database
+    file_metadata = models.JSONField(
+        default=dict, 
+        help_text="Audio file metadata (filename, size, duration, etc.)"
+    )
+    
     # Results
-    audio_file = models.FileField(null=True, blank=True, storage=S3Boto3Storage(),)
     conversation_text = models.TextField(blank=True, default="")
     error_message = models.TextField(blank=True, default="")
 
@@ -53,37 +65,47 @@ class PodcastJob(models.Model):
     source_file_ids = models.JSONField(default=list)
     source_metadata = models.JSONField(default=dict)
 
-    # Audio metadata
-    duration_seconds = models.IntegerField(null=True, blank=True)
+    # Audio metadata moved to file_metadata JSON field
 
     class Meta:
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["status"]),
             models.Index(fields=["user", "created_at"]),
-            models.Index(fields=["notebooks", "created_at"]),
+            # MinIO-specific indexes
+            models.Index(fields=["audio_object_key"]),
         ]
 
     def __str__(self):
-        return f"Podcast Job {self.job_id} - {self.title} (Notebook: {self.notebooks.title})"
+        return f"PodcastJob {self.id} - {self.title} ({self.status})"
+
+    def get_audio_url(self, expires=3600):
+        """Get pre-signed URL for audio access"""
+        if self.audio_object_key:
+            try:
+                from notebooks.utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_file_url(self.audio_object_key, expires)
+            except Exception:
+                return None
+        return None
 
     @property
     def audio_url(self):
-        """Return the audio file URL if available"""
-        if self.audio_file:
-            return self.audio_file.url
-        return None
+        """Legacy property for backward compatibility"""
+        return self.get_audio_url()
 
     def get_result_dict(self):
-        """Return job result as dictionary for API responses"""
+        """Return result data as dictionary"""
         return {
-            "job_id": str(self.job_id),
+            "job_id": str(self.id),
             "title": self.title,
             "description": self.description,
-            "audio_url": self.audio_url,
-            "source_files": self.source_metadata,
+            "status": self.status,
+            "audio_url": self.get_audio_url(),
             "conversation_text": self.conversation_text,
-            "duration_seconds": self.duration_seconds,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "notebook_id": self.notebooks.pk,
+            "duration_seconds": self.file_metadata.get("duration_seconds"),
+            "source_file_ids": self.source_file_ids,
+            "created_at": self.created_at.isoformat(),
+            "error_message": self.error_message,
         }

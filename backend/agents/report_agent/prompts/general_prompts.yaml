@@ -159,9 +159,9 @@ prompts:
     \ or summarizing content. Instead, use the outline or text input headings as a\
     \ springboard to delve deeper and present thought-provoking insights.\n\nAVAILABLE\
     \ FIGURES:\nIf 'Available figures' is provided (i.e., not 'N/A'), it will be a\
-    \ list of dictionaries, each containing 'image_path', 'figure_name', and 'caption'.\
+    \ list of dictionaries, each containing 'image_id', and 'caption'.\
     \ \nFigure Selection Rules:\n\t1.\tInspect each entry in Available figures (a\
-    \ list of dictionaries with keys image_path, figure_name, and caption).\n\t2.\t\
+    \ list of dictionaries with keys image_id, and caption).\n\t2.\t\
     Choose one figure whose caption is both:\n\t   - Highly relevant to the ideas\
     \ discussed in the current section, and\n\t   - Rich in content, meaning the caption\
     \ describes data, a chart/graph, or product-specific information.\n\t3.\tExclude\
@@ -169,9 +169,11 @@ prompts:
     \ details.\n\t4. Must refer to at most one figure in the section.\nReferencing\
     \ the Chosen Figure:\n\t1. Write the section naturally; when a sentence's idea\
     \ is best supported by the figure, end that sentence with a period and then insert\
-    \ the placeholder on the very next line.\n\t2. The placeholder must be a stand-alone\
-    \ line in the form of <Figure X>, where Figure X is the exact figure_name.\n \
-    \  3. Do not mention the figure name inside the section itself. The placeholder\
+    \ the placeholder on the very next line.\n\t2. The placeholder must be a stand-alone line\
+    \ in the form of <image_id> without any other text, such as <12f86924-df70-48a7-93e9-29f64855a4da>,\
+    \ image_id is in a form of uuid, and it's a unique identifier for the figure. You should\
+    \ use the exact image_id as placeholder without any other text.\n\t3. Do not mention\
+    \ the figure name inside the section itself. The placeholder\
     \ is the only reference.\n\t4. Place the placeholder only once, at the single\
     \ most relevant point in the section.\n\nPlease follow these formatting guidelines:\n\
     - Use a natural, friendly tone with vivid language. Avoid quotation marks and\
