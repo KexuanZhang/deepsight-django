@@ -37,7 +37,20 @@ const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({ src, alt, title
       return;
     }
 
-    // If it's an API URL, fetch it with credentials and create a blob URL
+    // Check if it's a MinIO URL (pre-signed URLs with X-Amz-Signature or minio host)
+    const isMinIOUrl = src.includes('X-Amz-Signature') || 
+                       src.includes('X-Amz-Algorithm') ||
+                       (src.includes('minio') && src.includes(':9000')) ||
+                       (src.includes('localhost:9000'));
+    
+    if (isMinIOUrl) {
+      console.log('Using MinIO pre-signed URL directly (no auth needed):', src);
+      setImgSrc(src);
+      setIsLoading(false);
+      return;
+    }
+
+    // If it's an API URL, fetch it with credentials and handle redirects
     if (src.includes('/api/v1/notebooks/') && src.includes('/images/')) {
       const fetchImageWithCredentials = async () => {
         try {
@@ -46,8 +59,21 @@ const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({ src, alt, title
             credentials: 'include',
             headers: {
               'Accept': 'image/*,*/*'
-            }
+            },
+            redirect: 'manual' // Handle redirects manually
           });
+
+          // Check if response is a redirect (status 302/301)
+          if (response.status === 302 || response.status === 301) {
+            const redirectUrl = response.headers.get('location');
+            if (redirectUrl) {
+              console.log('API returned redirect to:', redirectUrl);
+              // Use the redirect URL directly (it's a pre-signed MinIO URL)
+              setImgSrc(redirectUrl);
+              setIsLoading(false);
+              return;
+            }
+          }
 
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -140,15 +166,27 @@ const processMarkdownContent = (content: string, fileId: string, notebookId: str
   return content.replace(imagePattern, (match: string, altText: string, imagePath: string) => {
     console.log('Processing image:', { altText, imagePath });
     
-    // Handle relative paths that start with ../images/
+    // Skip if it's already a full URL (http/https)
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+      return match;
+    }
+    
+    // Handle relative paths that start with ../images/ or contain /images/
     if (imagePath.startsWith('../images/') || imagePath.includes('/images/')) {
       const imageName = imagePath.split('/').pop();
       const imageUrl = `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/images/${imageName}`;
-      console.log('Generated image URL:', imageUrl);
+      console.log('Generated image URL from relative path:', imageUrl);
       return `![${altText}](${imageUrl})`;
     }
     
-    // Return original if not a relative image path
+    // Handle direct image filenames (like _page_0_Figure_10.jpeg)
+    if (imagePath.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i) && !imagePath.includes('/')) {
+      const imageUrl = `${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/images/${imagePath}`;
+      console.log('Generated image URL from filename:', imageUrl);
+      return `![${altText}](${imageUrl})`;
+    }
+    
+    // Return original if not an image path we can process
     return match;
   });
 };
