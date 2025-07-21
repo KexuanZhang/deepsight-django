@@ -56,9 +56,9 @@ class NotebookPodcastJobListCreateView(APIView):
             if last_modified:
                 response['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
             
-            # Cache for 30 seconds if no active jobs, otherwise 5 seconds
+            # Use minimal caching to ensure delete operations are immediately reflected
             has_active_jobs = any(job_data.get('status') in ['pending', 'generating'] for job_data in serializer.data)
-            cache_timeout = 5 if has_active_jobs else 30
+            cache_timeout = 2 if has_active_jobs else 5
             response['Cache-Control'] = f'max-age={cache_timeout}, must-revalidate'
             
             return response
@@ -163,7 +163,15 @@ class NotebookPodcastJobDetailView(APIView):
             
             # Delete the job record from database
             job.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            
+            response = Response(status=status.HTTP_204_NO_CONTENT)
+            
+            # Add cache-busting headers to ensure browsers don't cache delete responses
+            response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response['Pragma'] = 'no-cache'
+            response['Expires'] = '0'
+            
+            return response
 
         except Exception as e:
             logger.error(f"Error deleting podcast-job {job_id} for notebook {notebook_id}: {e}")

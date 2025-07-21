@@ -2,7 +2,7 @@
 // This component demonstrates all 5 SOLID principles in action
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown } from 'lucide-react';
+import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown, Trash2 } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
 import { useToast } from '@/common/components/ui/use-toast';
 
@@ -231,13 +231,14 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   }, [sourcesListRef, onSelectionChange]);
 
   // ====== SINGLE RESPONSIBILITY: Report generation handler ======
-  const handleGenerateReport = useCallback(async () => {
+  const handleGenerateReport = useCallback(async (configOverrides?: Partial<any>) => {
     try {
       const config = {
         ...reportGeneration.config,
+        ...configOverrides,
         notebook_id: notebookId,
         selected_files_paths: selectedFiles.map((f: FileItem) => f.id),
-        model: reportGeneration.config.model || 'gpt-4'
+        model: configOverrides?.model || reportGeneration.config.model || 'gpt-4'
       };
 
       const response = await studioService.generateReport(config);
@@ -260,13 +261,14 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   }, [reportGeneration, notebookId, selectedFiles, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation handler ======
-  const handleGeneratePodcast = useCallback(async () => {
+  const handleGeneratePodcast = useCallback(async (configOverrides?: Partial<any>) => {
     try {
       const config = {
         ...podcastGeneration.config,
+        ...configOverrides,
         notebook_id: notebookId,
         source_file_ids: selectedFiles.map((f: FileItem) => f.id),
-        model: podcastGeneration.config.model || 'gpt-4'
+        model: configOverrides?.model || podcastGeneration.config.model || 'gpt-4'
       };
 
       const response = await studioService.generatePodcast(config);
@@ -498,7 +500,14 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       }
       
       // Delete from backend database using the proper API call
-      await (studioService as any).deleteReport?.(reportId, notebookId);
+      const result = await apiService.deleteReport(reportId, notebookId);
+      
+      // Verify the deletion was successful by checking the response
+      if (!result || (result.error && result.error !== null)) {
+        throw new Error(result?.error || 'Backend deletion failed');
+      }
+      
+      // Only remove from local state after confirming backend deletion succeeded
       studioData.removeReport(reportId);
       
       // Clear selected file if it's the one being deleted, without navigating to another file
@@ -509,17 +518,17 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       
       toast({
         title: "Report Deleted",
-        description: "The report has been deleted successfully from the database"
+        description: "The report has been deleted successfully"
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
-        title: "Delete Failed",
-        description: errorMessage,
+        title: "Delete Failed", 
+        description: `Failed to delete report: ${errorMessage}`,
         variant: "destructive"
       });
     }
-  }, [studioService, studioData, selectedFile, notebookId, toast]);
+  }, [studioData, selectedFile, notebookId, toast]);
 
   const handleDeletePodcast = useCallback(async (podcast: PodcastItem) => {
     if (!confirm('Are you sure you want to delete this podcast?')) {
@@ -532,7 +541,15 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         throw new Error('Podcast ID not found');
       }
       
-      await studioService.deleteFile(podcastId);
+      const result = await apiService.deletePodcast(podcastId, notebookId);
+      
+      // Verify the deletion was successful by checking the response
+      // For podcasts, successful deletion returns HTTP 204 (no content)
+      if (result && result.error) {
+        throw new Error(result.error || 'Backend deletion failed');
+      }
+      
+      // Only remove from local state after confirming backend deletion succeeded
       studioData.removePodcast(podcastId);
       
       if (selectedFile?.id === podcastId || selectedFile?.job_id === podcastId) {
@@ -548,11 +565,11 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
         title: "Delete Failed",
-        description: errorMessage,
+        description: `Failed to delete podcast: ${errorMessage}`,
         variant: "destructive"
       });
     }
-  }, [studioService, studioData, selectedFile, toast]);
+  }, [studioData, selectedFile, notebookId, toast]);
 
   const handleSaveFile = useCallback(async (content: string) => {
     if (!selectedFile) return;
@@ -732,7 +749,17 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                       </div>
                     </div>
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                      <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteReport(report);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -763,7 +790,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                   >
                     {/* Podcast Header */}
                     <div
-                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200"
+                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200 group"
                       onClick={() => handlePodcastClick(podcast)}
                     >
                       <div className="flex items-center space-x-3">
@@ -784,7 +811,18 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                             <span>Click to {isExpanded ? 'collapse' : 'play'}</span>
                           </div>
                         </div>
-                        <div className="flex-shrink-0">
+                        <div className="flex-shrink-0 flex items-center space-x-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePodcast(podcast);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                           <div className={`w-2 h-2 rounded-full transition-colors ${isExpanded ? 'bg-purple-400' : 'bg-gray-300'}`}></div>
                         </div>
                       </div>
