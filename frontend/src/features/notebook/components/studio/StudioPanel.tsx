@@ -442,11 +442,33 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         throw new Error('Report ID not found');
       }
       
-      const filename = `${report.title || report.article_title || 'report'}.md`;
-      await studioService.downloadFile(reportId, filename);
+      // Add a small delay to ensure any pending save operations complete
+      // This prevents race conditions between save and download
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const filename = `${report.title || report.article_title || 'report'}.pdf`;
+      
+      // Use apiService.downloadReportPdf directly instead of studioService.downloadFile
+      // This ensures we're using the correct PDF download endpoint
+      const blob = await apiService.downloadReportPdf(reportId, notebookId);
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up the blob URL
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 1000);
+      
       toast({
         title: "Download Started",
-        description: "Your report is being downloaded"
+        description: "Your report is being downloaded as PDF"
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -456,7 +478,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         variant: "destructive"
       });
     }
-  }, [studioService, toast]);
+  }, [apiService, notebookId, toast]);
 
   const handleDownloadPodcast = useCallback(async (podcast: PodcastItem) => {
     try {
