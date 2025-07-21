@@ -73,9 +73,9 @@ class ChatService:
         user_id,
         question,
         history,
-        filter_sources=None,
+        file_ids=None,         # <-- add file_ids param
         notebook=None,
-        collections=None,  # <-- add this
+        collections=None,
     ):
         """Create RAG chat stream with message recording"""
         # Get the chatbot singleton
@@ -88,7 +88,7 @@ class ChatService:
         raw_stream = bot.stream(
             question=question,
             history=history,
-            filter_sources=filter_sources,
+            file_ids=file_ids,  # <-- pass file_ids to bot
         )
 
         def wrapped_stream():

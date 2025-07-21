@@ -25,7 +25,7 @@ class RAGChatFromKBView(NotebookPermissionMixin, APIView):
     POST /api/v1/notebooks/{notebook_id}/chat/
     {
       "question":       "Explain quantum tunneling",
-      "filter_sources": ["paper1.pdf","notes.md"],
+      "file_ids":       ["e8e6fd53-b9e9-4569-8fa1-bbc01882a97a", ...],  # selected file IDs
       "collections":    ["cvpr_2017", "cvpr_2018"]  # optional, new
     }
     """
@@ -36,9 +36,8 @@ class RAGChatFromKBView(NotebookPermissionMixin, APIView):
 
     def post(self, request, notebook_id):
         question = request.data.get("question")
-        filter_sources = request.data.get("filter_sources", None)
-        collections = request.data.get("collections", None)  # new: list of extra collections
-
+        file_ids = request.data.get("file_ids", None)
+        collections = request.data.get("collections", None)
         # 1) Validate inputs using service
         validation_error = self.chat_service.validate_chat_request(question)
         if validation_error:
@@ -60,14 +59,14 @@ class RAGChatFromKBView(NotebookPermissionMixin, APIView):
         history = self.chat_service.get_chat_history(notebook)
         self.chat_service.record_user_message(notebook, question)
 
-        # 5) Create chat stream using service (remove mode, add collections)
+        # 5) Create chat stream using service, passing file_ids for filtering
         stream = self.chat_service.create_chat_stream(
             user_id=user_id,
             question=question,
             history=history,
-            filter_sources=filter_sources,
+            file_ids=file_ids,  # <-- pass file_ids for filtering
             notebook=notebook,
-            collections=collections  # pass collections to service/bot
+            collections=collections
         )
 
         return StreamingHttpResponse(

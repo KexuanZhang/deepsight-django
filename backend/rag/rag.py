@@ -277,7 +277,7 @@ class RAGChatbot:
         k_global: int = 3,
         extra_collections: Optional[List[str]] = None,
     ):
-        self.user_id = user_id
+        self.user_id = str(user_id)
         self.k_local = k_local
         self.k_global = k_global
         self.extra_collections = extra_collections or []
@@ -316,28 +316,37 @@ class RAGChatbot:
         self,
         question: str,
         history: Optional[List[Tuple[str, str]]] = None,
-        filter_sources: Optional[List[str]] = None,
+        file_ids: Optional[List[str]] = None,
     ) -> Generator[str, None, None]:
         history = history or []
-        # build local retriever with Milvus expr including filter_sources
+
         clauses = [f'user_id=="{self.user_id}"']
-        if filter_sources:
-            quoted = ",".join(f'\"{s}\"' for s in filter_sources)
-            clauses.append(f"source in [{quoted}]")
+        if file_ids:
+            quoted = ",".join(f'"{fid}"' for fid in file_ids)
+            clauses.append(f"kb_item_id in [{quoted}]")
         expr = " and ".join(clauses)
         local_ret = self.store.as_retriever(search_kwargs={"k": self.k_local, "expr": expr})
 
-        # combine with global
-        combined = CombinedRetriever(
-            local_retriever=local_ret,
-            global_retriever=self.global_retriever,
-            k_local=self.k_local,
-            k_global=self.k_global,
-            filter_sources=filter_sources,
-        )
-        docs = combined.get_relevant_documents(question)
+        # Retrieve local and global docs separately
+        local_docs = local_ret.get_relevant_documents(question)[:self.k_local]
+        global_docs = []
+        if not file_ids:
+            combined = CombinedRetriever(
+                local_retriever=local_ret,
+                global_retriever=self.global_retriever,
+                k_local=self.k_local,
+                k_global=self.k_global,
+                filter_sources=None,
+            )
+            docs = combined.get_relevant_documents(question)
+        else:
+            # If file_ids are set, only retrieve global docs for reference
+            global_docs = self.global_retriever.get_relevant_documents(question)[:self.k_global]
+            docs = local_docs + global_docs
 
-        print("!!!docs", docs)
+        print(f"Retrieved {len(docs)} documents for question: {question}")
+        print("Retrieved kb_item_ids:", [d.metadata.get("kb_item_id") for d in docs])
+        print("Selected file_ids:", file_ids)
 
         # emit metadata
         meta = {"type": "metadata", "docs": [
@@ -346,13 +355,30 @@ class RAGChatbot:
         ]}
         yield f"data: {json.dumps(meta)}\n\n"
 
-        # prepare context
-        context = "\n\n---\n\n".join(
-            f"Source: {d.metadata.get('source')}\n{d.page_content[:500]}" for d in docs
+        # prepare context with emphasis
+        local_context = "\n\n---\n\n".join(
+            f"Source: {d.metadata.get('source')} (User Selected)\n{d.page_content[:500]}" for d in local_docs
         )
+        global_context = "\n\n---\n\n".join(
+            f"Source: {d.metadata.get('source')} (Global Reference)\n{d.page_content[:500]}" for d in global_docs
+        )
+
+        if local_context and global_context:
+            context = (
+                "USER SELECTED FILES (PRIORITIZE THESE):\n"
+                f"{local_context}\n\n"
+                "GLOBAL/REFERENCE DOCUMENTS (FOR ADDITIONAL CONTEXT ONLY):\n"
+                f"{global_context}"
+            )
+        elif local_context:
+            context = f"USER SELECTED FILES:\n{local_context}"
+        else:
+            context = f"GLOBAL/REFERENCE DOCUMENTS:\n{global_context}"
+
         system_prompt = (
-            "You are an expert research assistant. Use the following snippets to answer the question:\n\n"
-            f"{context}\n\nHistory:\n{history}\n\nQuestion:\n{question}\n\nAnswer:"  
+            "You are an expert research assistant. Use the following snippets to answer the question.\n"
+            "Give highest priority to information from USER SELECTED FILES. Use GLOBAL/REFERENCE DOCUMENTS only if needed for additional context or clarification.\n\n"
+            f"{context}\n\nHistory:\n{history}\n\nQuestion:\n{question}\n\nAnswer:"
         )
 
         # stream LLM tokens
