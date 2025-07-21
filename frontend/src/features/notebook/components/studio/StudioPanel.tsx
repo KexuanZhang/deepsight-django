@@ -85,7 +85,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     model_provider: 'openai',
     retriever: 'searxng',
     prompt_type: 'general',
-    include_image: true,
+    include_image: false,
     include_domains: false,
     time_range: 'ALL',
     model: 'gpt-4'
