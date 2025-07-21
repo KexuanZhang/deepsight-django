@@ -1,10 +1,9 @@
 // src/pages/DashboardPage.tsx
 import React, { useState, useEffect } from "react";
-import { Tab } from "@headlessui/react";
 import { fetchJson } from "@/common/utils/utils"; // simple fetch wrapper
-import ReportCard from "@/features/report/components/ReportCard";
-import ConferenceCard from "@/features/conference/components/ConferenceCard";
-import OrganizationCard from "@/common/components/OrganizationCard";
+import ReportListItem from "@/features/report/components/ReportListItem";
+import PodcastListItem from "@/features/podcast/components/PodcastListItem";
+import ReportEditor from "@/features/report/components/ReportEditor";
 import { config } from "@/config";
 
 interface Report {
@@ -13,6 +12,22 @@ interface Report {
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   created_at: string;
   updated_at: string;
+  content?: string;
+  description?: string;
+  [key: string]: any;
+}
+
+interface Podcast {
+  id: string;
+  title: string;
+  status: 'pending' | 'generating' | 'completed' | 'failed' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+  description?: string;
+  topic?: string;
+  audioUrl?: string;
+  audio_file?: string;
+  duration?: number;
   [key: string]: any;
 }
 
@@ -43,13 +58,12 @@ interface OrganizationsOverview {
 }
 
 export default function DashboardPage() {
-  const tabs = ["Report", "Conference", "Organization"];
-  const [selectedIndex, setSelectedIndex] = useState(0);
-
   const [reports, setReports] = useState<Report[]>([]);
+  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [confsOverview, setConfsOverview] = useState<ConferencesOverview | null>(null);
   const [orgsOverview, setOrgsOverview] = useState<OrganizationsOverview | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
 
   useEffect(() => {
     async function loadAll() {
@@ -59,11 +73,15 @@ export default function DashboardPage() {
         const rpt = await fetchJson(`${config.API_BASE_URL}/reports/trending`);
         setReports(rpt);
 
-        // 2️⃣ Conferences overview
+        // 2️⃣ Podcasts
+        const pdc = await fetchJson(`${config.API_BASE_URL}/podcasts/`);
+        setPodcasts(pdc);
+
+        // 3️⃣ Conferences overview
         const confOv = await fetchJson(`${config.API_BASE_URL}/conferences/overview`);
         setConfsOverview(confOv);
 
-        // 3️⃣ Organizations overview
+        // 4️⃣ Organizations overview
         const orgOv = await fetchJson(`${config.API_BASE_URL}/organizations/overview`);
         setOrgsOverview(orgOv);
       } catch (e) {
@@ -75,6 +93,42 @@ export default function DashboardPage() {
     loadAll();
   }, []);
 
+  const handleReportSelect = (report: Report) => {
+    setSelectedReport(report);
+  };
+
+  const handlePodcastSelect = (podcast: Podcast) => {
+    // Handle podcast selection
+    console.log('Selected podcast:', podcast);
+  };
+
+  const handleViewModeChange = () => {
+    // Toggle view mode
+    console.log('Toggle view mode');
+  };
+
+  const handleLanguageChange = () => {
+    // Toggle language
+    console.log('Toggle language');
+  };
+
+  const handleBackToList = () => {
+    setSelectedReport(null);
+  };
+
+  const handleDeleteReport = (report: Report) => {
+    // Handle report deletion
+    console.log('Deleting report:', report.id);
+    setReports(reports.filter(r => r.id !== report.id));
+    setSelectedReport(null);
+  };
+
+  const handleSaveReport = (report: Report, content: string) => {
+    // Handle report saving
+    console.log('Saving report:', report.id, content);
+    // You can implement API call here to save the content
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -83,88 +137,89 @@ export default function DashboardPage() {
     );
   }
 
+  // Show report editor if a report is selected
+  if (selectedReport) {
+    return (
+      <ReportEditor
+        report={selectedReport}
+        onBack={handleBackToList}
+        onDelete={handleDeleteReport}
+        onSave={handleSaveReport}
+      />
+    );
+  }
+
   return (
     <div className="p-8 bg-white min-h-screen">
-      <h1 className="text-4xl font-bold mb-4">DeepSight</h1>
-      <Tab.Group selectedIndex={selectedIndex} onChange={setSelectedIndex}>
-        <Tab.List className="flex space-x-4 border-b mb-6">
-          {tabs.map((tab) => (
-            <Tab
-              key={tab}
-              className={({ selected }) =>
-                `px-4 py-2 text-lg ${
-                  selected
-                    ? "border-b-2 border-red-600 font-semibold"
-                    : "text-gray-600 hover:text-gray-900"
-                }`
-              }
-            >
-              {tab}
-            </Tab>
-          ))}
-        </Tab.List>
-
-        <Tab.Panels>
-          {/* ─── Report Tab ──────────────────────────────────────────── */}
-          <Tab.Panel>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {reports.map((r) => (
-                <ReportCard 
-                  key={r.id} 
-                  report={r} 
-                  onSelect={(report) => console.log('Selected report:', report)}
-                  onDownload={(report) => console.log('Download report:', report)}
-                  onDelete={(report) => console.log('Delete report:', report)}
+      <h1 className="text-4xl font-bold mb-8">DeepSight</h1>
+      
+      <div className="max-w-4xl mx-auto">
+        {/* Content Section */}
+        <div className="flex-1">
+          {/* Reports Section */}
+          {reports.length > 0 && (
+            <div className="mb-8">
+              {reports.map((report) => (
+                <ReportListItem
+                  key={report.id}
+                  report={report}
+                  onSelect={handleReportSelect}
                 />
               ))}
             </div>
-          </Tab.Panel>
+          )}
 
-          {/* ─── Conference Tab ─────────────────────────────────────── */}
-          <Tab.Panel>
-            {/* Overview metrics */}
-            {confsOverview && (
-              <div className="flex justify-around text-center mb-8">
-                <div>
-                  <p className="text-2xl font-bold">{confsOverview?.total_conferences}</p>
-                  <p className="text-gray-500">Total Conferences</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{confsOverview?.total_papers}</p>
-                  <p className="text-gray-500">Total Papers</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{confsOverview?.years_covered}</p>
-                  <p className="text-gray-500">Years Covered</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{confsOverview?.avg_papers_per_year}</p>
-                  <p className="text-gray-500">Avg Papers/Year</p>
-                </div>
-              </div>
-            )}
-            {/* Conference list */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {confsOverview?.conferences.map((c: Conference) => (
-                <ConferenceCard key={c.name} conference={c} />
+          {/* Podcasts Section */}
+          {podcasts.length > 0 && (
+            <div>
+              {podcasts.map((podcast) => (
+                <PodcastListItem
+                  key={podcast.id}
+                  podcast={podcast}
+                  onSelect={handlePodcastSelect}
+                />
               ))}
             </div>
-          </Tab.Panel>
+          )}
 
-          {/* ─── Organization Tab ──────────────────────────────────── */}
-          <Tab.Panel>
-            {orgsOverview ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {orgsOverview.organizations.map((o: Organization) => (
-                  <OrganizationCard key={o.name} organization={o} />
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-500">No data available.</p>
-            )}
-          </Tab.Panel>
-        </Tab.Panels>
-      </Tab.Group>
+          {/* Empty State */}
+          {!loading && reports.length === 0 && podcasts.length === 0 && (
+            <div className="text-center py-12">
+              <div className="text-gray-400 text-6xl mb-4">📊</div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No content yet</h3>
+              <p className="text-sm text-gray-500">
+                Get started by creating your first research report or podcast.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Action Buttons - Fixed on the right */}
+        <div className="fixed right-8 top-1/2 transform -translate-y-1/2 flex flex-col space-y-4">
+          {/* Grid View Button */}
+          <button
+            onClick={handleViewModeChange}
+            className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center hover:bg-gray-300 transition-colors"
+            title="Toggle view mode"
+          >
+            <div className="grid grid-cols-2 gap-1">
+              <div className="w-2 h-2 bg-gray-600 rounded"></div>
+              <div className="w-2 h-2 bg-gray-600 rounded"></div>
+              <div className="w-2 h-2 bg-gray-600 rounded"></div>
+              <div className="w-2 h-2 bg-gray-600 rounded"></div>
+            </div>
+          </button>
+
+          {/* Language Toggle Button */}
+          <button
+            onClick={handleLanguageChange}
+            className="w-12 h-12 bg-pink-500 rounded-full flex items-center justify-center text-white font-medium hover:bg-pink-600 transition-colors"
+            title="Toggle language"
+          >
+            中A
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

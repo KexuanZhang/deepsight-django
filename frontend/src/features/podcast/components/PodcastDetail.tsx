@@ -14,6 +14,7 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
 }) => {
   const [podcastAudio, setPodcastAudio] = useState<PodcastAudio | null>(audio || null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(!audio);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!audio && podcast.status === 'completed') {
@@ -23,6 +24,10 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
           const podcastService = new PodcastService();
           const audio = await podcastService.getPodcastAudio(podcast.id);
           setPodcastAudio(audio);
+          
+          // Set the correct audio URL using PodcastService logic
+          const url = podcastService.getAudioUrl(audio as any) || podcastService.getAudioUrl(podcast);
+          setAudioUrl(url);
         } catch (error) {
           console.error('Failed to load podcast audio:', error);
         } finally {
@@ -30,8 +35,13 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
         }
       };
       loadAudio();
+    } else if (podcast.status === 'completed') {
+      // If audio is already provided, still get the correct URL
+      const podcastService = new PodcastService();
+      const url = podcastService.getAudioUrl(audio as any) || podcastService.getAudioUrl(podcast);
+      setAudioUrl(url);
     }
-  }, [podcast.id, podcast.status, audio]);
+  }, [podcast, audio]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
@@ -229,12 +239,12 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
                   <div className="h-4 bg-gray-200 rounded w-3/4"></div>
                   <div className="h-4 bg-gray-200 rounded w-1/2"></div>
                 </div>
-              ) : (
+              ) : audioUrl ? (
                 <div className="space-y-4">
                   <audio 
                     controls 
                     className="w-full"
-                    src={podcastAudio.audioUrl}
+                    src={audioUrl}
                   >
                     Your browser does not support the audio element.
                   </audio>
@@ -247,6 +257,10 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
                       Duration: {formatDuration(podcastAudio.duration)}
                     </div>
                   )}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-gray-500">
+                  Audio not available
                 </div>
               )}
             </div>

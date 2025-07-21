@@ -28,6 +28,7 @@ interface PodcastListSectionProps {
   onToggleCollapse: () => void;
   onDownloadPodcast: (podcast: Podcast) => void;
   onDeletePodcast: (podcast: Podcast) => void;
+  notebookId?: string;
 }
 
 // ====== INTERFACE SEGREGATION PRINCIPLE (ISP) ======
@@ -39,7 +40,8 @@ const PodcastListSection: React.FC<PodcastListSectionProps> = ({
   isCollapsed,
   onToggleCollapse,
   onDownloadPodcast,
-  onDeletePodcast
+  onDeletePodcast,
+  notebookId
 }) => {
   const podcastCount = podcasts.length;
 
@@ -108,6 +110,7 @@ const PodcastListSection: React.FC<PodcastListSectionProps> = ({
                   podcast={podcast}
                   onDownload={onDownloadPodcast}
                   onDelete={onDeletePodcast}
+                  notebookId={notebookId}
                 />
               ))}
             </div>

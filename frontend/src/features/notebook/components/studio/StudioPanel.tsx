@@ -2,7 +2,7 @@
 // This component demonstrates all 5 SOLID principles in action
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette } from 'lucide-react';
+import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
 import { useToast } from '@/common/components/ui/use-toast';
 
@@ -21,6 +21,7 @@ import { useStudioData, useGenerationState, useJobStatus } from '@/features/note
 // Import focused UI components
 import ReportGenerationForm from './components/ReportGenerationForm';
 import PodcastGenerationForm from './components/PodcastGenerationForm';
+import PodcastAudioPlayer from './components/PodcastAudioPlayer';
 import FileViewer from './components/FileViewer';
 
 // ====== INTERFACE SEGREGATION PRINCIPLE (ISP) ======
@@ -62,6 +63,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     reports: false,
     podcasts: false
   });
+  const [expandedPodcasts, setExpandedPodcasts] = useState<Set<string>>(new Set());
 
 
   // ====== SINGLE RESPONSIBILITY: File Selection State ======
@@ -406,22 +408,25 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     }
   }, [studioService, toast]);
 
-  const handlePodcastClick = useCallback(async (podcast: PodcastItem) => {
-    try {
-      // For podcasts, we'll expand the audio player inline
-      // This could be implemented as a state change to show player
-      console.log('Playing podcast:', podcast);
-      // TODO: Implement podcast player expansion
-    } catch (error) {
-      console.error('Failed to play podcast:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      toast({
-        title: "Error",
-        description: "Failed to play podcast: " + errorMessage,
-        variant: "destructive"
-      });
-    }
-  }, [toast]);
+  const handlePodcastClick = useCallback((podcast: PodcastItem) => {
+    const podcastId = podcast.id || podcast.job_id || '';
+    setExpandedPodcasts(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(podcastId)) {
+        newSet.delete(podcastId);
+      } else {
+        newSet.add(podcastId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const getReportPreview = useCallback((report: ReportItem): string => {
+    // Get a two-line preview from content or description
+    const content = report.content || report.description || '';
+    const lines = content.split('\n').filter((line: string) => line.trim());
+    return lines.slice(0, 2).join(' ').substring(0, 120) + (content.length > 120 ? '...' : '');
+  }, []);
 
   const handleDownloadReport = useCallback(async (report: ReportItem) => {
     try {
@@ -702,26 +707,33 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         {/* ====== INLINE REPORT LISTINGS ====== */}
         {studioData.reports.length > 0 && (
           <div className="px-6 py-4">
-            <div className="space-y-2">
+            <div className="space-y-3">
               {studioData.reports.map((report: ReportItem, index: number) => (
                 <div
                   key={report.id || index}
-                  className="flex items-center space-x-4 p-4 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 cursor-pointer group border border-gray-200"
+                  className="p-4 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 cursor-pointer group border border-gray-200 hover:border-gray-300"
                   onClick={() => handleSelectReport(report)}
                 >
-                  <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center shadow-sm">
-                    <FileText className="h-4 w-4 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-semibold text-gray-900 truncate group-hover:text-red-700">
-                      {report.title || 'Research Report'}
-                    </h4>
-                    <p className="text-xs text-gray-600 mt-1">
-                      {report.created_at ? new Date(report.created_at).toLocaleDateString() : 'Generated'}
-                    </p>
-                  </div>
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                  <div className="flex items-start space-x-3">
+                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 mt-1">
+                      <FileText className="h-4 w-4 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-semibold text-gray-900 group-hover:text-blue-700 mb-2">
+                        {report.title || 'Research Report'}
+                      </h4>
+                      <p className="text-xs text-gray-600 leading-relaxed mb-2">
+                        {getReportPreview(report)}
+                      </p>
+                      <div className="flex items-center text-xs text-gray-500">
+                        <span>{report.created_at ? new Date(report.created_at).toLocaleDateString() : 'Generated'}</span>
+                        <span className="mx-2">•</span>
+                        <span>Click to edit</span>
+                      </div>
+                    </div>
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -739,29 +751,59 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         {/* ====== INLINE PODCAST LISTINGS ====== */}
         {studioData.podcasts.length > 0 && (
           <div className="px-6 py-4">
-            <div className="space-y-2">
-              {studioData.podcasts.map((podcast: PodcastItem, index: number) => (
-                <div
-                  key={podcast.id || index}
-                  className="flex items-center space-x-4 p-4 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 cursor-pointer group border border-gray-200"
-                  onClick={() => handlePodcastClick(podcast)}
-                >
-                  <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center shadow-sm">
-                    <Play className="h-4 w-4 text-white" />
+            <div className="space-y-3">
+              {studioData.podcasts.map((podcast: PodcastItem, index: number) => {
+                const podcastId = podcast.id || podcast.job_id || index.toString();
+                const isExpanded = expandedPodcasts.has(podcastId);
+                
+                return (
+                  <div
+                    key={podcastId}
+                    className="bg-white rounded-xl border border-gray-200 hover:border-gray-300 transition-all duration-200 overflow-hidden"
+                  >
+                    {/* Podcast Header */}
+                    <div
+                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200"
+                      onClick={() => handlePodcastClick(podcast)}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4 text-white" />
+                          ) : (
+                            <Play className="h-4 w-4 text-white" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-sm font-semibold text-gray-900 hover:text-purple-700">
+                            {podcast.title || 'Panel Discussion'}
+                          </h4>
+                          <div className="flex items-center text-xs text-gray-500 mt-1">
+                            <span>{podcast.created_at ? new Date(podcast.created_at).toLocaleDateString() : 'Generated'}</span>
+                            <span className="mx-2">•</span>
+                            <span>Click to {isExpanded ? 'collapse' : 'play'}</span>
+                          </div>
+                        </div>
+                        <div className="flex-shrink-0">
+                          <div className={`w-2 h-2 rounded-full transition-colors ${isExpanded ? 'bg-purple-400' : 'bg-gray-300'}`}></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Expanded Audio Player */}
+                    {isExpanded && (
+                      <div className="border-t border-gray-100 p-4 bg-gray-50">
+                        <PodcastAudioPlayer
+                          podcast={podcast}
+                          onDownload={() => handleDownloadPodcast(podcast)}
+                          onDelete={() => handleDeletePodcast(podcast)}
+                          notebookId={notebookId}
+                        />
+                      </div>
+                    )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-semibold text-gray-900 truncate group-hover:text-red-700">
-                      {podcast.title || 'Panel Discussion'}
-                    </h4>
-                    <p className="text-xs text-gray-600 mt-1">
-                      {podcast.created_at ? new Date(podcast.created_at).toLocaleDateString() : 'Generated'}
-                    </p>
-                  </div>
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="w-2 h-2 bg-red-400 rounded-full"></div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
