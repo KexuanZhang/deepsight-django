@@ -8,6 +8,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
+import { PodcastService } from '@/features/podcast/services/PodcastService';
 
 interface Podcast {
   id?: string;
@@ -23,12 +24,14 @@ interface PodcastAudioPlayerProps {
   podcast: Podcast;
   onDownload: (podcast: Podcast) => void;
   onDelete: (podcast: Podcast) => void;
+  notebookId?: string;
 }
 
 const PodcastAudioPlayer: React.FC<PodcastAudioPlayerProps> = ({
   podcast,
   onDownload,
-  onDelete
+  onDelete,
+  notebookId
 }) => {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -50,21 +53,27 @@ const PodcastAudioPlayer: React.FC<PodcastAudioPlayerProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // Load audio URL
+  // Load audio URL using PodcastService logic
   useEffect(() => {
     setIsLoading(true);
     
-    // Use audio_url directly from podcast object
-    if (podcast.audio_url) {
-      setAudioUrl(podcast.audio_url);
-      setIsLoading(false);
-    } else {
-      // Return error if no audio_url available
-      console.error('No audio_url available for podcast:', podcast.id || podcast.job_id);
+    try {
+      const podcastService = new PodcastService(notebookId);
+      const url = podcastService.getAudioUrl(podcast);
+      
+      if (url) {
+        setAudioUrl(url);
+      } else {
+        console.error('No audio URL available for podcast:', podcast.id || podcast.job_id);
+        setAudioUrl(null);
+      }
+    } catch (error) {
+      console.error('Error getting audio URL:', error);
       setAudioUrl(null);
+    } finally {
       setIsLoading(false);
     }
-  }, [podcast.audio_url]);
+  }, [podcast, notebookId]);
 
   return (
     <div className="p-4 border border-gray-200 rounded-lg bg-white">
