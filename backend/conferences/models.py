@@ -12,7 +12,7 @@ def publication_file_path(instance, filename):
     return f"publications/{venue}/{year}/{pid}/{filename}"
 
 class Venue(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=255)
     type = models.CharField(max_length=255)
     description = models.TextField()
@@ -33,7 +33,6 @@ class Instance(models.Model):
 
     def __str__(self):
         return f"{self.venue.name} {self.year}"
-
 
 
 class Publication(models.Model):

@@ -18,17 +18,11 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """Handle chat functionality business logic"""
     
-    def validate_chat_request(self, question, mode):
+    def validate_chat_request(self, question):
         """Validate chat request parameters"""
         if not question:
             return {
                 "error": "Question is required.",
-                "status_code": status.HTTP_400_BAD_REQUEST
-            }
-        
-        if mode not in ("local", "global", "hybrid"):
-            return {
-                "error": f"Invalid mode '{mode}'.",
                 "status_code": status.HTTP_400_BAD_REQUEST
             }
         
@@ -74,17 +68,27 @@ class ChatService:
             notebook=notebook, sender="assistant", message=message
         )
 
-    def create_chat_stream(self, user_id, question, history, mode, filter_sources, notebook):
+    def create_chat_stream(
+        self,
+        user_id,
+        question,
+        history,
+        filter_sources=None,
+        notebook=None,
+        collections=None,  # <-- add this
+    ):
         """Create RAG chat stream with message recording"""
         # Get the chatbot singleton
-        bot = RAGChatbot(user_id=user_id)
+        bot = RAGChatbot(
+            user_id=user_id,
+            extra_collections=collections  # <-- pass collections to RAGChatbot
+        )
 
         # Get raw stream from chatbot
         raw_stream = bot.stream(
             question=question,
             history=history,
-            mode=mode,
-            filter_sources=filter_sources
+            filter_sources=filter_sources,
         )
 
         def wrapped_stream():
@@ -149,4 +153,4 @@ class ChatService:
             return {
                 "error": str(e),
                 "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR
-            } 
+            }
