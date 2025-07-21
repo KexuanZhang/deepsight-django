@@ -48,14 +48,15 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   sourcesListRef, 
   onSelectionChange,
   onOpenModal,
-  onCloseModal
+  onCloseModal,
+  onToggleExpand,
+  isStudioExpanded
 }) => {
   const { toast } = useToast();
 
   // ====== SINGLE RESPONSIBILITY: UI State Management ======
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const [selectedFileContent, setSelectedFileContent] = useState<string>('');
-  const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
   const [isReportPreview, setIsReportPreview] = useState<boolean>(false);
   const [collapsedSections, setCollapsedSections] = useState<CollapsedSections>({
@@ -373,8 +374,10 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   }, []);
 
   const toggleExpanded = useCallback(() => {
-    setIsExpanded(prev => !prev);
-  }, []);
+    if (onToggleExpand) {
+      onToggleExpand();
+    }
+  }, [onToggleExpand]);
 
   const toggleViewMode = useCallback(() => {
     setViewMode(prev => prev === 'preview' ? 'edit' : 'preview');
@@ -615,7 +618,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   // ====== OPEN/CLOSED PRINCIPLE (OCP) ======
   // Render method that can be extended without modification
   return (
-    <div className={`flex flex-col h-full ${isExpanded ? `fixed inset-0 z-50 ${COLORS.panels.commonBackground}` : ''}`}>
+    <div className="flex flex-col h-full">
       {/* ====== SINGLE RESPONSIBILITY: Header rendering ====== */}
       <div className={`${PANEL_HEADERS.container}`}>
         <div className={PANEL_HEADERS.layout}>
@@ -674,7 +677,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                   className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
                   onClick={toggleExpanded}
                 >
-                  {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                  {isStudioExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
                 </Button>
                 <Button
                   variant="ghost"
@@ -729,7 +732,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                   className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
                   onClick={toggleExpanded}
                 >
-                  {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                  {isStudioExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
                 </Button>
               </>
             )}
@@ -917,7 +920,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         <FileViewer
           file={selectedFile}
           content={selectedFileContent}
-          isExpanded={isExpanded}
+          isExpanded={isStudioExpanded || false}
           viewMode={viewMode}
           onClose={handleCloseFile}
           onEdit={() => setViewMode('edit')}

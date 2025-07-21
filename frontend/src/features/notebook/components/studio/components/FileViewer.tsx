@@ -153,7 +153,7 @@ const FileViewer: React.FC<FileViewerProps> = ({
   };
 
   return (
-    <div className={`flex flex-col h-full bg-white ${isExpanded ? 'fixed inset-0 z-50' : ''}`}>
+    <div className="flex flex-col h-full bg-white">
       {/* ====== SINGLE RESPONSIBILITY: Toolbar rendering ====== */}
       {!hideHeader && (
         <div className="flex-shrink-0 bg-gray-50 border-b border-gray-200">
