@@ -743,7 +743,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                   </div>
 
                   {/* Knowledge Base Items */}
-                  <div className="max-h-64 space-y-2">
+                  <div className="max-h-64 overflow-y-auto space-y-2">
                     {knowledgeBaseItems.map((item) => (
                       <div
                         key={item.id}
