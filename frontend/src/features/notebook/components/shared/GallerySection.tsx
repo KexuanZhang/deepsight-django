@@ -46,7 +46,84 @@ const GallerySection: React.FC<GallerySectionProps> = ({ videoFileId, notebookId
   const [visibleCount, setVisibleCount] = useState(40);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const API_BASE_URL = config.API_BASE_URL;
+
+  // Handle settings modal
+  const handleSettingsSave = () => {
+    setShowSettings(false);
+    onCloseModal('gallerySettings');
+  };
+
+  const handleSettingsCancel = () => {
+    setShowSettings(false);
+    onCloseModal('gallerySettings');
+  };
+
+  // Create settings content as a function that will be re-evaluated on each render
+  const createSettingsContent = () => (
+    <div 
+      className="bg-white rounded-lg shadow-lg w-96 p-6" 
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center space-x-2">
+          <Settings className="h-5 w-5 text-gray-600" />
+          <h3 className="text-lg font-semibold text-gray-900">Gallery Settings</h3>
+        </div>
+        <button onClick={handleSettingsCancel} className="text-gray-400 hover:text-gray-600">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-700">Extraction Interval (s)</label>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={extractInterval}
+            onChange={(e) => setExtractInterval(Number(e.target.value) || 1)}
+            onKeyDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            autoComplete="off"
+            className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-700">Min Words</label>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={minWords}
+            onChange={(e) => setMinWords(Number(e.target.value) || 0)}
+            onKeyDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            autoComplete="off"
+            className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+      </div>
+
+      <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+        <Button variant="outline" onClick={handleSettingsCancel} className="text-gray-600 hover:text-gray-800">
+          Cancel
+        </Button>
+        <Button onClick={handleSettingsSave} className="bg-blue-600 hover:bg-blue-700 text-white">
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+
+  // Use effect to handle modal state
+  useEffect(() => {
+    if (showSettings) {
+      onOpenModal('gallerySettings', createSettingsContent());
+    }
+  }, [showSettings, extractInterval, minWords]); // Re-create when state changes
 
   // Attempt to load gallery images when extraction completes or component mounts
   useEffect(() => {
@@ -211,54 +288,7 @@ const GallerySection: React.FC<GallerySectionProps> = ({ videoFileId, notebookId
         <div className="flex items-center space-x-2">
           {/* Settings Button - gear icon only */}
           <button 
-            onClick={() => {
-              const settingsContent = (
-                <div className="bg-white rounded-lg shadow-lg w-96 p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-2">
-                      <Settings className="h-5 w-5 text-gray-600" />
-                      <h3 className="text-lg font-semibold text-gray-900">Gallery Settings</h3>
-                    </div>
-                    <button onClick={() => onCloseModal('gallerySettings')} className="text-gray-400 hover:text-gray-600">
-                      <X className="h-5 w-5" />
-                    </button>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">Extraction Interval (s)</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={extractInterval}
-                        onChange={(e) => setExtractInterval(Number(e.target.value))}
-                        className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">Min Words</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={minWords}
-                        onChange={(e) => setMinWords(Number(e.target.value))}
-                        className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
-                    <Button variant="outline" onClick={() => onCloseModal('gallerySettings')} className="text-gray-600 hover:text-gray-800">
-                      Cancel
-                    </Button>
-                    <Button onClick={() => onCloseModal('gallerySettings')} className="bg-blue-600 hover:bg-blue-700 text-white">
-                      Save
-                    </Button>
-                  </div>
-                </div>
-              );
-              onOpenModal('gallerySettings', settingsContent);
-            }} 
+            onClick={() => setShowSettings(true)} 
             className="text-gray-500 hover:text-gray-700 p-1 rounded"
             title="Settings"
           >

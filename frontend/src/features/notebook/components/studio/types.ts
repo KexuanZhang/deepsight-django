@@ -129,6 +129,8 @@ export interface StudioPanelProps {
   onSelectionChange: (callback: () => void) => void;
   onOpenModal: (id: string, content: React.ReactNode) => void;
   onCloseModal: (id: string) => void;
+  onToggleExpand?: () => void;
+  isStudioExpanded?: boolean;
 }
 
 export interface StatusDisplayProps {

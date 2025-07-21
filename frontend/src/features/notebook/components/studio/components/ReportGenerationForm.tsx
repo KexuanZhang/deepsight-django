@@ -43,7 +43,7 @@ interface ReportGenerationFormProps {
     error?: string;
     isGenerating: boolean;
   };
-  onGenerate: () => void;
+  onGenerate: (configOverrides?: Partial<ReportConfig>) => void;
   onCancel: () => void;
   selectedFiles: FileItem[];
   onOpenModal: (id: string, content: React.ReactNode) => void;
@@ -128,6 +128,7 @@ const ReportGenerationForm: React.FC<ReportGenerationFormProps> = ({
                         onConfigChange={onConfigChange}
                         type="report"
                         selectedFiles={selectedFiles}
+                        onGenerate={(configOverrides) => onGenerate(configOverrides)}
                       />
                     );
                     onOpenModal('customizeReport', customizeContent);
@@ -144,7 +145,7 @@ const ReportGenerationForm: React.FC<ReportGenerationFormProps> = ({
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                     : `${COLORS.tw.primary.bg[600]} ${COLORS.tw.primary.hover.bg[700]} text-white`
                 }`}
-                onClick={onGenerate}
+                onClick={() => onGenerate()}
                 disabled={!canGenerate}
               >
                 <FileText className="mr-2 h-4 w-4" />

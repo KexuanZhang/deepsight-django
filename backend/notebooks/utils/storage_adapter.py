@@ -24,7 +24,6 @@ class StorageAdapter:
     def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.storage_adapter")
         self.storage_service = EnhancedFileStorageService()
-        self.logger.info("Initialized enhanced storage adapter")
     
     @property
     def file_storage(self):
