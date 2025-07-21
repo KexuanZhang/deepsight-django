@@ -43,7 +43,7 @@ interface PodcastGenerationFormProps {
     progress?: number;
     error?: string;
   };
-  onGenerate: () => void;
+  onGenerate: (configOverrides?: Partial<PodcastConfig>) => void;
   onCancel: () => void;
   
   // File selection props
@@ -127,6 +127,7 @@ const PodcastGenerationForm: React.FC<PodcastGenerationFormProps> = ({
                         onConfigChange={onConfigChange}
                         type="podcast"
                         selectedFiles={selectedFiles}
+                        onGenerate={(configOverrides) => onGenerate(configOverrides)}
                       />
                     );
                     onOpenModal('customizePodcast', customizeContent);
@@ -143,7 +144,7 @@ const PodcastGenerationForm: React.FC<PodcastGenerationFormProps> = ({
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                     : `${COLORS.tw.primary.bg[600]} ${COLORS.tw.primary.hover.bg[700]} text-white`
                 }`}
-                onClick={onGenerate}
+                onClick={() => onGenerate()}
                 disabled={!canGenerate}
               >
                 {generationState.state === GenerationState.GENERATING ? (

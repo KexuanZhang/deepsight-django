@@ -231,13 +231,14 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   }, [sourcesListRef, onSelectionChange]);
 
   // ====== SINGLE RESPONSIBILITY: Report generation handler ======
-  const handleGenerateReport = useCallback(async () => {
+  const handleGenerateReport = useCallback(async (configOverrides?: Partial<any>) => {
     try {
       const config = {
         ...reportGeneration.config,
+        ...configOverrides,
         notebook_id: notebookId,
         selected_files_paths: selectedFiles.map((f: FileItem) => f.id),
-        model: reportGeneration.config.model || 'gpt-4'
+        model: configOverrides?.model || reportGeneration.config.model || 'gpt-4'
       };
 
       const response = await studioService.generateReport(config);
@@ -260,13 +261,14 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   }, [reportGeneration, notebookId, selectedFiles, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation handler ======
-  const handleGeneratePodcast = useCallback(async () => {
+  const handleGeneratePodcast = useCallback(async (configOverrides?: Partial<any>) => {
     try {
       const config = {
         ...podcastGeneration.config,
+        ...configOverrides,
         notebook_id: notebookId,
         source_file_ids: selectedFiles.map((f: FileItem) => f.id),
-        model: podcastGeneration.config.model || 'gpt-4'
+        model: configOverrides?.model || podcastGeneration.config.model || 'gpt-4'
       };
 
       const response = await studioService.generatePodcast(config);
