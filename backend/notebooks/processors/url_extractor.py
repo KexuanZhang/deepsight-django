@@ -461,13 +461,22 @@ class URLExtractor:
             content = ""
             processing_type = "url_content"
             transcript_filename = None
+            original_file_path = None
+            features = {}  # Initialize features to avoid UnboundLocalError
             
             if media_info.get("has_media"):
                 # Download and transcribe media
                 media_result = await self._download_and_transcribe_media(url, media_info)
                 content = media_result.get("content", "")
                 transcript_filename = media_result.get("transcript_filename")
+                original_file_path = media_result.get("original_file_path")  # Get the downloaded file path
                 processing_type = "media"
+                # For media content, create basic features dict
+                features = {
+                    "title": media_info.get("title", url),
+                    "url": url,
+                    "extraction_method": "media_transcription"
+                }
             else:
                 # Fall back to regular web scraping
                 options = {
@@ -494,9 +503,22 @@ class URLExtractor:
                 upload_url_id=upload_url_id,
                 processing_type=processing_type,
                 transcript_filename=transcript_filename,
+                original_file_path=original_file_path,  # Pass the video file path
                 user_id=user_id,
                 notebook_id=notebook_id
             )
+            
+            # Clean up temporary files after storage
+            if original_file_path and os.path.exists(original_file_path):
+                try:
+                    # Clean up the temporary directory containing the downloaded file
+                    temp_dir = os.path.dirname(original_file_path)
+                    if temp_dir and os.path.exists(temp_dir) and "deepsight_media_" in temp_dir:
+                        import shutil
+                        shutil.rmtree(temp_dir)
+                        self.log_operation("temp_cleanup", f"Cleaned up temporary directory: {temp_dir}")
+                except Exception as cleanup_err:
+                    self.log_operation("cleanup_error", f"Failed to cleanup temp files: {cleanup_err}", "warning")
             
             return {
                 "file_id": file_id,

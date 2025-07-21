@@ -485,9 +485,9 @@ class NotebookReportPdfDownloadView(APIView):
             # Fallback: read from MinIO storage
             elif report.main_report_object_key:
                 try:
-                    from notebooks.utils.file_storage import FileStorageService
+                    from notebooks.utils.storage import FileStorageService
                     storage_service = FileStorageService()
-                    content_bytes = storage_service.get_file_content(report.main_report_object_key)
+                    content_bytes = storage_service.get_file_content(report.main_report_object_key, user_id=request.user.id)
                     if isinstance(content_bytes, bytes):
                         markdown_content = content_bytes.decode('utf-8')
                     else:
@@ -510,31 +510,36 @@ class NotebookReportPdfDownloadView(APIView):
             temp_dir = Path(tempfile.mkdtemp())
             pdf_path = temp_dir / filename
             
-            # With MinIO storage, we can't use local file paths for images
-            # PDF generation will need to work without local image directory
-            image_root = None
-            logger.info("Using MinIO storage - PDF will be generated in temporary location")
-
             try:
-                # Convert markdown to PDF
+                # Convert markdown to PDF (now handles image downloading internally)
+                logger.info("Converting markdown to PDF with automatic image handling")
                 pdf_file_path = pdf_service.convert_markdown_to_pdf(
                     markdown_content=markdown_content,
                     output_path=str(pdf_path),
                     title=report_title,
-                    image_root=image_root,
                     input_file_path=None  # MinIO files don't have local paths
                 )
                 
                 # Return the PDF file
-                return FileResponse(
+                response = FileResponse(
                     open(pdf_file_path, "rb"),
                     as_attachment=True,
                     filename=filename,
                     content_type='application/pdf'
                 )
                 
+                # Clean up temporary directory
+                # Note: We can't clean up immediately due to FileResponse streaming
+                # The temp directory will be cleaned up by the OS eventually
+                logger.info(f"PDF generated successfully: {pdf_file_path}")
+                return response
+                
             except Exception as e:
                 logger.error(f"Error converting report to PDF for job {job_id}: {e}")
+                # Clean up temporary directory on error
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                
                 return Response(
                     {"detail": f"PDF conversion failed: {str(e)}"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -641,9 +646,7 @@ class NotebookReportContentView(APIView):
                         "report_id": report.id,
                         "notebook_id": notebook_id,
                         "content": report.result_content,
-                        "article_title": report.result_metadata.get(
-                            "article_title", report.article_title
-                        ),
+                        "article_title": report.article_title,
                         "generated_files": report.generated_files,
                     }
                 )
@@ -651,9 +654,9 @@ class NotebookReportContentView(APIView):
             # Fallback: read from MinIO storage
             if report.main_report_object_key:
                 try:
-                    from notebooks.utils.file_storage import FileStorageService
+                    from notebooks.utils.storage import FileStorageService
                     storage_service = FileStorageService()
-                    content_bytes = storage_service.get_file_content(report.main_report_object_key)
+                    content_bytes = storage_service.get_file_content(report.main_report_object_key, user_id=request.user.id)
                     if isinstance(content_bytes, bytes):
                         content = content_bytes.decode('utf-8')
                     else:
@@ -665,9 +668,7 @@ class NotebookReportContentView(APIView):
                             "report_id": report.id,
                             "notebook_id": notebook_id,
                             "content": content,
-                            "article_title": report.result_metadata.get(
-                                "article_title", report.article_title
-                            ),
+                            "article_title": report.article_title,
                             "generated_files": report.generated_files,
                         }
                     )

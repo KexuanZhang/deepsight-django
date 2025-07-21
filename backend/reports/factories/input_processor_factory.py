@@ -20,7 +20,7 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
     def __init__(self):
         pass  # No temp files to track - using direct content approach like podcast
     
-    def process_selected_files(self, file_paths: List[str]) -> Dict[str, Any]:
+    def process_selected_files(self, file_paths: List[str], user_id: int) -> Dict[str, Any]:
         """Process selected files from knowledge base and extract content"""
         input_data = {"text_files": [], "selected_file_ids": []}
         
@@ -52,7 +52,7 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
                     input_data["selected_file_ids"].append(f"f_{file_id}")
                     
                     # Get file content using the file storage service
-                    content = storage_adapter.get_file_content(file_id)
+                    content = storage_adapter.get_file_content(file_id, user_id)
                     
                     if content:
                         # Get metadata from knowledge base item

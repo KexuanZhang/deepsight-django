@@ -150,7 +150,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR("✗ Content mismatch"))
             
             # Generate URL
-            url = backend.get_file_url(object_key, expires=300)
+            url = backend.get_presigned_url(object_key, expires=300)
             self.stdout.write(f"✓ Generated URL: {url[:50]}...")
             
             # Clean up

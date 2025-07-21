@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { config } from '../../config';
+import { config } from '@/config';
 
 interface User {
   id: string;
