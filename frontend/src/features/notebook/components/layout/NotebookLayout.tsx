@@ -42,6 +42,7 @@ const NotebookLayout: React.FC<NotebookLayoutProps> = ({
   onSourcesSelectionChange 
 }) => {
   const [isSourcesCollapsed, setIsSourcesCollapsed] = useState(false);
+  const [isStudioExpanded, setIsStudioExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const sourcesListRef = useRef<any>(null);
   const selectionChangeCallbackRef = useRef<(() => void) | null>(null);
@@ -84,6 +85,11 @@ const NotebookLayout: React.FC<NotebookLayoutProps> = ({
     }));
   }, []);
 
+  // Handle studio expand/collapse
+  const handleStudioToggleExpand = useCallback(() => {
+    setIsStudioExpanded(prev => !prev);
+  }, []);
+
   // Pass modal functions to panels
   const panelProps = {
     sourcesListRef,
@@ -110,22 +116,24 @@ const NotebookLayout: React.FC<NotebookLayoutProps> = ({
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-h-0">
         <div 
-          className={`${RESPONSIVE_PANELS.mobile.gap} ${RESPONSIVE_PANELS.mobile.padding} md:${RESPONSIVE_PANELS.tablet.gap} md:${RESPONSIVE_PANELS.tablet.padding} lg:${RESPONSIVE_PANELS.desktop.gap} lg:${RESPONSIVE_PANELS.desktop.padding} flex-1 min-h-0 grid`}
+          className={`${RESPONSIVE_PANELS.mobile.gap} ${RESPONSIVE_PANELS.mobile.padding} md:${RESPONSIVE_PANELS.tablet.gap} md:${RESPONSIVE_PANELS.tablet.padding} lg:${RESPONSIVE_PANELS.desktop.gap} lg:${RESPONSIVE_PANELS.desktop.padding} flex-1 min-h-0 grid transition-all duration-300`}
           style={{
-            gridTemplateColumns: isSourcesCollapsed 
-              ? `40px ${LAYOUT_RATIOS.chat}fr ${LAYOUT_RATIOS.studio}fr`
-              : `${LAYOUT_RATIOS.sources}fr ${LAYOUT_RATIOS.chat}fr ${LAYOUT_RATIOS.studio}fr`
+            gridTemplateColumns: isStudioExpanded 
+              ? `0fr 4fr 8fr` // Studio expanded: hide sources, smaller chat, larger studio
+              : isSourcesCollapsed 
+                ? `40px ${LAYOUT_RATIOS.chat}fr ${LAYOUT_RATIOS.studio}fr`
+                : `${LAYOUT_RATIOS.sources}fr ${LAYOUT_RATIOS.chat}fr ${LAYOUT_RATIOS.studio}fr`
           }}
         >
           {/* Sources Panel */}
           <motion.div
             initial={{ opacity: 0, x: -10 }}
             animate={{ 
-              opacity: 1, 
+              opacity: isStudioExpanded ? 0 : 1, 
               x: 0
             }}
             transition={{ duration: 0.3 }}
-            className={`${COLORS.panels.sources.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-hidden min-h-0 relative`}
+            className={`${COLORS.panels.sources.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-hidden min-h-0 relative ${isStudioExpanded ? 'pointer-events-none' : ''}`}
           >
             <AnimatePresence mode="wait">
               {!isSourcesCollapsed ? (
@@ -187,7 +195,11 @@ const NotebookLayout: React.FC<NotebookLayoutProps> = ({
             transition={{ duration: 0.3, delay: 0.2 }}
             className={`${COLORS.panels.studio.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-auto min-h-0`}
           >
-            {React.cloneElement(studioPanel, panelProps)}
+            {React.cloneElement(studioPanel, {
+              ...panelProps,
+              onToggleExpand: handleStudioToggleExpand,
+              isStudioExpanded: isStudioExpanded
+            })}
           </motion.div>
         </div>
       </main>
