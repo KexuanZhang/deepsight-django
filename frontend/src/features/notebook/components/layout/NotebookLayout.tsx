@@ -141,8 +141,8 @@ const NotebookLayout: React.FC<NotebookLayoutProps> = ({
                   key="sources-content"
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, transition: { duration: 0 } }}
-                  transition={{ duration: 0.3 }}
+                  exit={{ opacity: 0, x: -20, transition: { duration: 0.15 } }}
+                  transition={{ duration: 0.15 }}
                 >
                   {React.cloneElement(sourcesPanel, {
                     ...panelProps,
@@ -157,21 +157,17 @@ const NotebookLayout: React.FC<NotebookLayoutProps> = ({
                   key="collapsed-sources"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  exit={{ opacity: 0, transition: { duration: 0 } }}
+                  exit={{ opacity: 0, transition: { duration: 0.15 } }}
                   transition={{ duration: 0.15 }}
                   className="h-full flex flex-col"
                 >
-                  {/* Collapsed Header - Only expand icon */}
-                  <div className="flex-shrink-0 py-4 bg-gray-100/95 backdrop-blur-sm flex items-center justify-center h-full w-full">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all duration-200"
-                      onClick={() => setIsSourcesCollapsed(false)}
-                      title="Expand Sources Panel"
-                    >
-                      <Database className="h-4 w-4" />
-                    </Button>
+                  {/* Collapsed Header - Entire bar clickable with red highlight */}
+                  <div 
+                    className="flex-shrink-0 py-4 bg-gray-100/95 backdrop-blur-sm flex items-center justify-center h-full w-full cursor-pointer hover:bg-red-50 transition-all duration-200 group"
+                    onClick={() => setIsSourcesCollapsed(false)}
+                    title="Expand Sources Panel"
+                  >
+                    <Database className="h-4 w-4 text-gray-400 group-hover:text-red-600 transition-all duration-200" />
                   </div>
                 </motion.div>
               )}
