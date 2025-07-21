@@ -243,6 +243,9 @@ interface FilePreviewState {
   audioLoaded: boolean;
   videoError: boolean;
   videoLoaded: boolean;
+  modals: {
+    [key: string]: React.ReactNode;
+  };
 }
 
 interface FilePreviewComponentProps {
@@ -262,12 +265,26 @@ const FilePreview: React.FC<FilePreviewComponentProps> = ({ source, isOpen, onCl
     audioError: false,
     audioLoaded: false,
     videoError: false,
-    videoLoaded: false
+    videoLoaded: false,
+    modals: {}
   });
 
   // Helper function to update state
   const updateState = (updates: Partial<FilePreviewState>) => {
     setState(prevState => ({ ...prevState, ...updates }));
+  };
+
+  // Modal handlers
+  const openModal = (modalType: string, content: React.ReactNode) => {
+    updateState({
+      modals: { ...state.modals, [modalType]: content }
+    });
+  };
+
+  const closeModal = (modalType: string) => {
+    const newModals = { ...state.modals };
+    delete newModals[modalType];
+    updateState({ modals: newModals });
   };
 
   // Helper function to get raw file URL
@@ -865,7 +882,7 @@ const FilePreview: React.FC<FilePreviewComponentProps> = ({ source, isOpen, onCl
         </div>
         
         {/* Gallery (Image Extraction) */}
-        {source.file_id && <GallerySection videoFileId={source.file_id} notebookId={notebookId} onOpenModal={() => {}} onCloseModal={() => {}} />}
+        {source.file_id && <GallerySection videoFileId={source.file_id} notebookId={notebookId} onOpenModal={openModal} onCloseModal={closeModal} />}
 
         {/* Transcript Content Display */}
         {state.preview.hasTranscript && (
@@ -1191,6 +1208,21 @@ const FilePreview: React.FC<FilePreviewComponentProps> = ({ source, isOpen, onCl
       <div className="p-6 overflow-y-auto max-h-[calc(95vh-120px)]">
         {renderPreviewContent()}
       </div>
+
+      {/* Render modals */}
+      {Object.entries(state.modals).map(([modalType, content]) => (
+        <div
+          key={modalType}
+          className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              closeModal(modalType);
+            }
+          }}
+        >
+          {content}
+        </div>
+      ))}
     </>
   );
 };
