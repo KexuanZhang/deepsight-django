@@ -36,15 +36,18 @@ export default function SignupPage() {
       return;
     }
 
-    // Prepare the payload with both password and password_confirm
+    // Prepare the data for the signup request
     const signupData = {
       username,
       email,
       password,
-      password_confirm: passwordConfirm, // Send password_confirm as well
-    };
+
 
     // Dispatch the signup action with the payload
+      password_confirm: passwordConfirm,
+    };
+
+    // Dispatch the signup action with the prepared data
     dispatch(signupUser(signupData));
   };
 

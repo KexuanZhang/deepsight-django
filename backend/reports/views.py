@@ -80,9 +80,9 @@ class NotebookReportListCreateView(APIView):
             if last_modified:
                 response['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
             
-            # Cache for 30 seconds if no active jobs, otherwise 5 seconds
+            # Use minimal caching to ensure delete operations are immediately reflected
             has_active_jobs = any(report.get('status') in ['pending', 'running'] for report in validated_reports)
-            cache_timeout = 5 if has_active_jobs else 30
+            cache_timeout = 2 if has_active_jobs else 5
             response['Cache-Control'] = f'max-age={cache_timeout}, must-revalidate'
             
             return response
@@ -304,7 +304,7 @@ class NotebookReportDetailView(APIView):
             report_id = report.id
             report.delete()
 
-            return Response(
+            response = Response(
                 {
                     "message": f"Report {report_id} deleted successfully",
                     "report_id": report_id,
@@ -312,6 +312,13 @@ class NotebookReportDetailView(APIView):
                     "deleted_metadata": deleted_metadata,
                 }
             )
+            
+            # Add cache-busting headers to ensure browsers don't cache delete responses
+            response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response['Pragma'] = 'no-cache'
+            response['Expires'] = '0'
+            
+            return response
 
         except Http404:
             return Response(

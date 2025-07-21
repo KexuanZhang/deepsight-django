@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 from django.db import transaction
 from notebooks.models import KnowledgeBaseImage
-from notebooks.utils.minio_backend import get_minio_backend
+from notebooks.utils.storage import get_minio_backend
 from reports.models import Report, ReportImage
 from reports.image_utils import (
     extract_figure_ids_from_content, 

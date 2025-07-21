@@ -178,6 +178,43 @@ class MinIOBackend:
             self.logger.error(f"Error generating presigned URL for {object_key}: {e}")
             return None
     
+    def copy_file(self, source_key: str, dest_key: str) -> bool:
+        """
+        Copy a file from one MinIO location to another within the same bucket.
+        
+        Args:
+            source_key: Source object key in MinIO
+            dest_key: Destination object key in MinIO
+            
+        Returns:
+            True if copy was successful, False otherwise
+        """
+        try:
+            from minio.commonconfig import CopySource
+            
+            # Create copy source configuration
+            copy_source = CopySource(
+                bucket_name=self.bucket_name,
+                object_name=source_key
+            )
+            
+            # Perform the copy operation
+            self.client.copy_object(
+                bucket_name=self.bucket_name,
+                object_name=dest_key,
+                source=copy_source
+            )
+            
+            self.logger.debug(f"Successfully copied file from {source_key} to {dest_key}")
+            return True
+            
+        except S3Error as e:
+            self.logger.error(f"Error copying file from {source_key} to {dest_key}: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Unexpected error copying file from {source_key} to {dest_key}: {e}")
+            return False
+
     def list_objects(self, prefix: str = "") -> List[str]:
         """List objects in bucket with optional prefix."""
         try:
@@ -341,8 +378,6 @@ class FileStorageService:
         
         # Initialize MinIO backend lazily
         self._minio_backend = None
-        
-        self.logger.info("File storage service initialized")
     
     @property
     def minio_backend(self):
@@ -425,15 +460,17 @@ class FileStorageService:
             # Generate object keys for MinIO storage using kb pattern with actual item ID
             base_key = f"{user_id}/kb/{knowledge_item.id}"
             
-            # Store main content
-            content_filename = processing_result.get('content_filename', 'extracted_content.md')
-            content_key = f"{base_key}/{content_filename}"
-            
-            content_bytes = content.encode('utf-8')
-            if not self.minio_backend.store_file(content_key, content_bytes, 'text/markdown'):
-                # If storage fails, clean up the database record
-                knowledge_item.delete()
-                raise Exception("Failed to store content file")
+            # Store main content only if not skipped (for marker processing that provides better content)
+            content_key = None
+            if not processing_result.get('skip_content_file', False):
+                content_filename = processing_result.get('content_filename', 'extracted_content.md')
+                content_key = f"{base_key}/{content_filename}"
+                
+                content_bytes = content.encode('utf-8')
+                if not self.minio_backend.store_file(content_key, content_bytes, 'text/markdown'):
+                    # If storage fails, clean up the database record
+                    knowledge_item.delete()
+                    raise Exception("Failed to store content file")
             
             # Store original file if provided
             original_file_key = None
