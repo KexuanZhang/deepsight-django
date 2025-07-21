@@ -35,7 +35,16 @@ export default function SignupPage() {
       return;
     }
 
-    dispatch(signupUser({ username, email, password }));
+    // Prepare the data for the signup request
+    const signupData = {
+      username,
+      email,
+      password,
+      password_confirm: passwordConfirm,
+    };
+
+    // Dispatch the signup action with the prepared data
+    dispatch(signupUser(signupData));
   };
 
   useEffect(() => {

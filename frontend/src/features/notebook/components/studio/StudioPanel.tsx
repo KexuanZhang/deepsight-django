@@ -2,7 +2,7 @@
 // This component demonstrates all 5 SOLID principles in action
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown } from 'lucide-react';
+import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown, Trash2, Edit, Download, Save, X } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
 import { useToast } from '@/common/components/ui/use-toast';
 
@@ -48,15 +48,17 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   sourcesListRef, 
   onSelectionChange,
   onOpenModal,
-  onCloseModal
+  onCloseModal,
+  onToggleExpand,
+  isStudioExpanded
 }) => {
   const { toast } = useToast();
 
   // ====== SINGLE RESPONSIBILITY: UI State Management ======
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const [selectedFileContent, setSelectedFileContent] = useState<string>('');
-  const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
+  const [isReportPreview, setIsReportPreview] = useState<boolean>(false);
   const [collapsedSections, setCollapsedSections] = useState<CollapsedSections>({
     report: false,
     podcast: false,
@@ -231,13 +233,14 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   }, [sourcesListRef, onSelectionChange]);
 
   // ====== SINGLE RESPONSIBILITY: Report generation handler ======
-  const handleGenerateReport = useCallback(async () => {
+  const handleGenerateReport = useCallback(async (configOverrides?: Partial<any>) => {
     try {
       const config = {
         ...reportGeneration.config,
+        ...configOverrides,
         notebook_id: notebookId,
         selected_files_paths: selectedFiles.map((f: FileItem) => f.id),
-        model: reportGeneration.config.model || 'gpt-4'
+        model: configOverrides?.model || reportGeneration.config.model || 'gpt-4'
       };
 
       const response = await studioService.generateReport(config);
@@ -260,13 +263,14 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   }, [reportGeneration, notebookId, selectedFiles, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation handler ======
-  const handleGeneratePodcast = useCallback(async () => {
+  const handleGeneratePodcast = useCallback(async (configOverrides?: Partial<any>) => {
     try {
       const config = {
         ...podcastGeneration.config,
+        ...configOverrides,
         notebook_id: notebookId,
         source_file_ids: selectedFiles.map((f: FileItem) => f.id),
-        model: podcastGeneration.config.model || 'gpt-4'
+        model: configOverrides?.model || podcastGeneration.config.model || 'gpt-4'
       };
 
       const response = await studioService.generatePodcast(config);
@@ -370,8 +374,10 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   }, []);
 
   const toggleExpanded = useCallback(() => {
-    setIsExpanded(prev => !prev);
-  }, []);
+    if (onToggleExpand) {
+      onToggleExpand();
+    }
+  }, [onToggleExpand]);
 
   const toggleViewMode = useCallback(() => {
     setViewMode(prev => prev === 'preview' ? 'edit' : 'preview');
@@ -397,6 +403,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       setSelectedFile(report);
       setSelectedFileContent(content.content || content.markdown_content || '');
       setViewMode('preview');
+      setIsReportPreview(true);
     } catch (error) {
       console.error('Failed to load report content:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -498,7 +505,14 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       }
       
       // Delete from backend database using the proper API call
-      await (studioService as any).deleteReport?.(reportId, notebookId);
+      const result = await apiService.deleteReport(reportId, notebookId);
+      
+      // Verify the deletion was successful by checking the response
+      if (!result || (result.error && result.error !== null)) {
+        throw new Error(result?.error || 'Backend deletion failed');
+      }
+      
+      // Only remove from local state after confirming backend deletion succeeded
       studioData.removeReport(reportId);
       
       // Clear selected file if it's the one being deleted, without navigating to another file
@@ -509,17 +523,17 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       
       toast({
         title: "Report Deleted",
-        description: "The report has been deleted successfully from the database"
+        description: "The report has been deleted successfully"
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
-        title: "Delete Failed",
-        description: errorMessage,
+        title: "Delete Failed", 
+        description: `Failed to delete report: ${errorMessage}`,
         variant: "destructive"
       });
     }
-  }, [studioService, studioData, selectedFile, notebookId, toast]);
+  }, [studioData, selectedFile, notebookId, toast]);
 
   const handleDeletePodcast = useCallback(async (podcast: PodcastItem) => {
     if (!confirm('Are you sure you want to delete this podcast?')) {
@@ -532,7 +546,15 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         throw new Error('Podcast ID not found');
       }
       
-      await studioService.deleteFile(podcastId);
+      const result = await apiService.deletePodcast(podcastId, notebookId);
+      
+      // Verify the deletion was successful by checking the response
+      // For podcasts, successful deletion returns HTTP 204 (no content)
+      if (result && result.error) {
+        throw new Error(result.error || 'Backend deletion failed');
+      }
+      
+      // Only remove from local state after confirming backend deletion succeeded
       studioData.removePodcast(podcastId);
       
       if (selectedFile?.id === podcastId || selectedFile?.job_id === podcastId) {
@@ -548,11 +570,11 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       toast({
         title: "Delete Failed",
-        description: errorMessage,
+        description: `Failed to delete podcast: ${errorMessage}`,
         variant: "destructive"
       });
     }
-  }, [studioService, studioData, selectedFile, toast]);
+  }, [studioData, selectedFile, notebookId, toast]);
 
   const handleSaveFile = useCallback(async (content: string) => {
     if (!selectedFile) return;
@@ -590,12 +612,13 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     setSelectedFile(null);
     setSelectedFileContent('');
     setViewMode('preview');
+    setIsReportPreview(false);
   }, []);
 
   // ====== OPEN/CLOSED PRINCIPLE (OCP) ======
   // Render method that can be extended without modification
   return (
-    <div className={`flex flex-col h-full ${isExpanded ? `fixed inset-0 z-50 ${COLORS.panels.commonBackground}` : ''}`}>
+    <div className="flex flex-col h-full">
       {/* ====== SINGLE RESPONSIBILITY: Header rendering ====== */}
       <div className={`${PANEL_HEADERS.container}`}>
         <div className={PANEL_HEADERS.layout}>
@@ -603,7 +626,9 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             <div className={PANEL_HEADERS.iconContainer}>
               <Palette className={PANEL_HEADERS.icon} />
             </div>
-            <h3 className={PANEL_HEADERS.title}>Studio</h3>
+            <h3 className={PANEL_HEADERS.title}>
+              {isReportPreview ? 'Studio/Report' : 'Studio'}
+            </h3>
             {(reportGeneration.isGenerating || podcastGeneration.isGenerating) && (
               <div className="flex items-center space-x-2 text-sm text-red-600">
                 <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse"></div>
@@ -612,59 +637,117 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             )}
           </div>
           <div className={PANEL_HEADERS.actionsContainer}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
-              onClick={handleRefresh}
-              disabled={studioData.loading.reports || studioData.loading.podcasts}
-            >
-              <RefreshCw className={`h-3 w-3 mr-1 ${studioData.loading.reports || studioData.loading.podcasts ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
-              onClick={() => {
-                // Import AdvancedSettingsModal component dynamically
-                import('./components/AdvancedSettingsModal').then(({ default: AdvancedSettingsModal }) => {
-                  const settingsContent = (
-                    <AdvancedSettingsModal
-                      isOpen={true}
-                      onClose={() => onCloseModal('advancedSettings')}
-                      reportConfig={reportGeneration.config}
-                      podcastConfig={podcastGeneration.config}
-                      onReportConfigChange={reportGeneration.updateConfig}
-                      onPodcastConfigChange={podcastGeneration.updateConfig}
-                      availableModels={studioData.availableModels || {}}
-                    />
-                  );
-                  onOpenModal('advancedSettings', settingsContent);
-                });
-              }}
-              title="Advanced Settings"
-            >
-              <Settings className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
-              onClick={toggleExpanded}
-            >
-              {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
+            {isReportPreview && selectedFile ? (
+              // Report preview controls
+              <>
+                {viewMode === 'preview' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                    onClick={() => setViewMode('edit')}
+                  >
+                    <Edit className="h-3 w-3 mr-1" />
+                    Edit
+                  </Button>
+                )}
+                {viewMode === 'edit' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                    onClick={() => handleSaveFile(selectedFileContent)}
+                  >
+                    <Save className="h-3 w-3 mr-1" />
+                    Save
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                  onClick={() => handleDownloadReport(selectedFile)}
+                >
+                  <Download className="h-3 w-3 mr-1" />
+                  Download
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
+                  onClick={toggleExpanded}
+                >
+                  {isStudioExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
+                  onClick={handleCloseFile}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </>
+            ) : (
+              // Default studio controls
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                  onClick={handleRefresh}
+                  disabled={studioData.loading.reports || studioData.loading.podcasts}
+                >
+                  <RefreshCw className={`h-3 w-3 mr-1 ${studioData.loading.reports || studioData.loading.podcasts ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                  onClick={() => {
+                    // Import AdvancedSettingsModal component dynamically
+                    import('./components/AdvancedSettingsModal').then(({ default: AdvancedSettingsModal }) => {
+                      const settingsContent = (
+                        <AdvancedSettingsModal
+                          isOpen={true}
+                          onClose={() => onCloseModal('advancedSettings')}
+                          reportConfig={reportGeneration.config}
+                          podcastConfig={podcastGeneration.config}
+                          onReportConfigChange={reportGeneration.updateConfig}
+                          onPodcastConfigChange={podcastGeneration.updateConfig}
+                          availableModels={studioData.availableModels || {}}
+                        />
+                      );
+                      onOpenModal('advancedSettings', settingsContent);
+                    });
+                  }}
+                  title="Advanced Settings"
+                >
+                  <Settings className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
+                  onClick={toggleExpanded}
+                >
+                  {isStudioExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* ====== SINGLE RESPONSIBILITY: Main content area ====== */}
-      <div className="flex-1 overflow-auto p-6 space-y-6 scrollbar-overlay">
-        {/* ====== LISKOV SUBSTITUTION PRINCIPLE (LSP) ====== */}
-        {/* Both forms follow the same interface contract */}
-        
-        <ReportGenerationForm
+      <div className={`flex-1 overflow-auto ${isReportPreview ? 'p-0' : 'p-6 space-y-6'} scrollbar-overlay`}>
+        {!isReportPreview && (
+          <>
+            {/* ====== LISKOV SUBSTITUTION PRINCIPLE (LSP) ====== */}
+            {/* Both forms follow the same interface contract */}
+            
+            <ReportGenerationForm
           config={reportGeneration.config}
           onConfigChange={reportGeneration.updateConfig}
           availableModels={studioData.availableModels || {}}
@@ -732,7 +815,17 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                       </div>
                     </div>
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                      <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteReport(report);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -763,7 +856,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                   >
                     {/* Podcast Header */}
                     <div
-                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200"
+                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200 group"
                       onClick={() => handlePodcastClick(podcast)}
                     >
                       <div className="flex items-center space-x-3">
@@ -784,7 +877,18 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                             <span>Click to {isExpanded ? 'collapse' : 'play'}</span>
                           </div>
                         </div>
-                        <div className="flex-shrink-0">
+                        <div className="flex-shrink-0 flex items-center space-x-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePodcast(podcast);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                           <div className={`w-2 h-2 rounded-full transition-colors ${isExpanded ? 'bg-purple-400' : 'bg-gray-300'}`}></div>
                         </div>
                       </div>
@@ -807,7 +911,8 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             </div>
           </div>
         )}
-
+          </>
+        )}
       </div>
 
       {/* ====== SINGLE RESPONSIBILITY: File viewer overlay ====== */}
@@ -815,7 +920,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         <FileViewer
           file={selectedFile}
           content={selectedFileContent}
-          isExpanded={isExpanded}
+          isExpanded={isStudioExpanded || false}
           viewMode={viewMode}
           onClose={handleCloseFile}
           onEdit={() => setViewMode('edit')}
@@ -829,6 +934,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
           onContentChange={setSelectedFileContent}
           notebookId={notebookId}
           useMinIOUrls={config.USE_MINIO_URLS}
+          hideHeader={isReportPreview}
         />
       )}
 
