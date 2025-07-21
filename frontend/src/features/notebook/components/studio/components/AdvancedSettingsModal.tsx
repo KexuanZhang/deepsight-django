@@ -144,7 +144,7 @@ const AdvancedSettingsModal: React.FC<AdvancedSettingsModalProps> = ({
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">AI Model</label>
                 <select
-                  className={`w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent`}
+                  className="w-full p-3 border border-gray-300 rounded-lg text-sm accent-red-500 focus:ring-2 focus:ring-red-500 focus:border-transparent focus:outline-none"
                   value={localReportConfig.model_provider || ''}
                   onChange={(e) => handleReportConfigChange({ model_provider: e.target.value })}
                 >
@@ -159,9 +159,12 @@ const AdvancedSettingsModal: React.FC<AdvancedSettingsModalProps> = ({
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">Search Engine</label>
                 <select
-                  className={`w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent`}
+                  className="w-full p-3 border border-gray-300 rounded-lg text-sm accent-red-500 focus:ring-2 focus:ring-red-500 focus:border-transparent focus:outline-none"
                   value={localReportConfig.retriever || 'searxng'}
-                  onChange={(e) => handleReportConfigChange({ retriever: e.target.value })}
+                  onChange={(e) => handleReportConfigChange({ 
+                    retriever: e.target.value,
+                    include_domains: e.target.value === 'tavily' ? true : localReportConfig.include_domains
+                  })}
                 >
                   <option value="searxng">SearXNG</option>
                   <option value="tavily">Tavily</option>
@@ -174,7 +177,7 @@ const AdvancedSettingsModal: React.FC<AdvancedSettingsModalProps> = ({
                   <input
                     type="checkbox"
                     id="include-image-checkbox"
-                    className={`h-4 w-4 ${COLORS.tw.primary.text[600]} border-gray-300 rounded focus:ring-red-500`}
+                    className="h-4 w-4 accent-red-500 border-gray-300 rounded focus:ring-red-500 focus:outline-none"
                     checked={localReportConfig.include_image}
                     onChange={(e) => handleReportConfigChange({ include_image: e.target.checked })}
                   />
@@ -189,7 +192,7 @@ const AdvancedSettingsModal: React.FC<AdvancedSettingsModalProps> = ({
                     <input
                       type="checkbox"
                       id="white-domain-checkbox"
-                      className={`h-4 w-4 ${COLORS.tw.primary.text[600]} border-gray-300 rounded focus:ring-red-500`}
+                      className="h-4 w-4 accent-red-500 border-gray-300 rounded focus:ring-red-500 focus:outline-none"
                       checked={localReportConfig.include_domains}
                       onChange={(e) => handleReportConfigChange({ include_domains: e.target.checked })}
                     />
@@ -203,7 +206,7 @@ const AdvancedSettingsModal: React.FC<AdvancedSettingsModalProps> = ({
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">Time Range</label>
                 <select
-                  className={`w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent`}
+                  className="w-full p-3 border border-gray-300 rounded-lg text-sm accent-red-500 focus:ring-2 focus:ring-red-500 focus:border-transparent focus:outline-none"
                   value={localReportConfig.time_range || 'ALL'}
                   onChange={(e) => handleReportConfigChange({ time_range: e.target.value })}
                 >
@@ -226,7 +229,7 @@ const AdvancedSettingsModal: React.FC<AdvancedSettingsModalProps> = ({
                 <input
                   type="text"
                   placeholder="e.g., 杨飞飞"
-                  className={`w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent`}
+                  className="w-full p-3 border border-gray-300 rounded-lg text-sm accent-red-500 focus:ring-2 focus:ring-red-500 focus:border-transparent focus:outline-none"
                   value={localPodcastConfig.expert_names?.host || ''}
                   onChange={(e) => handlePodcastConfigChange({ 
                     expert_names: { ...localPodcastConfig.expert_names, host: e.target.value }
@@ -238,7 +241,7 @@ const AdvancedSettingsModal: React.FC<AdvancedSettingsModalProps> = ({
                 <input
                   type="text"
                   placeholder="e.g., 奥立昆"
-                  className={`w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent`}
+                  className="w-full p-3 border border-gray-300 rounded-lg text-sm accent-red-500 focus:ring-2 focus:ring-red-500 focus:border-transparent focus:outline-none"
                   value={localPodcastConfig.expert_names?.expert1 || ''}
                   onChange={(e) => handlePodcastConfigChange({ 
                     expert_names: { ...localPodcastConfig.expert_names, expert1: e.target.value }
@@ -250,7 +253,7 @@ const AdvancedSettingsModal: React.FC<AdvancedSettingsModalProps> = ({
                 <input
                   type="text"
                   placeholder="e.g., 李特曼"
-                  className={`w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent`}
+                  className="w-full p-3 border border-gray-300 rounded-lg text-sm accent-red-500 focus:ring-2 focus:ring-red-500 focus:border-transparent focus:outline-none"
                   value={localPodcastConfig.expert_names?.expert2 || ''}
                   onChange={(e) => handlePodcastConfigChange({ 
                     expert_names: { ...localPodcastConfig.expert_names, expert2: e.target.value }
