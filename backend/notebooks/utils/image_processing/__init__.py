@@ -9,7 +9,6 @@ from .image_deduplicator import (
     setup_cuda_environment, get_optimal_device
 )
 from .caption_generator import generate_captions_for_directory
-from .utils import get_video_title_from_url, clean_title, find_existing_path
 
 __all__ = [
     'extract_frames',
@@ -21,8 +20,5 @@ __all__ = [
     'load_clip_model_and_preprocessing',
     'setup_cuda_environment',
     'get_optimal_device',
-    'generate_captions_for_directory',
-    'get_video_title_from_url',
-    'clean_title',
-    'find_existing_path'
+    'generate_captions_for_directory'
 ]

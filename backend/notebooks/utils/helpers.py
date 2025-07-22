@@ -76,23 +76,19 @@ config = NotebooksConfig()
 
 # ===== TEXT UTILITIES =====
 
-def clean_title(title: str, max_length: int = 100) -> str:
-    """
-    Clean and normalize title text for safe usage in filenames and titles.
-    """
+def clean_title(title: str) -> str:
+    """Clean the title by replacing non-alphanumeric characters with underscores."""
     if not title:
         return "untitled"
     
-    # Remove or replace problematic characters
-    title = re.sub(r'[<>:"/\\|?*]', '_', title)
-    title = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', title)  # Remove control characters
-    title = re.sub(r'\s+', ' ', title).strip()  # Normalize whitespace
+    # Replace all non-alphanumeric characters (except for underscores) with underscores
+    cleaned = re.sub(r'[^\w\d]', '_', title)
+    # Replace consecutive underscores with a single underscore
+    cleaned = re.sub(r'_+', '_', cleaned)
+    # Remove leading/trailing underscores
+    cleaned = cleaned.strip('_')
     
-    # Limit length
-    if len(title) > max_length:
-        title = title[:max_length].rsplit(' ', 1)[0]  # Break at word boundary
-        
-    return title or "untitled"
+    return cleaned or "untitled"
 
 
 def calculate_file_hash(file_content: bytes) -> str:
@@ -361,7 +357,7 @@ def generate_unique_filename(original_filename: str, user_id: int, timestamp: st
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     
     name, ext = os.path.splitext(original_filename)
-    clean_name = clean_title(name, max_length=50)
+    clean_name = clean_title(name)[:50]  # Limit to 50 chars after cleaning
     
     return f"{user_id}_{timestamp}_{clean_name}{ext}"
 
