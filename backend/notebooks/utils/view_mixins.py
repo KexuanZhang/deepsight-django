@@ -175,6 +175,8 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             "file_extension": self.extract_file_extension(kb_item.metadata),
             "file_size": self.extract_file_size(kb_item.metadata),
             "uploaded_at": kb_item.created_at.isoformat(),
+            # Include file_metadata for caption generation status and other metadata
+            "file_metadata": kb_item.file_metadata or {},
         }
 
         # Add source information if available

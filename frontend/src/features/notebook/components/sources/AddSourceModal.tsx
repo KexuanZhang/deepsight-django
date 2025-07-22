@@ -41,7 +41,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
 
   // File validation function
   const validateFile = (file: File) => {
-    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav", "m4a", "avi", "mov", "mkv", "webm", "wmv", "m4v"];
+    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "docx", "mp3", "mp4", "wav", "m4a", "avi", "mov", "mkv", "webm", "wmv", "m4v"];
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
     const maxSize = 100 * 1024 * 1024; // 100MB
     const minSize = 100; // 100 bytes minimum
@@ -465,7 +465,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-3">
-            Supported file types: PDF, .txt, Markdown, PPT/PPTX, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
+            Supported file types: pdf, txt, markdown, pptx, docx, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
           </p>
         </div>
       )}
@@ -567,7 +567,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                   />
                   {urlProcessingType === 'document' && (
                     <p className="text-xs text-gray-600">
-                      📄 Only PDF and PowerPoint files are supported. Use the "Website" option for HTML pages.
+                      📄 Only PDF and PowerPoint links are supported. Use the "Website" option for HTML pages.
                     </p>
                   )}
                   <Button
@@ -870,7 +870,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
           }
         }}
         style={{ display: 'none' }}
-        accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav,.m4a,.avi,.mov,.mkv,.webm,.wmv,.m4v"
+        accept=".pdf,.txt,.md,.ppt,.pptx,.docx,.mp3,.mp4,.wav,.m4a,.avi,.mov,.mkv,.webm,.wmv,.m4v"
       />
     </>
   );
