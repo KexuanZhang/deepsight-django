@@ -510,23 +510,26 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         throw new Error('Podcast ID not found');
       }
       
-      const filename = `${podcast.title || 'podcast'}.mp3`;
-      // Note: This will need to be implemented in the service layer
-      const blob = await (studioService as any).downloadPodcastAudio?.(podcastId, notebookId);
+      // Use the API service to download the podcast audio as a blob
+      const blob = await apiService.downloadPodcastAudio(podcastId, notebookId);
       
-      // Create download link
+      // Create download link and trigger download
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = filename;
+      link.download = `${podcast.title || 'podcast'}.mp3`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      
+      // Clean up the blob URL
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 1000);
       
       toast({
         title: "Download Started",
-        description: "Your podcast is being downloaded"
+        description: "Your podcast download should begin shortly"
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -536,7 +539,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         variant: "destructive"
       });
     }
-  }, [studioService, notebookId, toast]);
+  }, [notebookId, toast]);
 
   const handleDeleteReport = useCallback(async (report: ReportItem) => {
     if (!confirm('Are you sure you want to delete this report?')) {
