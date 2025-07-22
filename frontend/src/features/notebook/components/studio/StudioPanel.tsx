@@ -714,15 +714,17 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                     </Button>
                   </>
                 )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
-                  onClick={() => handleDownloadReport(selectedFile)}
-                >
-                  <Download className="h-3 w-3 mr-1" />
-                  Download
-                </Button>
+                {viewMode === 'preview' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                    onClick={() => handleDownloadReport(selectedFile)}
+                  >
+                    <Download className="h-3 w-3 mr-1" />
+                    Download
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
