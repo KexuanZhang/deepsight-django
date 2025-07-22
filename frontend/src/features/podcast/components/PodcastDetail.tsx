@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Podcast, PodcastDetailProps, PodcastAudio } from '../type';
 import { PodcastService } from '../services/PodcastService';
 
@@ -13,35 +13,93 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
   onBack
 }) => {
   const [podcastAudio, setPodcastAudio] = useState<PodcastAudio | null>(audio || null);
-  const [isLoadingAudio, setIsLoadingAudio] = useState(!audio);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [refreshAttempts, setRefreshAttempts] = useState(0);
+  const [currentPodcast, setCurrentPodcast] = useState<Podcast>(podcast);
+  const pollingIntervalRef = useRef<number | null>(null);
+
+  // Update current podcast when prop changes
+  useEffect(() => {
+    setCurrentPodcast(podcast);
+  }, [podcast]);
+
+  // Poll for podcast updates if status is generating or pending
+  useEffect(() => {
+    if (currentPodcast.status === 'generating' || currentPodcast.status === 'pending') {
+      const pollForUpdates = async () => {
+        try {
+          const podcastService = new PodcastService();
+          const updatedPodcast = await podcastService.getPodcast(currentPodcast.id);
+          setCurrentPodcast(updatedPodcast);
+          
+          // If status changed to completed, clear the interval
+          if (updatedPodcast.status === 'completed' || updatedPodcast.status === 'failed' || updatedPodcast.status === 'cancelled') {
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to poll for podcast updates:', error);
+        }
+      };
+
+      // Start polling every 2 seconds
+      pollingIntervalRef.current = setInterval(pollForUpdates, 2000);
+
+      // Cleanup on unmount or when status changes
+      return () => {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+      };
+    }
+  }, [currentPodcast.status, currentPodcast.id]);
 
   useEffect(() => {
-    if (!audio && podcast.status === 'completed') {
-      const loadAudio = async () => {
+    const loadAudio = async () => {
+      if (currentPodcast.status === 'completed') {
         try {
           setIsLoadingAudio(true);
           const podcastService = new PodcastService();
-          const audio = await podcastService.getPodcastAudio(podcast.id);
-          setPodcastAudio(audio);
           
-          // Set the correct audio URL using PodcastService logic
-          const url = podcastService.getAudioUrl(audio as any) || podcastService.getAudioUrl(podcast);
+          // First try to get audio URL from the podcast object itself
+          let url = podcastService.getAudioUrl(currentPodcast);
+          
+          // If no URL from podcast object and we don't have audio data, fetch it
+          if (!url && !audio) {
+            try {
+              const fetchedAudio = await podcastService.getPodcastAudio(currentPodcast.id);
+              setPodcastAudio(fetchedAudio);
+              url = podcastService.getAudioUrl(fetchedAudio as any);
+            } catch (error) {
+              console.error('Failed to load podcast audio:', error);
+              // If fetching audio fails, retry a few times with delay
+              if (refreshAttempts < 3) {
+                setTimeout(() => {
+                  setRefreshAttempts(prev => prev + 1);
+                }, 2000); // Retry after 2 seconds
+              }
+            }
+          } else if (audio) {
+            // If audio is provided, use it
+            setPodcastAudio(audio);
+            url = podcastService.getAudioUrl(audio as any) || url;
+          }
+          
           setAudioUrl(url);
         } catch (error) {
-          console.error('Failed to load podcast audio:', error);
+          console.error('Error loading audio:', error);
         } finally {
           setIsLoadingAudio(false);
         }
-      };
-      loadAudio();
-    } else if (podcast.status === 'completed') {
-      // If audio is already provided, still get the correct URL
-      const podcastService = new PodcastService();
-      const url = podcastService.getAudioUrl(audio as any) || podcastService.getAudioUrl(podcast);
-      setAudioUrl(url);
-    }
-  }, [podcast, audio]);
+      }
+    };
+    
+    loadAudio();
+  }, [currentPodcast, audio, refreshAttempts]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
@@ -87,22 +145,22 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
               </button>
               <div>
                 <h1 className="text-3xl font-bold text-gray-900">
-                  {podcast.title || 'Untitled Podcast'}
+                  {currentPodcast.title || 'Untitled Podcast'}
                 </h1>
                 <p className="text-gray-600 mt-1">
-                  Created on {formatDate(podcast.created_at)}
+                  Created on {formatDate(currentPodcast.created_at)}
                 </p>
               </div>
             </div>
             
             <div className="flex items-center space-x-2">
-              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(podcast.status)}`}>
-                {podcast.status}
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(currentPodcast.status)}`}>
+                {currentPodcast.status}
               </span>
               
-              {podcast.status === 'completed' && onPlay && (
+              {currentPodcast.status === 'completed' && onPlay && (
                 <button
-                  onClick={() => onPlay(podcast)}
+                  onClick={() => onPlay(currentPodcast)}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700"
                 >
                   <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -112,9 +170,9 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
                 </button>
               )}
               
-              {podcast.status === 'completed' && (
+              {currentPodcast.status === 'completed' && (
                 <button
-                  onClick={() => onDownload(podcast)}
+                  onClick={() => onDownload(currentPodcast)}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
                 >
                   <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -126,7 +184,7 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
               
               {onEdit && (
                 <button
-                  onClick={() => onEdit(podcast)}
+                  onClick={() => onEdit(currentPodcast)}
                   className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                 >
                   <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -137,7 +195,7 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
               )}
               
               <button
-                onClick={() => onDelete(podcast)}
+                onClick={() => onDelete(currentPodcast)}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
               >
                 <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -158,77 +216,77 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Topic</h3>
-                <p className="mt-1 text-sm text-gray-900">{podcast.topic || 'No topic specified'}</p>
+                <p className="mt-1 text-sm text-gray-900">{currentPodcast.topic || 'No topic specified'}</p>
               </div>
               
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Description</h3>
-                <p className="mt-1 text-sm text-gray-900">{podcast.description || 'No description'}</p>
+                <p className="mt-1 text-sm text-gray-900">{currentPodcast.description || 'No description'}</p>
               </div>
               
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Duration</h3>
                 <p className="mt-1 text-sm text-gray-900">
-                  {podcast.duration ? formatDuration(podcast.duration) : 'Not available'}
+                  {currentPodcast.duration ? formatDuration(currentPodcast.duration) : 'Not available'}
                 </p>
               </div>
               
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Created</h3>
-                <p className="mt-1 text-sm text-gray-900">{formatDate(podcast.created_at)}</p>
+                <p className="mt-1 text-sm text-gray-900">{formatDate(currentPodcast.created_at)}</p>
               </div>
               
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Last Updated</h3>
-                <p className="mt-1 text-sm text-gray-900">{formatDate(podcast.updated_at)}</p>
+                <p className="mt-1 text-sm text-gray-900">{formatDate(currentPodcast.updated_at)}</p>
               </div>
             </div>
             
             {/* Expert Names */}
-            {podcast.expert_names && (
+            {currentPodcast.expert_names && (
               <div className="mt-4">
                 <h3 className="text-sm font-medium text-gray-500">Participants</h3>
                 <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {podcast.expert_names.host && (
+                  {currentPodcast.expert_names.host && (
                     <div className="bg-gray-50 p-3 rounded-lg">
                       <p className="text-xs text-gray-500">Host</p>
-                      <p className="text-sm font-medium text-gray-900">{podcast.expert_names.host}</p>
+                      <p className="text-sm font-medium text-gray-900">{currentPodcast.expert_names.host}</p>
                     </div>
                   )}
-                  {podcast.expert_names.expert1 && (
+                  {currentPodcast.expert_names.expert1 && (
                     <div className="bg-gray-50 p-3 rounded-lg">
                       <p className="text-xs text-gray-500">Expert 1</p>
-                      <p className="text-sm font-medium text-gray-900">{podcast.expert_names.expert1}</p>
+                      <p className="text-sm font-medium text-gray-900">{currentPodcast.expert_names.expert1}</p>
                     </div>
                   )}
-                  {podcast.expert_names.expert2 && (
+                  {currentPodcast.expert_names.expert2 && (
                     <div className="bg-gray-50 p-3 rounded-lg">
                       <p className="text-xs text-gray-500">Expert 2</p>
-                      <p className="text-sm font-medium text-gray-900">{podcast.expert_names.expert2}</p>
+                      <p className="text-sm font-medium text-gray-900">{currentPodcast.expert_names.expert2}</p>
                     </div>
                   )}
                 </div>
               </div>
             )}
             
-            {podcast.progress && (
+            {currentPodcast.progress && (
               <div className="mt-4">
                 <h3 className="text-sm font-medium text-gray-500">Progress</h3>
-                <p className="mt-1 text-sm text-gray-900">{podcast.progress}</p>
+                <p className="mt-1 text-sm text-gray-900">{currentPodcast.progress}</p>
               </div>
             )}
             
-            {podcast.error_message && (
+            {currentPodcast.error_message && (
               <div className="mt-4">
                 <h3 className="text-sm font-medium text-red-500">Error</h3>
-                <p className="mt-1 text-sm text-red-600">{podcast.error_message}</p>
+                <p className="mt-1 text-sm text-red-600">{currentPodcast.error_message}</p>
               </div>
             )}
           </div>
         </div>
 
         {/* Audio Player */}
-        {podcast.status === 'completed' && podcastAudio && (
+        {currentPodcast.status === 'completed' && podcastAudio && (
           <div className="bg-white rounded-lg shadow mb-6">
             <div className="px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-medium text-gray-900">Audio Player</h2>
@@ -268,7 +326,7 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
         )}
 
         {/* Conversation Text */}
-        {podcast.conversation_text && (
+        {currentPodcast.conversation_text && (
           <div className="bg-white rounded-lg shadow">
             <div className="px-6 py-4 border-b border-gray-200">
               <h2 className="text-lg font-medium text-gray-900">Conversation Transcript</h2>
@@ -276,7 +334,7 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
             <div className="px-6 py-4">
               <div className="prose max-w-none">
                 <pre className="whitespace-pre-wrap text-sm text-gray-900 bg-gray-50 p-4 rounded-lg">
-                  {podcast.conversation_text}
+                  {currentPodcast.conversation_text}
                 </pre>
               </div>
             </div>

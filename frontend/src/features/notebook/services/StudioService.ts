@@ -28,6 +28,7 @@ export abstract class IStudioService {
   abstract getAvailableModels(): Promise<string[]>;
   abstract loadReports(notebookId: string): Promise<any>;
   abstract loadPodcasts(notebookId: string): Promise<any>;
+  abstract getPodcast(podcastId: string): Promise<any>;
   abstract loadReportContent(reportId: string): Promise<any>;
   abstract downloadFile(fileId: string, filename: string): Promise<any>;
   abstract deleteFile(fileId: string): Promise<any>;
@@ -109,6 +110,11 @@ export class ApiStudioService extends IStudioService {
   async loadPodcasts(notebookId: string): Promise<any> {
     const response = await this.api.get(`/notebooks/${notebookId}/podcast-jobs/`);
     return response.results || response.jobs || response || [];
+  }
+
+  async getPodcast(podcastId: string): Promise<any> {
+    const response = await this.api.get(`/notebooks/${this.notebookId}/podcast-jobs/${podcastId}/`);
+    return response;
   }
 
   async loadReportContent(reportId: string): Promise<any> {

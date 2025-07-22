@@ -118,9 +118,31 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   }, [reportGeneration, studioData, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation completion ======
-  const handlePodcastComplete = useCallback((result: PodcastItem) => {
+  const handlePodcastComplete = useCallback(async (result: PodcastItem) => {
     podcastGeneration.completeGeneration();
-    studioData.addPodcast(result);
+    
+    // Fetch complete podcast data from server to ensure we have audio URL
+    try {
+      const completeResult = { ...result };
+      
+      // If the result doesn't have an audio_url, try to fetch complete data
+      if (!result.audio_url && result.job_id) {
+        try {
+          const freshPodcast = await studioService.getPodcast(result.job_id);
+          Object.assign(completeResult, freshPodcast);
+        } catch (error) {
+          console.error('Failed to fetch complete podcast data:', error);
+          // Still add the result we have, the PodcastAudioPlayer will handle retries
+        }
+      }
+      
+      studioData.addPodcast(completeResult);
+    } catch (error) {
+      console.error('Error in handlePodcastComplete:', error);
+      // Fallback to original behavior
+      studioData.addPodcast(result);
+    }
+    
     if (podcastGeneration.currentJobId) {
       jobService.clearJob(podcastGeneration.currentJobId);
     }
@@ -128,7 +150,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       title: "Podcast Generated", 
       description: "Your panel discussion has been generated successfully."
     });
-  }, [podcastGeneration, studioData, toast]);
+  }, [podcastGeneration, studioData, studioService, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Job status monitoring ======
   const handleReportError = useCallback((error: string) => {
