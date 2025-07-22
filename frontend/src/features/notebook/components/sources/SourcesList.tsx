@@ -18,6 +18,7 @@ const fileIcons: FileIcons = {
   md: FileText, 
   ppt: Presentation,
   pptx: Presentation,
+  docx: FileText,
   mp3: Music,
   mp4: Video,
   wav: Music,
