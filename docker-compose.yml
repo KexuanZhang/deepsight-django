@@ -109,7 +109,7 @@ services:
   redis:
     image: redis:8-alpine
     container_name: deepsight-redis
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 64gb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     ports:
