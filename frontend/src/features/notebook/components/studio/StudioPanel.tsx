@@ -275,6 +275,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
 
       const response = await studioService.generatePodcast(config);
       podcastGeneration.startGeneration(response.job_id);
+      podcastGeneration.updateProgress('Starting podcast generation (10%)');
       jobService.saveJob(response.job_id, { 
         type: 'podcast', 
         config, 
@@ -791,7 +792,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
           onConfigChange={podcastGeneration.updateConfig}
           generationState={{
             state: podcastGeneration.state,
-            progress: podcastGeneration.progress ? parseInt(podcastGeneration.progress) || 0 : undefined,
+            progress: podcastGeneration.progress,
             error: podcastGeneration.error || undefined
           }}
           onGenerate={handleGeneratePodcast}

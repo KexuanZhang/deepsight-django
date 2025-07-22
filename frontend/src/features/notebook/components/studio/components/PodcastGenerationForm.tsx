@@ -91,7 +91,7 @@ const PodcastGenerationForm: React.FC<PodcastGenerationFormProps> = ({
               <StatusDisplay
                 state={generationState.state}
                 title="Generating Panel Discussion"
-                progress={generationState.progress?.toString()}
+                progress={generationState.progress}
                 error={generationState.error}
                 showCancel={true}
                 onCancel={onCancel}
