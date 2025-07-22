@@ -465,7 +465,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-3">
-            Supported file types: PDF, .txt, Markdown, PPT/PPTX, DOCX, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
+            Supported file types: pdf, txt, markdown, pptx, docx, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
           </p>
         </div>
       )}
