@@ -56,8 +56,15 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
             )
 
             # Add linked status to each item
+            from uuid import UUID
             for item in knowledge_base:
-                item["linked_to_notebook"] = item["id"] in linked_kb_item_ids
+                try:
+                    # Convert item["id"] to UUID for comparison since linked_kb_item_ids contains UUID objects
+                    item_uuid = UUID(str(item["id"]))
+                    item["linked_to_notebook"] = item_uuid in linked_kb_item_ids
+                except (ValueError, TypeError):
+                    # If conversion fails, assume not linked
+                    item["linked_to_notebook"] = False
 
             return self.success_response(
                 {

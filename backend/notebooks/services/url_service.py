@@ -9,7 +9,7 @@ from rest_framework import status
 
 from ..models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.url_extractor import URLExtractor
-from rag.rag import add_user_files  # Add this import at the top
+from rag.rag import add_user_files
 
 logger = logging.getLogger(__name__)
 

@@ -231,6 +231,8 @@ export interface SourcesListProps {
   isCollapsed?: boolean;
   onOpenModal?: (modalType: string, content?: React.ReactElement) => void;
   onCloseModal?: (modalType: string) => void;
+  onSourcesRemoved?: () => void;
+  sourcesRemovedTrigger?: number;
 }
 
 export interface SourceItemProps {

@@ -63,7 +63,7 @@ const getPrincipleFileIcon = (source: Source) => {
 };
 
 
-const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, onSelectionChange, onToggleCollapse, isCollapsed, onOpenModal, onCloseModal }, ref) => {
+const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, onSelectionChange, onToggleCollapse, isCollapsed, onOpenModal, onCloseModal, onSourcesRemoved, sourcesRemovedTrigger }, ref) => {
   const [sources, setSources] = useState<Source[]>([]);
 
   const [error, setError] = useState<string | null>(null);
@@ -407,11 +407,13 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     
     // Track which deletions succeed
     const deletionResults = [];
+    const unlinkedKnowledgeItems = [];
     
     // Delete files from backend
     for (const source of selectedSources) {
       try {
         let result;
+        let knowledgeItemId = null;
         
         // Priority order for unlink operations:
         // 1. knowledge_item_id (best for unlinking from notebook)
@@ -419,8 +421,10 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
         // 3. upload_file_id (upload tracking ID - fallback)
         
         if (source.metadata?.knowledge_item_id) {
+          knowledgeItemId = source.metadata.knowledge_item_id;
           result = await apiService.deleteParsedFile(source.metadata.knowledge_item_id, notebookId);
         } else if (source.file_id) {
+          knowledgeItemId = source.file_id;
           result = await apiService.deleteParsedFile(source.file_id, notebookId);
         } else if (source.upload_file_id) {
           result = await apiService.deleteFileByUploadId(source.upload_file_id, notebookId);
@@ -434,6 +438,10 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
         
         if (result.success) {
           deletionResults.push({ source, success: true });
+          // Track knowledge items that were successfully unlinked
+          if (knowledgeItemId) {
+            unlinkedKnowledgeItems.push(knowledgeItemId);
+          }
         } else {
           deletionResults.push({ source, success: false, error: result.error });
         }
@@ -450,8 +458,14 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     
     setSources((prev) => prev.filter((source) => !successfullyDeleted.includes(source.id)));
     
-      // Note: Knowledge base items would be updated if we had that state here
-    // For now, we just remove the sources from the local state
+    // Notify parent component about unlinked knowledge base items
+    // This will trigger a refresh of the knowledge base state in AddSourceModal
+    if (unlinkedKnowledgeItems.length > 0 && onSelectionChange) {
+      // Use a slight delay to ensure the backend state is updated
+      setTimeout(() => {
+        onSelectionChange();
+      }, 100);
+    }
     
     // Show error for failed deletions
     const failedDeletions = deletionResults.filter(result => !result.success);
@@ -503,6 +517,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
             // This ensures we get the current state after deletion
             loadParsedFiles();
           }}
+          onSourcesRemoved={sourcesRemovedTrigger}
         />
       );
       onOpenModal('addSourceModal', modalContent);
