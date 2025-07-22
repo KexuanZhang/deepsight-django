@@ -27,9 +27,8 @@ from django.core.exceptions import ValidationError
 
 try:
     from ..utils.storage import FileStorageService
-    from ..utils.helpers import ContentIndexingService, config as settings
+    from ..utils.helpers import ContentIndexingService, config as settings, clean_title
     from ..utils.validators import FileValidator
-    from ..utils.image_processing.utils import clean_title
     # Import caption generation dependencies
     from reports.image_utils import extract_figure_data_from_markdown
     from notebooks.utils.image_processing.caption_generator import generate_caption_for_image

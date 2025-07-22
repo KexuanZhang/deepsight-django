@@ -592,7 +592,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
             from ..serializers import VideoImageExtractionSerializer
             from ..utils.storage_adapter import get_storage_adapter
             from ..processors.media_processors import MediaProcessor
-            from ..utils.image_processing import clean_title
+            from ..utils.helpers import clean_title
             from pathlib import Path
             import tempfile
             import requests

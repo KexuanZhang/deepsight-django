@@ -319,9 +319,9 @@ class MediaProcessor:
             sequential_deep_dedupe,
             global_deep_dedupe,
             text_ocr_filter_dedupe,
-            generate_captions_for_directory,
-            clean_title
+            generate_captions_for_directory
         )
+        from ..utils.helpers import clean_title
         
         self.logger.info(f"Starting image extraction with dedup and captions for: {file_path}")
 
@@ -504,7 +504,7 @@ class MediaProcessor:
         """
         Main method to process a video file and generate deduplicated images with captions.
         """
-        from ..utils.image_processing import clean_title
+        from ..utils.helpers import clean_title
         
         try:
             # Determine video title

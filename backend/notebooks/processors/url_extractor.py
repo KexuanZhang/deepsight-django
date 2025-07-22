@@ -18,8 +18,7 @@ from django.core.files.uploadedfile import UploadedFile, InMemoryUploadedFile
 import io
 
 from ..utils.storage import get_storage_adapter
-from ..utils.image_processing.utils import clean_title
-from ..utils.helpers import ContentIndexingService, config as settings
+from ..utils.helpers import ContentIndexingService, config as settings, clean_title
 from .upload_processor import UploadProcessor
 
 logger = logging.getLogger(__name__)
@@ -726,7 +725,6 @@ class URLExtractor:
                         original_name = original_name[:-len(current_extension)]
                     
                     # Use clean_title to sanitize the filename and add correct extension
-                    from ..utils.image_processing.utils import clean_title
                     clean_base_name = clean_title(original_name)
                     new_filename = clean_base_name + correct_extension
                     new_path = current_path.parent / new_filename

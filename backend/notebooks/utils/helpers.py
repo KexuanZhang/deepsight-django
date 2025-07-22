@@ -76,28 +76,69 @@ config = NotebooksConfig()
 
 # ===== TEXT UTILITIES =====
 
-def clean_title(title: str, max_length: int = 100) -> str:
-    """
-    Clean and normalize title text for safe usage in filenames and titles.
-    """
+def clean_title(title: str) -> str:
+    """Clean the title by replacing non-alphanumeric characters with underscores."""
     if not title:
         return "untitled"
     
-    # Remove or replace problematic characters
-    title = re.sub(r'[<>:"/\\|?*]', '_', title)
-    title = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', title)  # Remove control characters
-    title = re.sub(r'\s+', ' ', title).strip()  # Normalize whitespace
+    # Replace all non-alphanumeric characters (except for underscores) with underscores
+    cleaned = re.sub(r'[^\w\d]', '_', title)
+    # Replace consecutive underscores with a single underscore
+    cleaned = re.sub(r'_+', '_', cleaned)
+    # Remove leading/trailing underscores
+    cleaned = cleaned.strip('_')
     
-    # Limit length
-    if len(title) > max_length:
-        title = title[:max_length].rsplit(' ', 1)[0]  # Break at word boundary
+    return cleaned or "untitled"
+
+
+def calculate_content_hash(content: Union[str, bytes]) -> str:
+    """
+    Calculate SHA256 hash of content for deduplication in KBItem source_hash column.
+    
+    This function generates the same hash for the same content regardless of filename,
+    enabling proper content-based deduplication for the knowledge base.
+    
+    Args:
+        content: File content as string or bytes
         
-    return title or "untitled"
+    Returns:
+        SHA256 hash as hexadecimal string for use in KnowledgeBaseItem.source_hash
+    """
+    if isinstance(content, str):
+        content_bytes = content.encode('utf-8')
+    else:
+        content_bytes = content
+    
+    return hashlib.sha256(content_bytes).hexdigest()
 
 
-def calculate_file_hash(file_content: bytes) -> str:
-    """Calculate SHA256 hash of file content."""
-    return hashlib.sha256(file_content).hexdigest()
+def check_duplicate_before_processing(file_obj, user) -> Optional[str]:
+    """
+    Check for duplicate content before processing the file.
+    
+    This enables early duplicate detection to avoid unnecessary processing.
+    
+    Args:
+        file_obj: Django uploaded file object
+        user: User instance
+        
+    Returns:
+        Existing KnowledgeBaseItem ID if duplicate found, None if unique
+    """
+    # Read file content and calculate hash
+    file_obj.seek(0)  # Ensure we read from beginning
+    file_content = file_obj.read()
+    file_obj.seek(0)  # Reset for potential later processing
+    
+    content_hash = calculate_content_hash(file_content)
+    
+    # Check for existing content
+    from ..models import KnowledgeBaseItem
+    existing_item = KnowledgeBaseItem.objects.filter(
+        user=user, source_hash=content_hash
+    ).first()
+    
+    return str(existing_item.id) if existing_item else None
 
 
 def extract_domain(url: str) -> str:
@@ -361,7 +402,7 @@ def generate_unique_filename(original_filename: str, user_id: int, timestamp: st
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     
     name, ext = os.path.splitext(original_filename)
-    clean_name = clean_title(name, max_length=50)
+    clean_name = clean_title(name)[:50]  # Limit to 50 chars after cleaning
     
     return f"{user_id}_{timestamp}_{clean_name}{ext}"
 
