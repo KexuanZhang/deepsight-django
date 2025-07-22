@@ -3,6 +3,7 @@ import json
 import queue
 import threading
 import re
+import uuid
 from typing import List, Tuple, Optional, Generator
 
 from PyPDF2 import PdfReader
@@ -138,9 +139,10 @@ def add_user_files(
 
         # Use inline content if present (from extracted markdown)
         if getattr(item, "content", None):
-            print(f"[DEBUG] Ingesting inline content for item {item.id}")
+            print(f"[DEBUG] Ingesting inline content for item {item}")
             text = item.content
             source_name = f"inline_{item.id}"
+            print("!!!!text", text[:200] if isinstance(text, str) else str(text)[:200])
         # Fallback to extracted markdown file if present
         elif getattr(item, "extracted_md_object_key", None):
             try:
@@ -202,7 +204,12 @@ def add_user_files(
     ).split_documents(docs)
 
     print(f"[DEBUG] Total chunks to ingest for user {user_id}: {len(chunks)}")
-    store.add_documents(chunks)
+
+    # Generate unique string IDs for each chunk
+    ids = [str(uuid.uuid4()) for _ in range(len(chunks))]
+
+    # Pass ids to add_documents
+    store.add_documents(chunks, ids=ids)
 
     # make sure Milvus is up to date
     coll = Collection(coll_name)
