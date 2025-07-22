@@ -188,3 +188,5 @@ logs/
 *data00/
 papers_summaries.json
 start_celery.sh
+
+myenv/
