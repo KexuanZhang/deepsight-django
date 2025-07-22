@@ -5,3 +5,4 @@ CLAUDE.md
 *.DS_Store
 secrets.toml
 *.ipynb
+papers/

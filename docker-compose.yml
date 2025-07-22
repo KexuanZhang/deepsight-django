@@ -6,10 +6,10 @@ x-backend-common: &backend-common
     context: ./backend
     dockerfile: Dockerfile
     args:
-      http_proxy: ${HTTP_PROXY:-}
-      https_proxy: ${HTTPS_PROXY:-}
-      no_proxy: ${NO_PROXY:-}
-  image: deepsight-backend-common:${VERSION:-latest}
+      http_proxy: ${HTTP_PROXY}
+      https_proxy: ${HTTPS_PROXY}
+      no_proxy: ${NO_PROXY}
+  image: deepsight-backend-common:${VERSION}
   restart: unless-stopped
   
   # Use deploy configuration for GPU access (preferred method)
@@ -26,39 +26,39 @@ x-backend-common: &backend-common
   
   environment:
     # NVIDIA Container Runtime environment variables
-    NVIDIA_VISIBLE_DEVICES: all
-    NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    - NVIDIA_VISIBLE_DEVICES=all
+    - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     
-    PGHOST: db
-    REDIS_URL: redis://redis:6379/0
-    CELERY_BROKER_URL: redis://redis:6379/0
-    CELERY_RESULT_BACKEND: redis://redis:6379/0
-    REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
-    SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
-    CURL_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+    - PGHOST=db
+    - REDIS_URL=redis://redis:6379/0
+    - CELERY_BROKER_URL=redis://redis:6379/0
+    - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+    - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+    - CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
     # Proxy settings for model downloads (shared by all backend services)
-    http_proxy: ${HTTP_PROXY:-}
-    https_proxy: ${HTTPS_PROXY:-}
-    no_proxy: ${NO_PROXY:-}
+    - http_proxy=${HTTP_PROXY}
+    - https_proxy=${HTTPS_PROXY}
+    - no_proxy=${NO_PROXY}
     # Hugging Face cache settings
-    HF_HOME: /root/.cache/huggingface
-    TRANSFORMERS_CACHE: /root/.cache/huggingface
-    HF_DATASETS_CACHE: /root/.cache/huggingface/datasets
+    - HF_HOME=/root/.cache/huggingface
+    - TRANSFORMERS_CACHE=/root/.cache/huggingface
+    - HF_DATASETS_CACHE=/root/.cache/huggingface/datasets
     # Django superuser settings (shared by all backend services)
-    DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-}
-    DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-}
-    DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-}
+    - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME}
+    - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
+    - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
     # Celery worker configuration (available as environment variables)
-    CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-4}
-    CELERY_MAX_TASKS_PER_CHILD: ${CELERY_MAX_TASKS_PER_CHILD:-100}
-    CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-3600}
-    CELERY_TASK_SOFT_TIME_LIMIT: ${CELERY_TASK_SOFT_TIME_LIMIT:-3300}
-    CELERY_QUEUES: ${CELERY_QUEUES:-notebook_processing,podcast,reports,maintenance,validation}
+    - CELERY_CONCURRENCY=${CELERY_CONCURRENCY}
+    - CELERY_MAX_TASKS_PER_CHILD=${CELERY_MAX_TASKS_PER_CHILD}
+    - CELERY_TASK_TIME_LIMIT=${CELERY_TASK_TIME_LIMIT}
+    - CELERY_TASK_SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT}
+    - CELERY_QUEUES=${CELERY_QUEUES}
     # Gunicorn configuration
-    GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
-    GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-600}
-    GUNICORN_MAX_REQUESTS: ${GUNICORN_MAX_REQUESTS:-1000}
-    GUNICORN_MAX_REQUESTS_JITTER: ${GUNICORN_MAX_REQUESTS_JITTER:-100}
+    - GUNICORN_WORKERS=${GUNICORN_WORKERS}
+    - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT}
+    - GUNICORN_MAX_REQUESTS=${GUNICORN_MAX_REQUESTS}
+    - GUNICORN_MAX_REQUESTS_JITTER=${GUNICORN_MAX_REQUESTS_JITTER}
   
   volumes:
     - ./backend/media:/app/media
@@ -88,15 +88,15 @@ services:
     image: postgres:17-alpine
     container_name: deepsight-postgres
     environment:
-      POSTGRES_DB: ${PGDATABASE}
-      POSTGRES_USER: ${PGUSER}
-      POSTGRES_PASSWORD: ${PGPASSWORD}
-      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+      - POSTGRES_DB=${PGDATABASE}
+      - POSTGRES_USER=${PGUSER}
+      - POSTGRES_PASSWORD=${PGPASSWORD}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=scram-sha-256
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db-init:/docker-entrypoint-initdb.d:ro
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PGUSER} -d ${PGDATABASE}"]
       <<: *healthcheck-defaults
@@ -113,7 +113,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       <<: *healthcheck-defaults
@@ -126,9 +126,9 @@ services:
   backend:
     <<: *backend-common
     container_name: deepsight-backend
-    image: deepsight-backend:${VERSION:-latest}
+    image: deepsight-backend:${VERSION}
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_PORT}:8000"
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8000/admin/login/"]
       <<: *healthcheck-defaults
@@ -138,7 +138,7 @@ services:
   celery:
     <<: *backend-common
     container_name: deepsight-celery
-    image: deepsight-celery:${VERSION:-latest}
+    image: deepsight-celery:${VERSION}
     command: ["celery-worker"]
     healthcheck:
       test: ["CMD", "celery", "-A", "backend", "inspect", "ping"]
@@ -151,11 +151,11 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        http_proxy: ${HTTP_PROXY:-}
-        https_proxy: ${HTTPS_PROXY:-}
-        no_proxy: ${NO_PROXY:-}
+        http_proxy: ${HTTP_PROXY}
+        https_proxy: ${HTTPS_PROXY}
+        no_proxy: ${NO_PROXY}
     container_name: deepsight-celery-beat
-    image: deepsight-celery-beat:${VERSION:-latest}
+    image: deepsight-celery-beat:${VERSION}
     restart: unless-stopped
     command: ["celery-beat"]
     
@@ -164,16 +164,16 @@ services:
     
     # Minimal environment for beat scheduler (no GPU, no common inheritance)
     environment:
-      PGHOST: db
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
-      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
-      CURL_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
-      http_proxy: ${HTTP_PROXY:-}
-      https_proxy: ${HTTPS_PROXY:-}
-      no_proxy: ${NO_PROXY:-}
+      - PGHOST=db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+      - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+      - CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+      - http_proxy=${HTTP_PROXY}
+      - https_proxy=${HTTPS_PROXY}
+      - no_proxy=${NO_PROXY}
     
     volumes:
       - ./backend/media:/app/media
@@ -204,13 +204,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        http_proxy: ${HTTP_PROXY:-}
-        https_proxy: ${HTTPS_PROXY:-}
-        no_proxy: ${NO_PROXY:-}
+        http_proxy: ${HTTP_PROXY}
+        https_proxy: ${HTTPS_PROXY}
+        no_proxy: ${NO_PROXY}
     container_name: deepsight-frontend
-    image: deepsight-frontend:${VERSION:-latest}
+    image: deepsight-frontend:${VERSION}
     ports:
-      - "${FRONTEND_PORT:-8888}:80"
+      - "${FRONTEND_PORT}:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -222,6 +222,68 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # ETCD Service for Milvus
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: deepsight-etcd
+    environment:
+      - ETCD_ADVERTISE_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ALLOW_NONE_AUTHENTICATION=yes
+    ports:
+      - "2379:2379"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # MinIO Service for Milvus
+  minio:
+    image: minio/minio:latest
+    container_name: deepsight-minio
+    entrypoint: >
+      /bin/sh -c "
+        /usr/bin/docker-entrypoint.sh server /data --console-address ':9001' &
+        sleep 5 &&
+        mc alias set local http://localhost:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/deepsight-media &&
+        mc policy set public local/deepsight-media
+        wait
+      "
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Milvus Standalone Service
+  milvus-standalone:
+    image: milvusdb/milvus:v2.4.4
+    container_name: deepsight-milvus
+    platform: linux/amd64
+    command: ["/tini","--","milvus","run","standalone"]
+    environment:
+      - ETCD_ENDPOINTS=etcd:2379
+      - MINIO_ADDRESS=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+    depends_on:
+      - etcd
+      - minio
+    ports:
+      - "19530:19530"
+      - "19121:19121"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
   # Container Update Monitor (Optional)
   watchtower:
     image: containrrr/watchtower:latest
@@ -229,12 +291,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      WATCHTOWER_CLEANUP: "true"
-      WATCHTOWER_POLL_INTERVAL: "300"
-      WATCHTOWER_ROLLING_RESTART: "true"
-      WATCHTOWER_INCLUDE_STOPPED: "true"
-      WATCHTOWER_REVIVE_STOPPED: "false"
-      WATCHTOWER_DEBUG: "true"
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_ROLLING_RESTART=true
+      - WATCHTOWER_INCLUDE_STOPPED=true
+      - WATCHTOWER_REVIVE_STOPPED=false
+      - WATCHTOWER_DEBUG=true
     command: --debug --cleanup --interval 300
     restart: unless-stopped
     profiles:
@@ -253,4 +315,8 @@ volumes:
   datalab_cache:
     driver: local
   celery_beat_data:
+    driver: local
+  minio_data:
+    driver: local
+  milvus_data:
     driver: local
