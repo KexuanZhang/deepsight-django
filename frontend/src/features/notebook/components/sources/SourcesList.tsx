@@ -1,5 +1,5 @@
 import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback, useMemo } from "react";
-import { Trash2, Plus, ChevronLeft, RefreshCw, AlertCircle, Upload, Group, File as FileIcon, FileText, Music, Video, Presentation, Loader2, Eye, Database, Link2, Globe } from "lucide-react";
+import { Trash2, Plus, ChevronLeft, RefreshCw, AlertCircle, Upload, Group, File as FileIcon, FileText, Music, Video, Presentation, Loader2, Eye, Database, Link2, Globe, ImageIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/common/components/ui/button";
 import { Alert, AlertDescription } from "@/common/components/ui/alert";
@@ -82,6 +82,22 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
       loadParsedFiles();
     }
   }, []); // Keep empty dependency array - only run on mount
+
+  // Check for ongoing caption generation and poll for updates
+  useEffect(() => {
+    const hasOngoingCaptionGeneration = sources.some(source => {
+      const captionStatus = source.metadata?.file_metadata?.caption_generation_status || source.metadata?.caption_generation_status;
+      return captionStatus && ['pending', 'in_progress'].includes(captionStatus);
+    });
+
+    if (hasOngoingCaptionGeneration && !isLoading) {
+      const pollInterval = setInterval(() => {
+        loadParsedFiles(); // Refresh data to get updated caption status
+      }, 5000); // Poll every 5 seconds
+
+      return () => clearInterval(pollInterval);
+    }
+  }, [sources, isLoading]);
 
   const loadParsedFiles = async () => {
     try {
@@ -530,6 +546,18 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     const isProcessing = source.parsing_status && ['pending', 'parsing', 'uploading', 'processing'].includes(source.parsing_status);
     const isFailed = source.parsing_status === 'failed';
     
+    // Check if this is a file with images and caption generation status
+    const captionGenerationStatus = source.metadata?.file_metadata?.caption_generation_status || source.metadata?.caption_generation_status;
+    const hasImages = (source.metadata?.file_metadata?.image_count && source.metadata.file_metadata.image_count > 0) || 
+                      (source.metadata?.image_count && source.metadata.image_count > 0);
+    const imagesRequiringCaptions = source.metadata?.file_metadata?.images_requiring_captions || source.metadata?.images_requiring_captions;
+    
+    // Show caption generation status for completed files with images
+    const showCaptionStatus = source.parsing_status === 'completed' && 
+                              hasImages && 
+                              captionGenerationStatus && 
+                              ['pending', 'in_progress'].includes(captionGenerationStatus);
+    
     if (isProcessing) {
       return (
         <div className="flex items-center space-x-1">
@@ -549,6 +577,19 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
         <div className="flex items-center space-x-1">
           <AlertCircle className="h-3 w-3 text-red-500" />
           <span className="text-xs text-red-500">Failed</span>
+        </div>
+      );
+    }
+    
+    // Show caption generation status for files with images
+    if (showCaptionStatus) {
+      return (
+        <div className="flex items-center space-x-1" title={`Generating captions for ${imagesRequiringCaptions || 'multiple'} images`}>
+          <ImageIcon className="h-3 w-3 text-blue-500" />
+          <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
+          <span className="text-xs text-blue-500">
+            {captionGenerationStatus === 'pending' ? 'Captions queued' : 'Generating captions...'}
+          </span>
         </div>
       );
     }

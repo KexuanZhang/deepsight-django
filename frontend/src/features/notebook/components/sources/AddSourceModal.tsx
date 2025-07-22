@@ -567,7 +567,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                   />
                   {urlProcessingType === 'document' && (
                     <p className="text-xs text-gray-600">
-                      📄 Only PDF and PowerPoint files are supported. Use the "Website" option for HTML pages.
+                      📄 Only PDF and PowerPoint links are supported. Use the "Website" option for HTML pages.
                     </p>
                   )}
                   <Button
