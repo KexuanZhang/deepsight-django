@@ -544,31 +544,82 @@ class ApiService {
       throw new Error('notebookId is required for downloading report files');
     }
     
+    if (!jobId) {
+      throw new Error('jobId is required for downloading report files');
+    }
+    
     let url = `/notebooks/${notebookId}/report-jobs/${jobId}/download/`;
     if (filename) {
       url += `?filename=${encodeURIComponent(filename)}`;
     }
     
-    const response = await fetch(`${this.baseUrl}${url}`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'X-CSRFToken': getCookie('csrftoken') ?? '',
-      },
-    });
-
-    if (!response.ok) {
-      let errorMessage = `HTTP ${response.status}`;
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.error || errorData.detail || errorMessage;
-      } catch (e) {
-        errorMessage = response.statusText || errorMessage;
+    
+    // Always use manual redirect handling to avoid CORS issues with MinIO
+    let response;
+    try {
+      response = await fetch(`${this.baseUrl}${url}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken') ?? '',
+        },
+        redirect: 'manual' // Always handle redirects manually
+      });
+    } catch (fetchError) {
+      console.error('=== FETCH ERROR ===');
+      console.error('Error type:', fetchError.constructor.name);
+      console.error('Error message:', fetchError.message);
+      console.error('Error stack:', fetchError.stack);
+      
+      // Special handling for common error types
+      if (fetchError.name === 'TypeError' && fetchError.message.includes('Failed to fetch')) {
+        console.error('This looks like a network connectivity or CORS issue');
+      } else if (fetchError.message.includes('NetworkError') || fetchError.message.includes('net::ERR_FAILED')) {
+        console.error('This looks like a network error (possibly server down or DNS issue)');
       }
-      throw new Error(errorMessage);
+      
+      console.error('==================');
+      throw new Error(`Network request failed (HTTP 0): ${fetchError.message}. Check console for details.`);
     }
 
-    return response.blob();
+
+    // Handle redirects to MinIO
+    if (response.status === 302 || response.status === 301) {
+      const redirectUrl = response.headers.get('Location');
+      if (redirectUrl) {
+        
+        // Fetch MinIO URL without credentials to avoid CORS
+        const minioResponse = await fetch(redirectUrl, {
+          method: 'GET',
+          credentials: 'omit', // Critical: no credentials for MinIO
+          mode: 'cors'
+        });
+        
+        
+        if (minioResponse.ok) {
+          return minioResponse.blob();
+        } else {
+          throw new Error(`MinIO download failed: ${minioResponse.status} ${minioResponse.statusText}`);
+        }
+      } else {
+        throw new Error('No redirect URL found in response headers');
+      }
+    }
+
+    // Handle direct responses (no redirect)
+    if (response.ok) {
+      return response.blob();
+    }
+
+    // Handle errors
+    let errorMessage = `HTTP ${response.status}`;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.error || errorData.detail || errorMessage;
+    } catch (e) {
+      errorMessage = response.statusText || errorMessage;
+    }
+    throw new Error(errorMessage);
   }
 
   async downloadReportPdf(jobId: string, notebookId: string): Promise<Blob> {
@@ -584,7 +635,25 @@ class ApiService {
       headers: {
         'X-CSRFToken': getCookie('csrftoken') ?? '',
       },
+      redirect: 'manual' // Handle redirects manually to avoid CORS issues with MinIO
     });
+
+    if (response.status === 302 || response.status === 301) {
+      // Handle redirect to MinIO URL - fetch without credentials to avoid CORS
+      const redirectUrl = response.headers.get('Location');
+      if (redirectUrl) {
+        const minioResponse = await fetch(redirectUrl, {
+          method: 'GET',
+          credentials: 'omit', // Don't send credentials to MinIO
+        });
+        
+        if (!minioResponse.ok) {
+          throw new Error(`MinIO PDF download failed: ${minioResponse.status}`);
+        }
+        
+        return minioResponse.blob();
+      }
+    }
 
     if (!response.ok) {
       let errorMessage = `HTTP ${response.status}`;
@@ -753,8 +822,12 @@ class ApiService {
       throw new Error('content is required for updating report');
     }
     
+    
     const url = `/notebooks/${notebookId}/report-jobs/${jobId}/`;
-    return await this.put(url, { content });
+    const result = await this.put(url, { content });
+    
+    
+    return result;
   }
 
   // Get the correct SSE endpoint for podcast job status

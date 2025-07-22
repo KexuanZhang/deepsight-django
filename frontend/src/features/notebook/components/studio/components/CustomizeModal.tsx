@@ -21,6 +21,7 @@ interface CustomizeModalProps {
   onConfigChange: (config: Partial<BaseConfig>) => void;
   type: 'report' | 'podcast';
   selectedFiles: FileItem[];
+  onGenerate?: (configOverrides?: Partial<BaseConfig>) => void;
 }
 
 const CustomizeModal: React.FC<CustomizeModalProps> = ({
@@ -29,7 +30,8 @@ const CustomizeModal: React.FC<CustomizeModalProps> = ({
   config,
   onConfigChange,
   type,
-  selectedFiles
+  selectedFiles,
+  onGenerate
 }) => {
   const [inputValue, setInputValue] = useState(config.topic || '');
 
@@ -73,6 +75,9 @@ const CustomizeModal: React.FC<CustomizeModalProps> = ({
   const handleGenerate = () => {
     if (hasSelectedFiles) {
       onConfigChange({ topic: inputValue });
+      if (onGenerate) {
+        onGenerate({ topic: inputValue });
+      }
       onClose();
     }
   };
