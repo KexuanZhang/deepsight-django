@@ -25,6 +25,7 @@ from .views import (
     ChatHistoryView,
     ClearChatHistoryView,
     SuggestedQuestionsView,
+    URLParseDocumentView
 )
 
 # Import views from podcast and reports apps

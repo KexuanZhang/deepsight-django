@@ -70,3 +70,4 @@ minio
 python-pptx
 weasyprint
 mammoth
+aiohttp==3.12.13

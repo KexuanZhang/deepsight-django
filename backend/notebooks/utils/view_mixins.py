@@ -189,9 +189,9 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             # Add URL-specific data
             if source.source_type == "url" and source.url_result:
                 file_data.update({
-                    "original_url": source.url_result.original_url,
-                    "url_title": source.url_result.title,
-                    "url_status": source.url_result.status,
+                    # "original_url": source.original_url,  # <-- FIXED
+                    "url_title": source.title,
+                    # "url_status": source.status,
                 })
 
-        return file_data 
+        return file_data
