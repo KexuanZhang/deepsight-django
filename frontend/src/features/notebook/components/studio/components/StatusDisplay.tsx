@@ -112,6 +112,11 @@ const StatusDisplay: React.FC<StatusDisplayProps> = ({
   };
 
   const progressPercentage = getProgressPercentage(progress);
+  
+  // Debug logging
+  if (progress) {
+    console.log('StatusDisplay - Progress:', progress, 'Percentage:', progressPercentage);
+  }
 
   return (
     <div className={`rounded-xl p-4 border ${config.borderColor} ${config.bgColor}`}>

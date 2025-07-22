@@ -128,7 +128,12 @@ export const useJobStatus = (
             const jobData = parsedEvent.data;
 
             setStatus(jobData.status);
-            setProgress(jobData.progress || 'Processing...');
+            setProgress(jobData.progress);
+            
+            // Debug logging for progress updates
+            if (jobData.progress) {
+              console.log('Job progress update:', jobData.progress);
+            }
             
             if (jobData.status === 'completed') {
               jobCompletedRef.current = true;
