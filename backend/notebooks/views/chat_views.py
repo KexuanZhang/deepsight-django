@@ -1,0 +1,164 @@
+"""
+Chat Views - Handle chat functionality only
+"""
+import json
+import logging
+
+from django.http import StreamingHttpResponse
+from rest_framework import status
+from rest_framework.views import APIView
+from rest_framework.response import Response
+
+from pymilvus import Collection
+from pymilvus.exceptions import SchemaNotReadyException, CollectionNotExistException
+
+from ..models import Notebook, NotebookChatMessage
+from ..utils.view_mixins import StandardAPIView, NotebookPermissionMixin
+from rag.rag import RAGChatbot, SuggestionRAGAgent, user_collection
+from ..services import ChatService
+
+logger = logging.getLogger(__name__)
+
+
+class RAGChatFromKBView(NotebookPermissionMixin, APIView):
+    """
+    POST /api/v1/notebooks/{notebook_id}/chat/
+    {
+      "question":       "Explain quantum tunneling",
+      "file_ids":       ["e8e6fd53-b9e9-4569-8fa1-bbc01882a97a", ...],  # selected file IDs
+      "collections":    ["cvpr_2017", "cvpr_2018"]  # optional, new
+    }
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.chat_service = ChatService()
+
+    def post(self, request, notebook_id):
+        question = request.data.get("question")
+        file_ids = request.data.get("file_ids", None)
+        collections = request.data.get("collections", None)
+        # 1) Validate inputs using service
+        validation_error = self.chat_service.validate_chat_request(question)
+        if validation_error:
+            return Response(validation_error, status=validation_error['status_code'])
+
+        # 2) Fetch & authorize notebook
+        try:
+            notebook = self.get_user_notebook(notebook_id, request.user)
+        except:
+            return Response({"error": "Notebook not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # 3) Check user's knowledge base using service
+        user_id = request.user.pk
+        kb_error = self.chat_service.check_user_knowledge_base(user_id)
+        if kb_error:
+            return Response(kb_error, status=kb_error['status_code'])
+
+        # 4) Load chat history and record user question using service
+        history = self.chat_service.get_chat_history(notebook)
+        self.chat_service.record_user_message(notebook, question)
+
+        # 5) Create chat stream using service, passing file_ids for filtering
+        stream = self.chat_service.create_chat_stream(
+            user_id=user_id,
+            question=question,
+            history=history,
+            file_ids=file_ids,  # <-- pass file_ids for filtering
+            notebook=notebook,
+            collections=collections
+        )
+
+        return StreamingHttpResponse(
+            stream,
+            content_type="text/event-stream",
+        )
+
+
+class ChatHistoryView(StandardAPIView, NotebookPermissionMixin):
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.chat_service = ChatService()
+
+    def get(self, request, notebook_id):
+        try:
+            notebook = self.get_user_notebook(notebook_id, request.user)
+        except Exception as e:
+            return Response({"error": "Notebook not found"}, status=404)
+        
+        # Use service to get formatted history
+        history = self.chat_service.get_formatted_chat_history(notebook)
+        return Response({"history": history})
+    
+
+class ClearChatHistoryView(StandardAPIView, NotebookPermissionMixin):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.chat_service = ChatService()
+
+    def delete(self, request, notebook_id):
+        try:
+            notebook = self.get_user_notebook(notebook_id, request.user)
+        except Exception as e:
+            return Response({"error": "Notebook not found"}, status=404)
+        
+        # Use service to clear history
+        success = self.chat_service.clear_chat_history(notebook)
+        if success:
+            return Response({"success": True, "message": "Chat history cleared"})
+        else:
+            return Response({"error": "Failed to clear chat history"}, status=500)
+    
+
+class SuggestedQuestionsView(StandardAPIView, NotebookPermissionMixin):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.chat_service = ChatService()
+
+    def get(self, request, notebook_id):
+        try:
+            notebook = self.get_user_notebook(notebook_id, request.user)
+            
+            # Use service to generate suggestions
+            result = self.chat_service.generate_suggested_questions(notebook)
+            
+            if result.get('success'):
+                return Response({"suggestions": result['suggestions']})
+            else:
+                return Response(result, status=result.get('status_code', 500))
+                
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+    def validate_chat_request(self, question):
+        if not question:
+            return {
+                "error": "Question is required.",
+                "status_code": status.HTTP_400_BAD_REQUEST
+            }
+        
+        return None
+
+
+def create_chat_stream(
+    self,
+    user_id,
+    question,
+    history,
+    filter_sources=None,
+    notebook=None,
+    collections=None,  # <-- add this
+):
+    # ...existing code...
+    bot = RAGChatbot(
+        user_id=user_id,
+        extra_collections=collections  # <-- pass collections to RAGChatbot
+    )
+    return bot.stream(
+        question=question,
+        history=history,
+        filter_sources=filter_sources,
+    )

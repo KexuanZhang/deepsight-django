@@ -2,23 +2,22 @@
 """
 PDF Service for converting Markdown reports to PDF
 
-This service converts Markdown content to PDF format with proper image rendering.
-It uses the markdown-pdf library which provides excellent image support and
-doesn't require external binaries like wkhtmltopdf.
+This service converts Markdown content to PDF format with automatic remote image handling.
+It converts remote images to base64 data URLs which work reliably with PDF conversion.
 
 Features:
-- Converts Markdown to PDF with embedded images
-- Supports relative and absolute image paths
-- Page numbers (no table of contents per requirements)
-- Customizable styling with CSS
-- No external binary dependencies
+- Converts Markdown to PDF with embedded remote images
+- Converts remote images to base64 data URLs for reliable embedding
+- No temporary files or external dependencies required
+- Professional PDF styling with CSS
 """
 
-import os
 import logging
+import re
+import base64
+import requests
 from pathlib import Path
 from typing import Optional
-from django.conf import settings
 
 try:
     from markdown_pdf import MarkdownPdf, Section
@@ -30,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class PdfService:
-    """Service for converting markdown reports to PDF"""
+    """Service for converting markdown reports to PDF with automatic image handling"""
     
     def __init__(self):
         if MarkdownPdf is None:
@@ -38,6 +37,51 @@ class PdfService:
                 "markdown-pdf library not found. "
                 "Please install it using: pip install markdown-pdf"
             )
+    
+    def _convert_remote_images_to_base64(self, content: str) -> str:
+        """
+        Convert remote image URLs to base64 data URLs.
+        
+        Args:
+            content: HTML/markdown content with remote image URLs
+            
+        Returns:
+            str: Content with remote images converted to base64 data URLs
+        """
+        # Find all img tags with remote URLs
+        img_pattern = r'<img([^>]*?)src=["\']([^"\']*https?://[^"\']*)["\']([^>]*?)>'
+        
+        def replace_img(match):
+            before_src = match.group(1)
+            img_url = match.group(2)
+            after_src = match.group(3)
+            
+            try:
+                response = requests.get(img_url, timeout=30)
+                response.raise_for_status()
+                
+                # Get image data and content type
+                img_data = response.content
+                content_type = response.headers.get('content-type', 'image/jpeg')
+                
+                # Convert to base64
+                img_base64 = base64.b64encode(img_data).decode('utf-8')
+                
+                # Create data URL
+                data_url = f"data:{content_type};base64,{img_base64}"
+                
+                # Return the updated img tag
+                return f'<img{before_src}src="{data_url}"{after_src}>'
+                
+            except Exception as e:
+                logger.warning(f"Failed to convert image {img_url}: {e}")
+                # Return original img tag if conversion fails
+                return match.group(0)
+        
+        # Replace all remote images with base64 data URLs
+        updated_content = re.sub(img_pattern, replace_img, content)
+        
+        return updated_content
     
     def convert_markdown_to_pdf(
         self,
@@ -49,7 +93,7 @@ class PdfService:
         input_file_path: Optional[str] = None
     ) -> str:
         """
-        Convert markdown content to PDF.
+        Convert markdown content to PDF with automatic remote image handling.
         
         Args:
             markdown_content: The markdown content to convert
@@ -73,95 +117,29 @@ class PdfService:
             logger.info(f"Converting markdown to PDF: {output_file.name}")
             logger.debug(f"Content length: {len(markdown_content):,} characters")
             
+            # Convert remote images to base64 data URLs
+            content_with_base64_images = self._convert_remote_images_to_base64(markdown_content)
+            
             # Create PDF converter with no TOC and optimization enabled
             pdf = MarkdownPdf(
                 toc_level=0,  # No table of contents per requirements
                 optimize=True
             )
             
-            # Check for image references and analyze paths
-            import re
-            image_patterns = [
-                r'!\[.*?\]\((.*?)\)',  # Markdown image syntax
-                r'<img[^>]+src=["\']([^"\']+)["\']',  # HTML img tags
-            ]
-            
-            found_images = []
-            for pattern in image_patterns:
-                matches = re.findall(pattern, markdown_content)
-                found_images.extend(matches)
-            
-            if found_images:
-                logger.info(f"📷 Found {len(found_images)} image references:")
-                for img in found_images[:5]:  # Show first 5
-                    if img.startswith('../'):
-                        logger.info(f"   - {img} (relative path)")
-                    elif img.startswith('http'):
-                        logger.info(f"   - {img} (web URL)")
-                    else:
-                        logger.info(f"   - {img}")
-                if len(found_images) > 5:
-                    logger.info(f"   ... and {len(found_images) - 5} more")
-            
-            # Determine the root directory for image resolution
+            # Determine root directory for any remaining local images
             if input_file_path:
-                # Use the input file path to calculate image root
-                input_path = Path(input_file_path)
-                
-                # Try to intelligently determine the root directory
-                # Check if the markdown contains paths that go up multiple levels
-                if '../../' in markdown_content:
-                    # Calculate how many levels up we need to go
-                    max_levels_up = 0
-                    lines = markdown_content.split('\n')
-                    for line in lines:
-                        if ('src=' in line or '![](' in line) and '../' in line:
-                            levels = line.count('../')
-                            max_levels_up = max(max_levels_up, levels)
-                    
-                    # Go up the calculated number of levels from the input file directory
-                    root_dir = input_path.parent
-                    for _ in range(max_levels_up):
-                        root_dir = root_dir.parent
-                    root_dir = str(root_dir.resolve())
-                    
-                    logger.info(f"📁 Detected complex relative paths, using root: {root_dir}")
-                else:
-                    # Use the input file's directory as root
-                    root_dir = str(input_path.parent.resolve())
-                    logger.info(f"📁 Using input file directory as root: {root_dir}")
+                root_dir = str(Path(input_file_path).parent.resolve())
+                logger.debug(f"Using input file directory as root: {root_dir}")
             elif image_root:
-                # Fallback to provided image root
                 root_dir = str(Path(image_root).resolve())
-                logger.info(f"📁 Using provided image root: {root_dir}")
+                logger.debug(f"Using provided image root: {root_dir}")
             else:
-                # Only try to intelligently determine the root directory if no image_root is provided
-                # Check if the markdown contains paths that go up multiple levels
-                if '../../' in markdown_content:
-                    # Calculate how many levels up we need to go
-                    max_levels_up = 0
-                    lines = markdown_content.split('\n')
-                    for line in lines:
-                        if ('src=' in line or '![](' in line) and '../' in line:
-                            levels = line.count('../')
-                            max_levels_up = max(max_levels_up, levels)
-                    
-                    # IMPORTANT: Since we don't have an actual input file, we use the output directory
-                    # but this is only when no image_root is provided (which shouldn't happen in our case)
-                    root_dir = output_file.parent
-                    for _ in range(max_levels_up):
-                        root_dir = root_dir.parent
-                    root_dir = str(root_dir.resolve())
-                    
-                    logger.info(f"📁 Detected complex relative paths, using root: {root_dir}")
-                else:
-                    # Use the output file's directory as root
-                    root_dir = str(output_file.parent.resolve())
-                    logger.info(f"📁 Using output directory as root: {root_dir}")
+                root_dir = str(output_file.parent.resolve())
+                logger.debug(f"Using output directory as root: {root_dir}")
             
             # Create section with content
             section = Section(
-                markdown_content,
+                content_with_base64_images,
                 root=root_dir,
                 paper_size=paper_size
             )
@@ -169,9 +147,9 @@ class PdfService:
             # Custom CSS for better appearance with page numbers
             custom_css = """
             body {
-                font-family: 'Helvetica', 'Arial', sans-serif;
+                font-family: 'Georgia', 'Times New Roman', serif;
                 line-height: 1.6;
-                color: #333;
+                color: black;
                 margin: 0;
                 padding: 20px;
                 padding-bottom: 60px; /* Space for page numbers */
@@ -223,7 +201,7 @@ class PdfService:
             }
             img {
                 max-width: 100%;
-                height: auto;
+                height: 500px;
                 display: block;
                 margin: 16px auto;
             }
@@ -243,11 +221,6 @@ class PdfService:
             
             # Save the PDF
             pdf.save(str(output_file))
-            
-            # Log success
-            output_size = output_file.stat().st_size
-            logger.info(f"Successfully converted to PDF: {output_file}")
-            logger.info(f"Output size: {output_size:,} bytes")
             
             return str(output_file)
             
@@ -291,4 +264,4 @@ class PdfService:
             
         except Exception as e:
             logger.error(f"Failed to convert report file to PDF: {e}")
-            raise Exception(f"Report file PDF conversion failed: {e}") 
+            raise Exception(f"Report file PDF conversion failed: {e}")

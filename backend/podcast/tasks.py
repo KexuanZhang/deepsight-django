@@ -4,16 +4,11 @@ Celery tasks for podcast generation.
 
 import logging
 import asyncio
-from typing import List, Dict
-from pathlib import Path
 from celery import shared_task
-import tempfile
-from django.core.files import File
-import os
 
 from .models import PodcastJob
 from .orchestrator import podcast_orchestrator
-from notebooks.utils.file_storage import FileStorageService
+from notebooks.utils.storage_adapter import get_storage_adapter
 from notebooks.models import KnowledgeBaseItem
 
 logger = logging.getLogger(__name__)
@@ -24,21 +19,21 @@ def process_podcast_generation(self, job_id: str):
     """Process podcast generation job - this runs in the background worker"""
     try:
         # Get the job
-        job = PodcastJob.objects.get(job_id=job_id)
+        job = PodcastJob.objects.get(id=job_id)
 
         # Check if job was cancelled before we start
         if job.status == "cancelled":
             logger.info(f"Job {job_id} was cancelled before processing started")
             return {"status": "cancelled", "message": "Job was cancelled"}
 
-        # Update job status to processing
+        # Update job status to processing (10% progress)
         podcast_orchestrator.update_job_progress(
-            job_id, "Starting podcast generation", "generating"
+            job_id, "Starting podcast generation (10%)", "generating"
         )
 
-        # Get content from source files
+        # Get content from source files (20% progress)
         podcast_orchestrator.update_job_progress(
-            job_id, "Gathering content from source files", "generating"
+            job_id, "Gathering content from source files (20%)", "generating"
         )
 
         # Check if job was cancelled
@@ -50,14 +45,14 @@ def process_podcast_generation(self, job_id: str):
         combined_content = ""
         source_metadata = []
 
-        # Initialize file storage service
-        file_storage = FileStorageService()
+        # Initialize storage adapter
+        storage_adapter = get_storage_adapter()
 
         for file_id in job.source_file_ids:
             try:
                 # Get parsed file content using synchronous method
-                content = file_storage.get_file_content(
-                    file_id, user_id=job.user_id if job.user else None
+                content = storage_adapter.get_file_content(
+                    file_id, user_id=job.user.id if job.user else None
                 )
 
                 if content:
@@ -93,7 +88,7 @@ def process_podcast_generation(self, job_id: str):
             return {"status": "cancelled", "message": "Job was cancelled"}
 
         podcast_orchestrator.update_job_progress(
-            job_id, "Generating podcast conversation", "generating"
+            job_id, "Generating podcast conversation and title (40%)", "generating"
         )
 
         # Generate podcast conversation using asyncio
@@ -106,6 +101,31 @@ def process_podcast_generation(self, job_id: str):
                     combined_content, {"sources": source_metadata}
                 )
             )
+            
+            # Generate title based on content and conversation (first stage)
+            if job.title == "Generated Podcast" or not job.title.strip():
+                # Generate a better title based on the content
+                title_prompt = f"Based on this podcast conversation, generate a concise, engaging title (max 50 characters):\n\n{conversation_text[:500]}..."
+                try:
+                    generated_title = podcast_orchestrator.generate_title(title_prompt)
+                    if generated_title and generated_title.strip():
+                        job.title = generated_title.strip()[:50]  # Limit to 50 characters
+                        logger.info(f"Generated title for job {job_id}: {job.title}")
+                except Exception as e:
+                    logger.warning(f"Failed to generate title for job {job_id}: {e}")
+                    # Keep the original title if generation fails
+            
+            # Save conversation_text, source_metadata, and title immediately after generation (first stage)
+            job.conversation_text = conversation_text
+            job.source_metadata = source_metadata
+            job.save()
+            
+            logger.info(f"Saved conversation script, source metadata, and title for job {job_id}")
+            
+            # Update progress to reflect completion of first stage (70% progress)
+            podcast_orchestrator.update_job_progress(
+                job_id, "Conversation script and title generated - preparing audio generation (70%)", "generating"
+            )
 
             # Check if job was cancelled before audio generation
             job.refresh_from_db()
@@ -114,36 +134,81 @@ def process_podcast_generation(self, job_id: str):
                 return {"status": "cancelled", "message": "Job was cancelled"}
 
             podcast_orchestrator.update_job_progress(
-                job_id, "Generating podcast audio", "generating"
+                job_id, "Generating podcast audio (80%)", "generating"
             )
 
-            # Generate audio file using centralized storage config
-            from notebooks.utils.config import storage_config
+            # Generate audio file using MinIO storage
+            from notebooks.utils.storage import get_minio_backend
+            import tempfile
+            import os
+            import re
             
-            # Generate audio filename
-            audio_filename = f"{job_id}.mp3"
+            # Generate audio filename using title
+            # Sanitize title for filename
+            safe_title = re.sub(r'[<>:"/\\|?*]', '_', job.title)
+            audio_filename = f"{safe_title}.mp3"
             
-            # Use the centralized function to create the path
-            final_audio_path, relative_path = storage_config.create_podcast_file_path(job, audio_filename)
+            # Create MinIO key: userId/notebook/notebookID/podcast/podcastID/title.mp3
+            minio_key = f"{job.user.id}/notebook/{job.notebooks.id}/podcast/{job.id}/{audio_filename}"
             
-            # Generate audio directly to the final location
-            podcast_orchestrator.generate_podcast_audio(
-                conversation_text, str(final_audio_path)
-            )
+            # Create temporary file for audio generation
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+                temp_audio_path = temp_file.name
             
-            # Save the relative path to database
-            job.audio_file.name = relative_path
-            job.save()
+            try:
+                # Generate audio to temporary file
+                podcast_orchestrator.generate_podcast_audio(
+                    conversation_text, temp_audio_path
+                )
+                
+                # Upload to MinIO
+                minio_backend = get_minio_backend()
+                with open(temp_audio_path, 'rb') as f:
+                    file_content = f.read()
+                    file_size = len(file_content)
+                    
+                    # Use MinIO client directly to upload with specific key
+                    from io import BytesIO
+                    content_stream = BytesIO(file_content)
+                    minio_backend.client.put_object(
+                        bucket_name=minio_backend.bucket_name,
+                        object_name=minio_key,
+                        data=content_stream,
+                        length=file_size,
+                        content_type="audio/mpeg"
+                    )
+                
+                # Save MinIO key to database
+                job.audio_object_key = minio_key
+                
+                # Store file metadata including size
+                job.file_metadata = {
+                    "filename": audio_filename,
+                    "size": file_size,
+                    "content_type": "audio/mpeg",
+                    "minio_key": minio_key
+                }
+                job.save()
+                
+                # Update progress to show audio upload completed (95% progress)
+                podcast_orchestrator.update_job_progress(
+                    job_id, "Audio file uploaded successfully (95%)", "generating"
+                )
+                
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_audio_path):
+                    os.unlink(temp_audio_path)
 
             # Prepare result
             result = {
                 "job_id": job_id,
                 "title": job.title,
                 "description": job.description,
-                "audio_path": str(job.audio_file.url),
+                "audio_url": job.get_audio_url(),
                 "source_metadata": source_metadata,
                 "conversation_text": conversation_text,
-                "duration_seconds": None,  # Could add audio duration analysis
+                "file_metadata": job.file_metadata,
             }
 
             # Update job with success
@@ -162,12 +227,14 @@ def process_podcast_generation(self, job_id: str):
         logger.info(f"Job {job_id} was interrupted")
         try:
             # Make sure the job status is updated to cancelled
-            job = PodcastJob.objects.get(job_id=job_id)
+            job = PodcastJob.objects.get(id=job_id)
             if job.status != "cancelled":
                 job.status = "cancelled"
                 job.error_message = "Job was interrupted"
                 job.progress = "Job cancelled"
                 job.save()
+                # Update status cache for frontend
+                podcast_orchestrator.update_job_progress(job_id, "Job cancelled", "cancelled")
         except PodcastJob.DoesNotExist:
             pass
         return {"status": "cancelled", "message": "Job was cancelled"}
@@ -194,14 +261,19 @@ def cleanup_old_podcast_jobs():
         for job in old_jobs:
             try:
                 # Delete associated audio file if it exists
-                if job.audio_file:
-                    job.audio_file.delete(save=False)
+                if job.audio_object_key:
+                    try:
+                        from notebooks.utils.storage import get_minio_backend
+                        minio_backend = get_minio_backend()
+                        minio_backend.delete_file(job.audio_object_key)
+                    except Exception as e:
+                        logger.error(f"Error deleting audio file from MinIO: {e}")
 
                 job.delete()
                 deleted_count += 1
 
             except Exception as e:
-                logger.error(f"Error deleting old job {job.job_id}: {e}")
+                logger.error(f"Error deleting old job {job.id}: {e}")
 
         logger.info(f"Cleaned up {deleted_count} old podcast jobs")
         return deleted_count
@@ -218,7 +290,7 @@ def cancel_podcast_generation(self, job_id: str):
         logger.info(f"Cancelling podcast generation for job {job_id}")
         
         # Get the job
-        job = PodcastJob.objects.get(job_id=job_id)
+        job = PodcastJob.objects.get(id=job_id)
         
         # Cancel the background task if it's running
         if job.celery_task_id:
@@ -236,6 +308,9 @@ def cancel_podcast_generation(self, job_id: str):
         job.error_message = "Job cancelled by user"
         job.progress = "Job cancelled"
         job.save()
+        
+        # Update status cache for frontend
+        podcast_orchestrator.update_job_progress(job_id, "Job cancelled", "cancelled")
         
         logger.info(f"Successfully cancelled podcast generation for job {job_id}")
         return {"status": "cancelled", "job_id": job_id}

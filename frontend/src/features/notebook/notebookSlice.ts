@@ -1,25 +1,13 @@
 import { createSlice, createAsyncThunk, createSelector } from '@reduxjs/toolkit';
 import NotebookService from './services/NotebookService';
-
-interface Notebook {
-  id: string;
-  name: string;
-  description: string;
-  created_at: string;
-  updated_at: string;
-  user: string;
-}
-
-interface NotebookState {
-  notebooks: Notebook[];
-  currentNotebook: Notebook | null;
-  isLoading: boolean;
-  error: string | null;
-  lastFetched: number | null;
-  searchTerm: string;
-  sortOrder: 'recent' | 'oldest';
-  viewMode: 'grid' | 'list';
-}
+import type { 
+  Notebook, 
+  NotebookState, 
+  CreateNotebookRequest, 
+  UpdateNotebookRequest,
+  SortOrder,
+  ViewMode
+} from '@/features/notebook/type';
 
 const initialState: NotebookState = {
   notebooks: [],
@@ -71,10 +59,10 @@ export const createNotebook = createAsyncThunk(
 
 export const updateNotebook = createAsyncThunk(
   'notebook/update',
-  async ({ id, updates }: { id: string; updates: Partial<Notebook> }, { rejectWithValue }) => {
+  async ({ id, updates }: { id: string; updates: UpdateNotebookRequest }, { rejectWithValue }) => {
     try {
       const data = await NotebookService.updateNotebook(id, updates);
-      return { id, ...data };
+      return { ...data };
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Failed to update notebook');
     }

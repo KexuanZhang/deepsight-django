@@ -44,8 +44,24 @@ class NotebookPodcastJobListCreateView(APIView):
                 notebooks=notebook
             ).order_by('-created_at')
             
+            # Calculate last modified time for caching
+            last_modified = None
+            if jobs:
+                last_modified = max(job.updated_at for job in jobs)
+            
             serializer = PodcastJobListSerializer(jobs, many=True)
-            return Response(serializer.data)
+            response = Response(serializer.data)
+            
+            # Add caching headers
+            if last_modified:
+                response['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            
+            # Use minimal caching to ensure delete operations are immediately reflected
+            has_active_jobs = any(job_data.get('status') in ['pending', 'generating'] for job_data in serializer.data)
+            cache_timeout = 2 if has_active_jobs else 5
+            response['Cache-Control'] = f'max-age={cache_timeout}, must-revalidate'
+            
+            return response
         except Exception as e:
             logger.error(f"Error listing podcast-jobs for notebook {notebook_id}: {e}")
             return Response(
@@ -83,7 +99,7 @@ class NotebookPodcastJobListCreateView(APIView):
             # Queue the job for background processing
             from .tasks import process_podcast_generation
 
-            task_result = process_podcast_generation.delay(str(job.job_id))
+            task_result = process_podcast_generation.delay(str(job.id))
 
             # Store the Celery task ID for cancellation purposes
             job.celery_task_id = task_result.id
@@ -113,7 +129,7 @@ class NotebookPodcastJobDetailView(APIView):
         )
         return get_object_or_404(
             PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
-            job_id=job_id
+            id=job_id
         )
 
     def get(self, request, notebook_id, job_id):
@@ -134,36 +150,28 @@ class NotebookPodcastJobDetailView(APIView):
         try:
             job = self.get_job(notebook_id, job_id)
 
-            # Delete the podcast directory using centralized storage config
-            if job.audio_file:
-                from notebooks.utils.config import storage_config
-                
+            # Delete the podcast audio file from MinIO
+            if job.audio_object_key:
                 try:
-                    # Use the centralized deletion function
-                    deletion_success = storage_config.delete_podcast_directory(job)
-                    if deletion_success:
-                        logger.info(f"Successfully deleted podcast directory for job {job_id}")
-                    else:
-                        logger.warning(f"Podcast directory not found or already deleted for job {job_id}")
+                    from notebooks.utils.storage import get_minio_backend
+                    minio_backend = get_minio_backend()
+                    minio_backend.delete_file(job.audio_object_key)
+                    logger.info(f"Successfully deleted podcast audio file for job {job_id}")
                         
                 except Exception as e:
-                    logger.error(f"Error deleting podcast directory for job {job_id}: {e}")
-                    # Fallback: try to delete the file directly if it exists
-                    try:
-                        from pathlib import Path
-                        from django.conf import settings
-                        
-                        if job.audio_file.name:
-                            audio_file_path = Path(settings.MEDIA_ROOT) / job.audio_file.name
-                            if audio_file_path.exists():
-                                audio_file_path.unlink()
-                                logger.info(f"Deleted audio file: {audio_file_path}")
-                    except Exception as fallback_error:
-                        logger.error(f"Fallback deletion also failed: {fallback_error}")
+                    logger.error(f"Error deleting podcast audio file for job {job_id}: {e}")
             
             # Delete the job record from database
             job.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            
+            response = Response(status=status.HTTP_204_NO_CONTENT)
+            
+            # Add cache-busting headers to ensure browsers don't cache delete responses
+            response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response['Pragma'] = 'no-cache'
+            response['Expires'] = '0'
+            
+            return response
 
         except Exception as e:
             logger.error(f"Error deleting podcast-job {job_id} for notebook {notebook_id}: {e}")
@@ -185,7 +193,7 @@ class NotebookPodcastJobCancelView(APIView):
         )
         return get_object_or_404(
             PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
-            job_id=job_id
+            id=job_id
         )
 
     def post(self, request, notebook_id, job_id):
@@ -195,7 +203,7 @@ class NotebookPodcastJobCancelView(APIView):
 
             if job.status in ["pending", "generating"]:
                 # Use orchestrator for cancellation (same pattern as reports)
-                success = podcast_orchestrator.cancel_podcast_job(str(job.job_id))
+                success = podcast_orchestrator.cancel_podcast_job(str(job.id))
 
                 if success:
                     serializer = PodcastJobSerializer(job)
@@ -231,7 +239,62 @@ class NotebookPodcastJobAudioView(APIView):
         )
         return get_object_or_404(
             PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
-            job_id=job_id
+            id=job_id
+        )
+
+    def get(self, request, notebook_id, job_id):
+        """Stream the generated audio file"""
+        try:
+            job = self.get_job(notebook_id, job_id)
+
+            # Debug logging
+            logger.info(f"Audio request for job {job_id}: status={job.status}, audio_object_key={job.audio_object_key}")
+            
+            if not job.audio_object_key:
+                logger.warning(f"No audio file for job {job_id} - status: {job.status}")
+                return Response(
+                    {"error": "Audio file not available"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            # Get pre-signed URL for audio file
+            audio_url = job.get_audio_url()
+            if not audio_url:
+                logger.error(f"Could not generate audio URL for job {job_id}")
+                return Response(
+                    {"error": "Audio file not accessible"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            # Return URL in JSON for API consistency, or redirect based on Accept header
+            if request.headers.get('Accept') == 'application/json':
+                return Response({"audio_url": audio_url})
+            else:
+                # Redirect to the pre-signed URL for direct access
+                from django.http import HttpResponseRedirect
+                return HttpResponseRedirect(audio_url)
+
+        except Exception as e:
+            logger.error(f"Error serving audio for job {job_id} in notebook {notebook_id}: {e}")
+            return Response(
+                {"error": f"Failed to serve audio: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+class NotebookPodcastJobDownloadView(APIView):
+    """Download audio files for podcast-jobs within a notebook"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_job(self, notebook_id, job_id):
+        """Get the job and verify user and notebook access"""
+        notebook = get_object_or_404(
+            Notebook.objects.filter(user=self.request.user),
+            pk=notebook_id
+        )
+        return get_object_or_404(
+            PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
+            id=job_id
         )
 
     def get(self, request, notebook_id, job_id):
@@ -240,43 +303,55 @@ class NotebookPodcastJobAudioView(APIView):
             job = self.get_job(notebook_id, job_id)
 
             # Debug logging
-            logger.info(f"Audio request for job {job_id}: status={job.status}, audio_file={job.audio_file}")
+            logger.info(f"Download request for job {job_id}: status={job.status}, audio_object_key={job.audio_object_key}")
             
-            if not job.audio_file:
+            if not job.audio_object_key:
                 logger.warning(f"No audio file for job {job_id} - status: {job.status}")
                 return Response(
                     {"error": "Audio file not available"},
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
-            # Check if file exists on disk
+            # Generate download URL with proper headers
             try:
-                if not job.audio_file.storage.exists(job.audio_file.name):
-                    logger.error(f"Audio file not found on disk for job {job_id}: {job.audio_file.name}")
+                from notebooks.utils.storage import get_minio_backend
+                minio_backend = get_minio_backend()
+                
+                # Generate filename
+                safe_title = "".join(c for c in (job.title or "podcast") if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                filename = f"{safe_title}.mp3" if safe_title else f"podcast-{job.id}.mp3"
+                
+                # Get pre-signed URL with download headers
+                download_url = minio_backend.get_presigned_url(
+                    object_key=job.audio_object_key,
+                    response_headers={
+                        'Content-Disposition': f'attachment; filename="{filename}"',
+                        'Content-Type': 'audio/mpeg'
+                    }
+                )
+                
+                if not download_url:
+                    logger.error(f"Could not generate download URL for job {job_id}")
                     return Response(
-                        {"error": "Audio file not found on disk"},
+                        {"error": "Audio file not accessible"},
                         status=status.HTTP_404_NOT_FOUND,
                     )
-            except Exception as storage_error:
-                logger.error(f"Error checking file existence for job {job_id}: {storage_error}")
+
+                # Redirect to the pre-signed download URL
+                from django.http import HttpResponseRedirect
+                return HttpResponseRedirect(download_url)
+
+            except Exception as e:
+                logger.error(f"Error generating download URL for job {job_id}: {e}")
                 return Response(
-                    {"error": "Audio file not accessible"},
-                    status=status.HTTP_404_NOT_FOUND,
+                    {"error": f"Failed to generate download URL: {str(e)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
-            # Return file response
-            response = FileResponse(
-                job.audio_file.open(), 
-                as_attachment=True, 
-                filename=f"{job.title}.mp3",
-                content_type="audio/mpeg"
-            )
-            return response
-
         except Exception as e:
-            logger.error(f"Error serving audio for job {job_id} in notebook {notebook_id}: {e}")
+            logger.error(f"Error downloading audio for job {job_id} in notebook {notebook_id}: {e}")
             return Response(
-                {"error": f"Failed to serve audio: {str(e)}"},
+                {"error": f"Failed to download audio: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -310,7 +385,7 @@ def notebook_job_status_stream(request, notebook_id, job_id):
             pk=notebook_id
         )
         if not PodcastJob.objects.filter(
-            job_id=job_id, 
+            id=job_id, 
             user=request.user, 
             notebooks=notebook
         ).exists():
@@ -335,7 +410,7 @@ def notebook_job_status_stream(request, notebook_id, job_id):
                 try:
                     # Check if job still exists and get current status
                     current_job = PodcastJob.objects.filter(
-                        job_id=job_id, user=request.user, notebooks=notebook
+                        id=job_id, user=request.user, notebooks=notebook
                     ).first()
                     if not current_job:
                         yield f"data: {json.dumps({'type': 'error', 'message': 'Job not found'})}\n\n"
@@ -348,13 +423,11 @@ def notebook_job_status_stream(request, notebook_id, job_id):
                     else:
                         # Fallback to database
                         status_data = {
-                            "job_id": str(current_job.job_id),
+                            "job_id": str(current_job.id),
                             "status": current_job.status,
                             "progress": current_job.progress,
                             "error_message": current_job.error_message,
-                            "audio_file_url": current_job.audio_file.url
-                            if current_job.audio_file
-                            else None,
+                            "audio_file_url": current_job.get_audio_url(),
                             "title": current_job.title,
                         }
 

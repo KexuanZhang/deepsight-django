@@ -89,38 +89,37 @@ class JobService:
                 if field not in report_data or report_data.get(field) is None:
                     report_data[field] = ""
             
+            # Generate unique job ID first
+            job_id = str(uuid.uuid4())
+            
             job_data = {
                 "user": user,
                 "status": Report.STATUS_PENDING,
                 "progress": "Report generation job has been queued",
+                "job_id": job_id,  # Set job_id during creation
                 **report_data,
             }
             
             if notebook:
                 job_data["notebooks"] = notebook
             
-            # Create the report
+            # Create the report with job_id already set
             report = Report.objects.create(**job_data)
-            
-            # Generate unique job ID
-            report.job_id = str(uuid.uuid4())
             
             # Handle figure_data if provided
             if figure_data:
                 from .figure_service import FigureDataService
-                figure_data_path = FigureDataService.create_knowledge_base_figure_data(
+                # Create knowledge base figure data for direct upload
+                # This will store the figure data in the report's cached data
+                FigureDataService.create_knowledge_base_figure_data(
                     user.pk, f"direct_{report.id}", figure_data
                 )
-                if figure_data_path:
-                    report.figure_data_path = figure_data_path
-            
-            report.save(update_fields=["job_id", "figure_data_path"])
             
             # Create job metadata for caching
             job_metadata = {
                 "job_id": report.job_id,
-                "report_id": report.id,
-                "user_id": report.user.pk,
+                "report_id": str(report.id),  # Convert UUID to string for JSON serialization
+                "user_id": str(report.user.pk),  # Convert UUID to string for JSON serialization
                 "status": report.status,
                 "progress": report.progress,
                 "created_at": report.created_at.isoformat(),
@@ -169,8 +168,8 @@ class JobService:
                 
                 job_data = {
                     "job_id": job_id,
-                    "report_id": report.id,
-                    "user_id": report.user.pk,
+                    "report_id": str(report.id),  # Convert UUID to string for JSON serialization
+                    "user_id": str(report.user.pk),  # Convert UUID to string for JSON serialization
                     "status": report.status,
                     "progress": report.progress,
                     "created_at": report.created_at.isoformat(),
@@ -244,22 +243,149 @@ class JobService:
             # Store the main content (prefer processed content from result data)
             if "report_content" in result and result["report_content"]:
                 # Use the processed content from the report generator
-                report.result_content = result["report_content"]
-                logger.info("Stored processed report content from result data")
+                content = result["report_content"]
                 
-                # Save the processed content to Django FileField
+                # Update image URLs in content if include_image is enabled
+                # Note: ReportImage records should already exist from prepare_report_images
+                if report.include_image:
+                    try:
+                        from .report_image_service import ReportImageService
+                        image_service = ReportImageService()
+                        
+                        # Get existing ReportImage records and update content with proper URLs
+                        from ..models import ReportImage
+                        report_images = list(ReportImage.objects.filter(report=report))
+                        
+                        if report_images:
+                            # Update content with proper image tags using existing ReportImage records
+                            content = image_service.insert_figure_images(content, report_images, report.id)
+                            logger.info(f"Updated content with {len(report_images)} existing images for report {report.id}")
+                        else:
+                            logger.info(f"No existing ReportImage records found for report {report.id}")
+                            
+                    except Exception as e:
+                        logger.error(f"Error updating image URLs in content: {e}")
+                        # Continue without failing the report generation
+                
+                report.result_content = content
+
+            # Handle file storage - upload generated files to MinIO if using MinIO storage
+            generated_files = result.get("generated_files", [])
+            
+            # Upload files to MinIO if there are generated files
+            if generated_files:
                 try:
-                    filename = f"report_{report.id}.md"
-                    report.main_report_file.save(
-                        filename, 
-                        ContentFile(result["report_content"].encode('utf-8')), 
-                        save=False
+                    from ..factories.storage_factory import StorageFactory
+                    storage = StorageFactory.create_storage('minio')
+                    
+                    # Upload files to MinIO and get MinIO keys
+                    minio_keys = storage.store_generated_files(
+                        generated_files, 
+                        report.user.id, 
+                        str(report.id), 
+                        report.notebooks.id if report.notebooks else None
                     )
-                    logger.info(f"Saved main_report_file: {report.main_report_file.name}")
+                    
+                    # Update generated_files with MinIO keys
+                    generated_files = minio_keys
+                    
+                    # Clean up the temporary directory
+                    import shutil
+                    import os
+                    if result.get("generated_files"):
+                        # Get temp directory from the first generated file
+                        first_file = result["generated_files"][0]
+                        temp_dir = os.path.dirname(first_file)
+                        
+                        # Only clean up if it's a temp directory (contains report_ prefix)
+                        if temp_dir and os.path.exists(temp_dir) and 'report_' in os.path.basename(temp_dir):
+                            shutil.rmtree(temp_dir)
+                            logger.info(f"Cleaned up temporary directory: {temp_dir}")
+                        else:
+                            logger.info(f"Skipped cleanup of non-temp directory: {temp_dir}")
+                    else:
+                        logger.info("No generated files to determine temp directory for cleanup")
+                        
                 except Exception as e:
-                    logger.warning(f"Could not save main_report_file: {e}")
+                    logger.error(f"Failed to upload files to MinIO: {e}")
+                    # Continue without failing the job
+            
+            # Set main report object key from generated files (now MinIO keys)
+            if generated_files:
+                # Use storage factory to identify main report file
+                try:
+                    from ..factories.storage_factory import StorageFactory
+                    storage = StorageFactory.create_storage('minio')
+                    main_report_key = storage.get_main_report_file(generated_files)
+                except Exception as e:
+                    logger.warning(f"Failed to identify main report file using storage factory: {e}")
+                    # Fallback to manual identification
+                    main_report_key = None
+                    for file_path in generated_files:
+                        filename = os.path.basename(file_path)
+                        if filename.startswith(f"report_{report.id}") and filename.endswith(".md"):
+                            main_report_key = file_path
+                            break
+                        elif "polished" in filename.lower() and filename.endswith(".md"):
+                            main_report_key = file_path
+                            break
+                        elif filename.endswith(".md"):
+                            main_report_key = file_path  # Fallback to any .md file
+                
+                if main_report_key:
+                    # For MinIO storage, this is already a MinIO key
+                    # For local storage, this would be a file path
+                    if main_report_key.startswith(('minio://', str(report.user.id))):
+                        report.main_report_object_key = main_report_key
+                        logger.info(f"Set main report object key: {main_report_key}")
+                    else:
+                        # This is a local file path, need to handle differently
+                        logger.warning(f"Main report appears to be local file: {main_report_key}")
+                        
+                # Update file metadata with generated files info
+                report.file_metadata = {
+                    "generated_files_count": len(generated_files),
+                    "generated_files": generated_files[:10],  # Store first 10 files to avoid huge metadata
+                    "main_report_object_key": report.main_report_object_key
+                }
+               
+            # Fallback: Save processed report content directly to MinIO if no generated files
+            elif "report_content" in result and result["report_content"]:
+                try:
+                    from notebooks.utils.storage import get_minio_backend
+                    import io
+                    
+                    filename = f"report_{report.id}.md"
+                    # Generate MinIO key: userId/notebook/notebookID/report/reportID/filename
+                    minio_key = f"{report.user.id}/notebook/{report.notebooks.id if report.notebooks else 'standalone'}/report/{report.id}/{filename}"
+                    
+                    # Upload to MinIO
+                    content_bytes = result["report_content"].encode('utf-8')
+                    content_stream = io.BytesIO(content_bytes)
+                    file_size = len(content_bytes)
+                    
+                    minio_backend = get_minio_backend()
+                    minio_backend.client.put_object(
+                        bucket_name=minio_backend.bucket_name,
+                        object_name=minio_key,
+                        data=content_stream,
+                        length=file_size,
+                        content_type="text/markdown"
+                    )
+                    
+                    # Save MinIO key and metadata to database
+                    report.main_report_object_key = minio_key
+                    report.file_metadata = {
+                        "main_report_filename": filename,
+                        "main_report_size": file_size,
+                        "main_report_content_type": "text/markdown",
+                        "main_report_minio_key": minio_key
+                    }
+                    logger.info(f"Saved main report content to MinIO: {minio_key}")
+                except Exception as e:
+                    logger.warning(f"Could not save main report to MinIO: {e}")
             else:
-                logger.warning("No processed report content found in result data")
+                logger.warning("No generated files or report content found in result data")
             
             # Update article_title with generated title from polishing
             if "article_title" in result and result["article_title"] != report.article_title:
@@ -269,32 +395,30 @@ class JobService:
             # Update topic with improved/generated topic if available
             if "generated_topic" in result and result["generated_topic"] and result["generated_topic"] != report.topic:
                 report.topic = result["generated_topic"]
-                logger.info(f"Updated topic from STORM generation: {result['generated_topic']}")
             
-            # Store additional metadata
-            metadata = {
+            # Store additional metadata in file_metadata (use MinIO keys if available, otherwise use original paths)
+            file_metadata = report.file_metadata.copy() if report.file_metadata else {}
+            file_metadata.update({
                 "output_directory": result.get("output_directory", ""),
-                "generated_files": result.get("generated_files", []),
-                "processing_logs": result.get("processing_logs", []),
                 "created_at": result.get("created_at", datetime.now(timezone.utc).isoformat()),
-            }
+            })
             
-            # Add main_report_file path to metadata if saved
-            if report.main_report_file:
-                metadata["main_report_file"] = report.main_report_file.name
-                logger.info(f"Stored main_report_file path in metadata: {report.main_report_file.name}")
+            # Add main report info to metadata if saved
+            if report.main_report_object_key:
+                file_metadata["main_report_object_key"] = report.main_report_object_key
+                logger.info(f"Stored main report object key in file_metadata: {report.main_report_object_key}")
             
-            report.result_metadata = metadata
+            report.file_metadata = file_metadata
             
-            # Store generated files (no need to filter since we no longer create duplicate files)
-            if result.get("generated_files"):
-                report.generated_files = result["generated_files"]
+            # Store generated files (use MinIO keys if available, otherwise use original paths)
+            if generated_files:
+                report.generated_files = generated_files
             
             if result.get("processing_logs"):
                 report.processing_logs = result["processing_logs"]
             
-            # Save all changes to database including result_content, result_metadata, article_title, topic, and main_report_file
-            report.save(update_fields=["result_content", "result_metadata", "article_title", "topic", "generated_files", "processing_logs", "main_report_file", "updated_at"])
+            # Save all changes to database including result_content, file_metadata, article_title, topic, and MinIO fields
+            report.save(update_fields=["result_content", "file_metadata", "article_title", "topic", "generated_files", "processing_logs", "main_report_object_key", "updated_at"])
             
             # Update status after saving content and metadata
             report.update_status(status, progress="Report generation completed successfully")
@@ -324,6 +448,10 @@ class JobService:
             self.error_detector.reset_job_errors(job_id)
             
             report = Report.objects.get(job_id=job_id)
+            
+            # Cleanup ReportImage records for failed jobs
+            self._cleanup_report_images_on_failure(report)
+            
             report.update_status(
                 Report.STATUS_FAILED, 
                 progress=f"Job failed: {error}", 
@@ -333,6 +461,14 @@ class JobService:
             # Also terminate the celery task if it's still running
             if report.celery_task_id:
                 self._terminate_celery_task(report.celery_task_id)
+            
+            # Cleanup temp directories and prevent MinIO upload for failed jobs
+            try:
+                from ..orchestrator import report_orchestrator
+                report_orchestrator.cleanup_failed_job(job_id)
+                logger.info(f"Cleaned up temp directories for failed job {job_id}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup temp directories for failed job {job_id}: {cleanup_error}")
             
             # Update cache
             cache_key = f"report_job:{job_id}"
@@ -404,7 +540,7 @@ class JobService:
             query = Report.objects.select_related("user").order_by("-created_at")
             
             if user_id:
-                query = query.filter(user_id=user_id)
+                query = query.filter(user=user_id)
             
             reports = query[:limit]
             
@@ -412,8 +548,8 @@ class JobService:
             for report in reports:
                 jobs.append({
                     "job_id": report.job_id,
-                    "report_id": report.id,
-                    "user_id": report.user.pk,
+                    "report_id": str(report.id),  # Convert UUID to string for JSON serialization
+                    "user_id": str(report.user.pk),  # Convert UUID to string for JSON serialization
                     "status": report.status,
                     "progress": report.progress,
                     "created_at": report.created_at.isoformat(),
@@ -453,14 +589,32 @@ class JobService:
     
     def _format_result(self, report: Report) -> Optional[Dict[str, Any]]:
         """Format the result data for API responses"""
-        if report.status != Report.STATUS_COMPLETED or not report.result_metadata:
+        if report.status != Report.STATUS_COMPLETED:
             return None
         
-        result = report.result_metadata.copy()
+        result = {}
+        
+        # Add report content
         if report.result_content:
             result["report_content"] = report.result_content
+            
+        # Add file metadata
+        if report.file_metadata:
+            result.update(report.file_metadata)
+            
+        # Add generated files
+        if report.generated_files:
+            result["generated_files"] = report.generated_files
+            
+        # Add processing logs
+        if report.processing_logs:
+            result["processing_logs"] = report.processing_logs
+            
+        # Add main report object key
+        if report.main_report_object_key:
+            result["main_report_object_key"] = report.main_report_object_key
         
-        return result
+        return result if result else None
     
     def _check_worker_crash(self, report: Report) -> Dict[str, Any]:
         """Check if a Celery worker has crashed for a running job"""
@@ -655,3 +809,85 @@ class JobService:
                 logger.info(f"Sent terminate signal to Celery task {celery_task_id}")
         except Exception as e:
             logger.error(f"Error terminating Celery task {celery_task_id}: {e}")
+    
+    def prepare_report_images(self, report: Report) -> bool:
+        """Prepare ReportImage records before report generation starts.
+        
+        This creates ReportImage records early so they're available during figure insertion.
+        
+        Args:
+            report: Report instance
+            
+        Returns:
+            bool: True if preparation was successful, False otherwise
+        """
+        if not report.include_image:
+            logger.info(f"Image processing disabled for report {report.id}")
+            return True
+        
+        try:
+            from .report_image_service import ReportImageService
+            from .figure_service import FigureDataService
+            
+            # Get figure data from cache or direct upload
+            figure_data = FigureDataService.get_cached_figure_data(
+                report.user.pk, f"direct_{report.id}"
+            ) or FigureDataService.get_cached_figure_data(
+                report.user.pk, report.notebooks.id if report.notebooks else None
+            )
+            
+            if figure_data and "figures" in figure_data:
+                # Extract figure IDs from cached figure data
+                figure_ids = [fig.get("figure_id") for fig in figure_data["figures"] if fig.get("figure_id")]
+                
+                if figure_ids:
+                    image_service = ReportImageService()
+                    
+                    # Find corresponding images in knowledge base
+                    kb_images = image_service.find_images_by_figure_ids(figure_ids, report.user.id)
+                    
+                    if kb_images:
+                        # Copy images to report folder and create ReportImage records
+                        report_images = image_service.copy_images_to_report(report, kb_images)
+                        logger.info(f"Prepared {len(report_images)} ReportImage records for report {report.id}")
+                        return True
+                    else:
+                        logger.warning(f"No images found for figure IDs: {figure_ids}")
+                else:
+                    logger.info(f"No figure IDs found in cached figure data for report {report.id}")
+            else:
+                logger.info(f"No cached figure data found for report {report.id}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error preparing report images for report {report.id}: {e}")
+            return False
+    
+    def _cleanup_report_images_on_failure(self, report: Report):
+        """Clean up ReportImage records when a job fails.
+        
+        Args:
+            report: Report instance
+        """
+        try:
+            from .report_image_service import ReportImageService
+            image_service = ReportImageService()
+            image_service.cleanup_report_images(report)
+            logger.info(f"Cleaned up ReportImage records for failed report {report.id}")
+        except Exception as e:
+            logger.error(f"Error cleaning up ReportImage records for failed report {report.id}: {e}")
+    
+    def _cleanup_report_images_on_cancellation(self, report: Report):
+        """Clean up ReportImage records when a job is cancelled.
+        
+        Args:
+            report: Report instance
+        """
+        try:
+            from .report_image_service import ReportImageService
+            image_service = ReportImageService()
+            image_service.cleanup_report_images(report)
+            logger.info(f"Cleaned up ReportImage records for cancelled report {report.id}")
+        except Exception as e:
+            logger.error(f"Error cleaning up ReportImage records for cancelled report {report.id}: {e}")

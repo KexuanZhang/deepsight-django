@@ -1,35 +1,14 @@
 # reports/models.py
+import uuid
 from django.db import models
 from django.conf import settings
-from storages.backends.s3boto3 import S3Boto3Storage
-import json
-
-
-def user_report_path(instance, filename):
-    """Generate path for report files following the new storage structure."""
-    from datetime import datetime
-
-    user_id = instance.user.pk
-    current_date = datetime.now()
-    year_month = current_date.strftime("%Y-%m")
-    report_id = instance.pk
-    
-    # Get notebook_id from the instance
-    notebook_id = None
-    if hasattr(instance, 'notebooks') and instance.notebooks:
-        notebook_id = instance.notebooks.pk
-    elif hasattr(instance, 'notebook') and instance.notebook:
-        notebook_id = instance.notebook.pk
-    
-    if notebook_id:
-        return f"Users/u_{user_id}/n_{notebook_id}/report/{year_month}/r_{report_id}/{filename}"
-    else:
-        # Fallback to old structure if no notebook is associated
-        return f"Users/u_{user_id}/report/{year_month}/r_{report_id}/{filename}"
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
 
 
 class Report(models.Model):
     # Associations
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="reports"
     )
@@ -169,7 +148,7 @@ class Report(models.Model):
 
     # New flag to control inclusion of figure data/image in report generation
     include_image = models.BooleanField(
-        default=False,
+        default=True,
         help_text="Whether to include figure data (images) during report generation",
     )
 
@@ -206,15 +185,25 @@ class Report(models.Model):
 
     # Results and files
     result_content = models.TextField(blank=True, help_text="Generated report content")
-    result_metadata = models.JSONField(
-        default=dict, blank=True, help_text="Additional result metadata"
-    )
     error_message = models.TextField(blank=True)
 
-    # File storage following new storage structure
-    main_report_file = models.FileField(upload_to=user_report_path, blank=True, storage=S3Boto3Storage(),)
+    # MinIO-native storage (replaces Django FileField)
+    main_report_object_key = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        db_index=True,
+        help_text="MinIO object key for main report file"
+    )
+    
+    # All file metadata stored in JSON (replaces multiple file fields)
+    file_metadata = models.JSONField(
+        default=dict, 
+        help_text="All file paths, names, sizes, etc."
+    )
+    
     generated_files = models.JSONField(
-        default=list, blank=True, help_text="List of generated file paths"
+        default=list, blank=True, help_text="List of generated file object keys"
     )
     processing_logs = models.JSONField(
         default=list, blank=True, help_text="Processing log messages"
@@ -223,13 +212,6 @@ class Report(models.Model):
     # Celery task tracking (optional – used for cancellation of background task)
     celery_task_id = models.CharField(max_length=255, null=True, blank=True)
     
-    # Figure data storage
-    figure_data_path = models.CharField(
-        max_length=500, 
-        blank=True, 
-        null=True,
-        help_text="Absolute path to combined figure_data.json file"
-    )
 
     # Job management
     job_id = models.CharField(
@@ -248,22 +230,38 @@ class Report(models.Model):
         indexes = [
             models.Index(fields=["user", "status"]),
             models.Index(fields=["job_id"]),
-            models.Index(fields=["created_at"]),
+            # MinIO-specific indexes
+            models.Index(fields=["main_report_object_key"]),
         ]
 
     def __str__(self):
-        return f"Report {self.id} ({self.status}) - {self.article_title} for {self.user.username}"
+        return f"Report: {self.article_title} ({self.status})"
+    
+    def get_report_url(self, expires=86400):
+        """Get pre-signed URL for report access"""
+        if self.main_report_object_key:
+            try:
+                from notebooks.utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_presigned_url(self.main_report_object_key, expires)
+            except Exception:
+                return None
+        return None
+    
+    def get_figure_data_url(self, expires=86400):
+        """Get pre-signed URL for figure data access"""
+        if self.figure_data_object_key:
+            try:
+                from notebooks.utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_presigned_url(self.figure_data_object_key, expires)
+            except Exception:
+                return None
+        return None
 
     def get_configuration_dict(self):
-        """Get the configuration as a dictionary for the report generator."""
-        # Use article_title as-is (no fallback to topic)
-        article_title = self.article_title.strip() if self.article_title else "Research Report"
-        topic = self.topic.strip() if self.topic else ""
-        
+        """Return configuration as a dictionary for passing to the report generator."""
         return {
-            "topic": topic,
-            "article_title": article_title,
-            "old_outline": self.old_outline,
             "model_provider": self.model_provider,
             "retriever": self.retriever,
             "temperature": self.temperature,
@@ -286,18 +284,119 @@ class Report(models.Model):
             "include_domains": self.include_domains,
             "skip_rewrite_outline": self.skip_rewrite_outline,
             "domain_list": self.domain_list,
-            "search_depth": self.search_depth,
             "include_image": self.include_image,
+            "search_depth": self.search_depth,
+            # Content input fields
+            "topic": self.topic,
             "selected_files_paths": self.selected_files_paths,
-            "csv_session_code": self.csv_session_code,
-            "csv_date_filter": self.csv_date_filter,
         }
 
     def update_status(self, status, progress=None, error=None):
-        """Update the report status and optional progress/error."""
+        """Update the status of this report."""
         self.status = status
-        if progress:
+        if progress is not None:
             self.progress = progress
-        if error:
+        if error is not None:
             self.error_message = error
         self.save(update_fields=["status", "progress", "error_message", "updated_at"])
+
+
+class ReportImage(models.Model):
+    """
+    Store image metadata for report items, similar to KnowledgeBaseImage but for reports.
+    Each image is linked to a report and stored in the report's MinIO folder.
+    """
+    
+    # Use standard auto-generated id as primary key to match database
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Separate figure_id field (not primary key)
+    figure_id = models.UUIDField(default=uuid.uuid4, editable=False, help_text="Unique figure identifier from knowledge base")
+    
+    # Link to report instead of knowledge_base_item
+    report = models.ForeignKey(
+        Report,
+        on_delete=models.CASCADE,
+        related_name="images",
+        help_text="Report this image belongs to"
+    )
+    
+    # Image identification and metadata (copied from KnowledgeBaseImage)
+    image_caption = models.TextField(
+        blank=True,
+        help_text="Description or caption for the image"
+    )
+    
+    # MinIO storage fields - use correct field name from database
+    report_figure_minio_object_key = models.CharField(
+        max_length=255,
+        db_index=True,
+        help_text="MinIO object key for the image file in report folder"
+    )
+    
+    # Image metadata and properties
+    image_metadata = models.JSONField(
+        default=dict,
+        help_text="Image metadata including dimensions, format, size, etc."
+    )
+    content_type = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="MIME type of the image (image/png, image/jpeg, etc.)"
+    )
+    file_size = models.PositiveIntegerField(
+        default=0,
+        help_text="File size in bytes"
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ["report", "created_at"]
+        verbose_name = "Report Image"
+        verbose_name_plural = "Report Images"
+        indexes = [
+            models.Index(fields=["report", "created_at"]),
+            models.Index(fields=["report_figure_minio_object_key"]),
+        ]
+    
+    def __str__(self):
+        return f"Image {self.figure_id} for Report {self.report.article_title}"
+    
+    def get_image_url(self, expires=86400):
+        """Get pre-signed URL for image access"""
+        if self.report_figure_minio_object_key:
+            try:
+                from notebooks.utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_presigned_url(self.report_figure_minio_object_key, expires)
+            except Exception:
+                return None
+        return None
+    
+    def get_image_content(self):
+        """Get image content as bytes from MinIO"""
+        if self.report_figure_minio_object_key:
+            try:
+                from notebooks.utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_file_content(self.report_figure_minio_object_key)
+            except Exception:
+                return None
+        return None
+
+
+# Signal handlers
+@receiver(pre_delete, sender=Report)
+def cleanup_report_images(sender, instance, **kwargs):
+    """Clean up associated images when a report is deleted"""
+    try:
+        from reports.core.report_image_service import ReportImageService
+        image_service = ReportImageService()
+        image_service.cleanup_report_images(instance)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error cleaning up images for report {instance.id}: {e}")

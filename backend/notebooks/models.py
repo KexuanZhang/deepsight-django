@@ -1,20 +1,20 @@
 import os
 import mimetypes
+import uuid
 from datetime import datetime
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
-from storages.backends.s3boto3 import S3Boto3Storage
 
 
 class Notebook(models.Model):
     """
     Represents a user-created notebook to organize sources and knowledge items.
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -40,7 +40,8 @@ class Source(models.Model):
     • URL
     • Pasted text
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     SOURCE_TYPE_CHOICES = [
         ("file", "File Upload"),
         ("url", "URL"),
@@ -78,70 +79,11 @@ class Source(models.Model):
         default="pending",
     )
 
+    class Meta:
+        ordering = ["-created_at"]
+
     def __str__(self):
-        return f"{self.get_source_type_display()} — {self.title or self.pk}"
-
-
-# File upload path functions
-
-
-def user_knowledge_base_path(instance, filename):
-    """
-    Generate organized path for knowledge base files.
-
-    New organized structure: Users/u_user_id/knowledge_base_item/yyyy-mm/f_file_id/content/extracted_content.md
-    The FileStorageService will pass the full path including directory structure.
-    """
-    # The FileStorageService provides the full organized path
-    return filename
-
-
-def user_report_path(instance, filename):
-    """Generate path for report files."""
-    # Assuming instance has a user attribute or user_id
-    user_id = getattr(instance, 'user_id', None) or getattr(instance.user, 'pk', None)
-    
-    # Get notebook_id from the instance
-    notebook_id = None
-    if hasattr(instance, 'notebooks') and instance.notebooks:
-        notebook_id = instance.notebooks.pk
-    elif hasattr(instance, 'notebook') and instance.notebook:
-        notebook_id = instance.notebook.pk
-    
-    current_date = datetime.now()
-    year_month = current_date.strftime("%Y-%m")
-    # Use instance ID as report ID if available
-    report_id = getattr(instance, 'id', 'temp')
-    
-    if notebook_id:
-        return f"Users/u_{user_id}/n_{notebook_id}/report/{year_month}/r_{report_id}/{filename}"
-    else:
-        # Fallback to old structure if no notebook is associated
-        return f"Users/u_{user_id}/report/{year_month}/r_{report_id}/{filename}"
-
-
-def user_podcast_path(instance, filename):
-    """Generate path for podcast files."""
-    # Assuming instance has a user attribute or user_id
-    user_id = getattr(instance, 'user_id', None) or getattr(instance.user, 'pk', None)
-    
-    # Get notebook_id from the instance
-    notebook_id = None
-    if hasattr(instance, 'notebooks') and instance.notebooks:
-        notebook_id = instance.notebooks.pk
-    elif hasattr(instance, 'notebook') and instance.notebook:
-        notebook_id = instance.notebook.pk
-    
-    current_date = datetime.now()
-    year_month = current_date.strftime("%Y-%m")
-    # Use instance ID as podcast ID if available
-    podcast_id = getattr(instance, 'id', 'temp')
-    
-    if notebook_id:
-        return f"Users/u_{user_id}/n_{notebook_id}/podcast/{year_month}/p_{podcast_id}/{filename}"
-    else:
-        # Fallback to old structure if no notebook is associated
-        return f"Users/u_{user_id}/podcast/{year_month}/p_{podcast_id}/{filename}"
+        return self.title or f"Source {self.id}"
 
 
 class URLProcessingResult(models.Model):
@@ -149,7 +91,8 @@ class URLProcessingResult(models.Model):
     Holds the result of crawling or downloading when the user provides a URL.
     These are notebook-specific.
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     source = models.OneToOneField(
         Source,
         on_delete=models.CASCADE,
@@ -159,13 +102,20 @@ class URLProcessingResult(models.Model):
         blank=True,
         help_text="Markdown extracted from a webpage, if applicable",
     )
-    downloaded_file = models.FileField(
-        upload_to=user_knowledge_base_path,
-        blank=True,
-        null=True,
-        help_text="Media file downloaded from the URL, if any",
-        storage=S3Boto3Storage(),
+    
+    # MinIO-native storage
+    downloaded_file_object_key = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        db_index=True,
+        help_text="MinIO object key for downloaded media file"
     )
+    file_metadata = models.JSONField(
+        default=dict,
+        help_text="Downloaded file metadata (name, size, content_type, etc.)"
+    )
+    
     error_message = models.TextField(
         blank=True,
         help_text="Error details if crawl or download failed",
@@ -174,13 +124,25 @@ class URLProcessingResult(models.Model):
 
     def __str__(self):
         return f"URLResult for Source {self.source_id}"
+    
+    def get_downloaded_file_url(self, expires=86400):
+        """Get pre-signed URL for downloaded file"""
+        if self.downloaded_file_object_key:
+            try:
+                from .utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_presigned_url(self.downloaded_file_object_key, expires)
+            except Exception:
+                return None
+        return None
 
 
 class ProcessingJob(models.Model):
     """
     A background job to process binaries or downloaded media (OCR, transcription, PDF→MD, etc.).
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     JOB_STATUS_CHOICES = [
         ("queued", "Queued"),
         ("running", "Running"),
@@ -202,13 +164,20 @@ class ProcessingJob(models.Model):
         choices=JOB_STATUS_CHOICES,
         default="queued",
     )
-    result_file = models.FileField(
-        upload_to=user_knowledge_base_path,
-        blank=True,
-        null=True,
-        help_text="Generated .md or other output file",
-        storage=S3Boto3Storage(),
+    
+    # MinIO-native storage
+    result_file_object_key = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        db_index=True,
+        help_text="MinIO object key for generated result file"
     )
+    result_file_metadata = models.JSONField(
+        default=dict,
+        help_text="Result file metadata (name, size, content_type, etc.)"
+    )
+    
     error_message = models.TextField(
         blank=True,
         help_text="Error details if processing failed",
@@ -217,7 +186,18 @@ class ProcessingJob(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
-        return f"{self.job_type} [{self.status}] for Source {self.source_id}"
+        return f"ProcessingJob {self.id} ({self.job_type}) for Source {self.source_id}"
+    
+    def get_result_file_url(self, expires=86400):
+        """Get pre-signed URL for result file"""
+        if self.result_file_object_key:
+            try:
+                from .utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_presigned_url(self.result_file_object_key, expires)
+            except Exception:
+                return None
+        return None
 
 
 class KnowledgeBaseItem(models.Model):
@@ -225,7 +205,8 @@ class KnowledgeBaseItem(models.Model):
     User-wide knowledge base items that can be shared across notebooks.
     These are the processed, searchable content items.
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -244,21 +225,6 @@ class KnowledgeBaseItem(models.Model):
             ("media", "Media File"),
         ],
         default="text",
-    )
-    file = models.FileField(
-        upload_to=user_knowledge_base_path,
-        blank=True,
-        null=True,
-        validators=[FileExtensionValidator(allowed_extensions=["md", "txt"])],
-        help_text="Processed content file in the user's knowledge base",
-        storage=S3Boto3Storage(),
-    )
-    original_file = models.FileField(
-        upload_to=user_knowledge_base_path,
-        blank=True,
-        null=True,
-        storage=S3Boto3Storage(),
-        help_text="Original binary file (PDF, audio, video, etc.) in the user's knowledge base",
     )
     content = models.TextField(
         blank=True,
@@ -279,6 +245,27 @@ class KnowledgeBaseItem(models.Model):
         default=list,
         help_text="Tags for categorization and search",
     )
+    
+    # MinIO-native storage fields (replaces Django FileFields)
+    file_object_key = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        db_index=True,
+        help_text="MinIO object key for processed content file"
+    )
+    original_file_object_key = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        db_index=True,
+        help_text="MinIO object key for original file"
+    )
+    file_metadata = models.JSONField(
+        default=dict,
+        help_text="File metadata stored in database (replaces file system metadata)"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -288,10 +275,72 @@ class KnowledgeBaseItem(models.Model):
             models.Index(fields=["user", "-created_at"]),
             models.Index(fields=["user", "source_hash"]),
             models.Index(fields=["user", "content_type"]),
+            # MinIO-specific indexes
+            models.Index(fields=["file_object_key"]),
+            models.Index(fields=["original_file_object_key"]),
         ]
 
     def __str__(self):
         return f"{self.title} ({self.content_type})"
+    
+    def get_file_url(self, expires=86400):
+        """Get pre-signed URL for processed file"""
+        if self.file_object_key:
+            try:
+                from .utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_presigned_url(self.file_object_key, expires)
+            except Exception:
+                return None
+        return None
+    
+    def get_original_file_url(self, expires=86400):
+        """Get pre-signed URL for original file"""
+        if self.original_file_object_key:
+            try:
+                from .utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_presigned_url(self.original_file_object_key, expires)
+            except Exception:
+                return None
+        return None
+
+    def get_file_content(self):
+        """Get the content from either inline field, processed file, or original file"""
+        if self.content:
+            return self.content
+        elif self.file_object_key:
+            try:
+                from .utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                content = backend.get_file(self.file_object_key)
+                return content.decode('utf-8') if isinstance(content, bytes) else content
+            except Exception:
+                pass  # Fall through to try original file
+        
+        # If no processed content, try the original file (useful for .md files)
+        if self.original_file_object_key:
+            try:
+                from .utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                content = backend.get_file(self.original_file_object_key)
+                return content.decode('utf-8') if isinstance(content, bytes) else content
+            except Exception:
+                pass
+        
+        return ""
+
+    def has_minio_storage(self):
+        """Check if this item uses MinIO storage"""
+        return bool(self.file_object_key or self.original_file_object_key)
+
+    def get_storage_info(self):
+        """Get storage information for this item"""
+        return {
+            'has_processed_file': bool(self.file_object_key),
+            'has_original_file': bool(self.original_file_object_key),
+            'file_metadata': self.file_metadata,
+        }
 
 
 class KnowledgeItem(models.Model):
@@ -299,7 +348,8 @@ class KnowledgeItem(models.Model):
     Links between notebooks and knowledge base items.
     This allows sharing knowledge items across multiple notebooks.
     """
-
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     notebook = models.ForeignKey(
         Notebook,
         on_delete=models.CASCADE,
@@ -320,7 +370,8 @@ class KnowledgeItem(models.Model):
     )
     added_at = models.DateTimeField(auto_now_add=True)
     notes = models.TextField(
-        blank=True, help_text="Notebook-specific notes about this knowledge item"
+        blank=True,
+        help_text="User notes about this knowledge item in this notebook",
     )
 
     class Meta:
@@ -328,18 +379,22 @@ class KnowledgeItem(models.Model):
         unique_together = ["notebook", "knowledge_base_item"]
         indexes = [
             models.Index(fields=["notebook", "-added_at"]),
+            models.Index(fields=["knowledge_base_item"]),
         ]
 
     def clean(self):
         # Ensure the knowledge base item belongs to the same user as the notebook
-        if self.knowledge_base_item and self.notebook:
-            if self.knowledge_base_item.user != self.notebook.user:
-                raise ValidationError(
-                    "Knowledge base item must belong to the same user as the notebook"
-                )
+        if (
+            self.notebook
+            and self.knowledge_base_item
+            and self.notebook.user != self.knowledge_base_item.user
+        ):
+            raise ValidationError(
+                "Knowledge base item must belong to the same user as the notebook."
+            )
 
     def __str__(self):
-        return f"{self.notebook.name} → {self.knowledge_base_item.title}"
+        return f"{self.notebook.name} -> {self.knowledge_base_item.title}"
 
 
 class BatchJob(models.Model):
@@ -347,6 +402,7 @@ class BatchJob(models.Model):
     Tracks batch processing operations for multiple URLs/files.
     """
     
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     BATCH_STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('processing', 'Processing'),
@@ -373,12 +429,12 @@ class BatchJob(models.Model):
     failed_items = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         ordering = ['-created_at']
-    
+
     def __str__(self):
-        return f"Batch {self.job_type} - {self.status} ({self.completed_items}/{self.total_items})"
+        return f"BatchJob {self.id} ({self.job_type}) - {self.status}"
 
 
 class BatchJobItem(models.Model):
@@ -386,6 +442,7 @@ class BatchJobItem(models.Model):
     Individual items within a batch job.
     """
     
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ITEM_STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('processing', 'Processing'),
@@ -405,15 +462,16 @@ class BatchJobItem(models.Model):
     error_message = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         ordering = ['created_at']
-    
+
     def __str__(self):
-        return f"Item {self.id} - {self.status}"
+        return f"BatchJobItem {self.id} - {self.status}"
 
 
 class NotebookChatMessage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     notebook = models.ForeignKey(
         "Notebook",
         on_delete=models.CASCADE,
@@ -428,3 +486,116 @@ class NotebookChatMessage(models.Model):
 
     class Meta:
         ordering = ["timestamp"]
+
+    def __str__(self):
+        return f"{self.sender}: {self.message[:50]}..."
+
+
+class KnowledgeBaseImage(models.Model):
+    """
+    Store image metadata for knowledge base items, replacing figure_data.json files.
+    Each image is linked to a knowledge base item and stored in MinIO.
+    """
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    figure_id = models.UUIDField(default=uuid.uuid4, editable=False, help_text="Unique figure identifier, different from primary key")
+    knowledge_base_item = models.ForeignKey(
+        KnowledgeBaseItem,
+        on_delete=models.CASCADE,
+        related_name="images",
+        help_text="Knowledge base item this image belongs to"
+    )
+    
+    # Image identification and metadata
+    image_caption = models.TextField(
+        blank=True,
+        help_text="Description or caption for the image"
+    )
+    
+    # MinIO storage fields
+    minio_object_key = models.CharField(
+        max_length=255,
+        db_index=True,
+        help_text="MinIO object key for the image file"
+    )
+    
+    # Image metadata and properties
+    image_metadata = models.JSONField(
+        default=dict,
+        help_text="Image metadata including dimensions, format, size, etc."
+    )
+    content_type = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="MIME type of the image (image/png, image/jpeg, etc.)"
+    )
+    file_size = models.PositiveIntegerField(
+        default=0,
+        help_text="File size in bytes"
+    )
+    
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ["knowledge_base_item", "created_at"]
+        verbose_name = "Knowledge Base Image"
+        verbose_name_plural = "Knowledge Base Images"
+        indexes = [
+            models.Index(fields=["knowledge_base_item", "created_at"]),
+            models.Index(fields=["minio_object_key"]),
+        ]
+        unique_together = []
+    
+    def __str__(self):
+        return f"Image for {self.knowledge_base_item.title} - {self.id}"
+    
+    def get_image_url(self, expires=86400):
+        """Get pre-signed URL for image access"""
+        if self.minio_object_key:
+            try:
+                from .utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_presigned_url(self.minio_object_key, expires)
+            except Exception:
+                return None
+        return None
+    
+    def get_image_content(self):
+        """Get image content as bytes from MinIO"""
+        if self.minio_object_key:
+            try:
+                from .utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                return backend.get_file(self.minio_object_key)
+            except Exception:
+                return None
+        return None
+    
+    def to_figure_data_dict(self):
+        """
+        Convert to figure_data.json compatible dictionary format.
+        This maintains compatibility with existing code that expects figure_data structure.
+        """
+        return {
+            'figure_id': str(self.figure_id),
+            'caption': self.image_caption,
+        }
+    
+    @classmethod
+    def create_from_figure_data(cls, knowledge_base_item, figure_data_dict, minio_object_key=None):
+        """
+        Create KnowledgeBaseImage instance from figure_data.json dictionary format.
+        This helps migrate from the old figure_data.json system.
+        """
+        return cls.objects.create(
+            knowledge_base_item=knowledge_base_item,
+            image_caption=figure_data_dict.get('caption', ''),
+            minio_object_key=minio_object_key or '',
+            content_type=figure_data_dict.get('content_type', ''),
+            file_size=figure_data_dict.get('file_size', 0),
+            image_metadata=figure_data_dict,
+        )
+    

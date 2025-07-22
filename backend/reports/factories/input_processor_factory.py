@@ -6,6 +6,7 @@ import tempfile
 import logging
 import os
 import mimetypes
+import uuid
 from typing import Dict, Any, List
 from pathlib import Path
 from ..interfaces.input_processor_interface import InputProcessorInterface
@@ -19,37 +20,39 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
     def __init__(self):
         pass  # No temp files to track - using direct content approach like podcast
     
-    def process_selected_files(self, file_paths: List[str]) -> Dict[str, Any]:
+    def process_selected_files(self, file_paths: List[str], user_id: int) -> Dict[str, Any]:
         """Process selected files from knowledge base and extract content"""
         input_data = {"text_files": [], "selected_file_ids": []}
         
         try:
-            from notebooks.utils.file_storage import FileStorageService
+            from notebooks.utils.storage_adapter import get_storage_adapter
             from notebooks.models import KnowledgeBaseItem
             
-            file_storage = FileStorageService()
+            storage_adapter = get_storage_adapter()
             
             for file_id in file_paths:
                 try:
-                    # Convert file_id to int if it's a string
-                    if isinstance(file_id, str) and file_id.isdigit():
-                        file_id = int(file_id)
-                    elif isinstance(file_id, str):
-                        # If it's not a digit, it might be an actual path (legacy)
-                        folder_path_obj = Path(file_id)
-                        if folder_path_obj.exists() and folder_path_obj.is_dir():
-                            # Process as folder path (legacy support)
-                            self._process_folder_path(folder_path_obj, input_data)
+                    # Handle UUID file identifiers (only UUID format supported)
+                    if isinstance(file_id, str):
+                        # Validate that it's a proper UUID
+                        try:
+                            uuid.UUID(file_id)
+                            # It's a valid UUID string, use as-is
+                        except ValueError:
+                            logger.warning(f"Invalid UUID file ID: {file_id}")
                             continue
-                        else:
-                            logger.warning(f"Invalid file path or ID: {file_id}")
-                            continue
+                    elif hasattr(file_id, 'hex'):
+                        # Already a UUID object, convert to string
+                        file_id = str(file_id)
+                    else:
+                        logger.warning(f"Unsupported file ID type: {type(file_id)} for {file_id}")
+                        continue
                     
                     # Store file ID for figure data combination
                     input_data["selected_file_ids"].append(f"f_{file_id}")
                     
                     # Get file content using the file storage service
-                    content = file_storage.get_file_content(file_id)
+                    content = storage_adapter.get_file_content(file_id, user_id)
                     
                     if content:
                         # Get metadata from knowledge base item
@@ -57,12 +60,14 @@ class KnowledgeBaseInputProcessor(InputProcessorInterface):
                             kb_item = KnowledgeBaseItem.objects.get(id=file_id)
                             filename = kb_item.title or f"file_{file_id}"
                             content_type = getattr(kb_item, 'content_type', 'unknown')
-                            # Get original file extension and MIME type
+                            # Get original file extension and MIME type from MinIO metadata
                             raw_extension = None
                             raw_mime = None
-                            if kb_item.original_file and kb_item.original_file.name:
-                                raw_extension = os.path.splitext(kb_item.original_file.name)[1].lower()
-                                raw_mime, _ = mimetypes.guess_type(kb_item.original_file.name)
+                            if kb_item.original_file_object_key:
+                                # Extract filename from metadata or use the title
+                                original_filename = kb_item.file_metadata.get('original_filename') or kb_item.title
+                                raw_extension = os.path.splitext(original_filename)[1].lower()
+                                raw_mime, _ = mimetypes.guess_type(original_filename)
                             file_data = {
                                 "content": content,
                                 "filename": filename,

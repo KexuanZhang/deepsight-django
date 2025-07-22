@@ -54,6 +54,28 @@ class PodcastOrchestrator:
         """Generate podcast conversation from content"""
         return await self.conversation_service.generate_conversation(content, file_metadata)
     
+    def generate_title(self, title_prompt: str) -> str:
+        """Generate a title based on the content"""
+        try:
+            # Use the AI client to generate a title
+            messages = [
+                {"role": "system", "content": "You are a podcast title generator. Generate concise, engaging titles."},
+                {"role": "user", "content": title_prompt}
+            ]
+            response = self.ai_client.create_chat_completion(messages)
+            
+            # Extract content from response (assuming OpenAI-like format)
+            if hasattr(response, 'choices') and len(response.choices) > 0:
+                title = response.choices[0].message.content.strip()
+                # Remove quotes if present
+                title = title.strip('"').strip("'")
+                return title[:50]  # Limit to 50 characters
+            else:
+                return "Generated Podcast"
+        except Exception as e:
+            logger.error(f"Error generating title: {e}")
+            return "Generated Podcast"
+    
     def generate_podcast_audio(self, conversation_text: str, output_path: str) -> str:
         """Generate complete podcast audio from conversation text"""
         return self.audio_processor.generate_podcast_audio(conversation_text, output_path)
@@ -73,6 +95,8 @@ class PodcastOrchestrator:
     def update_job_result(self, job_id: str, result: Dict, status: str = "completed"):
         """Update job with final result"""
         self.job_service.update_job_result(job_id, result, status)
+        # Update status cache for frontend
+        self.status_service.update_job_progress(job_id, "Podcast generation completed successfully", status)
     
     def update_job_error(self, job_id: str, error: str):
         """Update job with error information"""

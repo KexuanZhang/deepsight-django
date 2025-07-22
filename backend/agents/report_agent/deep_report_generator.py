@@ -197,6 +197,7 @@ class ReportGenerationConfig:
     author_json: Optional[str] = None
     caption_files: Optional[List[str]] = None
     selected_files_paths: Optional[List[str]] = None  # For image path fixing
+    user_id: Optional[str] = None  # User ID for MinIO access
 
     # CSV processing options (for non-interactive API use)
     csv_session_code: Optional[str] = None
@@ -737,6 +738,7 @@ class DeepReportGenerator:
                 reranker_threshold=config.reranker_threshold,
                 time_range=config.time_range.value if config.time_range else None,
                 text_input=config.text_input,
+                report_id=config.report_id,
             )
 
             # Setup retriever
@@ -747,9 +749,11 @@ class DeepReportGenerator:
             runner = STORMWikiRunner(engine_args, lm_configs, rm)
             runner.author_json = config.author_json
 
-            # Pass selected_files_paths for image path fixing
+            # Pass selected_files_paths and user_id for image path fixing
             if config.selected_files_paths:
                 runner.selected_files_paths = config.selected_files_paths
+            if config.user_id:
+                runner.user_id = config.user_id
 
             # Process CSV metadata
             article_title, speakers, csv_text_input = self._process_csv_metadata(
@@ -825,13 +829,28 @@ class DeepReportGenerator:
             runner.summary()
             processing_logs.append("Report generation completed")
 
-            # Always collect the basic storm files
+            # Collect all files from the output directory
+            import glob
+            all_files = glob.glob(os.path.join(article_output_dir, "*"))
+            # Filter to only include files (not directories) and common report file types
+            generated_files.extend([
+                f for f in all_files 
+                if os.path.isfile(f) and any(f.endswith(ext) for ext in 
+                    ['.md', '.txt', '.json', '.jsonl', '.html', '.pdf', '.csv'])
+            ])
+            
+            self.logger.info(f"Collected {len(generated_files)} files from output directory: {[os.path.basename(f) for f in generated_files]}")
+            
+            # Also collect the basic storm files specifically (for backwards compatibility)
             basic_storm_files = [
                 os.path.join(article_output_dir, "storm_gen_outline.txt"),
                 os.path.join(article_output_dir, "storm_gen_article.md"),
                 os.path.join(article_output_dir, "storm_gen_article_polished.md"),
             ]
-            generated_files.extend(basic_storm_files)
+            # Add any basic files that weren't already collected
+            for f in basic_storm_files:
+                if f not in generated_files and os.path.exists(f):
+                    generated_files.append(f)
 
             # Store the final processed report content for Django FileField storage
             # The actual file will be created by job_service.py using Django FileField
@@ -848,22 +867,6 @@ class DeepReportGenerator:
                         with open(polished_article_path, "r", encoding="utf-8") as f:
                             content = f.read()
 
-                        # Apply image path fixing to ensure final Report content has correct paths
-                        try:
-                            from agents.report_agent.utils.post_processing import (
-                                fix_image_paths_advanced,
-                            )
-
-                            content = fix_image_paths_advanced(
-                                content,
-                                config.selected_files_paths,
-                                report_output_dir=article_output_dir,
-                                figure_data=config.figure_data if hasattr(config, 'figure_data') else None,
-                            )
-                        except Exception as e:
-                            self.logger.warning(
-                                f"Failed to fix image paths in Report content: {e}"
-                            )
 
                         # Apply other post-processing (citations, captions, placeholders)
                         from agents.report_agent.utils.post_processing import (
@@ -904,6 +907,17 @@ class DeepReportGenerator:
 
             # Use generated article title if available, otherwise use original
             final_article_title = getattr(runner, 'generated_article_title', None) or article_title
+            
+            # Create report_{id}.md file with the final content
+            if final_report_content and config.report_id:
+                report_file_path = os.path.join(article_output_dir, f"report_{config.report_id}.md")
+                try:
+                    with open(report_file_path, 'w', encoding='utf-8') as f:
+                        f.write(final_report_content)
+                    generated_files.append(report_file_path)
+                    self.logger.info(f"Created report_{config.report_id}.md file")
+                except Exception as e:
+                    self.logger.warning(f"Failed to create report_{config.report_id}.md file: {e}")
             
             return ReportGenerationResult(
                 success=True,

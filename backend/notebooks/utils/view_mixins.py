@@ -72,54 +72,6 @@ class StandardAPIView(APIView):
         return Response(response_data, status=status_code)
 
 
-class FileMetadataExtractorMixin:
-    """Mixin for extracting file metadata from knowledge base items."""
-
-    def extract_original_filename(self, metadata: Dict, fallback_title: str) -> str:
-        """Extract original filename from metadata, with fallback to title."""
-        if not metadata:
-            return fallback_title
-
-        original_filename = (
-            metadata.get("original_filename")
-            or metadata.get("filename")
-            or fallback_title
-        )
-
-        if original_filename and "." not in original_filename:
-            extension = metadata.get("file_extension", "")
-            if extension and not extension.startswith("."):
-                extension = "." + extension
-            if extension:
-                original_filename = original_filename + extension
-
-        return original_filename
-
-    def extract_file_extension(self, metadata: Dict) -> str:
-        """Extract file extension from metadata."""
-        if not metadata:
-            return ""
-
-        extension = metadata.get("file_extension", "")
-        if (
-            not extension
-            and "original_filename" in metadata
-            and "." in metadata["original_filename"]
-        ):
-            extension = "." + metadata["original_filename"].split(".")[-1]
-        elif not extension and "filename" in metadata and "." in metadata["filename"]:
-            extension = "." + metadata["filename"].split(".")[-1]
-
-        return extension
-
-    def extract_file_size(self, metadata: Dict) -> Optional[int]:
-        """Extract file size from metadata."""
-        if not metadata:
-            return None
-
-        return metadata.get("file_size") or metadata.get("content_length") or None
-
-
 class FileAccessValidatorMixin:
     """Mixin for validating file access permissions."""
 
@@ -165,6 +117,34 @@ class PaginationMixin:
             return 50, 0  # Default values
 
 
+class FileMetadataExtractorMixin:
+    """Mixin for extracting metadata from file objects."""
+
+    def extract_original_filename(self, metadata: Dict, fallback_title: str) -> str:
+        """Extract original filename from metadata."""
+        if metadata:
+            # Try different metadata keys
+            for key in ["original_filename", "filename", "name"]:
+                if key in metadata and metadata[key]:
+                    return metadata[key]
+        return fallback_title
+
+    def extract_file_extension(self, metadata: Dict) -> Optional[str]:
+        """Extract file extension from metadata."""
+        if metadata and "file_extension" in metadata:
+            return metadata["file_extension"]
+        return None
+
+    def extract_file_size(self, metadata: Dict) -> Optional[int]:
+        """Extract file size from metadata."""
+        if metadata and "file_size" in metadata:
+            try:
+                return int(metadata["file_size"])
+            except (ValueError, TypeError):
+                pass
+        return None
+
+
 class FileListResponseMixin(FileMetadataExtractorMixin):
     """Mixin for generating standardized file list responses."""
 
@@ -184,9 +164,9 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             "added_to_notebook_at": ki.added_at.isoformat(),
             "notes": ki.notes,
             "metadata": kb_item.metadata or {},
-            "has_file": bool(kb_item.file),
+            "has_file": bool(kb_item.file_object_key),
             "has_content": bool(kb_item.content),
-            "has_original_file": bool(kb_item.original_file),
+            "has_original_file": bool(kb_item.original_file_object_key),
             "parsing_status": "completed",
             # Extract metadata
             "original_filename": self.extract_original_filename(
@@ -199,56 +179,19 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
 
         # Add source information if available
         if source:
-            file_data.update(
-                {
-                    "source_id": source.id,
-                    "source_type": source.source_type,
-                    "source_title": source.title,
-                    "source_status": source.processing_status,
-                }
-            )
+            file_data.update({
+                "source_type": source.source_type,
+                "source_title": source.title,
+                "processing_status": source.processing_status,
+                "needs_processing": source.needs_processing,
+            })
 
-            # Add source-specific metadata
-            if source.source_type == "url" and hasattr(source, "url_result"):
-                url_result = source.url_result
-                file_data.update(
-                    {
-                        "source_url": source.title,
-                        "content_length": len(url_result.content_md)
-                        if url_result.content_md
-                        else 0,
-                        "processing_method": "web_scraping",
-                        "extraction_type": "url_extractor",
-                    }
-                )
+            # Add URL-specific data
+            if source.source_type == "url" and source.url_result:
+                file_data.update({
+                    "original_url": source.url_result.original_url,
+                    "url_title": source.url_result.title,
+                    "url_status": source.url_result.status,
+                })
 
-                if url_result.downloaded_file:
-                    file_data["downloaded_file_path"] = url_result.downloaded_file.name
-                    file_data["downloaded_file_url"] = url_result.downloaded_file.url
-
-            elif source.source_type == "text":
-                file_data.update(
-                    {
-                        "original_filename": f"{source.title}.txt",
-                        "file_extension": ".txt",
-                    }
-                )
-
-        # Add knowledge base file URLs
-        if kb_item.file:
-            file_data.update(
-                {
-                    "knowledge_file_path": kb_item.file.name,
-                    "knowledge_file_url": kb_item.file.url,
-                }
-            )
-
-        if kb_item.original_file:
-            file_data.update(
-                {
-                    "original_file_path": kb_item.original_file.name,
-                    "original_file_url": kb_item.original_file.url,
-                }
-            )
-
-        return file_data
+        return file_data 
