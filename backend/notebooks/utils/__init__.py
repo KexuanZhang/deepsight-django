@@ -34,7 +34,6 @@ from .storage import (
 from .helpers import (
     clean_title,
     calculate_content_hash,
-    check_duplicate_before_processing,
     extract_domain,
     sanitize_path,
     get_file_extension,
@@ -98,7 +97,6 @@ __all__ = [
     # Helpers
     'clean_title',
     'calculate_content_hash',
-    'check_duplicate_before_processing',
     'extract_domain',
     'sanitize_path',
     'get_file_extension',

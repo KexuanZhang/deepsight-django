@@ -112,35 +112,6 @@ def calculate_content_hash(content: Union[str, bytes]) -> str:
     return hashlib.sha256(content_bytes).hexdigest()
 
 
-def check_duplicate_before_processing(file_obj, user) -> Optional[str]:
-    """
-    Check for duplicate content before processing the file.
-    
-    This enables early duplicate detection to avoid unnecessary processing.
-    
-    Args:
-        file_obj: Django uploaded file object
-        user: User instance
-        
-    Returns:
-        Existing KnowledgeBaseItem ID if duplicate found, None if unique
-    """
-    # Read file content and calculate hash
-    file_obj.seek(0)  # Ensure we read from beginning
-    file_content = file_obj.read()
-    file_obj.seek(0)  # Reset for potential later processing
-    
-    content_hash = calculate_content_hash(file_content)
-    
-    # Check for existing content
-    from ..models import KnowledgeBaseItem
-    existing_item = KnowledgeBaseItem.objects.filter(
-        user=user, source_hash=content_hash
-    ).first()
-    
-    return str(existing_item.id) if existing_item else None
-
-
 def extract_domain(url: str) -> str:
     """Extract domain from URL."""
     try:
