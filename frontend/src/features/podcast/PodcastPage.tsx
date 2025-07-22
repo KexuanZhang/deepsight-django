@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import type { AppDispatch } from '@/app/store';
 import { 
   fetchPodcasts, 
+  fetchPodcast,
   selectFilteredPodcasts, 
   selectPodcastLoading, 
   selectPodcastError,
@@ -97,9 +98,20 @@ const PodcastPage: React.FC = () => {
     dispatch(setFilters(newFilters));
   };
 
-  const handleDownloadPodcast = (podcast: Podcast) => {
-    // This would be implemented with the download action
-    console.log('Downloading podcast:', podcast.id);
+  const handleDownloadPodcast = async (podcast: Podcast) => {
+    if (!podcast.notebook_id) {
+      console.error('No notebook ID found for podcast');
+      return;
+    }
+    
+    try {
+      // Directly navigate to the download endpoint, let browser handle the download
+      const downloadUrl = `/api/v1/notebooks/${podcast.notebook_id}/podcast-jobs/${podcast.id}/download/`;
+      window.open(downloadUrl, '_blank');
+    } catch (error) {
+      console.error('Failed to download podcast:', error);
+      // You could show a toast notification here
+    }
   };
 
   const handleDeletePodcast = (podcast: Podcast) => {

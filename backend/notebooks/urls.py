@@ -169,6 +169,7 @@ urlpatterns = [
     path("<str:notebook_id>/podcast-jobs/<str:job_id>/", podcast_views.NotebookPodcastJobDetailView.as_view(), name="notebook-podcast-job-detail"),
     path("<str:notebook_id>/podcast-jobs/<str:job_id>/cancel/", podcast_views.NotebookPodcastJobCancelView.as_view(), name="notebook-podcast-job-cancel"),
     path("<str:notebook_id>/podcast-jobs/<str:job_id>/audio/", podcast_views.NotebookPodcastJobAudioView.as_view(), name="notebook-podcast-job-audio"),
+    path("<str:notebook_id>/podcast-jobs/<str:job_id>/download/", podcast_views.NotebookPodcastJobDownloadView.as_view(), name="notebook-podcast-job-download"),
     
     # Stream endpoint for podcast job status updates
     path(

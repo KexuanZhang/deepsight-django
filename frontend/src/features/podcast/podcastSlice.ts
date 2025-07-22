@@ -93,18 +93,6 @@ export const deletePodcast = createAsyncThunk(
   }
 );
 
-export const downloadPodcast = createAsyncThunk(
-  'podcast/download',
-  async ({ id, filename }: { id: string; filename?: string }, { rejectWithValue }) => {
-    try {
-      const podcastService = new PodcastService();
-      await podcastService.downloadPodcast(id, filename);
-      return { id, filename };
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to download podcast');
-    }
-  }
-);
 
 const podcastSlice = createSlice({
   name: 'podcast',

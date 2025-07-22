@@ -142,7 +142,7 @@ export interface StatusDisplayProps {
 
 export interface PodcastStatusProps {
   state: GenerationState;
-  progress?: number;
+  progress?: string;
   error?: string;
 }
 

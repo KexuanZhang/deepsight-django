@@ -654,11 +654,22 @@ useEffect(() => {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="w-full text-left justify-start text-xs bg-white/80 backdrop-blur-sm hover:bg-red-100 border-gray-200 hover:border-red-300 text-gray-700 hover:text-red-700 shadow-sm hover:shadow-md transition-all duration-200 h-auto py-2.5 px-3"
-                        onClick={() => handleSendMessage(typeof question === 'string' ? question : question.text || '')}
+                        className={`w-full text-left justify-start text-xs transition-all duration-200 h-auto py-2.5 px-3 ${
+                          !hasSelectedFiles() 
+                            ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-50' 
+                            : 'bg-white/80 backdrop-blur-sm hover:bg-red-100 border-gray-200 hover:border-red-300 text-gray-700 hover:text-red-700 shadow-sm hover:shadow-md'
+                        }`}
+                        disabled={!hasSelectedFiles()}
+                        onClick={() => {
+                          if (hasSelectedFiles()) {
+                            handleSendMessage(typeof question === 'string' ? question : question.text || '');
+                          }
+                        }}
                       >
                         <div className="flex items-start space-x-2 w-full">
-                          <div className="w-1.5 h-1.5 bg-red-400 rounded-full mt-1.5 flex-shrink-0"></div>
+                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${
+                            !hasSelectedFiles() ? 'bg-gray-300' : 'bg-red-400'
+                          }`}></div>
                           <span className="leading-relaxed line-clamp-2">{typeof question === 'string' ? question : question.text}</span>
                         </div>
                       </Button>

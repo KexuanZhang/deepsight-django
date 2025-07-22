@@ -122,7 +122,7 @@ const NotebookLayout: React.FC<NotebookLayoutProps> = ({
           className={`${RESPONSIVE_PANELS.mobile.gap} ${RESPONSIVE_PANELS.mobile.padding} md:${RESPONSIVE_PANELS.tablet.gap} md:${RESPONSIVE_PANELS.tablet.padding} lg:${RESPONSIVE_PANELS.desktop.gap} lg:${RESPONSIVE_PANELS.desktop.padding} flex-1 min-h-0 grid transition-all duration-300`}
           style={{
             gridTemplateColumns: isStudioExpanded 
-              ? `0fr 4fr 8fr` // Studio expanded: hide sources, smaller chat, larger studio
+              ? `40px 4fr 8fr` // Studio expanded: keep collapsed sources bar visible, smaller chat, larger studio
               : isSourcesCollapsed 
                 ? `40px ${LAYOUT_RATIOS.chat}fr ${LAYOUT_RATIOS.studio}fr`
                 : `${LAYOUT_RATIOS.sources}fr ${LAYOUT_RATIOS.chat}fr ${LAYOUT_RATIOS.studio}fr`
@@ -132,14 +132,14 @@ const NotebookLayout: React.FC<NotebookLayoutProps> = ({
           <motion.div
             initial={{ opacity: 0, x: -10 }}
             animate={{ 
-              opacity: isStudioExpanded ? 0 : 1, 
+              opacity: 1, 
               x: 0
             }}
             transition={{ duration: 0.3 }}
-            className={`${COLORS.panels.sources.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-hidden min-h-0 relative ${isStudioExpanded ? 'pointer-events-none' : ''}`}
+            className={`${COLORS.panels.sources.background} backdrop-blur-sm ${RESPONSIVE_PANELS.mobile.radius} lg:${RESPONSIVE_PANELS.desktop.radius} ${SHADOWS.panel.base} ${SHADOWS.panel.hover} transition-all duration-300 overflow-hidden min-h-0 relative`}
           >
             <AnimatePresence mode="wait">
-              {!isSourcesCollapsed ? (
+              {!isSourcesCollapsed && !isStudioExpanded ? (
                 <motion.div
                   key="sources-content"
                   initial={{ opacity: 0, x: -20 }}
@@ -167,8 +167,13 @@ const NotebookLayout: React.FC<NotebookLayoutProps> = ({
                   {/* Collapsed Header - Entire bar clickable with red highlight */}
                   <div 
                     className="flex-shrink-0 py-4 bg-gray-100/95 backdrop-blur-sm flex items-center justify-center h-full w-full cursor-pointer hover:bg-red-50 transition-all duration-200 group"
-                    onClick={() => setIsSourcesCollapsed(false)}
-                    title="Expand Sources Panel"
+                    onClick={() => {
+                      if (isStudioExpanded) {
+                        setIsStudioExpanded(false);
+                      }
+                      setIsSourcesCollapsed(false);
+                    }}
+                    title={isStudioExpanded ? "Minimize Studio & Expand Sources Panel" : "Expand Sources Panel"}
                   >
                     <Database className="h-4 w-4 text-gray-400 group-hover:text-red-600 transition-all duration-200" />
                   </div>

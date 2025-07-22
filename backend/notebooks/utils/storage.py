@@ -165,14 +165,19 @@ class MinIOBackend:
             self.logger.error(f"Unexpected error deleting folder {folder_prefix}: {e}")
             return False
     
-    def get_presigned_url(self, object_key: str, expires: int = 3600) -> Optional[str]:
+    def get_presigned_url(self, object_key: str, expires: int = 3600, response_headers: Dict[str, str] = None) -> Optional[str]:
         """Get pre-signed URL for file access."""
         try:
-            url = self.client.presigned_get_object(
-                bucket_name=self.bucket_name,
-                object_name=object_key,
-                expires=timedelta(seconds=expires)
-            )
+            kwargs = {
+                'bucket_name': self.bucket_name,
+                'object_name': object_key,
+                'expires': timedelta(seconds=expires)
+            }
+            
+            if response_headers:
+                kwargs['response_headers'] = response_headers
+                
+            url = self.client.presigned_get_object(**kwargs)
             return url
         except S3Error as e:
             self.logger.error(f"Error generating presigned URL for {object_key}: {e}")

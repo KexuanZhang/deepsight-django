@@ -23,11 +23,11 @@ const observer = new MutationObserver((mutations) => {
       if (
         addedNode.nodeType === Node.ELEMENT_NODE &&
         (
-          (addedNode as Element).tagName?.toLowerCase() === 'vite-error-overlay' ||
-          (addedNode as Element).classList?.contains('backdrop')
+          addedNode.tagName && addedNode.tagName.toLowerCase() === 'vite-error-overlay' ||
+          addedNode.classList && addedNode.classList.contains('backdrop')
         )
       ) {
-        handleViteOverlay(addedNode as Element);
+        handleViteOverlay(addedNode);
       }
     }
   }
@@ -38,12 +38,12 @@ observer.observe(document.documentElement, {
   subtree: true
 });
 
-function handleViteOverlay(node: Element): void {
-  if (!(node as any).shadowRoot) {
+function handleViteOverlay(node) {
+  if (!node.shadowRoot) {
     return;
   }
 
-  const backdrop = (node as any).shadowRoot.querySelector('.backdrop');
+  const backdrop = node.shadowRoot.querySelector('.backdrop');
 
   if (backdrop) {
     const overlayHtml = backdrop.outerHTML;
@@ -51,13 +51,13 @@ function handleViteOverlay(node: Element): void {
     const doc = parser.parseFromString(overlayHtml, 'text/html');
     const messageBodyElement = doc.querySelector('.message-body');
     const fileElement = doc.querySelector('.file');
-    const messageText = messageBodyElement ? messageBodyElement.textContent?.trim() || '' : '';
-    const fileText = fileElement ? fileElement.textContent?.trim() || '' : '';
+    const messageText = messageBodyElement ? (messageBodyElement.textContent && messageBodyElement.textContent.trim()) || '' : '';
+    const fileText = fileElement ? (fileElement.textContent && fileElement.textContent.trim()) || '' : '';
     const error = messageText + (fileText ? ' File:' + fileText : '');
 
     window.parent.postMessage({
       type: 'horizons-vite-error',
-      error,
+      error: error,
     }, '*');
   }
 }
@@ -86,7 +86,7 @@ window.onerror = (message, source, lineno, colno, errorObj) => {
 
 const consoleErrorHandler: string = `
 const originalConsoleError = console.error;
-console.error = function(...args: any[]): void {
+console.error = function(...args) {
   originalConsoleError.apply(console, args);
 
   let errorString = '';
@@ -94,13 +94,13 @@ console.error = function(...args: any[]): void {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg instanceof Error) {
-      errorString = arg.stack || \`\${arg.name}: \${arg.message}\`;
+      errorString = arg.stack || (arg.name + ': ' + arg.message);
       break;
     }
   }
 
   if (!errorString) {
-    errorString = args.map((arg: any) => 
+    errorString = args.map((arg) => 
       typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
     ).join(' ');
   }
@@ -115,8 +115,8 @@ console.error = function(...args: any[]): void {
 const fetchMonkeyPatch: string = `
 const originalFetch = window.fetch;
 
-window.fetch = function(...args: Parameters<typeof fetch>): Promise<Response> {
-  const url = args[0] instanceof Request ? args[0].url : args[0] as string;
+window.fetch = function(...args) {
+  const url = args[0] instanceof Request ? args[0].url : args[0];
 
   // Skip WebSocket URLs
   if (url.startsWith('ws:') || url.startsWith('wss:')) {
@@ -124,7 +124,7 @@ window.fetch = function(...args: Parameters<typeof fetch>): Promise<Response> {
   }
 
   return originalFetch.apply(this, args)
-    .then(async (response: Response) => {
+    .then(async (response) => {
       const contentType = response.headers.get('Content-Type') || '';
 
       // Exclude HTML document responses
@@ -136,12 +136,12 @@ window.fetch = function(...args: Parameters<typeof fetch>): Promise<Response> {
         const responseClone = response.clone();
         const errorFromRes = await responseClone.text();
         const requestUrl = response.url;
-        console.error(\`Fetch error from \${requestUrl}: \${errorFromRes}\`);
+        console.error('Fetch error from ' + requestUrl + ': ' + errorFromRes);
       }
 
       return response;
     })
-    .catch((error: Error) => {
+    .catch((error) => {
       if (!url.match(/\\.html?$/i)) {
         console.error(error);
       }
