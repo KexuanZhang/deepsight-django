@@ -789,185 +789,202 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       </div>
 
       {/* ====== SINGLE RESPONSIBILITY: Main content area ====== */}
-      <div className={`flex-1 overflow-auto ${isReportPreview ? 'p-0' : 'p-6 space-y-6'} scrollbar-overlay`}>
-        {!isReportPreview && (
-          <>
+      {!isReportPreview ? (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* ====== FIXED SECTIONS: Generation Forms ====== */}
+          <div className="flex-shrink-0 p-4 space-y-4 bg-gray-50/50 border-b border-gray-200/60">
             {/* ====== LISKOV SUBSTITUTION PRINCIPLE (LSP) ====== */}
             {/* Both forms follow the same interface contract */}
             
             <ReportGenerationForm
-          config={reportGeneration.config}
-          onConfigChange={reportGeneration.updateConfig}
-          availableModels={studioData.availableModels || {}}
-          generationState={{
-            state: reportGeneration.state,
-            progress: reportGeneration.progress,
-            error: reportGeneration.error || undefined,
-            isGenerating: reportGeneration.isGenerating
-          }}
-          onGenerate={handleGenerateReport}
-          onCancel={handleCancelReport}
-          selectedFiles={selectedFiles}
-          onOpenModal={onOpenModal}
-          onCloseModal={onCloseModal}
-        />
+              config={reportGeneration.config}
+              onConfigChange={reportGeneration.updateConfig}
+              availableModels={studioData.availableModels || {}}
+              generationState={{
+                state: reportGeneration.state,
+                progress: reportGeneration.progress,
+                error: reportGeneration.error || undefined,
+                isGenerating: reportGeneration.isGenerating
+              }}
+              onGenerate={handleGenerateReport}
+              onCancel={handleCancelReport}
+              selectedFiles={selectedFiles}
+              onOpenModal={onOpenModal}
+              onCloseModal={onCloseModal}
+            />
 
-        <PodcastGenerationForm
-          config={podcastGeneration.config}
-          onConfigChange={podcastGeneration.updateConfig}
-          generationState={{
-            state: podcastGeneration.state,
-            progress: podcastGeneration.progress,
-            error: podcastGeneration.error || undefined
-          }}
-          onGenerate={handleGeneratePodcast}
-          onCancel={handleCancelPodcast}
-          selectedFiles={selectedFiles}
-          selectedSources={selectedSources}
-          onOpenModal={onOpenModal}
-          onCloseModal={onCloseModal}
-        />
+            <PodcastGenerationForm
+              config={podcastGeneration.config}
+              onConfigChange={podcastGeneration.updateConfig}
+              generationState={{
+                state: podcastGeneration.state,
+                progress: podcastGeneration.progress,
+                error: podcastGeneration.error || undefined
+              }}
+              onGenerate={handleGeneratePodcast}
+              onCancel={handleCancelPodcast}
+              selectedFiles={selectedFiles}
+              selectedSources={selectedSources}
+              onOpenModal={onOpenModal}
+              onCloseModal={onCloseModal}
+            />
+          </div>
 
-        {/* ====== UNIFIED GENERATED CONTENT LIST ====== */}
-        {(studioData.reports.length > 0 || studioData.podcasts.length > 0) && (() => {
-          // Combine reports and podcasts into a unified list
-          const allItems = [
-            ...studioData.reports.map((report: ReportItem) => ({
-              ...report,
-              type: 'report',
-              created_at: report.created_at || new Date().toISOString()
-            })),
-            ...studioData.podcasts.map((podcast: PodcastItem) => ({
-              ...podcast,
-              type: 'podcast',
-              created_at: podcast.created_at || new Date().toISOString()
-            }))
-          ];
+          {/* ====== SCROLLABLE SECTION: Generated Files List ====== */}
+          <div className="flex-1 overflow-auto scrollbar-overlay">
+            {(studioData.reports.length > 0 || studioData.podcasts.length > 0) ? (() => {
+              // Combine reports and podcasts into a unified list
+              const allItems = [
+                ...studioData.reports.map((report: ReportItem) => ({
+                  ...report,
+                  type: 'report',
+                  created_at: report.created_at || new Date().toISOString()
+                })),
+                ...studioData.podcasts.map((podcast: PodcastItem) => ({
+                  ...podcast,
+                  type: 'podcast',
+                  created_at: podcast.created_at || new Date().toISOString()
+                }))
+              ];
 
-          // Sort by creation date, newest first
-          allItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+              // Sort by creation date, newest first
+              allItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-          return (
-            <div className="px-6 py-4">
-              <div className="space-y-3">
-                {allItems.map((item: any, index: number) => {
-                  const itemId = item.id || item.job_id || index.toString();
-                  
-                  if (item.type === 'report') {
-                    return (
-                      <div
-                        key={`report-${itemId}`}
-                        className="p-4 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 cursor-pointer group border border-gray-200 hover:border-gray-300"
-                        onClick={() => handleSelectReport(item)}
-                      >
-                        <div className="flex items-start space-x-3">
-                          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 mt-1">
-                            <FileText className="h-4 w-4 text-white" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="text-sm font-semibold text-gray-900 group-hover:text-blue-700 mb-2 truncate">
-                              {item.title || 'Research Report'}
-                            </h4>
-                            <p className="text-xs text-gray-600 leading-relaxed mb-2">
-                              {getReportPreview(item)}
-                            </p>
-                            <div className="flex items-center text-xs text-gray-500">
-                              <span>{new Date(item.created_at).toLocaleDateString()}</span>
-                              <span className="mx-2">•</span>
-                              <span>Report</span>
-                              <span className="mx-2">•</span>
-                              <span>Click to edit</span>
-                            </div>
-                          </div>
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteReport(item);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  } else if (item.type === 'podcast') {
-                    const isExpanded = expandedPodcasts.has(itemId);
-                    
-                    return (
-                      <div
-                        key={`podcast-${itemId}`}
-                        className="bg-white rounded-xl border border-gray-200 hover:border-gray-300 transition-all duration-200 overflow-hidden"
-                      >
-                        {/* Podcast Header */}
-                        <div
-                          className="p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200 group"
-                          onClick={() => handlePodcastClick(item)}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
-                              {isExpanded ? (
-                                <ChevronDown className="h-4 w-4 text-white" />
-                              ) : (
-                                <Play className="h-4 w-4 text-white" />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h4 className="text-sm font-semibold text-gray-900 hover:text-purple-700 truncate">
-                                {item.title || 'Panel Discussion'}
-                              </h4>
-                              <div className="flex items-center text-xs text-gray-500 mt-1">
-                                <span>{new Date(item.created_at).toLocaleDateString()}</span>
-                                <span className="mx-2">•</span>
-                                <span>Podcast</span>
-                                <span className="mx-2">•</span>
-                                <span>Click to {isExpanded ? 'collapse' : 'play'}</span>
+              return (
+                <div className="p-6">
+                  <div className="space-y-3">
+                    {allItems.map((item: any, index: number) => {
+                      const itemId = item.id || item.job_id || index.toString();
+                      
+                      if (item.type === 'report') {
+                        return (
+                          <div
+                            key={`report-${itemId}`}
+                            className="p-4 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 cursor-pointer group border border-gray-200 hover:border-gray-300"
+                            onClick={() => handleSelectReport(item)}
+                          >
+                            <div className="flex items-start space-x-3">
+                              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 mt-1">
+                                <FileText className="h-4 w-4 text-white" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="text-sm font-semibold text-gray-900 group-hover:text-blue-700 mb-2 truncate">
+                                  {item.title || 'Research Report'}
+                                </h4>
+                                <p className="text-xs text-gray-600 leading-relaxed mb-2">
+                                  {getReportPreview(item)}
+                                </p>
+                                <div className="flex items-center text-xs text-gray-500">
+                                  <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                                  <span className="mx-2">•</span>
+                                  <span>Report</span>
+                                  <span className="mx-2">•</span>
+                                  <span>Click to view</span>
+                                </div>
+                              </div>
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteReport(item);
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                               </div>
                             </div>
-                            <div className="flex-shrink-0 flex items-center space-x-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeletePodcast(item);
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                              <div className={`w-2 h-2 rounded-full transition-colors ${isExpanded ? 'bg-purple-400' : 'bg-gray-300'}`}></div>
+                          </div>
+                        );
+                      } else if (item.type === 'podcast') {
+                        const isExpanded = expandedPodcasts.has(itemId);
+                        
+                        return (
+                          <div
+                            key={`podcast-${itemId}`}
+                            className="bg-white rounded-xl border border-gray-200 hover:border-gray-300 transition-all duration-200 overflow-hidden"
+                          >
+                            {/* Podcast Header */}
+                            <div
+                              className="p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200 group"
+                              onClick={() => handlePodcastClick(item)}
+                            >
+                              <div className="flex items-center space-x-3">
+                                <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
+                                  {isExpanded ? (
+                                    <ChevronDown className="h-4 w-4 text-white" />
+                                  ) : (
+                                    <Play className="h-4 w-4 text-white" />
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="text-sm font-semibold text-gray-900 hover:text-purple-700 truncate">
+                                    {item.title || 'Panel Discussion'}
+                                  </h4>
+                                  <div className="flex items-center text-xs text-gray-500 mt-1">
+                                    <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                                    <span className="mx-2">•</span>
+                                    <span>Podcast</span>
+                                    <span className="mx-2">•</span>
+                                    <span>Click to {isExpanded ? 'collapse' : 'play'}</span>
+                                  </div>
+                                </div>
+                                <div className="flex-shrink-0 flex items-center space-x-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeletePodcast(item);
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                  <div className={`w-2 h-2 rounded-full transition-colors ${isExpanded ? 'bg-purple-400' : 'bg-gray-300'}`}></div>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </div>
 
-                        {/* Expanded Audio Player */}
-                        {isExpanded && (
-                          <div className="border-t border-gray-100 p-4 bg-gray-50">
-                            <PodcastAudioPlayer
-                              podcast={item}
-                              onDownload={() => handleDownloadPodcast(item)}
-                              onDelete={() => handleDeletePodcast(item)}
-                              notebookId={notebookId}
-                            />
+                            {/* Expanded Audio Player */}
+                            {isExpanded && (
+                              <div className="border-t border-gray-100 p-4 bg-gray-50">
+                                <PodcastAudioPlayer
+                                  podcast={item}
+                                  onDownload={() => handleDownloadPodcast(item)}
+                                  onDelete={() => handleDeletePodcast(item)}
+                                  notebookId={notebookId}
+                                />
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
+                        );
+                      }
+                      return null;
+                    })}
+                  </div>
+                </div>
+              );
+            })() : (
+              <div className="flex-1 flex items-center justify-center p-8">
+                <div className="text-center">
+                  <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                    <FileText className="h-8 w-8 text-gray-400" />
+                  </div>
+                  <h3 className="text-sm font-medium text-gray-900 mb-1">No generated content yet</h3>
+                  <p className="text-xs text-gray-500">Create a research report or podcast to see it here</p>
+                </div>
               </div>
-            </div>
-          );
-        })()}
-          </>
-        )}
-      </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-auto p-0 scrollbar-overlay">
+          {/* Report preview content when viewing a specific report */}
+        </div>
+      )}
 
       {/* ====== SINGLE RESPONSIBILITY: File viewer overlay ====== */}
       {selectedFile && (
