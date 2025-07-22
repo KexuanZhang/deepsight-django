@@ -40,7 +40,7 @@ interface PodcastGenerationFormProps {
   // Generation state props
   generationState: {
     state: GenerationState;
-    progress?: number;
+    progress?: string;
     error?: string;
   };
   onGenerate: (configOverrides?: Partial<PodcastConfig>) => void;
