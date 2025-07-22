@@ -14,7 +14,7 @@ import apiService from '@/common/utils/api';
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused custom hooks for specific concerns
 import { config } from '@/config';
-import { PANEL_HEADERS, COLORS } from "@/features/notebook/config/uiConfig";
+import { PANEL_HEADERS } from "@/features/notebook/config/uiConfig";
 import { useStudioData, useGenerationState, useJobStatus } from '@/features/notebook/hooks';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
@@ -32,8 +32,7 @@ import {
   SourceItem,
   ReportItem,
   PodcastItem,
-  GenerationStateHook,
-  CollapsedSections
+  GenerationStateHook
 } from './types';
 
 // ====== DEPENDENCY INVERSION PRINCIPLE (DIP) ======
@@ -59,12 +58,6 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   const [selectedFileContent, setSelectedFileContent] = useState<string>('');
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
   const [isReportPreview, setIsReportPreview] = useState<boolean>(false);
-  const [collapsedSections, setCollapsedSections] = useState<CollapsedSections>({
-    report: false,
-    podcast: false,
-    reports: false,
-    podcasts: false
-  });
   const [expandedPodcasts, setExpandedPodcasts] = useState<Set<string>>(new Set());
 
 
@@ -388,13 +381,6 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     }
   }, [podcastGeneration]);
 
-  // ====== SINGLE RESPONSIBILITY: UI toggle handlers ======
-  const toggleSection = useCallback((section: keyof CollapsedSections) => {
-    setCollapsedSections(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }));
-  }, []);
 
   const toggleExpanded = useCallback(() => {
     if (onToggleExpand) {
