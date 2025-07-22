@@ -11,6 +11,7 @@ from rest_framework import status
 from ..models import Source, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.upload_processor import UploadProcessor
 from ..processors import FileProcessor
+from ..utils import check_duplicate_before_processing
 from rag.rag import add_user_files
 
 logger = logging.getLogger(__name__)
@@ -29,12 +30,19 @@ class FileService:
     def handle_single_file_upload(self, file_obj, upload_id, notebook, user):
         """Process single file upload"""
         try:
-            # 1) Process & save to KnowledgeBaseItem using original processor
-            # (This handles the full upload pipeline including storage)
-            result = async_to_sync(self.upload_processor.process_upload)(
-                file_obj, upload_id, user_pk=user.pk, notebook_id=notebook.id
-            )
-            kb_item = get_object_or_404(KnowledgeBaseItem, id=result["file_id"], user=user)
+            # EARLY DUPLICATE DETECTION - Check before any processing
+            duplicate_id = check_duplicate_before_processing(file_obj, user)
+            if duplicate_id:
+                logger.info(f"Duplicate content detected for {file_obj.name}, using existing item: {duplicate_id}")
+                kb_item = get_object_or_404(KnowledgeBaseItem, id=duplicate_id, user=user)
+            else:
+                # 1) Process & save to KnowledgeBaseItem using original processor
+                # (This handles the full upload pipeline including storage)
+                logger.info(f"Processing new file: {file_obj.name}")
+                result = async_to_sync(self.upload_processor.process_upload)(
+                    file_obj, upload_id, user_pk=user.pk, notebook_id=notebook.id
+                )
+                kb_item = get_object_or_404(KnowledgeBaseItem, id=result["file_id"], user=user)
 
             # 2) Create or update the link in KnowledgeItem
             source = Source.objects.create(
@@ -66,12 +74,22 @@ class FileService:
                 "file_id": kb_item.id,
                 "knowledge_item_id": ki.id,
                 "status_code": status.HTTP_201_CREATED,
-                "refresh_source_list": True  # Signal frontend to refresh source list
+                "refresh_source_list": True,  # Signal frontend to refresh source list
+                "duplicate_detected": duplicate_id is not None,
+                "processing_skipped": duplicate_id is not None
             }
 
         except Exception as e:
             logger.exception(f"Single file upload failed for {file_obj.name}: {e}")
             raise
+    
+    def upload_file(self, file, upload_file_id, user, notebook):
+        """
+        Upload file method called by Celery tasks.
+        
+        This is a wrapper around handle_single_file_upload for consistency.
+        """
+        return self.handle_single_file_upload(file, upload_file_id, notebook, user)
 
     @transaction.atomic
     def handle_batch_file_upload(self, files, notebook, user):

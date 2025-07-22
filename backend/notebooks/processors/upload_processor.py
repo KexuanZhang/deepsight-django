@@ -27,9 +27,8 @@ from django.core.exceptions import ValidationError
 
 try:
     from ..utils.storage import FileStorageService
-    from ..utils.helpers import ContentIndexingService, config as settings
+    from ..utils.helpers import ContentIndexingService, config as settings, clean_title
     from ..utils.validators import FileValidator
-    from ..utils.image_processing.utils import clean_title
     # Import caption generation dependencies
     from reports.image_utils import extract_figure_data_from_markdown
     from notebooks.utils.image_processing.caption_generator import generate_caption_for_image
@@ -1437,15 +1436,39 @@ class UploadProcessor:
                 
                 kb_item.save()
                 
-                # Auto-populate image captions if images were created
+                # Schedule async caption generation if images were created
                 if image_files:
                     try:
-                        self._populate_image_captions_for_kb_item(kb_item, markdown_content)
-                        self.log_operation("marker_caption_generation", 
-                            f"Auto-populated captions for {len(image_files)} images in file_id {file_id}")
+                        # Mark that caption generation is needed and schedule the task
+                        kb_item.file_metadata['caption_generation_status'] = 'pending'
+                        kb_item.file_metadata['images_requiring_captions'] = len(image_files)
+                        kb_item.save()
+                        
+                        self.log_operation("marker_caption_preparing", 
+                            f"Preparing to schedule caption generation for {len(image_files)} images in KB item {kb_item.id}")
+                        
+                        # Schedule caption generation as an async task
+                        try:
+                            from ..tasks import generate_image_captions_task
+                            # Convert UUID to string for Celery serialization
+                            kb_item_id_str = str(kb_item.id)
+                            task_result = generate_image_captions_task.delay(kb_item_id_str)
+                            
+                            self.log_operation("marker_caption_scheduling", 
+                                f"Scheduled caption generation task {task_result.id} for {len(image_files)} images in KB item {kb_item_id_str}")
+                        except ImportError as import_error:
+                            raise Exception(f"Failed to import caption generation task: {str(import_error)}")
+                        except Exception as task_error:
+                            raise Exception(f"Failed to schedule Celery task: {str(task_error)}")
+                        
                     except Exception as caption_error:
-                        self.log_operation("marker_caption_generation_error", 
-                            f"Failed to auto-populate captions for file_id {file_id}: {str(caption_error)}", "error")
+                        # If task scheduling fails, mark caption generation as failed
+                        kb_item.file_metadata['caption_generation_status'] = 'failed'
+                        kb_item.file_metadata['caption_generation_error'] = str(caption_error)
+                        kb_item.save()
+                        
+                        self.log_operation("marker_caption_scheduling_error", 
+                            f"Failed to schedule caption generation for KB item {kb_item.id}: {str(caption_error)}", "error")
                 
                 # Log summary
                 total_files = len(content_files) + len(image_files)

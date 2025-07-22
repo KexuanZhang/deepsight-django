@@ -2,7 +2,7 @@
 // This component demonstrates all 5 SOLID principles in action
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown, Trash2, Edit, Download, Save, X } from 'lucide-react';
+import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown, Trash2, Edit, Download, Save, X, Eye } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
 import { useToast } from '@/common/components/ui/use-toast';
 
@@ -14,7 +14,7 @@ import apiService from '@/common/utils/api';
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused custom hooks for specific concerns
 import { config } from '@/config';
-import { PANEL_HEADERS, COLORS } from "@/features/notebook/config/uiConfig";
+import { PANEL_HEADERS } from "@/features/notebook/config/uiConfig";
 import { useStudioData, useGenerationState, useJobStatus } from '@/features/notebook/hooks';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
@@ -32,8 +32,7 @@ import {
   SourceItem,
   ReportItem,
   PodcastItem,
-  GenerationStateHook,
-  CollapsedSections
+  GenerationStateHook
 } from './types';
 
 // ====== DEPENDENCY INVERSION PRINCIPLE (DIP) ======
@@ -59,12 +58,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   const [selectedFileContent, setSelectedFileContent] = useState<string>('');
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
   const [isReportPreview, setIsReportPreview] = useState<boolean>(false);
-  const [collapsedSections, setCollapsedSections] = useState<CollapsedSections>({
-    report: false,
-    podcast: false,
-    reports: false,
-    podcasts: false
-  });
+  const [isPreviewingEdits, setIsPreviewingEdits] = useState<boolean>(false);
   const [expandedPodcasts, setExpandedPodcasts] = useState<Set<string>>(new Set());
 
 
@@ -388,13 +382,6 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     }
   }, [podcastGeneration]);
 
-  // ====== SINGLE RESPONSIBILITY: UI toggle handlers ======
-  const toggleSection = useCallback((section: keyof CollapsedSections) => {
-    setCollapsedSections(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }));
-  }, []);
 
   const toggleExpanded = useCallback(() => {
     if (onToggleExpand) {
@@ -661,6 +648,12 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     setSelectedFileContent('');
     setViewMode('preview');
     setIsReportPreview(false);
+    setIsPreviewingEdits(false);
+  }, []);
+
+  const handlePreviewEdits = useCallback(() => {
+    setIsPreviewingEdits(true);
+    setViewMode('preview');
   }, []);
 
   // ====== OPEN/CLOSED PRINCIPLE (OCP) ======
@@ -700,25 +693,38 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                   </Button>
                 )}
                 {viewMode === 'edit' && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-blue-600 hover:text-blue-800"
+                      onClick={handlePreviewEdits}
+                    >
+                      <Eye className="h-3 w-3 mr-1" />
+                      Preview
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                      onClick={() => handleSaveFile(selectedFileContent)}
+                    >
+                      <Save className="h-3 w-3 mr-1" />
+                      Save
+                    </Button>
+                  </>
+                )}
+                {viewMode === 'preview' && (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
-                    onClick={() => handleSaveFile(selectedFileContent)}
+                    onClick={() => handleDownloadReport(selectedFile)}
                   >
-                    <Save className="h-3 w-3 mr-1" />
-                    Save
+                    <Download className="h-3 w-3 mr-1" />
+                    Download
                   </Button>
                 )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
-                  onClick={() => handleDownloadReport(selectedFile)}
-                >
-                  <Download className="h-3 w-3 mr-1" />
-                  Download
-                </Button>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -994,7 +1000,10 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
           isExpanded={isStudioExpanded || false}
           viewMode={viewMode}
           onClose={handleCloseFile}
-          onEdit={() => setViewMode('edit')}
+          onEdit={() => {
+            setViewMode('edit');
+            setIsPreviewingEdits(false);
+          }}
           onSave={handleSaveFile}
           onDownload={selectedFile.audio_file ? 
             () => handleDownloadPodcast(selectedFile) : 
@@ -1006,6 +1015,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
           notebookId={notebookId}
           useMinIOUrls={config.USE_MINIO_URLS}
           hideHeader={isReportPreview}
+          isPreviewingEdits={isPreviewingEdits}
         />
       )}
 

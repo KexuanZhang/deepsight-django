@@ -58,6 +58,7 @@ interface FileViewerProps {
   notebookId: string;
   useMinIOUrls?: boolean;
   hideHeader?: boolean;
+  isPreviewingEdits?: boolean;
 }
 
 // ====== INTERFACE SEGREGATION PRINCIPLE (ISP) ======
@@ -76,11 +77,17 @@ const FileViewer: React.FC<FileViewerProps> = ({
   onContentChange,
   notebookId,
   useMinIOUrls = false,
-  hideHeader = false
+  hideHeader = false,
+  isPreviewingEdits = false
 }) => {
   const [editContent, setEditContent] = useState(content || '');
   const [minioContent, setMinioContent] = useState(null);
   const [isLoadingMinio, setIsLoadingMinio] = useState(false);
+
+  // Update editContent when content prop changes
+  useEffect(() => {
+    setEditContent(content || '');
+  }, [content]);
 
   // Process the content for display with proper image URLs
   const processedContent = useMemo(() => {
@@ -88,24 +95,35 @@ const FileViewer: React.FC<FileViewerProps> = ({
       useMinIOUrls,
       hasMinioContent: !!minioContent,
       hasRegularContent: !!content,
-      notebookId
+      notebookId,
+      isPreviewingEdits,
+      viewMode
     });
     
-    // If using MinIO URLs and we have MinIO content, use that
-    if (useMinIOUrls && minioContent) {
+    // Determine which content to use
+    let contentToProcess = content;
+    
+    // If we're in preview mode and previewing edits, use the edit content
+    if (viewMode === 'preview' && isPreviewingEdits) {
+      console.log('FileViewer: Using edited content for preview');
+      contentToProcess = editContent;
+    }
+    
+    // If using MinIO URLs and we have MinIO content and NOT previewing edits
+    if (useMinIOUrls && minioContent && !isPreviewingEdits) {
       console.log('FileViewer: Using MinIO content with direct URLs');
       return processReportMarkdownContent(minioContent, notebookId, true);
     }
     
     // Otherwise use regular content processing
-    if (!content || !notebookId) {
+    if (!contentToProcess || !notebookId) {
       console.log('FileViewer: No content or notebook ID available');
-      return content;
+      return contentToProcess;
     }
     
     console.log('FileViewer: Using regular content processing');
-    return processReportMarkdownContent(content, notebookId, false);
-  }, [content, notebookId, useMinIOUrls, minioContent]);
+    return processReportMarkdownContent(contentToProcess, notebookId, false);
+  }, [content, notebookId, useMinIOUrls, minioContent, editContent, isPreviewingEdits, viewMode]);
 
   // Load MinIO content when useMinIOUrls is enabled
   useEffect(() => {
@@ -173,7 +191,7 @@ const FileViewer: React.FC<FileViewerProps> = ({
               {viewMode === 'preview' && onEdit && (
                 <Button variant="outline" size="sm" onClick={onEdit}>
                   <Edit className="h-4 w-4 mr-1" />
-                  Edit
+                  {isPreviewingEdits ? 'Back to Edit' : 'Edit'}
                 </Button>
               )}
 

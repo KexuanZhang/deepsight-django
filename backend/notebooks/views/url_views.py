@@ -18,6 +18,7 @@ from ..serializers import (
 )
 from ..utils.view_mixins import StandardAPIView, NotebookPermissionMixin
 from ..processors.url_extractor import URLExtractor
+from rag.rag import add_user_files  # Add this import at the top
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
     def _handle_single_url_parse(self, url, upload_url_id, notebook, user):
         """Handle single URL parsing (original behavior)."""
         from asgiref.sync import async_to_sync
-        
+
         # Process the URL using async function
         async def process_url_async():
             return await url_extractor.process_url(
@@ -115,6 +116,15 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
                 'notes': f"Processed from URL: {url}"
             }
         )
+
+        # Ingest KB item content for retrieval (embedding)
+        if result.get("file_id"):
+            kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
+            if kb_item and kb_item.content:  # Ensure content exists
+                try:
+                    add_user_files(user_id=user.pk, kb_items=[kb_item])
+                except Exception as e:
+                    logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
 
         return Response(
             {
@@ -298,6 +308,15 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
                 'notes': f"Processed from URL with media: {url}"
             }
         )
+
+        # Ingest KB item content for retrieval (embedding)
+        if result.get("file_id"):
+            kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
+            if kb_item and kb_item.content:  # Ensure content exists
+                try:
+                    add_user_files(user_id=user.pk, kb_items=[kb_item])
+                except Exception as e:
+                    logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
 
         return Response(
             {

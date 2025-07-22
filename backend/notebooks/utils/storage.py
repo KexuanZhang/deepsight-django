@@ -15,6 +15,8 @@ from pathlib import Path
 from django.conf import settings
 from django.core.exceptions import ValidationError
 
+from .helpers import calculate_content_hash
+
 try:
     from minio import Minio
     from minio.error import S3Error
@@ -398,17 +400,6 @@ class FileStorageService:
             message += f": {details}"
         getattr(self.logger, level)(message)
     
-    def _calculate_content_hash(self, content: str, metadata: Dict[str, Any] = None) -> str:
-        """Calculate SHA-256 hash of content for deduplication."""
-        # If content is empty, include metadata to create a unique hash
-        if not content.strip():
-            if metadata:
-                hash_input = f"{content}|{metadata.get('original_filename', '')}|{metadata.get('file_size', 0)}|{metadata.get('upload_timestamp', '')}"
-                return hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
-        
-        # For substantial content, use content-based hashing
-        return hashlib.sha256(content.encode("utf-8")).hexdigest()
-    
     def store_processed_file(
         self,
         content: str,
@@ -429,7 +420,7 @@ class FileStorageService:
             user = User.objects.get(id=user_id)
             
             # Calculate content hash for deduplication
-            content_hash = self._calculate_content_hash(content, metadata)
+            content_hash = calculate_content_hash(content)
             
             # Check for existing content
             existing_item = KnowledgeBaseItem.objects.filter(

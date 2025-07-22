@@ -149,7 +149,7 @@ class FileProcessor:
             
             # Import clean_title function
             try:
-                from ..utils.image_processing import clean_title
+                from ..utils.helpers import clean_title
                 clean_pdf_title = clean_title(base_title)
             except ImportError:
                 clean_pdf_title = base_title
