@@ -901,4 +901,11 @@ class URLExtractor:
             
         except Exception as e:
             self.log_operation("store_content_error", f"Error storing URL content: {e}", "error")
-            raise 
+            raise
+
+        crawl_result : CrawlResult = await self.aprocess_html(
+            url=url,
+            html=html,
+            extracted_content=extracted_content,
+            config=config,  # config should contain screenshot if needed
+        )

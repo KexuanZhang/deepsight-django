@@ -25,8 +25,8 @@ class RAGChatFromKBView(NotebookPermissionMixin, APIView):
     POST /api/v1/notebooks/{notebook_id}/chat/
     {
       "question":       "Explain quantum tunneling",
-      "mode":           "local"|"global"|"hybrid",
-      "filter_sources": ["paper1.pdf","notes.md"]
+      "file_ids":       ["e8e6fd53-b9e9-4569-8fa1-bbc01882a97a", ...],  # selected file IDs
+      "collections":    ["cvpr_2017", "cvpr_2018"]  # optional, new
     }
     """
 
@@ -36,11 +36,10 @@ class RAGChatFromKBView(NotebookPermissionMixin, APIView):
 
     def post(self, request, notebook_id):
         question = request.data.get("question")
-        mode = request.data.get("mode", "hybrid")
-        filter_sources = request.data.get("filter_sources", None)
-
+        file_ids = request.data.get("file_ids", None)
+        collections = request.data.get("collections", None)
         # 1) Validate inputs using service
-        validation_error = self.chat_service.validate_chat_request(question, mode)
+        validation_error = self.chat_service.validate_chat_request(question)
         if validation_error:
             return Response(validation_error, status=validation_error['status_code'])
 
@@ -60,14 +59,14 @@ class RAGChatFromKBView(NotebookPermissionMixin, APIView):
         history = self.chat_service.get_chat_history(notebook)
         self.chat_service.record_user_message(notebook, question)
 
-        # 5) Create chat stream using service
+        # 5) Create chat stream using service, passing file_ids for filtering
         stream = self.chat_service.create_chat_stream(
             user_id=user_id,
             question=question,
             history=history,
-            mode=mode,
-            filter_sources=filter_sources,
-            notebook=notebook
+            file_ids=file_ids,  # <-- pass file_ids for filtering
+            notebook=notebook,
+            collections=collections
         )
 
         return StreamingHttpResponse(
@@ -132,4 +131,34 @@ class SuggestedQuestionsView(StandardAPIView, NotebookPermissionMixin):
                 return Response(result, status=result.get('status_code', 500))
                 
         except Exception as e:
-            return Response({"error": str(e)}, status=400) 
+            return Response({"error": str(e)}, status=400)
+
+    def validate_chat_request(self, question):
+        if not question:
+            return {
+                "error": "Question is required.",
+                "status_code": status.HTTP_400_BAD_REQUEST
+            }
+        
+        return None
+
+
+def create_chat_stream(
+    self,
+    user_id,
+    question,
+    history,
+    filter_sources=None,
+    notebook=None,
+    collections=None,  # <-- add this
+):
+    # ...existing code...
+    bot = RAGChatbot(
+        user_id=user_id,
+        extra_collections=collections  # <-- pass collections to RAGChatbot
+    )
+    return bot.stream(
+        question=question,
+        history=history,
+        filter_sources=filter_sources,
+    )

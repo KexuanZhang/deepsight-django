@@ -38,7 +38,7 @@ DEBUG = True
 
 # Host Configuration - Set HOST_IP environment variable for server deployment
 HOST_IP = os.getenv("HOST_IP", "localhost")
-BACKEND_PORT = os.getenv("BACKEND_PORT", "8000")
+BACKEND_PORT = os.getenv("BACKEND_PORT", "8001")
 FRONTEND_PORT = os.getenv("FRONTEND_PORT", "5173")
 
 ALLOWED_HOSTS = [
@@ -171,13 +171,23 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "backend.wsgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
-}
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql_psycopg2',
+#         'NAME': os.getenv('PGDATABASE'),
+#         'USER': os.getenv('PGUSER'),
+#         'PASSWORD': os.getenv('PGPASSWORD'),
+#         'HOST': os.getenv('PGHOST', 'localhost'),
+#         'PORT': os.getenv('PGPORT', '5432'),
+#     }
+# }
 
+DATABASES = {
+     'default': {
+         'ENGINE': 'django.db.backends.sqlite3',
+         'NAME': BASE_DIR / 'db.sqlite3',
+     }
+ }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

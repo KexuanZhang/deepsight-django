@@ -34,6 +34,7 @@ export default function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     dispatch(loginUser({ username, password }));
+    console.log("Logging");
   };
 
   useEffect(() => {
