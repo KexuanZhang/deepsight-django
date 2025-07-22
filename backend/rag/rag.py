@@ -3,6 +3,7 @@ import json
 import queue
 import threading
 import re
+import uuid
 from typing import List, Tuple, Optional, Generator
 
 from PyPDF2 import PdfReader
@@ -202,7 +203,12 @@ def add_user_files(
     ).split_documents(docs)
 
     print(f"[DEBUG] Total chunks to ingest for user {user_id}: {len(chunks)}")
-    store.add_documents(chunks)
+    
+    # Generate unique IDs for each chunk
+    chunk_ids = [str(uuid.uuid4()) for _ in chunks]
+    
+    # Add documents with explicit IDs
+    store.add_documents(chunks, ids=chunk_ids)
 
     # make sure Milvus is up to date
     coll = Collection(coll_name)
