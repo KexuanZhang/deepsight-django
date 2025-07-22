@@ -40,7 +40,7 @@ interface PodcastGenerationFormProps {
   // Generation state props
   generationState: {
     state: GenerationState;
-    progress?: number;
+    progress?: string;
     error?: string;
   };
   onGenerate: (configOverrides?: Partial<PodcastConfig>) => void;
@@ -91,7 +91,7 @@ const PodcastGenerationForm: React.FC<PodcastGenerationFormProps> = ({
               <StatusDisplay
                 state={generationState.state}
                 title="Generating Panel Discussion"
-                progress={generationState.progress?.toString()}
+                progress={generationState.progress}
                 error={generationState.error}
                 showCancel={true}
                 onCancel={onCancel}

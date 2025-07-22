@@ -9,8 +9,7 @@ from rest_framework import status
 
 from ..models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.url_extractor import URLExtractor
-from ..processors import URLProcessor
-from rag.rag import add_user_files  # Add this import at the top
+from rag.rag import add_user_files
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +18,6 @@ class URLService:
     """Handle URL processing business logic"""
     
     def __init__(self):
-        # Use new focused URL processor for domain-specific processing
-        self.url_processor = URLProcessor()
         # Keep original url extractor for full pipeline
         self.url_extractor = URLExtractor()
     
@@ -227,10 +224,6 @@ class URLService:
         except Exception as e:
             logger.exception(f"Document URL parsing failed for {url}: {e}")
             raise
-
-    def process_url_by_domain(self, url, options=None):
-        """Process URL using focused domain-specific processor"""
-        return async_to_sync(self.url_processor.process_url_by_domain)(url, options)
 
     def validate_url_request(self, serializer):
         """Validate URL request data"""

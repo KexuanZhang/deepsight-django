@@ -321,7 +321,6 @@ class RAGChatbot:
 
         # Build list of collections to retrieve from
         self.selected_collections = [coll_name]
-        # If extra_collections specified, add them; else default to 'global'
         if self.extra_collections:
             self.selected_collections.extend(self.extra_collections)
         else:
@@ -344,8 +343,22 @@ class RAGChatbot:
         question: str,
         history: Optional[List[Tuple[str, str]]] = None,
         file_ids: Optional[List[str]] = None,
+        extra_collections: Optional[List[str]] = None,  # <-- allow override per call
     ) -> Generator[str, None, None]:
         history = history or []
+
+        # Build collections to retrieve from: user's + extra
+        coll_name = user_collection(self.user_id)
+        collections_to_use = [coll_name]
+        if extra_collections:
+            collections_to_use.extend(extra_collections)
+        elif self.extra_collections:
+            collections_to_use.extend(self.extra_collections)
+        else:
+            collections_to_use.append(DEFAULT_COLLECTION_NAME)
+
+        # Build retriever for these collections
+        global_retriever = get_rag_chain(collections_to_use).retriever
 
         clauses = [f'user_id=="{self.user_id}"']
         if file_ids:
@@ -360,7 +373,7 @@ class RAGChatbot:
         if not file_ids:
             combined = CombinedRetriever(
                 local_retriever=local_ret,
-                global_retriever=self.global_retriever,
+                global_retriever=global_retriever,
                 k_local=self.k_local,
                 k_global=self.k_global,
                 filter_sources=None,
@@ -368,12 +381,13 @@ class RAGChatbot:
             docs = combined.get_relevant_documents(question)
         else:
             # If file_ids are set, only retrieve global docs for reference
-            global_docs = self.global_retriever.get_relevant_documents(question)[:self.k_global]
+            global_docs = global_retriever.get_relevant_documents(question)[:self.k_global]
             docs = local_docs + global_docs
 
         print(f"Retrieved {len(docs)} documents for question: {question}")
         print("Retrieved kb_item_ids:", [d.metadata.get("kb_item_id") for d in docs])
         print("Selected file_ids:", file_ids)
+        print("Extra collections used:", collections_to_use)
 
         # emit metadata
         meta = {"type": "metadata", "docs": [

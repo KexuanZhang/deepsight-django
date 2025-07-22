@@ -243,7 +243,7 @@ class NotebookPodcastJobAudioView(APIView):
         )
 
     def get(self, request, notebook_id, job_id):
-        """Download the generated audio file"""
+        """Stream the generated audio file"""
         try:
             job = self.get_job(notebook_id, job_id)
 
@@ -278,6 +278,80 @@ class NotebookPodcastJobAudioView(APIView):
             logger.error(f"Error serving audio for job {job_id} in notebook {notebook_id}: {e}")
             return Response(
                 {"error": f"Failed to serve audio: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+class NotebookPodcastJobDownloadView(APIView):
+    """Download audio files for podcast-jobs within a notebook"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_job(self, notebook_id, job_id):
+        """Get the job and verify user and notebook access"""
+        notebook = get_object_or_404(
+            Notebook.objects.filter(user=self.request.user),
+            pk=notebook_id
+        )
+        return get_object_or_404(
+            PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
+            id=job_id
+        )
+
+    def get(self, request, notebook_id, job_id):
+        """Download the generated audio file"""
+        try:
+            job = self.get_job(notebook_id, job_id)
+
+            # Debug logging
+            logger.info(f"Download request for job {job_id}: status={job.status}, audio_object_key={job.audio_object_key}")
+            
+            if not job.audio_object_key:
+                logger.warning(f"No audio file for job {job_id} - status: {job.status}")
+                return Response(
+                    {"error": "Audio file not available"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            # Generate download URL with proper headers
+            try:
+                from notebooks.utils.storage import get_minio_backend
+                minio_backend = get_minio_backend()
+                
+                # Generate filename
+                safe_title = "".join(c for c in (job.title or "podcast") if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                filename = f"{safe_title}.mp3" if safe_title else f"podcast-{job.id}.mp3"
+                
+                # Get pre-signed URL with download headers
+                download_url = minio_backend.get_presigned_url(
+                    object_key=job.audio_object_key,
+                    response_headers={
+                        'Content-Disposition': f'attachment; filename="{filename}"',
+                        'Content-Type': 'audio/mpeg'
+                    }
+                )
+                
+                if not download_url:
+                    logger.error(f"Could not generate download URL for job {job_id}")
+                    return Response(
+                        {"error": "Audio file not accessible"},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+
+                # Redirect to the pre-signed download URL
+                from django.http import HttpResponseRedirect
+                return HttpResponseRedirect(download_url)
+
+            except Exception as e:
+                logger.error(f"Error generating download URL for job {job_id}: {e}")
+                return Response(
+                    {"error": f"Failed to generate download URL: {str(e)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+        except Exception as e:
+            logger.error(f"Error downloading audio for job {job_id} in notebook {notebook_id}: {e}")
+            return Response(
+                {"error": f"Failed to download audio: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

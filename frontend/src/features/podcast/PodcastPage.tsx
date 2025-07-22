@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import type { AppDispatch } from '@/app/store';
 import { 
   fetchPodcasts, 
+  fetchPodcast,
   selectFilteredPodcasts, 
   selectPodcastLoading, 
   selectPodcastError,
@@ -41,6 +42,14 @@ const PodcastPage: React.FC = () => {
     dispatch(fetchPodcasts(filters));
   }, [dispatch, filters]);
 
+  // Refresh podcasts when navigating back from detail view
+  useEffect(() => {
+    if (!showDetail && selectedPodcast) {
+      // When returning from detail view, refresh the list to get latest data
+      dispatch(fetchPodcasts(filters));
+    }
+  }, [showDetail, dispatch, filters]);
+
   useEffect(() => {
     if (error) {
       // Auto-clear error after 5 seconds
@@ -51,8 +60,20 @@ const PodcastPage: React.FC = () => {
     }
   }, [error, dispatch]);
 
-  const handleSelectPodcast = (podcast: Podcast) => {
-    setSelectedPodcast(podcast);
+  const handleSelectPodcast = async (podcast: Podcast) => {
+    // If the podcast is completed, fetch the latest data to ensure we have the audio URL
+    if (podcast.status === 'completed') {
+      try {
+        const updatedPodcast = await dispatch(fetchPodcast(podcast.id)).unwrap();
+        setSelectedPodcast(updatedPodcast);
+      } catch (error) {
+        console.error('Failed to fetch podcast details:', error);
+        // Still show the detail page with the data we have
+        setSelectedPodcast(podcast);
+      }
+    } else {
+      setSelectedPodcast(podcast);
+    }
     setShowDetail(true);
   };
 
@@ -77,9 +98,20 @@ const PodcastPage: React.FC = () => {
     dispatch(setFilters(newFilters));
   };
 
-  const handleDownloadPodcast = (podcast: Podcast) => {
-    // This would be implemented with the download action
-    console.log('Downloading podcast:', podcast.id);
+  const handleDownloadPodcast = async (podcast: Podcast) => {
+    if (!podcast.notebook_id) {
+      console.error('No notebook ID found for podcast');
+      return;
+    }
+    
+    try {
+      // Directly navigate to the download endpoint, let browser handle the download
+      const downloadUrl = `/api/v1/notebooks/${podcast.notebook_id}/podcast-jobs/${podcast.id}/download/`;
+      window.open(downloadUrl, '_blank');
+    } catch (error) {
+      console.error('Failed to download podcast:', error);
+      // You could show a toast notification here
+    }
   };
 
   const handleDeletePodcast = (podcast: Podcast) => {
@@ -101,6 +133,7 @@ const PodcastPage: React.FC = () => {
     return (
       <PodcastDetail
         podcast={selectedPodcast}
+        audio={selectedPodcast.audio_url ? selectedPodcast : undefined}
         isLoading={isLoading}
         onDownload={handleDownloadPodcast}
         onDelete={handleDeletePodcast}

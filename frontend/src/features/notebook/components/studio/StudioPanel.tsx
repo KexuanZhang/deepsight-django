@@ -2,7 +2,7 @@
 // This component demonstrates all 5 SOLID principles in action
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown, Trash2, Edit, Download, Save, X } from 'lucide-react';
+import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown, Trash2, Edit, Download, Save, X, Eye } from 'lucide-react';
 import { Button } from '@/common/components/ui/button';
 import { useToast } from '@/common/components/ui/use-toast';
 
@@ -14,7 +14,7 @@ import apiService from '@/common/utils/api';
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused custom hooks for specific concerns
 import { config } from '@/config';
-import { PANEL_HEADERS, COLORS } from "@/features/notebook/config/uiConfig";
+import { PANEL_HEADERS } from "@/features/notebook/config/uiConfig";
 import { useStudioData, useGenerationState, useJobStatus } from '@/features/notebook/hooks';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
@@ -32,8 +32,7 @@ import {
   SourceItem,
   ReportItem,
   PodcastItem,
-  GenerationStateHook,
-  CollapsedSections
+  GenerationStateHook
 } from './types';
 
 // ====== DEPENDENCY INVERSION PRINCIPLE (DIP) ======
@@ -59,12 +58,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   const [selectedFileContent, setSelectedFileContent] = useState<string>('');
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
   const [isReportPreview, setIsReportPreview] = useState<boolean>(false);
-  const [collapsedSections, setCollapsedSections] = useState<CollapsedSections>({
-    report: false,
-    podcast: false,
-    reports: false,
-    podcasts: false
-  });
+  const [isPreviewingEdits, setIsPreviewingEdits] = useState<boolean>(false);
   const [expandedPodcasts, setExpandedPodcasts] = useState<Set<string>>(new Set());
 
 
@@ -118,9 +112,31 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   }, [reportGeneration, studioData, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation completion ======
-  const handlePodcastComplete = useCallback((result: PodcastItem) => {
+  const handlePodcastComplete = useCallback(async (result: PodcastItem) => {
     podcastGeneration.completeGeneration();
-    studioData.addPodcast(result);
+    
+    // Fetch complete podcast data from server to ensure we have audio URL
+    try {
+      const completeResult = { ...result };
+      
+      // If the result doesn't have an audio_url, try to fetch complete data
+      if (!result.audio_url && result.job_id) {
+        try {
+          const freshPodcast = await studioService.getPodcast(result.job_id);
+          Object.assign(completeResult, freshPodcast);
+        } catch (error) {
+          console.error('Failed to fetch complete podcast data:', error);
+          // Still add the result we have, the PodcastAudioPlayer will handle retries
+        }
+      }
+      
+      studioData.addPodcast(completeResult);
+    } catch (error) {
+      console.error('Error in handlePodcastComplete:', error);
+      // Fallback to original behavior
+      studioData.addPodcast(result);
+    }
+    
     if (podcastGeneration.currentJobId) {
       jobService.clearJob(podcastGeneration.currentJobId);
     }
@@ -128,7 +144,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       title: "Podcast Generated", 
       description: "Your panel discussion has been generated successfully."
     });
-  }, [podcastGeneration, studioData, toast]);
+  }, [podcastGeneration, studioData, studioService, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Job status monitoring ======
   const handleReportError = useCallback((error: string) => {
@@ -275,6 +291,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
 
       const response = await studioService.generatePodcast(config);
       podcastGeneration.startGeneration(response.job_id);
+      podcastGeneration.updateProgress('Starting podcast generation (10%)');
       jobService.saveJob(response.job_id, { 
         type: 'podcast', 
         config, 
@@ -365,13 +382,6 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     }
   }, [podcastGeneration]);
 
-  // ====== SINGLE RESPONSIBILITY: UI toggle handlers ======
-  const toggleSection = useCallback((section: keyof CollapsedSections) => {
-    setCollapsedSections(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }));
-  }, []);
 
   const toggleExpanded = useCallback(() => {
     if (onToggleExpand) {
@@ -487,23 +497,26 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         throw new Error('Podcast ID not found');
       }
       
-      const filename = `${podcast.title || 'podcast'}.mp3`;
-      // Note: This will need to be implemented in the service layer
-      const blob = await (studioService as any).downloadPodcastAudio?.(podcastId, notebookId);
+      // Use the API service to download the podcast audio as a blob
+      const blob = await apiService.downloadPodcastAudio(podcastId, notebookId);
       
-      // Create download link
+      // Create download link and trigger download
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = filename;
+      link.download = `${podcast.title || 'podcast'}.mp3`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      
+      // Clean up the blob URL
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 1000);
       
       toast({
         title: "Download Started",
-        description: "Your podcast is being downloaded"
+        description: "Your podcast download should begin shortly"
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -513,7 +526,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         variant: "destructive"
       });
     }
-  }, [studioService, notebookId, toast]);
+  }, [notebookId, toast]);
 
   const handleDeleteReport = useCallback(async (report: ReportItem) => {
     if (!confirm('Are you sure you want to delete this report?')) {
@@ -635,6 +648,12 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     setSelectedFileContent('');
     setViewMode('preview');
     setIsReportPreview(false);
+    setIsPreviewingEdits(false);
+  }, []);
+
+  const handlePreviewEdits = useCallback(() => {
+    setIsPreviewingEdits(true);
+    setViewMode('preview');
   }, []);
 
   // ====== OPEN/CLOSED PRINCIPLE (OCP) ======
@@ -674,15 +693,26 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                   </Button>
                 )}
                 {viewMode === 'edit' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
-                    onClick={() => handleSaveFile(selectedFileContent)}
-                  >
-                    <Save className="h-3 w-3 mr-1" />
-                    Save
-                  </Button>
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-blue-600 hover:text-blue-800"
+                      onClick={handlePreviewEdits}
+                    >
+                      <Eye className="h-3 w-3 mr-1" />
+                      Preview
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
+                      onClick={() => handleSaveFile(selectedFileContent)}
+                    >
+                      <Save className="h-3 w-3 mr-1" />
+                      Save
+                    </Button>
+                  </>
                 )}
                 <Button
                   variant="ghost"
@@ -763,179 +793,202 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       </div>
 
       {/* ====== SINGLE RESPONSIBILITY: Main content area ====== */}
-      <div className={`flex-1 overflow-auto ${isReportPreview ? 'p-0' : 'p-6 space-y-6'} scrollbar-overlay`}>
-        {!isReportPreview && (
-          <>
+      {!isReportPreview ? (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* ====== FIXED SECTIONS: Generation Forms ====== */}
+          <div className="flex-shrink-0 p-4 space-y-4 bg-gray-50/50 border-b border-gray-200/60">
             {/* ====== LISKOV SUBSTITUTION PRINCIPLE (LSP) ====== */}
             {/* Both forms follow the same interface contract */}
             
             <ReportGenerationForm
-          config={reportGeneration.config}
-          onConfigChange={reportGeneration.updateConfig}
-          availableModels={studioData.availableModels || {}}
-          generationState={{
-            state: reportGeneration.state,
-            progress: reportGeneration.progress,
-            error: reportGeneration.error || undefined,
-            isGenerating: reportGeneration.isGenerating
-          }}
-          onGenerate={handleGenerateReport}
-          onCancel={handleCancelReport}
-          selectedFiles={selectedFiles}
-          onOpenModal={onOpenModal}
-          onCloseModal={onCloseModal}
-        />
+              config={reportGeneration.config}
+              onConfigChange={reportGeneration.updateConfig}
+              availableModels={studioData.availableModels || {}}
+              generationState={{
+                state: reportGeneration.state,
+                progress: reportGeneration.progress,
+                error: reportGeneration.error || undefined,
+                isGenerating: reportGeneration.isGenerating
+              }}
+              onGenerate={handleGenerateReport}
+              onCancel={handleCancelReport}
+              selectedFiles={selectedFiles}
+              onOpenModal={onOpenModal}
+              onCloseModal={onCloseModal}
+            />
 
-        <PodcastGenerationForm
-          config={podcastGeneration.config}
-          onConfigChange={podcastGeneration.updateConfig}
-          generationState={{
-            state: podcastGeneration.state,
-            progress: podcastGeneration.progress ? parseInt(podcastGeneration.progress) || 0 : undefined,
-            error: podcastGeneration.error || undefined
-          }}
-          onGenerate={handleGeneratePodcast}
-          onCancel={handleCancelPodcast}
-          selectedFiles={selectedFiles}
-          selectedSources={selectedSources}
-          onOpenModal={onOpenModal}
-          onCloseModal={onCloseModal}
-        />
-
-        {/* ====== SEPARATOR BETWEEN PODCAST FORM AND REPORT LISTINGS ====== */}
-        {studioData.reports.length > 0 && (
-          <div className="px-6 py-2">
-            <div className="border-t border-gray-200/60"></div>
+            <PodcastGenerationForm
+              config={podcastGeneration.config}
+              onConfigChange={podcastGeneration.updateConfig}
+              generationState={{
+                state: podcastGeneration.state,
+                progress: podcastGeneration.progress,
+                error: podcastGeneration.error || undefined
+              }}
+              onGenerate={handleGeneratePodcast}
+              onCancel={handleCancelPodcast}
+              selectedFiles={selectedFiles}
+              selectedSources={selectedSources}
+              onOpenModal={onOpenModal}
+              onCloseModal={onCloseModal}
+            />
           </div>
-        )}
 
-        {/* ====== INLINE REPORT LISTINGS ====== */}
-        {studioData.reports.length > 0 && (
-          <div className="px-6 py-4">
-            <div className="space-y-3">
-              {studioData.reports.map((report: ReportItem, index: number) => (
-                <div
-                  key={report.id || index}
-                  className="p-4 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 cursor-pointer group border border-gray-200 hover:border-gray-300"
-                  onClick={() => handleSelectReport(report)}
-                >
-                  <div className="flex items-start space-x-3">
-                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 mt-1">
-                      <FileText className="h-4 w-4 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-semibold text-gray-900 group-hover:text-blue-700 mb-2">
-                        {report.title || 'Research Report'}
-                      </h4>
-                      <p className="text-xs text-gray-600 leading-relaxed mb-2">
-                        {getReportPreview(report)}
-                      </p>
-                      <div className="flex items-center text-xs text-gray-500">
-                        <span>{report.created_at ? new Date(report.created_at).toLocaleDateString() : 'Generated'}</span>
-                        <span className="mx-2">•</span>
-                        <span>Click to edit</span>
-                      </div>
-                    </div>
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteReport(report);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+          {/* ====== SCROLLABLE SECTION: Generated Files List ====== */}
+          <div className="flex-1 overflow-auto scrollbar-overlay">
+            {(studioData.reports.length > 0 || studioData.podcasts.length > 0) ? (() => {
+              // Combine reports and podcasts into a unified list
+              const allItems = [
+                ...studioData.reports.map((report: ReportItem) => ({
+                  ...report,
+                  type: 'report',
+                  created_at: report.created_at || new Date().toISOString()
+                })),
+                ...studioData.podcasts.map((podcast: PodcastItem) => ({
+                  ...podcast,
+                  type: 'podcast',
+                  created_at: podcast.created_at || new Date().toISOString()
+                }))
+              ];
+
+              // Sort by creation date, newest first
+              allItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+              return (
+                <div className="p-6">
+                  <div className="space-y-3">
+                    {allItems.map((item: any, index: number) => {
+                      const itemId = item.id || item.job_id || index.toString();
+                      
+                      if (item.type === 'report') {
+                        return (
+                          <div
+                            key={`report-${itemId}`}
+                            className="p-4 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 cursor-pointer group border border-gray-200 hover:border-gray-300"
+                            onClick={() => handleSelectReport(item)}
+                          >
+                            <div className="flex items-start space-x-3">
+                              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 mt-1">
+                                <FileText className="h-4 w-4 text-white" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="text-sm font-semibold text-gray-900 group-hover:text-blue-700 mb-2 truncate">
+                                  {item.title || 'Research Report'}
+                                </h4>
+                                <p className="text-xs text-gray-600 leading-relaxed mb-2">
+                                  {getReportPreview(item)}
+                                </p>
+                                <div className="flex items-center text-xs text-gray-500">
+                                  <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                                  <span className="mx-2">•</span>
+                                  <span>Report</span>
+                                  <span className="mx-2">•</span>
+                                  <span>Click to view</span>
+                                </div>
+                              </div>
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteReport(item);
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      } else if (item.type === 'podcast') {
+                        const isExpanded = expandedPodcasts.has(itemId);
+                        
+                        return (
+                          <div
+                            key={`podcast-${itemId}`}
+                            className="bg-white rounded-xl border border-gray-200 hover:border-gray-300 transition-all duration-200 overflow-hidden"
+                          >
+                            {/* Podcast Header */}
+                            <div
+                              className="p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200 group"
+                              onClick={() => handlePodcastClick(item)}
+                            >
+                              <div className="flex items-center space-x-3">
+                                <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
+                                  {isExpanded ? (
+                                    <ChevronDown className="h-4 w-4 text-white" />
+                                  ) : (
+                                    <Play className="h-4 w-4 text-white" />
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="text-sm font-semibold text-gray-900 hover:text-purple-700 truncate">
+                                    {item.title || 'Panel Discussion'}
+                                  </h4>
+                                  <div className="flex items-center text-xs text-gray-500 mt-1">
+                                    <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                                    <span className="mx-2">•</span>
+                                    <span>Podcast</span>
+                                    <span className="mx-2">•</span>
+                                    <span>Click to {isExpanded ? 'collapse' : 'play'}</span>
+                                  </div>
+                                </div>
+                                <div className="flex-shrink-0 flex items-center space-x-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeletePodcast(item);
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                  <div className={`w-2 h-2 rounded-full transition-colors ${isExpanded ? 'bg-purple-400' : 'bg-gray-300'}`}></div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Expanded Audio Player */}
+                            {isExpanded && (
+                              <div className="border-t border-gray-100 p-4 bg-gray-50">
+                                <PodcastAudioPlayer
+                                  podcast={item}
+                                  onDownload={() => handleDownloadPodcast(item)}
+                                  onDelete={() => handleDeletePodcast(item)}
+                                  notebookId={notebookId}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ====== SEPARATOR BETWEEN PODCAST FORM AND PODCAST LISTINGS ====== */}
-        {studioData.podcasts.length > 0 && (
-          <div className="px-6 py-2">
-            <div className="border-t border-gray-200/60"></div>
-          </div>
-        )}
-
-        {/* ====== INLINE PODCAST LISTINGS ====== */}
-        {studioData.podcasts.length > 0 && (
-          <div className="px-6 py-4">
-            <div className="space-y-3">
-              {studioData.podcasts.map((podcast: PodcastItem, index: number) => {
-                const podcastId = podcast.id || podcast.job_id || index.toString();
-                const isExpanded = expandedPodcasts.has(podcastId);
-                
-                return (
-                  <div
-                    key={podcastId}
-                    className="bg-white rounded-xl border border-gray-200 hover:border-gray-300 transition-all duration-200 overflow-hidden"
-                  >
-                    {/* Podcast Header */}
-                    <div
-                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200 group"
-                      onClick={() => handlePodcastClick(podcast)}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
-                          {isExpanded ? (
-                            <ChevronDown className="h-4 w-4 text-white" />
-                          ) : (
-                            <Play className="h-4 w-4 text-white" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-semibold text-gray-900 hover:text-purple-700">
-                            {podcast.title || 'Panel Discussion'}
-                          </h4>
-                          <div className="flex items-center text-xs text-gray-500 mt-1">
-                            <span>{podcast.created_at ? new Date(podcast.created_at).toLocaleDateString() : 'Generated'}</span>
-                            <span className="mx-2">•</span>
-                            <span>Click to {isExpanded ? 'collapse' : 'play'}</span>
-                          </div>
-                        </div>
-                        <div className="flex-shrink-0 flex items-center space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeletePodcast(podcast);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                          <div className={`w-2 h-2 rounded-full transition-colors ${isExpanded ? 'bg-purple-400' : 'bg-gray-300'}`}></div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Expanded Audio Player */}
-                    {isExpanded && (
-                      <div className="border-t border-gray-100 p-4 bg-gray-50">
-                        <PodcastAudioPlayer
-                          podcast={podcast}
-                          onDownload={() => handleDownloadPodcast(podcast)}
-                          onDelete={() => handleDeletePodcast(podcast)}
-                          notebookId={notebookId}
-                        />
-                      </div>
-                    )}
+              );
+            })() : (
+              <div className="flex-1 flex items-center justify-center p-8">
+                <div className="text-center">
+                  <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                    <FileText className="h-8 w-8 text-gray-400" />
                   </div>
-                );
-              })}
-            </div>
+                  <h3 className="text-sm font-medium text-gray-900 mb-1">No generated content yet</h3>
+                  <p className="text-xs text-gray-500">Create a research report or podcast to see it here</p>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-          </>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-auto p-0 scrollbar-overlay">
+          {/* Report preview content when viewing a specific report */}
+        </div>
+      )}
 
       {/* ====== SINGLE RESPONSIBILITY: File viewer overlay ====== */}
       {selectedFile && (
@@ -945,7 +998,10 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
           isExpanded={isStudioExpanded || false}
           viewMode={viewMode}
           onClose={handleCloseFile}
-          onEdit={() => setViewMode('edit')}
+          onEdit={() => {
+            setViewMode('edit');
+            setIsPreviewingEdits(false);
+          }}
           onSave={handleSaveFile}
           onDownload={selectedFile.audio_file ? 
             () => handleDownloadPodcast(selectedFile) : 
@@ -957,6 +1013,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
           notebookId={notebookId}
           useMinIOUrls={config.USE_MINIO_URLS}
           hideHeader={isReportPreview}
+          isPreviewingEdits={isPreviewingEdits}
         />
       )}
 

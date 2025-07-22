@@ -13,6 +13,7 @@ interface AddSourceModalProps {
   onSourcesAdded: () => void;
   onUploadStarted?: (uploadFileId: string, filename: string, fileType: string) => void;
   onKnowledgeBaseItemsDeleted?: (deletedItemIds: string[]) => void;
+  onSourcesRemoved?: number;
 }
 
 const AddSourceModal: React.FC<AddSourceModalProps> = ({
@@ -20,7 +21,8 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
   notebookId,
   onSourcesAdded,
   onUploadStarted,
-  onKnowledgeBaseItemsDeleted
+  onKnowledgeBaseItemsDeleted,
+  onSourcesRemoved
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
@@ -39,7 +41,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
 
   // File validation function
   const validateFile = (file: File) => {
-    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav", "m4a", "avi", "mov", "mkv", "webm", "wmv", "m4v"];
+    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "docx", "mp3", "mp4", "wav", "m4a", "avi", "mov", "mkv", "webm", "wmv", "m4v"];
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
     const maxSize = 100 * 1024 * 1024; // 100MB
     const minSize = 100; // 100 bytes minimum
@@ -220,6 +222,14 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       setIsLoadingKnowledgeBase(false);
     }
   };
+
+  // Listen for sources removal to refresh knowledge base
+  React.useEffect(() => {
+    if (onSourcesRemoved && onSourcesRemoved > 0 && activeTab === 'knowledge') {
+      // Refresh knowledge base when sources are removed
+      loadKnowledgeBase();
+    }
+  }, [onSourcesRemoved, activeTab]);
 
   // Handle knowledge item selection
   const handleKnowledgeItemSelect = (itemId: string) => {
@@ -402,10 +412,8 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
               e.preventDefault();
               e.stopPropagation();
               setActiveTab('knowledge');
-              // Load knowledge base only when switching to this tab
-              if (knowledgeBaseItems.length === 0 && !isLoadingKnowledgeBase) {
-                loadKnowledgeBase();
-              }
+              // Always reload knowledge base when switching to this tab to ensure fresh data
+              loadKnowledgeBase();
             }}
             className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
               activeTab === 'knowledge'
@@ -457,7 +465,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-3">
-            Supported file types: PDF, .txt, Markdown, PPT/PPTX, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
+            Supported file types: pdf, txt, markdown, pptx, docx, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
           </p>
         </div>
       )}
@@ -559,7 +567,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                   />
                   {urlProcessingType === 'document' && (
                     <p className="text-xs text-gray-600">
-                      📄 Only PDF and PowerPoint files are supported. Use the "Website" option for HTML pages.
+                      📄 Only PDF and PowerPoint links are supported. Use the "Website" option for HTML pages.
                     </p>
                   )}
                   <Button
@@ -735,7 +743,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                   </div>
 
                   {/* Knowledge Base Items */}
-                  <div className="max-h-64 space-y-2">
+                  <div className="max-h-64 overflow-y-auto space-y-2">
                     {knowledgeBaseItems.map((item) => (
                       <div
                         key={item.id}
@@ -862,7 +870,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
           }
         }}
         style={{ display: 'none' }}
-        accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav,.m4a,.avi,.mov,.mkv,.webm,.wmv,.m4v"
+        accept=".pdf,.txt,.md,.ppt,.pptx,.docx,.mp3,.mp4,.wav,.m4a,.avi,.mov,.mkv,.webm,.wmv,.m4v"
       />
     </>
   );

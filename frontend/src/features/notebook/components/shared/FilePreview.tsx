@@ -197,7 +197,7 @@ interface MarkdownContentProps {
 }
 
 const MarkdownContent = React.memo<MarkdownContentProps>(({ content }) => (
-  <div className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900">
+  <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900">
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeHighlight, rehypeRaw]}
@@ -463,7 +463,7 @@ const FilePreview: React.FC<FilePreviewComponentProps> = ({ source, isOpen, onCl
           )}
         </div>
 
-        <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+        <div className="bg-gray-50 rounded-lg p-6 max-h-[600px] overflow-y-auto">
           <MarkdownContent content={processedContent} />
         </div>
       </div>

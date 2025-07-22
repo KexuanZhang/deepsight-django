@@ -3,7 +3,7 @@ Processors package for the notebooks module.
 
 This package contains all processing logic for different types of content:
 - file_processors.py: New file type specific processors
-- url_processors.py: New URL domain specific processors  
+  
 - media_processors.py: Media processing utilities
 - upload_processor.py: Legacy upload processor (moved from utils)
 - url_extractor.py: Legacy URL extractor (moved from utils)
@@ -11,7 +11,6 @@ This package contains all processing logic for different types of content:
 
 # New focused processors
 from .file_processors import FileProcessor
-from .url_processors import URLProcessor
 from .media_processors import MediaProcessor
 
 # Legacy processors (moved from utils)
@@ -27,7 +26,6 @@ except ImportError:
 
 __all__ = [
     'FileProcessor',
-    'URLProcessor', 
     'MediaProcessor',
     'UploadProcessor',
     'URLExtractor'
