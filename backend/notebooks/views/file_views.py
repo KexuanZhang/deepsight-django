@@ -1073,4 +1073,4 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             
             return response
         except Exception as e:
-            raise Http404(f"Image not accessible: {str(e)}") 
+            raise Http404(f"Image not accessible: {str(e)}")

@@ -9,6 +9,7 @@ from rest_framework import status
 
 from ..models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.url_extractor import URLExtractor
+from rag.rag import add_user_files
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,12 @@ class URLService:
                 source=source,
                 content_md=result.get("content_preview", ""),
             )
+
+            # Ingest the KB item content for this URL
+            if result.get("file_id"):
+                kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
+                if kb_item:
+                    add_user_files(user_id=user.pk, kb_items=[kb_item])
 
             return {
                 "success": True,
@@ -236,4 +243,4 @@ class URLService:
             # Convert single URL to single format for backward compatibility
             url = validated_data.get('url')
             upload_url_id = validated_data.get('upload_url_id', uuid4().hex)
-            return {'url': url, 'upload_url_id': upload_url_id} 
+            return {'url': url, 'upload_url_id': upload_url_id}

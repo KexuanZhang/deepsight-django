@@ -31,6 +31,7 @@ export default function SignupPage() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Check if passwords match before submitting
     if (password !== passwordConfirm) {
       return;
     }
@@ -40,6 +41,9 @@ export default function SignupPage() {
       username,
       email,
       password,
+
+
+    // Dispatch the signup action with the payload
       password_confirm: passwordConfirm,
     };
 
@@ -49,7 +53,7 @@ export default function SignupPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate("/");
+      navigate("/"); // Redirect to the homepage if the user is authenticated
     }
   }, [isAuthenticated, navigate]);
 
