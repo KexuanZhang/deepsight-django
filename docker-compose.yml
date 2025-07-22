@@ -1,0 +1,424 @@
+# Clean Docker Compose Configuration with Entrypoint Script
+# All setup logic moved to Dockerfile entrypoint for better maintainability
+
+x-backend-common: &backend-common
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+    args:
+      http_proxy: ${HTTP_PROXY:-}
+      https_proxy: ${HTTPS_PROXY:-}
+      no_proxy: ${NO_PROXY:-}
+  image: deepsight-backend-common:${VERSION:-latest}
+  restart: unless-stopped
+  
+  # FIXED: Use runtime instead of deploy for better compatibility
+  runtime: nvidia
+  
+  # ALTERNATIVE: If runtime doesn't work, use this deploy configuration
+  # deploy:
+  #   resources:
+  #     reservations:
+  #       devices:
+  #         - driver: nvidia
+  #           count: all
+  #           capabilities: [gpu]
+  
+  env_file:
+    - ./.env
+  
+  environment:
+    # FIXED: Add NVIDIA Container Runtime environment variables
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    
+    # Database connections
+    PGHOST: db
+    REDIS_URL: redis://redis:6379/0
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/0
+    
+    # Vector database & storage
+    MILVUS_HOST: milvus
+    MILVUS_PORT: 19530
+    MINIO_ENDPOINT: minio:9000
+    MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+    MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    MINIO_SECURE: false
+    
+    # SSL certificates
+    REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+    SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+    CURL_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+    
+    # Proxy settings for model downloads (shared by all backend services)
+    http_proxy: ${HTTP_PROXY:-}
+    https_proxy: ${HTTPS_PROXY:-}
+    no_proxy: ${NO_PROXY:-}
+    
+    # Hugging Face cache settings
+    HF_HOME: /root/.cache/huggingface
+    TRANSFORMERS_CACHE: /root/.cache/huggingface
+    HF_DATASETS_CACHE: /root/.cache/huggingface/datasets
+  
+  volumes:
+    - ./backend/media:/app/media
+    - ./backend/staticfiles:/app/staticfiles
+    - /data00/deepsight_${VERSION}:/data00/deepsight_${VERSION}:rw
+    - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+    - ~/.cache/huggingface:/root/.cache/huggingface
+    - ~/.cache/datalab/:/root/.cache/datalab
+  
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    milvus:
+      condition: service_healthy
+  
+  security_opt:
+    - no-new-privileges:true
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 30s
+  timeout: 10s
+  retries: 3
+
+services:
+  # Database Service
+  db:
+    image: postgres:17-alpine
+    container_name: deepsight-postgres
+    environment:
+      POSTGRES_DB: ${PGDATABASE}
+      POSTGRES_USER: ${PGUSER}
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER} -d ${PGDATABASE}"]
+      <<: *healthcheck-defaults
+      start_period: 20s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Redis Cache Service
+  redis:
+    image: redis:8-alpine
+    container_name: deepsight-redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      <<: *healthcheck-defaults
+      start_period: 10s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # ============================================================================
+  # VECTOR DATABASE & STORAGE (MILVUS STACK)
+  # ============================================================================
+
+  # etcd - Metadata storage for Milvus
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: deepsight-etcd
+    environment:
+      - ETCD_ADVERTISE_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ALLOW_NONE_AUTHENTICATION=yes
+    ports:
+      - "${ETCD_PORT:-2379}:2379"
+    volumes:
+      - etcd_data:/etcd
+    healthcheck:
+      test: ["CMD-SHELL", "etcdctl endpoint health"]
+      <<: *healthcheck-defaults
+      start_period: 20s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # MinIO - Object storage for Milvus & Django media files
+  minio:
+    image: minio/minio:latest
+    container_name: deepsight-minio
+    entrypoint: >
+      /bin/sh -c "
+        /usr/bin/docker-entrypoint.sh server /data --console-address ':9001' &
+        sleep 5 &&
+        mc alias set local http://localhost:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/deepsight-users &&
+        mc policy set public local/deepsight-users
+        wait
+      "
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:9000/minio/health/live"]
+      <<: *healthcheck-defaults
+      start_period: 30s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Milvus - Vector database for AI embeddings
+  milvus:
+    image: milvusdb/milvus:v2.2.16
+    container_name: deepsight-milvus
+    platform: linux/amd64
+    command: ["/tini", "--", "milvus", "run", "standalone"]
+    environment:
+      - ETCD_ENDPOINTS=etcd:2379
+      - MINIO_ADDRESS=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "${MILVUS_PORT:-19530}:19530"
+      - "${MILVUS_METRICS_PORT:-19121}:19121"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:19121/metrics"]
+      <<: *healthcheck-defaults
+      start_period: 60s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Django Backend Service
+  backend:
+    <<: *backend-common
+    container_name: deepsight-backend
+    image: deepsight-backend:${VERSION:-latest}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8000/admin/login/"]
+      <<: *healthcheck-defaults
+      start_period: 120s
+    environment:
+      # FIXED: Add NVIDIA environment variables
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      
+      # Database connections (inherit from backend-common)
+      PGHOST: db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      
+      # Vector database & storage (inherit from backend-common)
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_SECURE: false
+      
+      # SSL certificates
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      CURL_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      
+      # Proxy settings for model downloads
+      http_proxy: ${HTTP_PROXY:-}
+      https_proxy: ${HTTPS_PROXY:-}
+      no_proxy: ${NO_PROXY:-}
+      
+      # Hugging Face cache settings
+      HF_HOME: /root/.cache/huggingface
+      TRANSFORMERS_CACHE: /root/.cache/huggingface
+      HF_DATASETS_CACHE: /root/.cache/huggingface/datasets
+      
+      # Backend-specific environment variables
+      DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-}
+      DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-}
+      DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-}
+
+  # Celery Worker Service
+  celery:
+    <<: *backend-common
+    container_name: deepsight-celery
+    image: deepsight-celery:${VERSION:-latest}
+    command: >
+      celery -A backend worker
+        --loglevel=info
+        --concurrency=${CELERY_CONCURRENCY:-4}
+        --queues=notebook_processing,podcast,reports,maintenance,validation
+        --max-tasks-per-child=${CELERY_MAX_TASKS_PER_CHILD:-100}
+        --time-limit=${CELERY_TASK_TIME_LIMIT:-3600}
+        --soft-time-limit=${CELERY_TASK_SOFT_TIME_LIMIT:-3300}
+    environment:
+      # FIXED: Add NVIDIA environment variables for Celery worker
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    healthcheck:
+      test: ["CMD", "celery", "-A", "backend", "inspect", "ping"]
+      <<: *healthcheck-defaults
+      start_period: 30s
+
+  # Celery Beat Scheduler Service
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        http_proxy: ${HTTP_PROXY:-}
+        https_proxy: ${HTTPS_PROXY:-}
+        no_proxy: ${NO_PROXY:-}
+    container_name: deepsight-celery-beat
+    image: deepsight-celery-beat:${VERSION:-latest}
+    restart: unless-stopped
+    command: >
+      celery -A backend beat 
+        --loglevel=info 
+        --pidfile=/tmp/celerybeat.pid
+    
+    env_file:
+      - ./.env
+    
+    environment:
+      # No GPU access needed for beat scheduler
+      # Database connections
+      PGHOST: db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      
+      # Vector database & storage
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_SECURE: false
+      
+      # SSL certificates
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      CURL_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      
+      # Proxy settings
+      http_proxy: ${HTTP_PROXY:-}
+      https_proxy: ${HTTPS_PROXY:-}
+      no_proxy: ${NO_PROXY:-}
+      
+      # Cache settings
+      HF_HOME: /root/.cache/huggingface
+      TRANSFORMERS_CACHE: /root/.cache/huggingface
+      HF_DATASETS_CACHE: /root/.cache/huggingface/datasets
+    
+    volumes:
+      - ./backend/media:/app/media
+      - static_files:/app/staticfiles
+      - /data00/deepsight_${VERSION}:/data00/deepsight_${VERSION}:rw
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/host-ca.crt:ro
+      - huggingface_cache:/root/.cache/huggingface
+      - datalab_cache:/root/.cache/datalab
+      - celery_beat_data:/tmp
+    
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/celerybeat.pid"]
+      <<: *healthcheck-defaults
+      start_period: 30s
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        http_proxy: ${HTTP_PROXY:-}
+        https_proxy: ${HTTPS_PROXY:-}
+        no_proxy: ${NO_PROXY:-}
+    container_name: deepsight-frontend
+    image: deepsight-frontend:${VERSION:-latest}
+    ports:
+      - "${FRONTEND_PORT:-8888}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      <<: *healthcheck-defaults
+      start_period: 20s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  # Container Update Monitor (Optional)
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: deepsight-watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_ROLLING_RESTART: "true"
+      WATCHTOWER_INCLUDE_STOPPED: "true"
+      WATCHTOWER_REVIVE_STOPPED: "false"
+      WATCHTOWER_DEBUG: "true"
+    command: --debug --cleanup --interval 300
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+# Persistent Data Volumes
+volumes:
+  # Database volumes
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  
+  # Vector database & storage volumes
+  etcd_data:
+    driver: local
+  minio_data:
+    driver: local
+  milvus_data:
+    driver: local
+  
+  # Application volumes
+  static_files:
+    driver: local
+  huggingface_cache:
+    driver: local
+  datalab_cache:
+    driver: local
+  celery_beat_data:
+    driver: local

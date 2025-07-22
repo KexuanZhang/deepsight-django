@@ -96,6 +96,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
 ]
 
 ROOT_URLCONF = "backend.urls"
@@ -106,24 +107,24 @@ WSGI_APPLICATION = "backend.wsgi.application"
 # ============================================================================
 
 # SQLite Database for development
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.sqlite3",
-#         "NAME": BASE_DIR / "db.sqlite3",
-#     }
-# }
-
-# PostgreSQL Database for production
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql_psycopg2",
-        "NAME": os.getenv("PGDATABASE", "deepsight"),
-        "USER": os.getenv("PGUSER", "deepsight"),
-        "PASSWORD": os.getenv("PGPASSWORD", "deepsight"),
-        "HOST": os.getenv("PGHOST", "localhost"),
-        "PORT": os.getenv("DB_PORT", "5432"),
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
+
+# PostgreSQL Database for production
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.postgresql_psycopg2",
+#         "NAME": os.getenv("PGDATABASE", "deepsight"),
+#         "USER": os.getenv("PGUSER", "deepsight"),
+#         "PASSWORD": os.getenv("PGPASSWORD", "deepsight"),
+#         "HOST": os.getenv("PGHOST", "localhost"),
+#         "PORT": os.getenv("DB_PORT", "5432"),
+#     }
+# }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -186,6 +187,15 @@ USE_TZ = True
 # ============================================================================
 
 STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_DIRS = []
+if not os.path.exists(STATIC_ROOT):
+    os.makedirs(STATIC_ROOT, exist_ok=True)
+# Only add STATIC_ROOT to STATICFILES_DIRS if you have additional static files outside apps (optional)
+# STATICFILES_DIRS.append(STATIC_ROOT)
+
+# Use WhiteNoise for static file storage
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Note: Media files are stored in MinIO object storage
 # MEDIA_ROOT and MEDIA_URL are not used with MinIO backend
