@@ -828,137 +828,143 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
           onCloseModal={onCloseModal}
         />
 
-        {/* ====== SEPARATOR BETWEEN PODCAST FORM AND REPORT LISTINGS ====== */}
-        {studioData.reports.length > 0 && (
-          <div className="px-6 py-2">
-            <div className="border-t border-gray-200/60"></div>
-          </div>
-        )}
+        {/* ====== UNIFIED GENERATED CONTENT LIST ====== */}
+        {(studioData.reports.length > 0 || studioData.podcasts.length > 0) && (() => {
+          // Combine reports and podcasts into a unified list
+          const allItems = [
+            ...studioData.reports.map((report: ReportItem) => ({
+              ...report,
+              type: 'report',
+              created_at: report.created_at || new Date().toISOString()
+            })),
+            ...studioData.podcasts.map((podcast: PodcastItem) => ({
+              ...podcast,
+              type: 'podcast',
+              created_at: podcast.created_at || new Date().toISOString()
+            }))
+          ];
 
-        {/* ====== INLINE REPORT LISTINGS ====== */}
-        {studioData.reports.length > 0 && (
-          <div className="px-6 py-4">
-            <div className="space-y-3">
-              {studioData.reports.map((report: ReportItem, index: number) => (
-                <div
-                  key={report.id || index}
-                  className="p-4 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 cursor-pointer group border border-gray-200 hover:border-gray-300"
-                  onClick={() => handleSelectReport(report)}
-                >
-                  <div className="flex items-start space-x-3">
-                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 mt-1">
-                      <FileText className="h-4 w-4 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-semibold text-gray-900 group-hover:text-blue-700 mb-2">
-                        {report.title || 'Research Report'}
-                      </h4>
-                      <p className="text-xs text-gray-600 leading-relaxed mb-2">
-                        {getReportPreview(report)}
-                      </p>
-                      <div className="flex items-center text-xs text-gray-500">
-                        <span>{report.created_at ? new Date(report.created_at).toLocaleDateString() : 'Generated'}</span>
-                        <span className="mx-2">•</span>
-                        <span>Click to edit</span>
-                      </div>
-                    </div>
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteReport(report);
-                        }}
+          // Sort by creation date, newest first
+          allItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+          return (
+            <div className="px-6 py-4">
+              <div className="space-y-3">
+                {allItems.map((item: any, index: number) => {
+                  const itemId = item.id || item.job_id || index.toString();
+                  
+                  if (item.type === 'report') {
+                    return (
+                      <div
+                        key={`report-${itemId}`}
+                        className="p-4 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 cursor-pointer group border border-gray-200 hover:border-gray-300"
+                        onClick={() => handleSelectReport(item)}
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ====== SEPARATOR BETWEEN PODCAST FORM AND PODCAST LISTINGS ====== */}
-        {studioData.podcasts.length > 0 && (
-          <div className="px-6 py-2">
-            <div className="border-t border-gray-200/60"></div>
-          </div>
-        )}
-
-        {/* ====== INLINE PODCAST LISTINGS ====== */}
-        {studioData.podcasts.length > 0 && (
-          <div className="px-6 py-4">
-            <div className="space-y-3">
-              {studioData.podcasts.map((podcast: PodcastItem, index: number) => {
-                const podcastId = podcast.id || podcast.job_id || index.toString();
-                const isExpanded = expandedPodcasts.has(podcastId);
-                
-                return (
-                  <div
-                    key={podcastId}
-                    className="bg-white rounded-xl border border-gray-200 hover:border-gray-300 transition-all duration-200 overflow-hidden"
-                  >
-                    {/* Podcast Header */}
-                    <div
-                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200 group"
-                      onClick={() => handlePodcastClick(podcast)}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
-                          {isExpanded ? (
-                            <ChevronDown className="h-4 w-4 text-white" />
-                          ) : (
-                            <Play className="h-4 w-4 text-white" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-semibold text-gray-900 hover:text-purple-700">
-                            {podcast.title || 'Panel Discussion'}
-                          </h4>
-                          <div className="flex items-center text-xs text-gray-500 mt-1">
-                            <span>{podcast.created_at ? new Date(podcast.created_at).toLocaleDateString() : 'Generated'}</span>
-                            <span className="mx-2">•</span>
-                            <span>Click to {isExpanded ? 'collapse' : 'play'}</span>
+                        <div className="flex items-start space-x-3">
+                          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 mt-1">
+                            <FileText className="h-4 w-4 text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-semibold text-gray-900 group-hover:text-blue-700 mb-2 truncate">
+                              {item.title || 'Research Report'}
+                            </h4>
+                            <p className="text-xs text-gray-600 leading-relaxed mb-2">
+                              {getReportPreview(item)}
+                            </p>
+                            <div className="flex items-center text-xs text-gray-500">
+                              <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                              <span className="mx-2">•</span>
+                              <span>Report</span>
+                              <span className="mx-2">•</span>
+                              <span>Click to edit</span>
+                            </div>
+                          </div>
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteReport(item);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </div>
-                        <div className="flex-shrink-0 flex items-center space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeletePodcast(podcast);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                          <div className={`w-2 h-2 rounded-full transition-colors ${isExpanded ? 'bg-purple-400' : 'bg-gray-300'}`}></div>
+                      </div>
+                    );
+                  } else if (item.type === 'podcast') {
+                    const isExpanded = expandedPodcasts.has(itemId);
+                    
+                    return (
+                      <div
+                        key={`podcast-${itemId}`}
+                        className="bg-white rounded-xl border border-gray-200 hover:border-gray-300 transition-all duration-200 overflow-hidden"
+                      >
+                        {/* Podcast Header */}
+                        <div
+                          className="p-4 cursor-pointer hover:bg-gray-50 transition-colors duration-200 group"
+                          onClick={() => handlePodcastClick(item)}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 text-white" />
+                              ) : (
+                                <Play className="h-4 w-4 text-white" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-sm font-semibold text-gray-900 hover:text-purple-700 truncate">
+                                {item.title || 'Panel Discussion'}
+                              </h4>
+                              <div className="flex items-center text-xs text-gray-500 mt-1">
+                                <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                                <span className="mx-2">•</span>
+                                <span>Podcast</span>
+                                <span className="mx-2">•</span>
+                                <span>Click to {isExpanded ? 'collapse' : 'play'}</span>
+                              </div>
+                            </div>
+                            <div className="flex-shrink-0 flex items-center space-x-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePodcast(item);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                              <div className={`w-2 h-2 rounded-full transition-colors ${isExpanded ? 'bg-purple-400' : 'bg-gray-300'}`}></div>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
 
-                    {/* Expanded Audio Player */}
-                    {isExpanded && (
-                      <div className="border-t border-gray-100 p-4 bg-gray-50">
-                        <PodcastAudioPlayer
-                          podcast={podcast}
-                          onDownload={() => handleDownloadPodcast(podcast)}
-                          onDelete={() => handleDeletePodcast(podcast)}
-                          notebookId={notebookId}
-                        />
+                        {/* Expanded Audio Player */}
+                        {isExpanded && (
+                          <div className="border-t border-gray-100 p-4 bg-gray-50">
+                            <PodcastAudioPlayer
+                              podcast={item}
+                              onDownload={() => handleDownloadPodcast(item)}
+                              onDelete={() => handleDeletePodcast(item)}
+                              notebookId={notebookId}
+                            />
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
+                    );
+                  }
+                  return null;
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
           </>
         )}
       </div>
