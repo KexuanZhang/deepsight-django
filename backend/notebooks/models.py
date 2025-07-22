@@ -102,7 +102,7 @@ class URLProcessingResult(models.Model):
         blank=True,
         help_text="Markdown extracted from a webpage, if applicable",
     )
-    
+ 
     # MinIO-native storage
     downloaded_file_object_key = models.CharField(
         max_length=255, 
@@ -598,4 +598,4 @@ class KnowledgeBaseImage(models.Model):
             file_size=figure_data_dict.get('file_size', 0),
             image_metadata=figure_data_dict,
         )
-    
+
