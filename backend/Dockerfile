@@ -128,5 +128,5 @@ EXPOSE 8000
 # Use entrypoint script
 ENTRYPOINT ["/entrypoint.sh"]
 
-# The CMD uses 'gunicorn' which is found in the PATH via /opt/venv/bin
-CMD ["gunicorn", "backend.wsgi:application", "--bind", "0.0.0.0:8000"]
+# The CMD now uses the entrypoint to handle different service types
+CMD ["gunicorn"]
