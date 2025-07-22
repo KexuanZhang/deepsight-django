@@ -85,7 +85,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     model_provider: 'openai',
     retriever: 'searxng',
     prompt_type: 'general',
-    include_image: true,
+    include_image: false,
     include_domains: false,
     time_range: 'ALL',
     model: 'gpt-4'
@@ -118,9 +118,31 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   }, [reportGeneration, studioData, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Podcast generation completion ======
-  const handlePodcastComplete = useCallback((result: PodcastItem) => {
+  const handlePodcastComplete = useCallback(async (result: PodcastItem) => {
     podcastGeneration.completeGeneration();
-    studioData.addPodcast(result);
+    
+    // Fetch complete podcast data from server to ensure we have audio URL
+    try {
+      const completeResult = { ...result };
+      
+      // If the result doesn't have an audio_url, try to fetch complete data
+      if (!result.audio_url && result.job_id) {
+        try {
+          const freshPodcast = await studioService.getPodcast(result.job_id);
+          Object.assign(completeResult, freshPodcast);
+        } catch (error) {
+          console.error('Failed to fetch complete podcast data:', error);
+          // Still add the result we have, the PodcastAudioPlayer will handle retries
+        }
+      }
+      
+      studioData.addPodcast(completeResult);
+    } catch (error) {
+      console.error('Error in handlePodcastComplete:', error);
+      // Fallback to original behavior
+      studioData.addPodcast(result);
+    }
+    
     if (podcastGeneration.currentJobId) {
       jobService.clearJob(podcastGeneration.currentJobId);
     }
@@ -128,7 +150,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       title: "Podcast Generated", 
       description: "Your panel discussion has been generated successfully."
     });
-  }, [podcastGeneration, studioData, toast]);
+  }, [podcastGeneration, studioData, studioService, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Job status monitoring ======
   const handleReportError = useCallback((error: string) => {
@@ -275,6 +297,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
 
       const response = await studioService.generatePodcast(config);
       podcastGeneration.startGeneration(response.job_id);
+      podcastGeneration.updateProgress('Starting podcast generation (10%)');
       jobService.saveJob(response.job_id, { 
         type: 'podcast', 
         config, 
@@ -442,11 +465,33 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         throw new Error('Report ID not found');
       }
       
-      const filename = `${report.title || report.article_title || 'report'}.md`;
-      await studioService.downloadFile(reportId, filename);
+      // Add a small delay to ensure any pending save operations complete
+      // This prevents race conditions between save and download
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const filename = `${report.title || report.article_title || 'report'}.pdf`;
+      
+      // Use apiService.downloadReportPdf directly instead of studioService.downloadFile
+      // This ensures we're using the correct PDF download endpoint
+      const blob = await apiService.downloadReportPdf(reportId, notebookId);
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up the blob URL
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 1000);
+      
       toast({
         title: "Download Started",
-        description: "Your report is being downloaded"
+        description: "Your report is being downloaded as PDF"
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -456,7 +501,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         variant: "destructive"
       });
     }
-  }, [studioService, toast]);
+  }, [apiService, notebookId, toast]);
 
   const handleDownloadPodcast = useCallback(async (podcast: PodcastItem) => {
     try {
@@ -769,7 +814,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
           onConfigChange={podcastGeneration.updateConfig}
           generationState={{
             state: podcastGeneration.state,
-            progress: podcastGeneration.progress ? parseInt(podcastGeneration.progress) || 0 : undefined,
+            progress: podcastGeneration.progress,
             error: podcastGeneration.error || undefined
           }}
           onGenerate={handleGeneratePodcast}

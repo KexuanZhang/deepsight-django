@@ -9,7 +9,7 @@ from rest_framework import status
 
 from ..models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.url_extractor import URLExtractor
-from ..processors import URLProcessor
+from rag.rag import add_user_files
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +18,6 @@ class URLService:
     """Handle URL processing business logic"""
     
     def __init__(self):
-        # Use new focused URL processor for domain-specific processing
-        self.url_processor = URLProcessor()
         # Keep original url extractor for full pipeline
         self.url_extractor = URLExtractor()
     
@@ -53,6 +51,12 @@ class URLService:
                 source=source,
                 content_md=result.get("content_preview", ""),
             )
+
+            # Ingest the KB item content for this URL
+            if result.get("file_id"):
+                kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
+                if kb_item:
+                    add_user_files(user_id=user.pk, kb_items=[kb_item])
 
             return {
                 "success": True,
@@ -221,10 +225,6 @@ class URLService:
             logger.exception(f"Document URL parsing failed for {url}: {e}")
             raise
 
-    def process_url_by_domain(self, url, options=None):
-        """Process URL using focused domain-specific processor"""
-        return async_to_sync(self.url_processor.process_url_by_domain)(url, options)
-
     def validate_url_request(self, serializer):
         """Validate URL request data"""
         serializer.is_valid(raise_exception=True)
@@ -243,4 +243,4 @@ class URLService:
             # Convert single URL to single format for backward compatibility
             url = validated_data.get('url')
             upload_url_id = validated_data.get('upload_url_id', uuid4().hex)
-            return {'url': url, 'upload_url_id': upload_url_id} 
+            return {'url': url, 'upload_url_id': upload_url_id}

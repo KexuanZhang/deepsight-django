@@ -2,6 +2,13 @@
 // Abstracting dependencies and inverting control from concrete to abstract
 
 import type { GenerationConfig } from '@/types/global';
+import { config } from '@/config';
+
+// Helper to get CSRF token from cookie
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+  return match ? decodeURIComponent(match[2]) : null;
+}
 
 // API Client interface
 interface ApiClient {
@@ -9,6 +16,8 @@ interface ApiClient {
   post(url: string, data?: any): Promise<any>;
   delete(url: string): Promise<any>;
   put(url: string, data?: any): Promise<any>;
+  downloadReportFile?(jobId: string, notebookId: string, filename?: string): Promise<Blob>;
+  downloadReportPdf?(jobId: string, notebookId: string): Promise<Blob>;
 }
 
 // Abstract service interface - components depend on this abstraction, not concrete implementation
@@ -19,6 +28,7 @@ export abstract class IStudioService {
   abstract getAvailableModels(): Promise<string[]>;
   abstract loadReports(notebookId: string): Promise<any>;
   abstract loadPodcasts(notebookId: string): Promise<any>;
+  abstract getPodcast(podcastId: string): Promise<any>;
   abstract loadReportContent(reportId: string): Promise<any>;
   abstract downloadFile(fileId: string, filename: string): Promise<any>;
   abstract deleteFile(fileId: string): Promise<any>;
@@ -102,26 +112,94 @@ export class ApiStudioService extends IStudioService {
     return response.results || response.jobs || response || [];
   }
 
+  async getPodcast(podcastId: string): Promise<any> {
+    const response = await this.api.get(`/notebooks/${this.notebookId}/podcast-jobs/${podcastId}/`);
+    return response;
+  }
+
   async loadReportContent(reportId: string): Promise<any> {
     const response = await this.api.get(`/notebooks/${this.notebookId}/report-jobs/${reportId}/content/`);
     return response;
   }
 
   async downloadFile(fileId: string, filename: string): Promise<any> {
+    
     try {
-      // Open report PDF in browser instead of downloading
-      // TODO: Implement downloadReportPdf in ApiService
-      const response = await this.api.get(`/notebooks/${this.notebookId}/reports/${fileId}/download/`);
-      const blob = new Blob([response], { type: 'application/pdf' });
+      let blob: Blob;
+      
+      // Check if the API client has the downloadReportFile method (from the main API service)
+      if (this.api.downloadReportFile) {
+        // Use the proper download method that returns a Blob
+        // Don't pass filename to avoid backend filename mismatch issues
+        blob = await this.api.downloadReportFile(fileId, this.notebookId);
+      } else {
+        // Fallback: direct fetch for binary data (without filename parameter to avoid mismatch)
+        const downloadUrl = `${config.API_BASE_URL}/notebooks/${this.notebookId}/report-jobs/${fileId}/download/`;
+        
+        // Always use manual redirect handling to avoid CORS issues with MinIO
+        let response;
+        try {
+          response = await fetch(downloadUrl, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+              'X-CSRFToken': getCookie('csrftoken') ?? '',
+            },
+            redirect: 'manual' // Always handle redirects manually
+          });
+        } catch (fetchError) {
+          console.error('=== STUDIO SERVICE FETCH ERROR ===');
+          console.error('Error type:', fetchError.constructor.name);
+          console.error('Error message:', fetchError.message);
+          console.error('Download URL:', downloadUrl);
+          console.error('================================');
+          throw new Error(`StudioService network request failed: ${fetchError.message}`);
+        }
+
+
+        // Handle redirects to MinIO
+        if (response.status === 302 || response.status === 301) {
+          const redirectUrl = response.headers.get('Location');
+          if (redirectUrl) {
+            const minioResponse = await fetch(redirectUrl, {
+              method: 'GET',
+              credentials: 'omit', // Critical: no credentials for MinIO
+              mode: 'cors'
+            });
+            
+            
+            if (minioResponse.ok) {
+              blob = await minioResponse.blob();
+            } else {
+              throw new Error(`MinIO download failed: ${minioResponse.status} ${minioResponse.statusText}`);
+            }
+          } else {
+            throw new Error('No redirect URL found');
+          }
+        } else if (response.ok) {
+          // Handle direct responses (no redirect)
+          blob = await response.blob();
+        } else {
+          // Handle errors
+          throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+        }
+      }
+      
+      // Create download link
       const url = window.URL.createObjectURL(blob);
-      // Open PDF in new tab/window
-      window.open(url, '_blank');
-      // Clean up the blob URL after a short delay to allow browser to load it
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename || `report_${fileId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up the blob URL
       setTimeout(() => {
         window.URL.revokeObjectURL(url);
       }, 1000);
     } catch (error) {
-      console.error('PDF open failed:', error);
+      console.error('Download failed:', error);
       throw error;
     }
   }
@@ -136,9 +214,13 @@ export class ApiStudioService extends IStudioService {
   }
 
   async updateFile(fileId: string, content: string): Promise<any> {
-    // Use the dedicated updateReport method for proper report content updates
-    // TODO: Implement updateReport in ApiService
-    return await this.api.put(`/notebooks/${this.notebookId}/reports/${fileId}/`, { content });
+    
+    // Use the dedicated updateReport method if available, otherwise fallback
+    if ('updateReport' in this.api) {
+      return await (this.api as any).updateReport(fileId, this.notebookId, content);
+    } else {
+      return await this.api.put(`/notebooks/${this.notebookId}/report-jobs/${fileId}/`, { content });
+    }
   }
 
   async loadAudio(podcastId: string): Promise<string> {

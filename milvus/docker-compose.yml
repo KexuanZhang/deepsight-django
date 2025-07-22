@@ -1,12 +1,68 @@
-version: "3.8"
+# version: "3.8"
+
+# services:
+#   etcd:
+#     image: quay.io/coreos/etcd:v3.5.5
+#     environment:
+#       - ETCD_ADVERTISE_CLIENT_URLS=http://0.0.0.0:2379
+#       - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+#       - ALLOW_NONE_AUTHENTICATION=yes
+#     ports:
+#       - "2379:2379"
+
+#   minio:
+#     image: minio/minio:latest
+#     entrypoint: >
+#       /bin/sh -c "
+#         /usr/bin/docker-entrypoint.sh server /data --console-address ':9001' &
+#         sleep 5 &&
+#         mc alias set local http://localhost:9000 minioadmin minioadmin &&
+#         mc mb --ignore-existing local/deepsight-media &&
+#         mc policy set public local/deepsight-media
+#         wait
+#       "
+#     environment:
+#       - MINIO_ROOT_USER=minioadmin
+#       - MINIO_ROOT_PASSWORD=minioadmin
+#     ports:
+#       - "9000:9000"
+#       - "9001:9001"
+#     volumes:
+#       - minio-data:/data
+
+#   milvus-standalone:
+#     image: milvusdb/milvus:v2.2.16
+#     platform: linux/amd64
+#     command: ["/tini","--","milvus","run","standalone"]
+#     environment:
+#       - ETCD_ENDPOINTS=etcd:2379
+#       - MINIO_ADDRESS=minio:9000
+#       - MINIO_ACCESS_KEY=minioadmin
+#       - MINIO_SECRET_KEY=minioadmin
+#     depends_on:
+#       - etcd
+#       - minio
+#     ports:
+#       - "19530:19530"
+#       - "19121:19121"
+#     volumes:
+#       - milvus-data:/var/lib/milvus
+
+# volumes:
+#   minio-data:
+#   milvus-data:
 
 services:
-  etcd:
-    image: quay.io/coreos/etcd:v3.5.5
+  db:
+    image: postgres:14
+    container_name: local_postgres
+    env_file:
+      - .env
     environment:
-      - ETCD_ADVERTISE_CLIENT_URLS=http://0.0.0.0:2379
-      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
-      - ALLOW_NONE_AUTHENTICATION=yes
+      # these map automatically, but we can be explicit:
+      - POSTGRES_DB=${PGDATABASE}
+      - POSTGRES_USER=${PGUSER}
+      - POSTGRES_PASSWORD=${PGPASSWORD}
     ports:
       - "2379:2379"
 
@@ -28,26 +84,7 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio-data:/data
-
-  milvus-standalone:
-    image: milvusdb/milvus:v2.2.16
-    platform: linux/amd64
-    command: ["/tini","--","milvus","run","standalone"]
-    environment:
-      - ETCD_ENDPOINTS=etcd:2379
-      - MINIO_ADDRESS=minio:9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
-    depends_on:
-      - etcd
-      - minio
-    ports:
-      - "19530:19530"
-      - "19121:19121"
-    volumes:
-      - milvus-data:/var/lib/milvus
+      - pgdata:/var/lib/postgresql/data
 
 volumes:
-  minio-data:
-  milvus-data:
+  pgdata:

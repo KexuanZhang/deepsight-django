@@ -38,7 +38,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     # required fields for PermissionsMixin/AbstractBaseUser:
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-
     objects = UserManager()
 
     USERNAME_FIELD = "username"

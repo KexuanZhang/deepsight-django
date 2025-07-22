@@ -37,7 +37,7 @@ DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
 # ============================================================================
 
 HOST_IP = os.getenv("HOST_IP", "localhost")
-BACKEND_PORT = os.getenv("BACKEND_PORT", "8000")
+BACKEND_PORT = os.getenv("BACKEND_PORT", "8001")
 FRONTEND_PORT = os.getenv("FRONTEND_PORT", "5173")
 
 ALLOWED_HOSTS = [

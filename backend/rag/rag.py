@@ -3,6 +3,7 @@ import json
 import queue
 import threading
 import re
+import uuid
 from typing import List, Tuple, Optional, Generator
 
 from PyPDF2 import PdfReader
@@ -15,11 +16,13 @@ from langchain_milvus import Milvus
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 # Import your engine's HybridRetriever and global chain
-from rag.engine import get_rag_chain, HybridRetriever
+from rag.engine import get_rag_chain, HybridRetriever, DEFAULT_COLLECTION_NAME
+
 from pymilvus import connections, utility, CollectionSchema, FieldSchema, DataType, Collection
 import logging
 
 logger = logging.getLogger(__name__)
+
 # ─── Configuration ─────────────────────────────────────────────────────────
 MILVUS_HOST      = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT      = os.getenv("MILVUS_PORT", "19530")
@@ -34,38 +37,32 @@ connections.connect(
 )
 
 def ensure_user_collection(coll_name: str):
-    """Ensure the Milvus collection exists; create and index via Collection constructor if missing."""
     exists = utility.has_collection(coll_name, using="default")
     logger.debug("Checking Milvus collection %r exists? %s", coll_name, exists)
     if not exists:
         logger.info("Creating Milvus collection %r via Collection constructor", coll_name)
-        # Define schema fields (using LangChain compatible field names)
         fields = [
             FieldSchema(name="pk",        dtype=DataType.INT64,        is_primary=True, auto_id=True),
-            FieldSchema(name="vector",    dtype=DataType.FLOAT_VECTOR, dim=1536),
-            FieldSchema(name="text",      dtype=DataType.VARCHAR,     max_length=65535),  # LangChain stores document content here
-            FieldSchema(name="user_id",   dtype=DataType.VARCHAR,     max_length=64),
+            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=1536),
+            FieldSchema(name="user_id",   dtype=DataType.VARCHAR, max_length=64),  # <-- changed
             FieldSchema(name="source",    dtype=DataType.VARCHAR,     max_length=512),
         ]
         schema = CollectionSchema(fields, description="Per-user file embeddings")
-        # Create collection using the ORM Collection constructor
         coll = Collection(name=coll_name, schema=schema, using="default")
-        # Create index on the vector field for efficient similarity search
         index_params = {
             "index_type": "IVF_FLAT",
             "metric_type": "L2",
             "params": {"nlist": 128}
         }
-        coll.create_index(field_name="vector", index_params=index_params, using="default")
-        # Load the collection into memory
+        coll.create_index(field_name="embedding", index_params=index_params, using="default")
         coll.load()
         logger.info("Collection %r created, indexed, and loaded", coll_name)
 
 # Helper to derive a user-specific collection name
-def user_collection(user_id) -> str:
-    # Convert UUID to string and remove hyphens for valid Milvus collection name
-    user_id_str = str(user_id).replace('-', '')
-    return f"{BASE_COLLECTION}_{user_id_str}"
+def user_collection(user_id: str) -> str:
+    # Ensure only numbers, letters, and underscores
+    safe_user_id = str(user_id).replace("-", "_")
+    return f"{BASE_COLLECTION}_{safe_user_id}"
 
 # SSE-based streaming helper
 def _pdf_to_text(path: str) -> str:
@@ -101,7 +98,7 @@ class SSEStreamer(BaseCallbackHandler):
         yield None
 
 # Ingest helper (called on file upload, kept here if needed)
-def add_user_content_documents(user_id, docs: List[Document]) -> None:
+def add_user_content_documents(user_id: int, docs: List[Document]) -> None:
     coll_name = user_collection(user_id)
     ensure_user_collection(coll_name)
 
@@ -115,7 +112,6 @@ def add_user_content_documents(user_id, docs: List[Document]) -> None:
         collection_name=coll_name,
         connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
         drop_old=False,
-        auto_id=True,
     )
     store.add_documents(chunks)
 
@@ -125,41 +121,66 @@ def add_user_content_documents(user_id, docs: List[Document]) -> None:
     coll.load()
 
 def add_user_files(
-    user_id,
-    kb_items: List,  # now take model instances, not paths
+    user_id: int,
+    kb_items: List,  # KnowledgeBaseItem model instances
 ) -> None:
-    print("!!!Add")
     coll_name = user_collection(user_id)
     store = Milvus(
         embedding_function=OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY),
         collection_name=coll_name,
         connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
         drop_old=False,
-        auto_id=True,
     )
 
     docs = []
     for item in kb_items:
-        # Use the model's get_file_content method which handles both MinIO and local storage
-        text = item.get_file_content()
-        
-        # If no processed content, try to get from inline content field
-        if not text:
-            text = item.content
-            
-        if not text:
-            # Skip items without any content
-            print(f"!!!Skipping item {item.id} - no content available")
-            continue
+        text = None
+        source_name = None
 
-        # Get source name from metadata or title
-        source_name = item.title
-        if item.file_metadata and 'original_filename' in item.file_metadata:
-            source_name = item.file_metadata['original_filename']
-        elif item.metadata and 'original_filename' in item.metadata:
-            source_name = item.metadata['original_filename']
-        elif item.metadata and 'filename' in item.metadata:
-            source_name = item.metadata['filename']
+        # Use inline content if present (from extracted markdown)
+        if getattr(item, "content", None):
+            print(f"[DEBUG] Ingesting inline content for item {item.id}")
+            text = item.content
+            source_name = f"inline_{item.id}"
+        # Fallback to extracted markdown file if present
+        elif getattr(item, "extracted_md_object_key", None):
+            try:
+                from notebooks.utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                content = backend.get_file(item.extracted_md_object_key)
+                print(f"[DEBUG] Ingesting extracted markdown for item {item.id}: key={item.extracted_md_object_key}")
+                print(f"[DEBUG] Extracted markdown content (first 200 chars): {content[:200] if isinstance(content, bytes) else str(content)[:200]}")
+                text = content.decode('utf-8') if isinstance(content, bytes) else content
+                source_name = item.extracted_md_object_key.rsplit("/", 1)[-1]
+            except Exception as e:
+                print(f"[ERROR] Error reading extracted markdown for item {item.id}: {e}")
+                continue
+        # Fallback to processed file
+        elif getattr(item, "file_object_key", None):
+            try:
+                from notebooks.utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                content = backend.get_file(item.file_object_key)
+                print(f"[DEBUG] Ingesting processed file for item {item.id}: key={item.file_object_key}")
+                text = content.decode('utf-8') if isinstance(content, bytes) else content
+                source_name = item.file_object_key.rsplit("/", 1)[-1]
+            except Exception as e:
+                print(f"[ERROR] Error reading processed file for item {item.id}: {e}")
+                continue
+        elif getattr(item, "original_file_object_key", None):
+            try:
+                from notebooks.utils.storage import get_minio_backend
+                backend = get_minio_backend()
+                content = backend.get_file(item.original_file_object_key)
+                print(f"[DEBUG] Ingesting original file for item {item.id}: key={item.original_file_object_key}")
+                text = content.decode('utf-8') if isinstance(content, bytes) else content
+                source_name = item.original_file_object_key.rsplit("/", 1)[-1]
+            except Exception as e:
+                print(f"[ERROR] Error reading original file for item {item.id}: {e}")
+                continue
+        else:
+            print(f"[WARN] Skipping item {getattr(item, 'id', None)}: no file or content attached.")
+            continue
 
         docs.append(Document(
             page_content=text,
@@ -170,85 +191,43 @@ def add_user_files(
             }
         ))
 
-    print("!!!docs", docs)
-    
-    # Only proceed if we have documents
+    print(f"[DEBUG] Total docs to ingest for user {user_id}: {len(docs)}")
     if not docs:
-        print("!!!No documents to add to Milvus")
+        print("[WARN] No valid files or content to add for user", user_id)
         return
-    
+
     # split into chunks and add
     chunks = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=100
     ).split_documents(docs)
+
+    print(f"[DEBUG] Total chunks to ingest for user {user_id}: {len(chunks)}")
     
-    # Only add to Milvus if we have chunks
-    if chunks:
-        store.add_documents(chunks)
-        print(f"!!!Added {len(chunks)} chunks to Milvus")
-    else:
-        print("!!!No chunks generated from documents")
+    # Generate unique IDs for each chunk
+    chunk_ids = [str(uuid.uuid4()) for _ in chunks]
+    
+    # Add documents with explicit IDs
+    store.add_documents(chunks, ids=chunk_ids)
 
     # make sure Milvus is up to date
     coll = Collection(coll_name)
     coll.flush()
     coll.load()
+    print(f"[DEBUG] Milvus collection '{coll_name}' flushed and loaded after ingest.")
 
 
 # Remove helper to delete vectors by source
-def delete_user_file(user_id, source: str) -> None:
+def delete_user_file(user_id: int, source: str) -> None:
     coll_name = user_collection(user_id)
-    
-    # Check if collection exists
-    if not utility.has_collection(coll_name, using="default"):
-        logger.info(f"Collection {coll_name} does not exist, skipping deletion")
-        return
-    
-    # Get the collection to query for primary keys
-    coll = Collection(coll_name, using="default")
-    
-    try:
-        # First, query to get the primary keys of vectors to delete
-        # Use string literals for proper escaping in Milvus query
-        user_id_escaped = str(user_id).replace('"', '\\"')
-        source_escaped = source.replace('"', '\\"')
-        expr = f'user_id == "{user_id_escaped}" && source == "{source_escaped}"'
-        
-        logger.info(f"Querying Milvus collection {coll_name} with expression: {expr}")
-        
-        # Query to get primary keys
-        results = coll.query(
-            expr=expr,
-            output_fields=["pk"],
-            consistency_level="Strong"
-        )
-        
-        if not results:
-            logger.info(f"No vectors found for user_id={user_id}, source={source}")
-            return
-        
-        # Extract primary keys
-        pks = [result["pk"] for result in results]
-        logger.info(f"Found {len(pks)} vectors to delete for source: {source}")
-        
-        # Delete by primary keys using simple pk-based expression
-        if pks:
-            # Create pk-based deletion expression
-            pk_list = ",".join(str(pk) for pk in pks)
-            pk_expr = f"pk in [{pk_list}]"
-            
-            logger.info(f"Deleting vectors with expression: {pk_expr}")
-            coll.delete(expr=pk_expr)
-            
-            # Flush to ensure deletion is persisted
-            coll.flush()
-            logger.info(f"Successfully deleted {len(pks)} vectors for source: {source}")
-        
-    except Exception as e:
-        logger.error(f"Error deleting vectors for user_id={user_id}, source={source}: {str(e)}")
-        # Re-raise to let the caller handle the error appropriately
-        raise
+    store = Milvus(
+        embedding_function=OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY),
+        collection_name=coll_name,
+        connection_args={"host": MILVUS_HOST, "port": MILVUS_PORT},
+        drop_old=False,
+    )
+    expr = f'user_id=={user_id} && source=="{source}"'
+    store.delete(expr=expr)
 
 
 from typing import List, Optional
@@ -257,16 +236,13 @@ from langchain.schema import BaseRetriever, Document
 class CombinedRetriever(BaseRetriever):
     """
     Combines local and global retrievers per-call.
-    mode: 'local', 'global', or 'hybrid'
     filter_sources: optional list of source filenames
     """
 
-    # Declare fields with defaults so Pydantic won’t complain
     local_retriever: BaseRetriever
     global_retriever: BaseRetriever
     k_local: int = 7
     k_global: int = 3
-    mode: str = "hybrid"
     filter_sources: Optional[List[str]] = None
 
     class Config:
@@ -278,37 +254,27 @@ class CombinedRetriever(BaseRetriever):
         global_retriever: BaseRetriever,
         k_local: int = 7,
         k_global: int = 3,
-        mode: str = "hybrid",
         filter_sources: Optional[List[str]] = None,
     ):
-        # Pass everything into super so Pydantic sees all fields
         super().__init__(
             local_retriever=local_retriever,
             global_retriever=global_retriever,
             k_local=k_local,
             k_global=k_global,
-            mode=mode,
             filter_sources=filter_sources,
         )
 
-        assert mode in ("local", "global", "hybrid"), \
-            "mode must be 'local', 'global', or 'hybrid'"
-
-        # And keep your own easy-to-reference attributes
         self.local_retriever  = local_retriever
         self.global_retriever = global_retriever
         self.k_local          = k_local
         self.k_global         = k_global
-        self.mode             = mode
         self.filter_sources   = filter_sources or []
 
     def get_relevant_documents(self, query: str) -> List[Document]:
         hits: List[Document] = []
 
-        if self.mode in ("local", "hybrid"):
-            hits.extend(self.local_retriever.get_relevant_documents(query)[: self.k_local])
-        if self.mode in ("global", "hybrid"):
-            hits.extend(self.global_retriever.get_relevant_documents(query)[: self.k_global])
+        hits.extend(self.local_retriever.get_relevant_documents(query)[: self.k_local])
+        hits.extend(self.global_retriever.get_relevant_documents(query)[: self.k_global])
 
         # filter by source if requested
         if self.filter_sources:
@@ -324,22 +290,23 @@ class CombinedRetriever(BaseRetriever):
 
         return results
 
-
-
 class RAGChatbot:
     """
-    Hybrid local+global RAG with streaming via .stream().
+    RAG with streaming via .stream().
     Each user has its own Milvus collection.
+    Supports specifying additional collections for retrieval.
     """
     def __init__(
         self,
-        user_id,
+        user_id: int,
         k_local: int = 7,
         k_global: int = 3,
+        extra_collections: Optional[List[str]] = None,
     ):
-        self.user_id = user_id
+        self.user_id = str(user_id)
         self.k_local = k_local
         self.k_global = k_global
+        self.extra_collections = extra_collections or []
 
         # persistent Milvus store per user
         coll_name = user_collection(user_id)
@@ -351,8 +318,16 @@ class RAGChatbot:
             drop_old=False,
         )
 
-        # global retriever from engine
-        self.global_retriever = get_rag_chain().retriever
+        # Build list of collections to retrieve from
+        self.selected_collections = [coll_name]
+        # If extra_collections specified, add them; else default to 'global'
+        if self.extra_collections:
+            self.selected_collections.extend(self.extra_collections)
+        else:
+            self.selected_collections.append(DEFAULT_COLLECTION_NAME)
+
+        # global retriever from engine, using selected collections
+        self.global_retriever = get_rag_chain(self.selected_collections).retriever
 
         # LLM + SSE
         self.streamer = SSEStreamer()
@@ -367,28 +342,37 @@ class RAGChatbot:
         self,
         question: str,
         history: Optional[List[Tuple[str, str]]] = None,
-        mode: str = "hybrid",
-        filter_sources: Optional[List[str]] = None,
+        file_ids: Optional[List[str]] = None,
     ) -> Generator[str, None, None]:
         history = history or []
-        # build local retriever with Milvus expr including filter_sources
+
         clauses = [f'user_id=="{self.user_id}"']
-        if filter_sources:
-            quoted = ",".join(f'\"{s}\"' for s in filter_sources)
-            clauses.append(f"source in [{quoted}]")
+        if file_ids:
+            quoted = ",".join(f'"{fid}"' for fid in file_ids)
+            clauses.append(f"kb_item_id in [{quoted}]")
         expr = " and ".join(clauses)
-        print("!!!expr!!!", expr)
         local_ret = self.store.as_retriever(search_kwargs={"k": self.k_local, "expr": expr})
-        # combine with global
-        combined = CombinedRetriever(
-            local_retriever=local_ret,
-            global_retriever=self.global_retriever,
-            k_local=self.k_local,
-            k_global=self.k_global,
-            mode=mode,
-            filter_sources=filter_sources,
-        )
-        docs = combined.get_relevant_documents(question)
+
+        # Retrieve local and global docs separately
+        local_docs = local_ret.get_relevant_documents(question)[:self.k_local]
+        global_docs = []
+        if not file_ids:
+            combined = CombinedRetriever(
+                local_retriever=local_ret,
+                global_retriever=self.global_retriever,
+                k_local=self.k_local,
+                k_global=self.k_global,
+                filter_sources=None,
+            )
+            docs = combined.get_relevant_documents(question)
+        else:
+            # If file_ids are set, only retrieve global docs for reference
+            global_docs = self.global_retriever.get_relevant_documents(question)[:self.k_global]
+            docs = local_docs + global_docs
+
+        print(f"Retrieved {len(docs)} documents for question: {question}")
+        print("Retrieved kb_item_ids:", [d.metadata.get("kb_item_id") for d in docs])
+        print("Selected file_ids:", file_ids)
 
         # emit metadata
         meta = {"type": "metadata", "docs": [
@@ -397,13 +381,30 @@ class RAGChatbot:
         ]}
         yield f"data: {json.dumps(meta)}\n\n"
 
-        # prepare context
-        context = "\n\n---\n\n".join(
-            f"Source: {d.metadata.get('source')}\n{d.page_content[:500]}" for d in docs
+        # prepare context with emphasis
+        local_context = "\n\n---\n\n".join(
+            f"Source: {d.metadata.get('source')} (User Selected)\n{d.page_content[:500]}" for d in local_docs
         )
+        global_context = "\n\n---\n\n".join(
+            f"Source: {d.metadata.get('source')} (Global Reference)\n{d.page_content[:500]}" for d in global_docs
+        )
+
+        if local_context and global_context:
+            context = (
+                "USER SELECTED FILES (PRIORITIZE THESE):\n"
+                f"{local_context}\n\n"
+                "GLOBAL/REFERENCE DOCUMENTS (FOR ADDITIONAL CONTEXT ONLY):\n"
+                f"{global_context}"
+            )
+        elif local_context:
+            context = f"USER SELECTED FILES:\n{local_context}"
+        else:
+            context = f"GLOBAL/REFERENCE DOCUMENTS:\n{global_context}"
+
         system_prompt = (
-            "You are an expert research assistant. Use the following snippets to answer the question:\n\n"
-            f"{context}\n\nHistory:\n{history}\n\nQuestion:\n{question}\n\nAnswer:"  
+            "You are an expert research assistant. Use the following snippets to answer the question.\n"
+            "Give highest priority to information from USER SELECTED FILES. Use GLOBAL/REFERENCE DOCUMENTS only if needed for additional context or clarification.\n\n"
+            f"{context}\n\nHistory:\n{history}\n\nQuestion:\n{question}\n\nAnswer:"
         )
 
         # stream LLM tokens

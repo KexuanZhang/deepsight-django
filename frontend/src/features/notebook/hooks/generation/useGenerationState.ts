@@ -14,7 +14,7 @@ export const useGenerationState = (initialConfig: Record<string, any> = {}) => {
   // Single responsibility: Start generation
   const startGeneration = useCallback((jobId: string) => {
     setState(GenerationState.GENERATING);
-    setProgress('');
+    setProgress('Starting generation...');
     setError(null);
     setCurrentJobId(jobId);
   }, []);

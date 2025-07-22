@@ -35,6 +35,8 @@ const PodcastAudioPlayer: React.FC<PodcastAudioPlayerProps> = ({
 }) => {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [retryAttempts, setRetryAttempts] = useState(0);
+  const [currentPodcast, setCurrentPodcast] = useState<Podcast>(podcast);
 
   const formatDate = (dateString?: string): string => {
     if (!dateString) return '';
@@ -53,27 +55,57 @@ const PodcastAudioPlayer: React.FC<PodcastAudioPlayerProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // Load audio URL using PodcastService logic
+  // Update current podcast when prop changes
   useEffect(() => {
-    setIsLoading(true);
-    
-    try {
-      const podcastService = new PodcastService(notebookId);
-      const url = podcastService.getAudioUrl(podcast);
+    setCurrentPodcast(podcast);
+    setRetryAttempts(0); // Reset retry attempts when podcast changes
+  }, [podcast]);
+
+  // Load audio URL with retry logic
+  useEffect(() => {
+    const loadAudio = async () => {
+      setIsLoading(true);
       
-      if (url) {
+      try {
+        const podcastService = new PodcastService(notebookId);
+        let url = podcastService.getAudioUrl(currentPodcast);
+        
+        // If no URL found, try to fetch fresh podcast data
+        if (!url && currentPodcast.id) {
+          try {
+            console.log('No audio URL found, fetching fresh podcast data for:', currentPodcast.id);
+            const freshPodcast = await podcastService.getPodcast(currentPodcast.id);
+            url = podcastService.getAudioUrl(freshPodcast);
+            
+            if (url) {
+              // Update the current podcast with fresh data
+              setCurrentPodcast(freshPodcast);
+            }
+          } catch (fetchError) {
+            console.error('Failed to fetch fresh podcast data:', fetchError);
+            
+            // Retry with exponential backoff if we haven't exceeded max attempts
+            if (retryAttempts < 5) {
+              const delay = Math.min(1000 * Math.pow(2, retryAttempts), 10000); // Max 10 seconds
+              console.log(`Retrying audio load in ${delay}ms (attempt ${retryAttempts + 1}/5)`);
+              setTimeout(() => {
+                setRetryAttempts(prev => prev + 1);
+              }, delay);
+            }
+          }
+        }
+        
         setAudioUrl(url);
-      } else {
-        console.error('No audio URL available for podcast:', podcast.id || podcast.job_id);
+      } catch (error) {
+        console.error('Error getting audio URL:', error);
         setAudioUrl(null);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error('Error getting audio URL:', error);
-      setAudioUrl(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [podcast, notebookId]);
+    };
+    
+    loadAudio();
+  }, [currentPodcast, notebookId, retryAttempts]);
 
   return (
     <div className="p-4 border border-gray-200 rounded-lg bg-white">
@@ -81,14 +113,14 @@ const PodcastAudioPlayer: React.FC<PodcastAudioPlayerProps> = ({
       <div className="flex items-center justify-between mb-3">
         <div className="flex-1 min-w-0">
           <h4 className="font-medium text-gray-900 truncate">
-            {podcast.title || 'Untitled Panel Discussion'}
+            {currentPodcast.title || 'Untitled Panel Discussion'}
           </h4>
           <div className="flex items-center space-x-3 text-xs text-gray-500 mt-1">
-            <span>{formatDate(podcast.created_at)}</span>
-            {podcast.file_size && (
+            <span>{formatDate(currentPodcast.created_at)}</span>
+            {currentPodcast.file_size && (
               <>
                 <span>•</span>
-                <span>{formatFileSize(podcast.file_size)}</span>
+                <span>{formatFileSize(currentPodcast.file_size)}</span>
               </>
             )}
           </div>
@@ -98,7 +130,7 @@ const PodcastAudioPlayer: React.FC<PodcastAudioPlayerProps> = ({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onDownload(podcast)}
+            onClick={() => onDownload(currentPodcast)}
             className="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
             title="Download audio"
           >
@@ -108,7 +140,7 @@ const PodcastAudioPlayer: React.FC<PodcastAudioPlayerProps> = ({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onDelete(podcast)}
+            onClick={() => onDelete(currentPodcast)}
             className="h-8 w-8 p-0 text-gray-500 hover:text-red-600"
             title="Delete podcast"
           >
@@ -121,7 +153,9 @@ const PodcastAudioPlayer: React.FC<PodcastAudioPlayerProps> = ({
       {isLoading ? (
         <div className="flex items-center justify-center py-2 text-gray-500">
           <Loader2 className="h-4 w-4 animate-spin mr-2" />
-          <span className="text-sm">Loading audio...</span>
+          <span className="text-sm">
+            {retryAttempts > 0 ? `Retrying audio load... (${retryAttempts}/5)` : 'Loading audio...'}
+          </span>
         </div>
       ) : audioUrl ? (
         <audio 
@@ -135,7 +169,7 @@ const PodcastAudioPlayer: React.FC<PodcastAudioPlayerProps> = ({
         </audio>
       ) : (
         <div className="text-center py-2 text-gray-500 text-sm">
-          Audio not available
+          {retryAttempts >= 5 ? 'Audio not available after retries' : 'Audio not available'}
         </div>
       )}
     </div>
