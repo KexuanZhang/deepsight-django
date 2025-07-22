@@ -91,9 +91,25 @@ def clean_title(title: str) -> str:
     return cleaned or "untitled"
 
 
-def calculate_file_hash(file_content: bytes) -> str:
-    """Calculate SHA256 hash of file content."""
-    return hashlib.sha256(file_content).hexdigest()
+def calculate_content_hash(content: Union[str, bytes]) -> str:
+    """
+    Calculate SHA256 hash of content for deduplication in KBItem source_hash column.
+    
+    This function generates the same hash for the same content regardless of filename,
+    enabling proper content-based deduplication for the knowledge base.
+    
+    Args:
+        content: File content as string or bytes
+        
+    Returns:
+        SHA256 hash as hexadecimal string for use in KnowledgeBaseItem.source_hash
+    """
+    if isinstance(content, str):
+        content_bytes = content.encode('utf-8')
+    else:
+        content_bytes = content
+    
+    return hashlib.sha256(content_bytes).hexdigest()
 
 
 def extract_domain(url: str) -> str:
