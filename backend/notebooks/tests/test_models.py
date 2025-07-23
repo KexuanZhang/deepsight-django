@@ -12,7 +12,6 @@ from ..models import (
     Source, 
     KnowledgeBaseItem, 
     KnowledgeItem, 
-    URLProcessingResult,
     BatchJob,
     BatchJobItem
 )

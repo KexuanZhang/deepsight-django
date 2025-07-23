@@ -10,7 +10,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from asgiref.sync import async_to_sync
 from uuid import uuid4
 
-from .models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, Notebook, BatchJob, BatchJobItem
+from .models import Source, KnowledgeItem, KnowledgeBaseItem, Notebook, BatchJob, BatchJobItem
 from .exceptions import (
     FileProcessingError,
     URLProcessingError,

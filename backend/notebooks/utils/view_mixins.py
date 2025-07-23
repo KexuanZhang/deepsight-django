@@ -189,7 +189,7 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             })
 
             # Add URL-specific data
-            if source.source_type == "url" and source.url_result:
+            if source.source_type == "url":
                 file_data.update({
                     # "original_url": source.original_url,  # <-- FIXED
                     "url_title": source.title,

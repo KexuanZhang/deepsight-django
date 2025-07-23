@@ -27,7 +27,6 @@ from .url_serializers import (
     URLParseSerializer,
     URLParseWithMediaSerializer,
     URLParseDocumentSerializer,
-    URLProcessingResultSerializer,
     BatchURLParseSerializer,
     BatchURLParseWithMediaSerializer
 )
@@ -56,7 +55,6 @@ __all__ = [
     'URLParseSerializer',
     'URLParseWithMediaSerializer',
     'URLParseDocumentSerializer',
-    'URLProcessingResultSerializer',
     'BatchURLParseSerializer',
     'BatchURLParseWithMediaSerializer',
     
