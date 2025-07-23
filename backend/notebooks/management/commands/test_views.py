@@ -3,7 +3,7 @@ Test command to verify view imports and basic functionality
 """
 from django.core.management.base import BaseCommand
 from django.test import RequestFactory
-from notebooks.views import URLParseView, SimpleTestView
+from notebooks.views.url_views import URLParseView, SimpleTestView
 from django.contrib.auth import get_user_model
 
 User = get_user_model()

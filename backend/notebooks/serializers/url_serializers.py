@@ -3,7 +3,6 @@ URL processing serializers for the notebooks module.
 """
 
 from rest_framework import serializers
-from ..models import URLProcessingResult
 from ..utils.helpers import check_source_duplicate
 
 
@@ -106,28 +105,6 @@ class URLParseDocumentSerializer(serializers.Serializer):
         
         return data
 
-
-class URLProcessingResultSerializer(serializers.ModelSerializer):
-    """Serializer for URL processing results with MinIO object key support."""
-    
-    downloaded_file_url = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = URLProcessingResult
-        fields = [
-            "id", 
-            "content_md", 
-            "downloaded_file_object_key",
-            "downloaded_file_url",
-            "file_metadata", 
-            "error_message", 
-            "created_at"
-        ]
-        read_only_fields = ["id", "created_at"]
-    
-    def get_downloaded_file_url(self, obj):
-        """Get pre-signed URL for downloaded file."""
-        return obj.get_downloaded_file_url() if obj.downloaded_file_object_key else None
 
 
 class BatchURLParseSerializer(serializers.Serializer):

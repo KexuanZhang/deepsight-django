@@ -3,21 +3,12 @@ from django.utils.html import format_html
 from .models import (
     Notebook,
     Source,
-    URLProcessingResult,
     ProcessingJob,
     KnowledgeBaseItem,
     KnowledgeItem,
     NotebookChatMessage,
 )
 
-
-class URLProcessingResultInline(admin.StackedInline):
-    """Inline admin for URL processing results."""
-
-    model = URLProcessingResult
-    readonly_fields = ("created_at",)
-    extra = 0
-    fields = ("content_md", "downloaded_file_object_key", "error_message", "created_at")
 
 
 class ProcessingJobInline(admin.TabularInline):
@@ -94,7 +85,7 @@ class SourceAdmin(admin.ModelAdmin):
     list_filter = ("source_type", "processing_status", "needs_processing", "created_at")
     search_fields = ("title", "notebook__name", "notebook__user__username")
     readonly_fields = ("created_at",)
-    inlines = [URLProcessingResultInline, ProcessingJobInline]
+    inlines = [ProcessingJobInline]
 
     def get_queryset(self, request):
         return (
@@ -183,31 +174,6 @@ class KnowledgeItemAdmin(admin.ModelAdmin):
             )
         )
 
-
-@admin.register(URLProcessingResult)
-class URLProcessingResultAdmin(admin.ModelAdmin):
-    """Admin configuration for URLProcessingResult model."""
-
-    list_display = ("id", "source", "get_content_length", "has_file", "created_at")
-    list_filter = ("created_at",)
-    search_fields = ("source__title", "content_md")
-    readonly_fields = ("created_at",)
-
-    def get_content_length(self, obj):
-        """Get content length."""
-        return len(obj.content_md) if obj.content_md else 0
-
-    get_content_length.short_description = "Content Length"
-
-    def has_file(self, obj):
-        """Check if has downloaded file."""
-        return bool(obj.downloaded_file_object_key)
-
-    has_file.boolean = True
-    has_file.short_description = "Has File"
-
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related("source")
 
 @admin.register(NotebookChatMessage)
 class NotebookChatMessageAdmin(admin.ModelAdmin):

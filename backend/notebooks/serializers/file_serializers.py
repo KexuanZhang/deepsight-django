@@ -319,7 +319,6 @@ class KnowledgeItemSerializer(serializers.ModelSerializer):
 class SourceSerializer(serializers.ModelSerializer):
     """Serializer for source models with related data."""
 
-    from .url_serializers import URLProcessingResultSerializer  # Import to avoid circular imports
     jobs = ProcessingJobSerializer(many=True, read_only=True)
     knowledge_items = KnowledgeItemSerializer(many=True, read_only=True)
 
@@ -333,7 +332,6 @@ class SourceSerializer(serializers.ModelSerializer):
             "created_at",
             "needs_processing",
             "processing_status",
-            "url_result",
             "jobs",
             "knowledge_items",
         ]
@@ -344,9 +342,4 @@ class SourceSerializer(serializers.ModelSerializer):
             "processing_status",
         ]
     
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Dynamically add URLProcessingResultSerializer to avoid circular imports
-        if 'url_result' in self.fields:
-            from .url_serializers import URLProcessingResultSerializer
-            self.fields['url_result'] = URLProcessingResultSerializer(read_only=True) 
+ 
