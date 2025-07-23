@@ -35,7 +35,42 @@ class FileUploadSerializer(serializers.Serializer):
         if request and hasattr(request, 'user') and request.user.is_authenticated:
             user_id = request.user.id
             
-            # Check for source duplicate using original filename for this user
+            # Detect if this is pasted text (markdown files with generated names)
+            is_pasted_text = (
+                original_filename.endswith('.md') and 
+                file.content_type in ['text/markdown', 'text/plain'] and
+                file.size < 50000  # Reasonable limit for pasted text
+            )
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"[FileUploadSerializer] Validating file: {original_filename}, is_pasted_text: {is_pasted_text}, content_type: {file.content_type}, size: {file.size}")
+            
+            if is_pasted_text:
+                # For pasted text, check content hash instead of filename
+                try:
+                    file_content = file.read().decode('utf-8', errors='ignore')
+                    file.seek(0)  # Reset file pointer
+                    
+                    from ..utils.helpers import check_content_duplicate
+                    existing_item = check_content_duplicate(file_content, user_id)
+                    if existing_item:
+                        raise serializers.ValidationError({
+                            'file': f'This text content already exists in your workspace. Duplicate content detected.',
+                            'existing_item_id': str(existing_item.id)
+                        })
+                    # For pasted text, we only check content, not filename
+                    return data
+                except serializers.ValidationError:
+                    # Re-raise ValidationError so it's properly handled
+                    raise
+                except Exception as e:
+                    # If we can't read content, fall back to filename check
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Could not read file content for duplicate check: {e}")
+            
+            # For regular files, check source duplicate using original filename
             existing_item = check_source_duplicate(original_filename, user_id, notebook_id)
             if existing_item:
                 raise serializers.ValidationError({

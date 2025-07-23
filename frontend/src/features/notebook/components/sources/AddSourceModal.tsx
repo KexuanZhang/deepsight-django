@@ -183,28 +183,35 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       
       const filename = words.length > 0 ? `${words.join('_').toLowerCase()}.md` : 'pasted_text.md';
       
-      // Notify parent component that upload started
-      if (onUploadStarted) {
-        onUploadStarted(uploadFileId, filename, 'md');
-      }
-      
-      // Close modal immediately after upload starts
-      handleClose();
-      
       const blob = new Blob([pasteText], { type: 'text/markdown' });
       const file = new File([blob], filename, { type: 'text/markdown' });
       
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
-        // Refresh sources list (modal is already closed)
+        // Notify parent component that upload started
+        if (onUploadStarted) {
+          onUploadStarted(uploadFileId, filename, 'md');
+        }
+        
+        // Close modal and refresh sources list
+        handleClose();
         onSourcesAdded();
       } else {
         throw new Error(response.error || 'Text upload failed');
       }
     } catch (error) {
       console.error('Error processing text:', error);
-      setError(`Failed to upload text: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Parse the error message to check for duplicate content detection
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check if this is a duplicate content validation error
+      if (errorMessage.includes('already exists') || errorMessage.includes('Duplicate content detected')) {
+        setError(`This text content already exists in your workspace. Please modify the text or use different content.`);
+      } else {
+        setError(`Failed to upload text: ${errorMessage}`);
+      }
     } finally {
       setIsUploading(false);
     }
