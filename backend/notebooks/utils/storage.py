@@ -422,13 +422,20 @@ class FileStorageService:
             # Calculate content hash for deduplication
             content_hash = calculate_content_hash(content)
             
-            # Check for existing content
+            # Create unique hash incorporating content, filename, and upload timestamp
+            # This ensures each file upload creates a separate KB item record
+            unique_content_hash = calculate_content_hash(
+                f"{content}|{metadata.get('original_filename', 'Untitled')}|{metadata.get('upload_timestamp', '')}"
+            )
+            
+            # Check for existing exact duplicate (same content + filename + timestamp)
             existing_item = KnowledgeBaseItem.objects.filter(
-                user=user, source_hash=content_hash
+                user=user, 
+                source_hash=unique_content_hash
             ).first()
             
             if existing_item:
-                self.log_operation("duplicate_content", f"Content already exists: {existing_item.id}")
+                self.log_operation("duplicate_content", f"Exact duplicate upload already exists: {existing_item.id}")
                 return str(existing_item.id)
             
             # Create database record first to get the ID
@@ -437,13 +444,15 @@ class FileStorageService:
                 title=metadata.get('original_filename', 'Untitled'),
                 content_type=metadata.get('source_type', 'document'),  # Map source_type to content_type
                 content=content,  # Store the actual content in the database
-                source_hash=content_hash,
+                source_hash=unique_content_hash,
                 metadata={
                     'file_extension': metadata.get('file_extension', ''),
                     'file_size': metadata.get('file_size', len(content.encode('utf-8'))),
                     'content_type': metadata.get('content_type', ''),
                     'processing_status': 'completed',
                     'original_filename': metadata.get('original_filename', 'Untitled'),
+                    'original_content_hash': content_hash,  # Track original content hash for reference
+                    'unique_content_hash': unique_content_hash,  # Track unique hash used for deduplication
                     **metadata  # Include all other metadata
                 },
                 file_metadata={
