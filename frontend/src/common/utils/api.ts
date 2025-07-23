@@ -74,6 +74,15 @@ class ApiService {
             } else {
               msg = err.detail;
             }
+          } else if (err.details) {
+            // Handle validation errors with details structure (file validation)
+            if (err.details.file && Array.isArray(err.details.file)) {
+              msg = err.details.file[0]; // Get the first file error message
+            } else if (typeof err.details === 'string') {
+              msg = err.details;
+            } else {
+              msg = JSON.stringify(err.details);
+            }
           } else if (err.error) {
             // Handle StandardAPIView error responses (notebooks app)
             msg = err.error;

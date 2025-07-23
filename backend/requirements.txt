@@ -91,4 +91,20 @@ aiofiles>=23.2.1               # Async file I/O
 duckduckgo_search
 trafilatura                    # Web extraction
 wikipedia==1.4.0
+yt_dlp
+celery
+langchain_community
+langchain-openai
+faiss-cpu
+crawl4ai
+toml
+marker-pdf==1.7.5
+django-storages
+boto3
+PyPDF2
+minio
+python-pptx
+weasyprint
+mammoth
+aiohttp==3.12.13
 tavily-python                  # Tavily API

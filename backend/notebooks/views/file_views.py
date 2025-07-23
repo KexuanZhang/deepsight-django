@@ -7,7 +7,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from asgiref.sync import async_to_sync
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework.exceptions import ValidationError
 from django.http import Http404, FileResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status, permissions, authentication
@@ -45,7 +46,10 @@ class FileUploadView(NotebookPermissionMixin, APIView):
             notebook = self.get_user_notebook(notebook_id, request.user)
 
             # Try batch upload first
-            batch_serializer = BatchFileUploadSerializer(data=request.data)
+            batch_serializer = BatchFileUploadSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             if batch_serializer.is_valid():
                 files = self.file_service.validate_batch_file_upload(batch_serializer)
                 if files:
@@ -53,18 +57,35 @@ class FileUploadView(NotebookPermissionMixin, APIView):
                     return Response(result, status=result['status_code'])
 
             # Handle single file upload
-            serializer = FileUploadSerializer(data=request.data)
+            serializer = FileUploadSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             file_obj, upload_id = self.file_service.validate_file_upload(serializer)
             
             result = self.file_service.handle_single_file_upload(file_obj, upload_id, notebook, request.user)
             return Response(result, status=result['status_code'])
 
         except ValidationError as e:
-            return self.error_response(
-                "File validation failed",
-                status_code=status.HTTP_400_BAD_REQUEST,
-                details={"error": str(e)},
-            )
+            # Handle both direct ValidationError and serializer ValidationError
+            if hasattr(e, 'detail') and isinstance(e.detail, dict):
+                # This is a serializer ValidationError with structured details
+                logger.info(f"Duplicate file detected - returning 400: {e.detail}")
+                return Response(
+                    {
+                        "error": "File validation failed", 
+                        "details": e.detail
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            else:
+                # This is a regular ValidationError
+                logger.info(f"File validation failed - returning 400: {str(e)}")
+                return self.error_response(
+                    "File validation failed",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    details={"error": str(e)},
+                )
         except Exception as e:
             logger.exception(
                 "Unhandled exception in FileUploadView POST for notebook %s: %s",
@@ -102,7 +123,7 @@ class FileListView(StandardAPIView, NotebookPermissionMixin, FileListResponseMix
             # Get all KnowledgeItems for this notebook with optimized query
             knowledge_items = (
                 KnowledgeItem.objects.filter(notebook=notebook)
-                .select_related("knowledge_base_item", "source", "source__url_result")
+                .select_related("knowledge_base_item", "source")
                 .order_by("-added_at")
             )
 
@@ -592,7 +613,7 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
             from ..serializers import VideoImageExtractionSerializer
             from ..utils.storage_adapter import get_storage_adapter
             from ..processors.media_processors import MediaProcessor
-            from ..utils.image_processing import clean_title
+            from ..utils.helpers import clean_title
             from pathlib import Path
             import tempfile
             import requests

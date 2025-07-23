@@ -11,13 +11,14 @@ from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
+from ..models import Source, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..serializers import (
     URLParseSerializer, URLParseWithMediaSerializer, URLParseDocumentSerializer,
     BatchURLParseSerializer, BatchURLParseWithMediaSerializer
 )
 from ..utils.view_mixins import StandardAPIView, NotebookPermissionMixin
 from ..processors.url_extractor import URLExtractor
+from rag.rag import add_user_files  # Add this import at the top
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,10 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
             
             # Try batch serializer first
             from ..serializers import BatchURLParseSerializer, URLParseSerializer
-            batch_serializer = BatchURLParseSerializer(data=request.data)
+            batch_serializer = BatchURLParseSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             if batch_serializer.is_valid():
                 validated_data = batch_serializer.validated_data
                 
@@ -52,7 +56,10 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
                     return self._handle_single_url_parse(url, upload_url_id, notebook, request.user)
             
             # Fallback to original serializer for backward compatibility
-            serializer = URLParseSerializer(data=request.data)
+            serializer = URLParseSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             if not serializer.is_valid():
                 return self.error_response(
                     "Invalid request data", 
@@ -74,7 +81,7 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
     def _handle_single_url_parse(self, url, upload_url_id, notebook, user):
         """Handle single URL parsing (original behavior)."""
         from asgiref.sync import async_to_sync
-        
+
         # Process the URL using async function
         async def process_url_async():
             return await url_extractor.process_url(
@@ -88,7 +95,7 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
         result = async_to_sync(process_url_async)()
 
         # Create source record
-        from ..models import Source, URLProcessingResult
+        from ..models import Source
         source = Source.objects.create(
             notebook=notebook,
             source_type="url",
@@ -97,11 +104,6 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
             processing_status="done",
         )
 
-        # Create URL processing result
-        URLProcessingResult.objects.create(
-            source=source,
-            content_md=result.get("content_preview", ""),
-        )
 
         # Link to knowledge base
         kb_item_id = result['file_id']
@@ -115,6 +117,15 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
                 'notes': f"Processed from URL: {url}"
             }
         )
+
+        # Ingest KB item content for retrieval (embedding)
+        if result.get("file_id"):
+            kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
+            if kb_item and kb_item.content:  # Ensure content exists
+                try:
+                    add_user_files(user_id=user.pk, kb_items=[kb_item])
+                except Exception as e:
+                    logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
 
         return Response(
             {
@@ -221,7 +232,10 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
             
             # Try batch serializer first
             from ..serializers import BatchURLParseWithMediaSerializer, URLParseWithMediaSerializer
-            batch_serializer = BatchURLParseWithMediaSerializer(data=request.data)
+            batch_serializer = BatchURLParseWithMediaSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             if batch_serializer.is_valid():
                 validated_data = batch_serializer.validated_data
                 
@@ -235,7 +249,10 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
                     return self._handle_single_url_parse_with_media(url, upload_url_id, notebook, request.user)
             
             # Fallback to original serializer for backward compatibility
-            serializer = URLParseWithMediaSerializer(data=request.data)
+            serializer = URLParseWithMediaSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             if not serializer.is_valid():
                 return self.error_response(
                     "Invalid request data", 
@@ -271,7 +288,7 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
         result = async_to_sync(process_url_with_media_async)()
 
         # Create source record
-        from ..models import Source, URLProcessingResult
+        from ..models import Source
         source = Source.objects.create(
             notebook=notebook,
             source_type="url",
@@ -280,11 +297,6 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
             processing_status="done",
         )
 
-        # Create URL processing result
-        URLProcessingResult.objects.create(
-            source=source,
-            content_md=result.get("content_preview", ""),
-        )
 
         # Link to knowledge base
         kb_item_id = result['file_id']
@@ -298,6 +310,15 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
                 'notes': f"Processed from URL with media: {url}"
             }
         )
+
+        # Ingest KB item content for retrieval (embedding)
+        if result.get("file_id"):
+            kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
+            if kb_item and kb_item.content:  # Ensure content exists
+                try:
+                    add_user_files(user_id=user.pk, kb_items=[kb_item])
+                except Exception as e:
+                    logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
 
         return Response(
             {
@@ -374,7 +395,10 @@ class URLParseDocumentView(StandardAPIView, NotebookPermissionMixin):
             notebook = self.get_user_notebook(notebook_id, request.user)
             
             # Validate input
-            serializer = URLParseDocumentSerializer(data=request.data)
+            serializer = URLParseDocumentSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             if not serializer.is_valid():
                 return self.error_response(
                     "Invalid input data",

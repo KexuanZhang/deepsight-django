@@ -10,6 +10,7 @@ from ..models import (
     KnowledgeBaseImage,
     KnowledgeItem,
 )
+from ..utils.helpers import check_source_duplicate
 
 
 class FileUploadSerializer(serializers.Serializer):
@@ -17,6 +18,67 @@ class FileUploadSerializer(serializers.Serializer):
 
     file = serializers.FileField()
     upload_file_id = serializers.CharField(required=False)
+    
+    def validate(self, data):
+        """Check for duplicate filename before processing."""
+        file = data.get('file')
+        if not file:
+            return data
+            
+        # Get original filename before any processing
+        original_filename = file.name
+        
+        # Get user and notebook from context
+        request = self.context.get('request')
+        notebook_id = self.context.get('notebook_id')
+        
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            user_id = request.user.id
+            
+            # Detect if this is pasted text (markdown files with generated names)
+            is_pasted_text = (
+                original_filename.endswith('.md') and 
+                file.content_type in ['text/markdown', 'text/plain'] and
+                file.size < 50000  # Reasonable limit for pasted text
+            )
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"[FileUploadSerializer] Validating file: {original_filename}, is_pasted_text: {is_pasted_text}, content_type: {file.content_type}, size: {file.size}")
+            
+            if is_pasted_text:
+                # For pasted text, check content hash instead of filename
+                try:
+                    file_content = file.read().decode('utf-8', errors='ignore')
+                    file.seek(0)  # Reset file pointer
+                    
+                    from ..utils.helpers import check_content_duplicate
+                    existing_item = check_content_duplicate(file_content, user_id)
+                    if existing_item:
+                        raise serializers.ValidationError({
+                            'file': f'This text content already exists in your workspace. Duplicate content detected.',
+                            'existing_item_id': str(existing_item.id)
+                        })
+                    # For pasted text, we only check content, not filename
+                    return data
+                except serializers.ValidationError:
+                    # Re-raise ValidationError so it's properly handled
+                    raise
+                except Exception as e:
+                    # If we can't read content, fall back to filename check
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Could not read file content for duplicate check: {e}")
+            
+            # For regular files, check source duplicate using original filename
+            existing_item = check_source_duplicate(original_filename, user_id, notebook_id)
+            if existing_item:
+                raise serializers.ValidationError({
+                    'file': f'File with name "{original_filename}" already exists. Check the knowledge base.',
+                    'existing_item_id': str(existing_item.id)
+                })
+        
+        return data
 
 
 class VideoImageExtractionSerializer(serializers.Serializer):
@@ -75,7 +137,7 @@ class BatchFileUploadSerializer(serializers.Serializer):
     upload_file_id = serializers.CharField(required=False)
 
     def validate(self, data):
-        """Ensure either file or files is provided."""
+        """Ensure either file or files is provided and check for duplicates."""
         file = data.get('file')
         files = data.get('files')
         
@@ -84,6 +146,39 @@ class BatchFileUploadSerializer(serializers.Serializer):
         
         if file and files:
             raise serializers.ValidationError("Provide either 'file' or 'files', not both.")
+        
+        # Check for duplicates
+        request = self.context.get('request')
+        notebook_id = self.context.get('notebook_id')
+        
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            user_id = request.user.id
+            
+            # Check single file
+            if file:
+                existing_item = check_source_duplicate(file.name, user_id, notebook_id)
+                if existing_item:
+                    raise serializers.ValidationError({
+                        'file': f'File with name "{file.name}" already exists. Check the knowledge base.',
+                        'existing_item_id': str(existing_item.id)
+                    })
+            
+            # Check multiple files
+            if files:
+                duplicate_files = []
+                for f in files:
+                    existing_item = check_source_duplicate(f.name, user_id, notebook_id)
+                    if existing_item:
+                        duplicate_files.append({
+                            'filename': f.name,
+                            'existing_item_id': str(existing_item.id)
+                        })
+                
+                if duplicate_files:
+                    raise serializers.ValidationError({
+                        'files': 'Some files already exist. Check the knowledge base.',
+                        'duplicates': duplicate_files
+                    })
         
         return data
 
@@ -224,7 +319,6 @@ class KnowledgeItemSerializer(serializers.ModelSerializer):
 class SourceSerializer(serializers.ModelSerializer):
     """Serializer for source models with related data."""
 
-    from .url_serializers import URLProcessingResultSerializer  # Import to avoid circular imports
     jobs = ProcessingJobSerializer(many=True, read_only=True)
     knowledge_items = KnowledgeItemSerializer(many=True, read_only=True)
 
@@ -238,7 +332,6 @@ class SourceSerializer(serializers.ModelSerializer):
             "created_at",
             "needs_processing",
             "processing_status",
-            "url_result",
             "jobs",
             "knowledge_items",
         ]
@@ -249,9 +342,4 @@ class SourceSerializer(serializers.ModelSerializer):
             "processing_status",
         ]
     
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Dynamically add URLProcessingResultSerializer to avoid circular imports
-        if 'url_result' in self.fields:
-            from .url_serializers import URLProcessingResultSerializer
-            self.fields['url_result'] = URLProcessingResultSerializer(read_only=True) 
+ 

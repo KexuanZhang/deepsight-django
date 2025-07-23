@@ -10,16 +10,16 @@ import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from urllib.parse import urljoin, urlparse, urlunparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import re
 
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import UploadedFile, InMemoryUploadedFile
+from django.core.exceptions import ValidationError
 import io
 
 from ..utils.storage import get_storage_adapter
-from ..utils.image_processing.utils import clean_title
-from ..utils.helpers import ContentIndexingService, config as settings
+from ..utils.helpers import ContentIndexingService, config as settings, clean_title
 from .upload_processor import UploadProcessor
 
 logger = logging.getLogger(__name__)
@@ -726,7 +726,6 @@ class URLExtractor:
                         original_name = original_name[:-len(current_extension)]
                     
                     # Use clean_title to sanitize the filename and add correct extension
-                    from ..utils.image_processing.utils import clean_title
                     clean_base_name = clean_title(original_name)
                     new_filename = clean_base_name + correct_extension
                     new_path = current_path.parent / new_filename
@@ -803,6 +802,14 @@ class URLExtractor:
                 size=file_info["size"],
                 charset=None
             )
+            
+            # Add source_url to the file metadata for duplicate detection
+            # We'll need to modify the upload processor to handle this metadata
+            if hasattr(django_file, 'source_url'):
+                django_file.source_url = url
+            else:
+                # Store it as an attribute that can be accessed later
+                django_file._source_url = url
             
             # Use upload processor to handle the file
             result = await self.upload_processor.process_upload(
@@ -889,7 +896,8 @@ class URLExtractor:
                 processing_result=processing_result_data,
                 user_id=user_id,
                 notebook_id=notebook_id,
-                original_file_path=original_file_path  # Pass the original file to be stored
+                original_file_path=original_file_path,  # Pass the original file to be stored
+                source_identifier=url  # Pass URL for source hash calculation
             )
             
             # Store mapping if upload_url_id is provided
@@ -902,10 +910,3 @@ class URLExtractor:
         except Exception as e:
             self.log_operation("store_content_error", f"Error storing URL content: {e}", "error")
             raise
-
-        crawl_result : CrawlResult = await self.aprocess_html(
-            url=url,
-            html=html,
-            extracted_content=extracted_content,
-            config=config,  # config should contain screenshot if needed
-        )

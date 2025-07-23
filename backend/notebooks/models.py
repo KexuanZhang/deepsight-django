@@ -86,57 +86,6 @@ class Source(models.Model):
         return self.title or f"Source {self.id}"
 
 
-class URLProcessingResult(models.Model):
-    """
-    Holds the result of crawling or downloading when the user provides a URL.
-    These are notebook-specific.
-    """
-    
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    source = models.OneToOneField(
-        Source,
-        on_delete=models.CASCADE,
-        related_name="url_result",
-    )
-    content_md = models.TextField(
-        blank=True,
-        help_text="Markdown extracted from a webpage, if applicable",
-    )
-    
-    # MinIO-native storage
-    downloaded_file_object_key = models.CharField(
-        max_length=255, 
-        blank=True, 
-        null=True, 
-        db_index=True,
-        help_text="MinIO object key for downloaded media file"
-    )
-    file_metadata = models.JSONField(
-        default=dict,
-        help_text="Downloaded file metadata (name, size, content_type, etc.)"
-    )
-    
-    error_message = models.TextField(
-        blank=True,
-        help_text="Error details if crawl or download failed",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"URLResult for Source {self.source_id}"
-    
-    def get_downloaded_file_url(self, expires=86400):
-        """Get pre-signed URL for downloaded file"""
-        if self.downloaded_file_object_key:
-            try:
-                from .utils.storage import get_minio_backend
-                backend = get_minio_backend()
-                return backend.get_presigned_url(self.downloaded_file_object_key, expires)
-            except Exception:
-                return None
-        return None
-
-
 class ProcessingJob(models.Model):
     """
     A background job to process binaries or downloaded media (OCR, transcription, PDF→MD, etc.).
@@ -598,4 +547,4 @@ class KnowledgeBaseImage(models.Model):
             file_size=figure_data_dict.get('file_size', 0),
             image_metadata=figure_data_dict,
         )
-    
+

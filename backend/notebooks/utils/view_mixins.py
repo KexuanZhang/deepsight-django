@@ -175,6 +175,8 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             "file_extension": self.extract_file_extension(kb_item.metadata),
             "file_size": self.extract_file_size(kb_item.metadata),
             "uploaded_at": kb_item.created_at.isoformat(),
+            # Include file_metadata for caption generation status and other metadata
+            "file_metadata": kb_item.file_metadata or {},
         }
 
         # Add source information if available
@@ -187,11 +189,11 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             })
 
             # Add URL-specific data
-            if source.source_type == "url" and source.url_result:
+            if source.source_type == "url":
                 file_data.update({
-                    "original_url": source.url_result.original_url,
-                    "url_title": source.url_result.title,
-                    "url_status": source.url_result.status,
+                    # "original_url": source.original_url,  # <-- FIXED
+                    "url_title": source.title,
+                    # "url_status": source.status,
                 })
 
-        return file_data 
+        return file_data

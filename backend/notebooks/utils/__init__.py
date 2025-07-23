@@ -33,7 +33,11 @@ from .storage import (
 # Helper utilities and services
 from .helpers import (
     clean_title,
-    calculate_file_hash,
+    calculate_content_hash,
+    calculate_user_content_hash,
+    check_content_duplicate,
+    calculate_source_hash,
+    check_source_duplicate,
     extract_domain,
     sanitize_path,
     get_file_extension,
@@ -96,7 +100,11 @@ __all__ = [
     
     # Helpers
     'clean_title',
-    'calculate_file_hash',
+    'calculate_content_hash',
+    'calculate_user_content_hash',
+    'check_content_duplicate',
+    'calculate_source_hash',
+    'check_source_duplicate',
     'extract_domain',
     'sanitize_path',
     'get_file_extension',

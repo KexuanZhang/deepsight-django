@@ -47,6 +47,7 @@ export const FILE_CATEGORIES = {
   TEXT: ['txt', 'md'],
   PDF: ['pdf'],
   PRESENTATION: ['ppt', 'pptx'],
+  DOCUMENT: ['docx'],
   AUDIO: ['mp3', 'wav', 'm4a'],
   VIDEO: ['mp4', 'avi', 'mov', 'mkv', 'webm', 'wmv', 'm4v'],
   URL: ['url']
@@ -78,6 +79,10 @@ export function getPreviewType(fileExtension: string, metadata: FileMetadata = {
   }
   
   if (FILE_CATEGORIES.PRESENTATION.includes(ext)) {
+    return PREVIEW_TYPES.TEXT_CONTENT;
+  }
+  
+  if (FILE_CATEGORIES.DOCUMENT.includes(ext)) {
     return PREVIEW_TYPES.TEXT_CONTENT;
   }
   
@@ -144,6 +149,7 @@ export function supportsPreview(fileExtension: string, metadata: FileMetadata = 
     ...FILE_CATEGORIES.TEXT,
     ...FILE_CATEGORIES.PDF,
     ...FILE_CATEGORIES.PRESENTATION,
+    ...FILE_CATEGORIES.DOCUMENT,
     ...FILE_CATEGORIES.AUDIO,
     ...FILE_CATEGORIES.VIDEO,
     ...FILE_CATEGORIES.URL

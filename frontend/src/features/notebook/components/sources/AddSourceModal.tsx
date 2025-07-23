@@ -2,7 +2,6 @@ import React, { useState, useRef, useCallback } from "react";
 import { Trash2, Plus, X, Upload, Link2, FileText, Globe, Youtube, Loader2, RefreshCw, FileIcon } from "lucide-react";
 import { Button } from "@/common/components/ui/button";
 import { Badge } from "@/common/components/ui/badge";
-import { Alert, AlertDescription } from "@/common/components/ui/alert";
 import apiService from "@/common/utils/api";
 import { KnowledgeBaseItem } from "@/features/notebook/type";
 import { COLORS } from "@/features/notebook/config/uiConfig";
@@ -41,7 +40,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
 
   // File validation function
   const validateFile = (file: File) => {
-    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "mp3", "mp4", "wav", "m4a", "avi", "mov", "mkv", "webm", "wmv", "m4v"];
+    const allowedExtensions = ["pdf", "txt", "md", "ppt", "pptx", "docx", "mp3", "mp4", "wav", "m4a", "avi", "mov", "mkv", "webm", "wmv", "m4v"];
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
     const maxSize = 100 * 1024 * 1024; // 100MB
     const minSize = 100; // 100 bytes minimum
@@ -82,25 +81,32 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
     try {
       const uploadFileId = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
       
-      // Notify parent component that upload started
-      if (onUploadStarted) {
-        onUploadStarted(uploadFileId, file.name, validation.extension);
-      }
-      
-      // Close modal immediately after upload starts
-      handleClose();
-      
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
-        // Refresh sources list (modal is already closed)
+        // Notify parent component that upload started
+        if (onUploadStarted) {
+          onUploadStarted(uploadFileId, file.name, validation.extension);
+        }
+        
+        // Close modal and refresh sources list
+        handleClose();
         onSourcesAdded();
       } else {
         throw new Error(response.error || 'Upload failed');
       }
     } catch (error) {
       console.error('Error uploading file:', error);
-      setError(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Parse the error message to check for duplicate file detection
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check if this is a validation error response with details
+      if (errorMessage.includes('File validation failed') && errorMessage.includes('already exists')) {
+        setError(`File "${file.name}" already exists in this workspace. Please choose a different file or rename it.`);
+      } else {
+        setError(`Failed to upload ${file.name}: ${errorMessage}`);
+      }
     } finally {
       setIsUploading(false);
     }
@@ -123,14 +129,6 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       const urlDomain = linkUrl.replace(/^https?:\/\//, '').split('/')[0];
       const displayName = `${urlDomain} - ${urlProcessingType || 'website'}`;
       
-      // Notify parent component that upload started
-      if (onUploadStarted) {
-        onUploadStarted(uploadFileId, displayName, 'url');
-      }
-      
-      // Close modal immediately after upload starts
-      handleClose();
-      
       let response;
       if (urlProcessingType === 'media') {
         response = await apiService.parseUrlWithMedia(linkUrl, notebookId, 'cosine', uploadFileId);
@@ -141,14 +139,29 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       }
       
       if (response.success) {
-        // Refresh sources list (modal is already closed)
+        // Notify parent component that upload started
+        if (onUploadStarted) {
+          onUploadStarted(uploadFileId, displayName, 'url');
+        }
+        
+        // Close modal and refresh sources list
+        handleClose();
         onSourcesAdded();
       } else {
         throw new Error(response.error || 'URL parsing failed');
       }
     } catch (error) {
       console.error('Error processing URL:', error);
-      setError(`Failed to process URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Parse the error message to check for duplicate URL detection
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check if this is a duplicate URL validation error
+      if (errorMessage.includes('already exists')) {
+        setError(`This URL already exists in your workspace. Please use a different URL.`);
+      } else {
+        setError(`Failed to process URL: ${errorMessage}`);
+      }
     } finally {
       setIsUploading(false);
     }
@@ -176,28 +189,35 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       
       const filename = words.length > 0 ? `${words.join('_').toLowerCase()}.md` : 'pasted_text.md';
       
-      // Notify parent component that upload started
-      if (onUploadStarted) {
-        onUploadStarted(uploadFileId, filename, 'md');
-      }
-      
-      // Close modal immediately after upload starts
-      handleClose();
-      
       const blob = new Blob([pasteText], { type: 'text/markdown' });
       const file = new File([blob], filename, { type: 'text/markdown' });
       
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
-        // Refresh sources list (modal is already closed)
+        // Notify parent component that upload started
+        if (onUploadStarted) {
+          onUploadStarted(uploadFileId, filename, 'md');
+        }
+        
+        // Close modal and refresh sources list
+        handleClose();
         onSourcesAdded();
       } else {
         throw new Error(response.error || 'Text upload failed');
       }
     } catch (error) {
       console.error('Error processing text:', error);
-      setError(`Failed to upload text: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Parse the error message to check for duplicate content detection
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check if this is a duplicate content validation error
+      if (errorMessage.includes('already exists') || errorMessage.includes('Duplicate content detected')) {
+        setError(`This text content already exists in your workspace. Please modify the text or use different content.`);
+      } else {
+        setError(`Failed to upload text: ${errorMessage}`);
+      }
     } finally {
       setIsUploading(false);
     }
@@ -385,6 +405,38 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
           </Button>
         </div>
 
+        {/* Error Message Display - Show within sticky header */}
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3 flex-1">
+                <p className="text-sm font-medium text-red-800">
+                  Duplicate Content Detected
+                </p>
+                <p className="mt-1 text-sm text-red-700">
+                  {error}
+                </p>
+              </div>
+              <div className="ml-auto pl-3">
+                <button
+                  onClick={() => setError(null)}
+                  className="inline-flex text-red-400 hover:text-red-600"
+                >
+                  <span className="sr-only">Dismiss</span>
+                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Tab Navigation - Fixed at top */}
         <div className={`flex space-x-1 mb-2 ${COLORS.tw.secondary.bg[100]} p-1 rounded-lg`}>
           <button
@@ -427,8 +479,6 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
         </div>
       </div>
 
-
-
       {/* Main Upload Area - Only show when not in knowledge base mode */}
       {activeTab !== 'knowledge' && (
         <div
@@ -465,7 +515,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-3">
-            Supported file types: PDF, .txt, Markdown, PPT/PPTX, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
+            Supported file types: pdf, txt, markdown, pptx, docx, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
           </p>
         </div>
       )}
@@ -567,7 +617,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                   />
                   {urlProcessingType === 'document' && (
                     <p className="text-xs text-gray-600">
-                      📄 Only PDF and PowerPoint files are supported. Use the "Website" option for HTML pages.
+                      📄 Only PDF and PowerPoint links are supported. Use the "Website" option for HTML pages.
                     </p>
                   )}
                   <Button
@@ -585,7 +635,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : null}
                     {urlProcessingType === 'media' ? 'Process Media' : 
-                     urlProcessingType === 'document' ? 'Download Document' : 
+                     urlProcessingType === 'document' ? 'Process Document' : 
                      'Process Website'}
                   </Button>
                 </div>
@@ -840,24 +890,6 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
         </div>
       )}
 
-      {/* Error Display */}
-      {error && (
-        <div className="mt-6">
-          <Alert variant="destructive" className={`${COLORS.tw.primary.border[600]} ${COLORS.tw.primary.bg[50]}`}>
-            <AlertDescription className="text-red-700">
-              {error}
-              <Button
-                variant="ghost"
-                size="sm"
-                className={`ml-2 h-6 px-2 ${COLORS.tw.primary.text[600]} ${COLORS.tw.primary.hover.text[700]}`}
-                onClick={() => setError(null)}
-              >
-                Dismiss
-              </Button>
-            </AlertDescription>
-          </Alert>
-        </div>
-      )}
 
       {/* Hidden File Input */}
       <input
@@ -870,7 +902,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
           }
         }}
         style={{ display: 'none' }}
-        accept=".pdf,.txt,.md,.ppt,.pptx,.mp3,.mp4,.wav,.m4a,.avi,.mov,.mkv,.webm,.wmv,.m4v"
+        accept=".pdf,.txt,.md,.ppt,.pptx,.docx,.mp3,.mp4,.wav,.m4a,.avi,.mov,.mkv,.webm,.wmv,.m4v"
       />
     </>
   );

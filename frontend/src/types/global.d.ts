@@ -69,6 +69,12 @@ export interface FileMetadata {
   error?: string;
   extraction_type?: string;
   processing_method?: string;
+  // Caption generation fields
+  caption_generation_status?: 'pending' | 'in_progress' | 'completed' | 'failed';
+  caption_generation_error?: string;
+  caption_generation_completed_at?: string;
+  images_requiring_captions?: number;
+  image_count?: number;
   [key: string]: any;
 }
 
