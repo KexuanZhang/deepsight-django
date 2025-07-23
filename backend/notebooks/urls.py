@@ -79,7 +79,7 @@ urlpatterns = [
 
     # 4.1) parse document URL with format validation
     path(
-        '<int:notebook_id>/files/parse_document_url/',
+        '<str:notebook_id>/files/parse_document_url/',
         URLParseDocumentView.as_view(),
         name='url-parse-document'
     ),

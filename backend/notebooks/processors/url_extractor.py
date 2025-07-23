@@ -10,7 +10,7 @@ import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from urllib.parse import urljoin, urlparse, urlunparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import re
 
 from django.core.files.base import ContentFile
@@ -786,34 +786,78 @@ class URLExtractor:
             raise
     
     async def _process_document_file(self, file_path: str, file_info: Dict, url: str, upload_url_id: Optional[str], user_id: int, notebook_id: int) -> Dict[str, Any]:
-        """Process the validated document file using upload processor."""
+        """Process the validated document file using direct storage (like regular URL processing)."""
         try:
-            # Create a Django UploadedFile object from the temporary file
-            with open(file_path, 'rb') as temp_file:
-                file_content = temp_file.read()
+            # Read file content
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+                
+            # Create metadata for the document
+            file_metadata = {
+                'filename': file_info["filename"],
+                'file_extension': file_info["extension"],
+                'file_size': file_info["size"],
+                'content_type': file_info["mime_type"],
+                'processing_status': 'completed',
+                'original_filename': file_info["filename"],
+                'upload_file_id': upload_url_id,
+                'upload_timestamp': datetime.now(timezone.utc).isoformat(),
+                'parsing_status': 'completed',
+                'storage_backend': 'minio',
+                'source_url': url,  # Store the original URL
+            }
             
-            # Create an InMemoryUploadedFile that acts like an uploaded file
-            django_file = InMemoryUploadedFile(
-                file=io.BytesIO(file_content),
-                field_name='file',
-                name=file_info["filename"],
-                content_type=file_info["mime_type"],
-                size=file_info["size"],
-                charset=None
+            # Process the document based on type
+            if file_info["extension"].lower() == '.pdf':
+                # Process PDF content (sync method)
+                processing_result = self.upload_processor._process_pdf_marker(file_path, file_metadata)
+            elif file_info["extension"].lower() in ['.pptx']:
+                # Process PowerPoint content  
+                processing_result = self.upload_processor._process_presentation_immediate(file_path, file_metadata)
+            else:
+                raise ValueError(f"Unsupported document type: {file_info['extension']}")
+            
+            # Create processing result data
+            processing_result_data = {
+                'status': 'completed',
+                'processing_type': 'document_url',
+                'extraction_method': 'document_download',
+                'file_extension': file_info["extension"],
+                'file_size': file_info["size"],
+                'content_type': file_info["mime_type"],
+                'original_filename': file_info["filename"],
+                'source_url': url,
+            }
+            
+            # Store file using the same method as regular URL processing
+            # Import the store_file_sync function
+            from asgiref.sync import sync_to_async
+            
+            if not self.upload_processor.file_storage:
+                raise Exception("MinIO file storage service not available")
+                
+            store_file_sync = sync_to_async(self.upload_processor.file_storage.store_processed_file, thread_sensitive=False)
+            file_id = await store_file_sync(
+                content=processing_result.get("content", ""),
+                metadata=file_metadata,
+                processing_result=processing_result_data,
+                user_id=user_id,
+                notebook_id=notebook_id,
+                original_file_path=file_path,
+                source_identifier=url  # Use URL for source hash calculation (THIS IS THE KEY FIX!)
             )
             
-            # Use upload processor to handle the file
-            result = await self.upload_processor.process_upload(
-                file=django_file,
-                upload_file_id=upload_url_id,
-                user_pk=user_id,
-                notebook_id=notebook_id
-            )
+            # Store mapping if upload_url_id is provided
+            if upload_url_id:
+                self.url_id_mapping[upload_url_id] = file_id
             
-            # Log the result structure for debugging
-            self.log_operation("upload_result", f"Upload processor returned: {result}")
+            self.log_operation("store_document", f"Stored document from URL with file_id: {file_id}")
             
-            return result
+            return {
+                "file_id": file_id,
+                "status": "completed",
+                "content_preview": processing_result.get("content_preview", processing_result.get("content", "")[:500])
+            }
             
         except Exception as e:
             self.log_operation("document_processing_error", f"Error processing document file: {e}", "error")
@@ -887,7 +931,8 @@ class URLExtractor:
                 processing_result=processing_result_data,
                 user_id=user_id,
                 notebook_id=notebook_id,
-                original_file_path=original_file_path  # Pass the original file to be stored
+                original_file_path=original_file_path,  # Pass the original file to be stored
+                source_identifier=url  # Pass URL for source hash calculation
             )
             
             # Store mapping if upload_url_id is provided

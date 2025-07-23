@@ -39,7 +39,10 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
             
             # Try batch serializer first
             from ..serializers import BatchURLParseSerializer, URLParseSerializer
-            batch_serializer = BatchURLParseSerializer(data=request.data)
+            batch_serializer = BatchURLParseSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             if batch_serializer.is_valid():
                 validated_data = batch_serializer.validated_data
                 
@@ -53,7 +56,10 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
                     return self._handle_single_url_parse(url, upload_url_id, notebook, request.user)
             
             # Fallback to original serializer for backward compatibility
-            serializer = URLParseSerializer(data=request.data)
+            serializer = URLParseSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             if not serializer.is_valid():
                 return self.error_response(
                     "Invalid request data", 
@@ -231,7 +237,10 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
             
             # Try batch serializer first
             from ..serializers import BatchURLParseWithMediaSerializer, URLParseWithMediaSerializer
-            batch_serializer = BatchURLParseWithMediaSerializer(data=request.data)
+            batch_serializer = BatchURLParseWithMediaSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             if batch_serializer.is_valid():
                 validated_data = batch_serializer.validated_data
                 
@@ -245,7 +254,10 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
                     return self._handle_single_url_parse_with_media(url, upload_url_id, notebook, request.user)
             
             # Fallback to original serializer for backward compatibility
-            serializer = URLParseWithMediaSerializer(data=request.data)
+            serializer = URLParseWithMediaSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             if not serializer.is_valid():
                 return self.error_response(
                     "Invalid request data", 
@@ -393,7 +405,10 @@ class URLParseDocumentView(StandardAPIView, NotebookPermissionMixin):
             notebook = self.get_user_notebook(notebook_id, request.user)
             
             # Validate input
-            serializer = URLParseDocumentSerializer(data=request.data)
+            serializer = URLParseDocumentSerializer(
+                data=request.data, 
+                context={'request': request, 'notebook_id': notebook_id}
+            )
             if not serializer.is_valid():
                 return self.error_response(
                     "Invalid input data",
