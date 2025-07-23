@@ -635,7 +635,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : null}
                     {urlProcessingType === 'media' ? 'Process Media' : 
-                     urlProcessingType === 'document' ? 'Download Document' : 
+                     urlProcessingType === 'document' ? 'Process Document' : 
                      'Process Website'}
                   </Button>
                 </div>
