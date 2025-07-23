@@ -130,14 +130,6 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       const urlDomain = linkUrl.replace(/^https?:\/\//, '').split('/')[0];
       const displayName = `${urlDomain} - ${urlProcessingType || 'website'}`;
       
-      // Notify parent component that upload started
-      if (onUploadStarted) {
-        onUploadStarted(uploadFileId, displayName, 'url');
-      }
-      
-      // Close modal immediately after upload starts
-      handleClose();
-      
       let response;
       if (urlProcessingType === 'media') {
         response = await apiService.parseUrlWithMedia(linkUrl, notebookId, 'cosine', uploadFileId);
@@ -148,14 +140,29 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       }
       
       if (response.success) {
-        // Refresh sources list (modal is already closed)
+        // Notify parent component that upload started
+        if (onUploadStarted) {
+          onUploadStarted(uploadFileId, displayName, 'url');
+        }
+        
+        // Close modal and refresh sources list
+        handleClose();
         onSourcesAdded();
       } else {
         throw new Error(response.error || 'URL parsing failed');
       }
     } catch (error) {
       console.error('Error processing URL:', error);
-      setError(`Failed to process URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Parse the error message to check for duplicate URL detection
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check if this is a duplicate URL validation error
+      if (errorMessage.includes('already exists')) {
+        setError(`This URL already exists in your workspace. Please use a different URL.`);
+      } else {
+        setError(`Failed to process URL: ${errorMessage}`);
+      }
     } finally {
       setIsUploading(false);
     }

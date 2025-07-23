@@ -74,7 +74,7 @@ class FileUploadSerializer(serializers.Serializer):
             existing_item = check_source_duplicate(original_filename, user_id, notebook_id)
             if existing_item:
                 raise serializers.ValidationError({
-                    'file': f'File with name "{original_filename}" already exists. Check the knowledge base..',
+                    'file': f'File with name "{original_filename}" already exists. Check the knowledge base.',
                     'existing_item_id': str(existing_item.id)
                 })
         
@@ -159,7 +159,7 @@ class BatchFileUploadSerializer(serializers.Serializer):
                 existing_item = check_source_duplicate(file.name, user_id, notebook_id)
                 if existing_item:
                     raise serializers.ValidationError({
-                        'file': f'File with name "{file.name}" already exists. Check the knowledge base..',
+                        'file': f'File with name "{file.name}" already exists. Check the knowledge base.',
                         'existing_item_id': str(existing_item.id)
                     })
             
@@ -176,7 +176,7 @@ class BatchFileUploadSerializer(serializers.Serializer):
                 
                 if duplicate_files:
                     raise serializers.ValidationError({
-                        'files': 'Some files already exist. Check the knowledge base..',
+                        'files': 'Some files already exist. Check the knowledge base.',
                         'duplicates': duplicate_files
                     })
         
