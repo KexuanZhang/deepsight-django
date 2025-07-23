@@ -719,7 +719,7 @@ useEffect(() => {
           </div>
           <Button
             onClick={() => handleSendMessage()}
-            disabled={!inputMessage.trim() || isLoading}
+            disabled={!inputMessage.trim() || isLoading || !hasSelectedFiles()}
             size="sm"
             className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
