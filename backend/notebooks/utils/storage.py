@@ -638,7 +638,7 @@ class FileStorageService:
     def delete_knowledge_base_item(self, kb_item_id: str, user_id: int) -> bool:
         """Delete a knowledge base item and its entire folder from MinIO."""
         try:
-            from ..models import KnowledgeBaseItem
+            from ..models import KnowledgeBaseItem, KnowledgeItem, Source
             from django.contrib.auth import get_user_model
             
             User = get_user_model()
@@ -647,12 +647,29 @@ class FileStorageService:
             # Get the knowledge base item
             kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
             
+            # Find all KnowledgeItems that link to this KB item
+            knowledge_items = KnowledgeItem.objects.filter(knowledge_base_item=kb_item)
+            
+            # Collect all Source records that created this KB item
+            source_ids_to_delete = []
+            for ki in knowledge_items:
+                if ki.source:
+                    source_ids_to_delete.append(ki.source.id)
+                    self.log_operation("source_marked_for_deletion", 
+                        f"Source {ki.source.id} will be deleted (created KB item {kb_item_id})")
+            
             # Delete entire folder by prefix (using trailing slash to indicate prefix)
             prefix = f"{user_id}/kb/{kb_item_id}/"
             folder_deletion_success = self.minio_backend.delete_folder(prefix)
             
-            # Always delete database record regardless of file deletion status
+            # Delete the KB item (this will cascade delete KnowledgeItems due to FK constraint)
             kb_item.delete()
+            
+            # Delete the Source records that created this KB item
+            if source_ids_to_delete:
+                deleted_sources = Source.objects.filter(id__in=source_ids_to_delete).delete()
+                self.log_operation("sources_deleted", 
+                    f"Deleted {deleted_sources[0]} Source record(s) that created KB item {kb_item_id}")
             
             if not folder_deletion_success:
                 self.log_operation("kb_item_deleted_with_issues", 

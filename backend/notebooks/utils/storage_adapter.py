@@ -53,6 +53,22 @@ class StorageAdapter:
     def delete_file(self, *args, **kwargs):
         """Delete file using the service."""
         return self.storage_service.delete_file(*args, **kwargs)
+    
+    def get_user_knowledge_base(self, *args, **kwargs):
+        """Get user knowledge base using the service."""
+        return self.storage_service.get_user_knowledge_base(*args, **kwargs)
+    
+    def link_knowledge_item_to_notebook(self, *args, **kwargs):
+        """Link knowledge item to notebook using the service."""
+        return self.storage_service.link_knowledge_item_to_notebook(*args, **kwargs)
+    
+    def delete_knowledge_base_item(self, *args, **kwargs):
+        """Delete knowledge base item using the service."""
+        return self.storage_service.delete_knowledge_base_item(*args, **kwargs)
+    
+    def unlink_knowledge_item_from_notebook(self, *args, **kwargs):
+        """Unlink knowledge item from notebook using the service."""
+        return self.storage_service.unlink_knowledge_item_from_notebook(*args, **kwargs)
 
 
 class EnhancedFileStorageService(FileStorageService):
