@@ -887,7 +887,8 @@ class URLExtractor:
                 processing_result=processing_result_data,
                 user_id=user_id,
                 notebook_id=notebook_id,
-                original_file_path=original_file_path  # Pass the original file to be stored
+                original_file_path=original_file_path,  # Pass the original file to be stored
+                source_identifier=url  # Pass URL for source hash calculation
             )
             
             # Store mapping if upload_url_id is provided

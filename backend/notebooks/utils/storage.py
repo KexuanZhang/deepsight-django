@@ -15,7 +15,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.exceptions import ValidationError
 
-from .helpers import calculate_content_hash
+from .helpers import calculate_content_hash, calculate_source_hash
 
 try:
     from minio import Minio
@@ -409,6 +409,7 @@ class FileStorageService:
         notebook_id: int,
         source_id: Optional[int] = None,
         original_file_path: Optional[str] = None,
+        source_identifier: Optional[str] = None,
     ) -> str:
         """Store processed file content in user's knowledge base."""
         try:
@@ -419,17 +420,33 @@ class FileStorageService:
             User = get_user_model()
             user = User.objects.get(id=user_id)
             
-            # Calculate content hash for deduplication
-            content_hash = calculate_content_hash(content)
+            # Calculate source hash (primary) - use source_identifier if provided
+            if source_identifier:
+                source_hash = calculate_source_hash(source_identifier, user_id)
+            else:
+                # Fallback to content hash if no source identifier provided
+                source_hash = calculate_content_hash(content)
             
-            # Check for existing content
+            # Check for existing source first (primary check)
             existing_item = KnowledgeBaseItem.objects.filter(
-                user=user, source_hash=content_hash
+                user=user, source_hash=source_hash
             ).first()
             
             if existing_item:
-                self.log_operation("duplicate_content", f"Content already exists: {existing_item.id}")
+                self.log_operation("duplicate_source", f"Source already exists: {existing_item.id}")
                 return str(existing_item.id)
+            
+            # Secondary check: content-based deduplication for different filenames with same content
+            if source_identifier:  # Only do secondary check if we used source hash as primary
+                content_hash = calculate_content_hash(content)
+                existing_content = KnowledgeBaseItem.objects.filter(
+                    user=user,
+                    source_hash=content_hash  # Check if content hash exists in any source_hash
+                ).exclude(id=existing_item.id if existing_item else None).first()
+                
+                if existing_content:
+                    self.log_operation("duplicate_content", f"Content already exists with different source: {existing_content.id}")
+                    return str(existing_content.id)
             
             # Create database record first to get the ID
             knowledge_item = KnowledgeBaseItem.objects.create(
@@ -437,7 +454,7 @@ class FileStorageService:
                 title=metadata.get('original_filename', 'Untitled'),
                 content_type=metadata.get('source_type', 'document'),  # Map source_type to content_type
                 content=content,  # Store the actual content in the database
-                source_hash=content_hash,
+                source_hash=source_hash,
                 metadata={
                     'file_extension': metadata.get('file_extension', ''),
                     'file_size': metadata.get('file_size', len(content.encode('utf-8'))),

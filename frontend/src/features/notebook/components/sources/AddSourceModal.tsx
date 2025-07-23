@@ -82,25 +82,32 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
     try {
       const uploadFileId = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
       
-      // Notify parent component that upload started
-      if (onUploadStarted) {
-        onUploadStarted(uploadFileId, file.name, validation.extension);
-      }
-      
-      // Close modal immediately after upload starts
-      handleClose();
-      
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
-        // Refresh sources list (modal is already closed)
+        // Notify parent component that upload started
+        if (onUploadStarted) {
+          onUploadStarted(uploadFileId, file.name, validation.extension);
+        }
+        
+        // Close modal and refresh sources list
+        handleClose();
         onSourcesAdded();
       } else {
         throw new Error(response.error || 'Upload failed');
       }
     } catch (error) {
       console.error('Error uploading file:', error);
-      setError(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Parse the error message to check for duplicate file detection
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check if this is a validation error response with details
+      if (errorMessage.includes('File validation failed') && errorMessage.includes('already exists')) {
+        setError(`File "${file.name}" already exists in this workspace. Please choose a different file or rename it.`);
+      } else {
+        setError(`Failed to upload ${file.name}: ${errorMessage}`);
+      }
     } finally {
       setIsUploading(false);
     }
