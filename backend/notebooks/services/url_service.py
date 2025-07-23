@@ -7,7 +7,7 @@ from asgiref.sync import async_to_sync
 from django.db import transaction
 from rest_framework import status
 
-from ..models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
+from ..models import Source, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.url_extractor import URLExtractor
 from rag.rag import add_user_files
 
@@ -46,11 +46,6 @@ class URLService:
                 processing_status="done",
             )
 
-            # Create URL processing result
-            URLProcessingResult.objects.create(
-                source=source,
-                content_md=result.get("content_preview", ""),
-            )
 
             # Ingest the KB item content for this URL
             if result.get("file_id"):
@@ -168,11 +163,6 @@ class URLService:
                 processing_status="done",
             )
 
-            # Create URL processing result
-            URLProcessingResult.objects.create(
-                source=source,
-                content_md=result.get("content_preview", ""),
-            )
 
             return {
                 "success": True,
@@ -208,11 +198,6 @@ class URLService:
                 processing_status="done",
             )
 
-            # Create URL processing result
-            URLProcessingResult.objects.create(
-                source=source,
-                content_md=result.get("content_preview", ""),
-            )
 
             return {
                 "success": True,

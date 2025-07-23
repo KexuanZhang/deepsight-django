@@ -102,7 +102,7 @@ class FileListView(StandardAPIView, NotebookPermissionMixin, FileListResponseMix
             # Get all KnowledgeItems for this notebook with optimized query
             knowledge_items = (
                 KnowledgeItem.objects.filter(notebook=notebook)
-                .select_related("knowledge_base_item", "source", "source__url_result")
+                .select_related("knowledge_base_item", "source")
                 .order_by("-added_at")
             )
 

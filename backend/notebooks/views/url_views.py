@@ -11,7 +11,7 @@ from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import Source, URLProcessingResult, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
+from ..models import Source, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..serializers import (
     URLParseSerializer, URLParseWithMediaSerializer, URLParseDocumentSerializer,
     BatchURLParseSerializer, BatchURLParseWithMediaSerializer
@@ -89,7 +89,7 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
         result = async_to_sync(process_url_async)()
 
         # Create source record
-        from ..models import Source, URLProcessingResult
+        from ..models import Source
         source = Source.objects.create(
             notebook=notebook,
             source_type="url",
@@ -98,11 +98,6 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
             processing_status="done",
         )
 
-        # Create URL processing result
-        URLProcessingResult.objects.create(
-            source=source,
-            content_md=result.get("content_preview", ""),
-        )
 
         # Link to knowledge base
         kb_item_id = result['file_id']
@@ -281,7 +276,7 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
         result = async_to_sync(process_url_with_media_async)()
 
         # Create source record
-        from ..models import Source, URLProcessingResult
+        from ..models import Source
         source = Source.objects.create(
             notebook=notebook,
             source_type="url",
@@ -290,11 +285,6 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
             processing_status="done",
         )
 
-        # Create URL processing result
-        URLProcessingResult.objects.create(
-            source=source,
-            content_md=result.get("content_preview", ""),
-        )
 
         # Link to knowledge base
         kb_item_id = result['file_id']
