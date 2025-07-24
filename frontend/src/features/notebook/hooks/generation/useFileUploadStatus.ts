@@ -76,7 +76,7 @@ export const useFileUploadStatus = () => {
     if (notebookId && !sseRef.current) {
       console.log(`[SSE_DEBUG] Starting SSE connection for upload completion signals: notebook ${notebookId}`);
       
-      const sseUrl = `/api/notebooks/${notebookId}/files/stream`;
+      const sseUrl = `/api/v1/notebooks/${notebookId}/files/stream`;
       console.log('[SSE_DEBUG] Connecting to SSE URL:', sseUrl);
       const eventSource = new EventSource(sseUrl);
       
