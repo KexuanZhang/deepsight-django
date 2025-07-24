@@ -477,6 +477,10 @@ class UploadProcessor:
                 "parsing_status": "processing",
                 "storage_backend": "minio",  # Mark as MinIO storage
             }
+            
+            # Add source URL to metadata if available (for duplicate detection)
+            if hasattr(file, '_source_url') and file._source_url:
+                file_metadata["source_url"] = file._source_url
 
             # Process based on file type
             processing_result = await self._process_file_by_type(temp_path, file_metadata)
@@ -502,6 +506,9 @@ class UploadProcessor:
             if not self.file_storage:
                 raise Exception("MinIO file storage service not available")
                 
+            # Use source URL as identifier for duplicate detection if available, otherwise use filename
+            source_identifier = getattr(file, '_source_url', None) or file.name
+            
             store_file_sync = sync_to_async(self.file_storage.store_processed_file, thread_sensitive=False)
             file_id = await store_file_sync(
                 content=processing_result["content"],
@@ -510,7 +517,7 @@ class UploadProcessor:
                 user_id=user_pk,
                 notebook_id=notebook_id,
                 original_file_path=temp_path,
-                source_identifier=file.name,  # Pass original filename for source hash
+                source_identifier=source_identifier,  # Use URL for duplicate detection if available
             )
 
             # Run synchronous content indexing in executor

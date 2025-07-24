@@ -10,11 +10,12 @@ import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from urllib.parse import urljoin, urlparse, urlunparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import re
 
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import UploadedFile, InMemoryUploadedFile
+from django.core.exceptions import ValidationError
 import io
 
 from ..utils.storage import get_storage_adapter
@@ -802,6 +803,14 @@ class URLExtractor:
                 charset=None
             )
             
+            # Add source_url to the file metadata for duplicate detection
+            # We'll need to modify the upload processor to handle this metadata
+            if hasattr(django_file, 'source_url'):
+                django_file.source_url = url
+            else:
+                # Store it as an attribute that can be accessed later
+                django_file._source_url = url
+            
             # Use upload processor to handle the file
             result = await self.upload_processor.process_upload(
                 file=django_file,
@@ -901,10 +910,3 @@ class URLExtractor:
         except Exception as e:
             self.log_operation("store_content_error", f"Error storing URL content: {e}", "error")
             raise
-
-        crawl_result : CrawlResult = await self.aprocess_html(
-            url=url,
-            html=html,
-            extracted_content=extracted_content,
-            config=config,  # config should contain screenshot if needed
-        )
