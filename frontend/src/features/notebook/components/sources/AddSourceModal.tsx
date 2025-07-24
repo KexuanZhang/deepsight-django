@@ -2,7 +2,6 @@ import React, { useState, useRef, useCallback } from "react";
 import { Trash2, Plus, X, Upload, Link2, FileText, Globe, Youtube, Loader2, RefreshCw, FileIcon } from "lucide-react";
 import { Button } from "@/common/components/ui/button";
 import { Badge } from "@/common/components/ui/badge";
-import { Alert, AlertDescription } from "@/common/components/ui/alert";
 import apiService from "@/common/utils/api";
 import { KnowledgeBaseItem } from "@/features/notebook/type";
 import { COLORS } from "@/features/notebook/config/uiConfig";
@@ -459,6 +458,37 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
             知识库
           </button>
         </div>
+
+        {/* Custom Error Display - Now in header for better visibility */}
+        {error && (
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                {/* Custom error icon SVG */}
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3 flex-1">
+                <div className="text-sm text-red-700">
+                  {error}
+                </div>
+              </div>
+              <div className="ml-4 flex-shrink-0">
+                <button
+                  type="button"
+                  className="inline-flex text-red-400 hover:text-red-600 focus:outline-none"
+                  onClick={() => setError(null)}
+                >
+                  {/* Custom dismiss icon SVG */}
+                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
 
@@ -874,24 +904,6 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
         </div>
       )}
 
-      {/* Error Display */}
-      {error && (
-        <div className="mt-6">
-          <Alert variant="destructive" className={`${COLORS.tw.primary.border[600]} ${COLORS.tw.primary.bg[50]}`}>
-            <AlertDescription className="text-red-700">
-              {error}
-              <Button
-                variant="ghost"
-                size="sm"
-                className={`ml-2 h-6 px-2 ${COLORS.tw.primary.text[600]} ${COLORS.tw.primary.hover.text[700]}`}
-                onClick={() => setError(null)}
-              >
-                Dismiss
-              </Button>
-            </AlertDescription>
-          </Alert>
-        </div>
-      )}
 
       {/* Hidden File Input */}
       <input
