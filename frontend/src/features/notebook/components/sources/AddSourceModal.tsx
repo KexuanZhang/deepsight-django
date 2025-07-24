@@ -412,7 +412,6 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
               handleClose();
             }}
             className="text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-            disabled={isUploading}
           >
             <X className="h-6 w-6" />
           </Button>
