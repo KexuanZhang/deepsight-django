@@ -10,6 +10,7 @@ from ..models import (
     KnowledgeBaseImage,
     KnowledgeItem,
 )
+from ..utils.helpers import check_source_duplicate
 
 
 class FileUploadSerializer(serializers.Serializer):
@@ -17,6 +18,32 @@ class FileUploadSerializer(serializers.Serializer):
 
     file = serializers.FileField()
     upload_file_id = serializers.CharField(required=False)
+    
+    def validate(self, data):
+        """Check for duplicate filename before processing."""
+        file = data.get('file')
+        if not file:
+            return data
+            
+        # Get original filename before any processing
+        original_filename = file.name
+        
+        # Get user and notebook from context
+        request = self.context.get('request')
+        notebook_id = self.context.get('notebook_id')
+        
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            user_id = request.user.id
+            
+            # Check for source duplicate using original filename for this user
+            existing_item = check_source_duplicate(original_filename, user_id, notebook_id)
+            if existing_item:
+                raise serializers.ValidationError({
+                    'file': f'File with name "{original_filename}" already exists. Check the knowledge base..',
+                    'existing_item_id': str(existing_item.id)
+                })
+        
+        return data
 
 
 class VideoImageExtractionSerializer(serializers.Serializer):
@@ -75,7 +102,7 @@ class BatchFileUploadSerializer(serializers.Serializer):
     upload_file_id = serializers.CharField(required=False)
 
     def validate(self, data):
-        """Ensure either file or files is provided."""
+        """Ensure either file or files is provided and check for duplicates."""
         file = data.get('file')
         files = data.get('files')
         
@@ -84,6 +111,39 @@ class BatchFileUploadSerializer(serializers.Serializer):
         
         if file and files:
             raise serializers.ValidationError("Provide either 'file' or 'files', not both.")
+        
+        # Check for duplicates
+        request = self.context.get('request')
+        notebook_id = self.context.get('notebook_id')
+        
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            user_id = request.user.id
+            
+            # Check single file
+            if file:
+                existing_item = check_source_duplicate(file.name, user_id, notebook_id)
+                if existing_item:
+                    raise serializers.ValidationError({
+                        'file': f'File with name "{file.name}" already exists. Check the knowledge base..',
+                        'existing_item_id': str(existing_item.id)
+                    })
+            
+            # Check multiple files
+            if files:
+                duplicate_files = []
+                for f in files:
+                    existing_item = check_source_duplicate(f.name, user_id, notebook_id)
+                    if existing_item:
+                        duplicate_files.append({
+                            'filename': f.name,
+                            'existing_item_id': str(existing_item.id)
+                        })
+                
+                if duplicate_files:
+                    raise serializers.ValidationError({
+                        'files': 'Some files already exist. Check the knowledge base..',
+                        'duplicates': duplicate_files
+                    })
         
         return data
 

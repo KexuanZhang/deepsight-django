@@ -91,18 +91,40 @@ def clean_title(title: str) -> str:
     return cleaned or "untitled"
 
 
+def calculate_source_hash(source_identifier: str, user_id: int) -> str:
+    """
+    Calculate SHA256 hash of source identifier (filename or URL) for early duplicate detection.
+    
+    This is used as the primary hash for source_hash field in KnowledgeBaseItem.
+    For files: uses original filename before clean_title
+    For URLs: uses the raw URL
+    User ID is included to scope duplicates per user.
+    
+    Args:
+        source_identifier: Original filename or raw URL
+        user_id: User ID to scope the hash per user
+        
+    Returns:
+        SHA256 hash as hexadecimal string for use in KnowledgeBaseItem.source_hash
+    """
+    # Combine source identifier with user ID for user-scoped hashing
+    combined_source = f"{user_id}:{source_identifier}"
+    content_bytes = combined_source.encode('utf-8')
+    return hashlib.sha256(content_bytes).hexdigest()
+
+
 def calculate_content_hash(content: Union[str, bytes]) -> str:
     """
-    Calculate SHA256 hash of content for deduplication in KBItem source_hash column.
+    Calculate SHA256 hash of content for content-based deduplication (fallback check).
     
-    This function generates the same hash for the same content regardless of filename,
-    enabling proper content-based deduplication for the knowledge base.
+    This is used as a secondary check to catch duplicates when different filenames
+    contain the same content.
     
     Args:
         content: File content as string or bytes
         
     Returns:
-        SHA256 hash as hexadecimal string for use in KnowledgeBaseItem.source_hash
+        SHA256 hash as hexadecimal string
     """
     if isinstance(content, str):
         content_bytes = content.encode('utf-8')
@@ -110,6 +132,31 @@ def calculate_content_hash(content: Union[str, bytes]) -> str:
         content_bytes = content
     
     return hashlib.sha256(content_bytes).hexdigest()
+
+
+def check_source_duplicate(source_identifier: str, user_id: int, notebook_id: str = None):
+    """
+    Check if source (filename or URL) already exists for the user.
+    
+    Args:
+        source_identifier: Original filename or raw URL
+        user_id: User ID to check within
+        notebook_id: Optional notebook ID (not used in current implementation as duplicates are checked per user)
+        
+    Returns:
+        KnowledgeBaseItem if duplicate found, None otherwise
+    """
+    from ..models import KnowledgeBaseItem
+    
+    source_hash = calculate_source_hash(source_identifier, user_id)
+    
+    # Check for duplicates per user (same user, same filename/URL)
+    duplicate_item = KnowledgeBaseItem.objects.filter(
+        user_id=user_id,
+        source_hash=source_hash
+    ).first()
+    
+    return duplicate_item
 
 
 def extract_domain(url: str) -> str:

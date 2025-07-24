@@ -510,6 +510,7 @@ class UploadProcessor:
                 user_id=user_pk,
                 notebook_id=notebook_id,
                 original_file_path=temp_path,
+                source_identifier=file.name,  # Pass original filename for source hash
             )
 
             # Run synchronous content indexing in executor

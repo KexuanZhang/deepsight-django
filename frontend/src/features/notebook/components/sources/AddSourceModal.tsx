@@ -82,25 +82,38 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
     try {
       const uploadFileId = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
       
-      // Notify parent component that upload started
+      // Notify parent component that upload started IMMEDIATELY
+      // This makes the item show up in processing state right away (like URLs do)
       if (onUploadStarted) {
         onUploadStarted(uploadFileId, file.name, validation.extension);
       }
       
-      // Close modal immediately after upload starts
-      handleClose();
-      
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
-        // Refresh sources list (modal is already closed)
+        // Close modal and refresh sources list on success
+        handleClose();
         onSourcesAdded();
       } else {
         throw new Error(response.error || 'Upload failed');
       }
     } catch (error) {
       console.error('Error uploading file:', error);
-      setError(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check if this is a validation error (duplicate file)
+      if (errorMessage.includes('File validation failed') && errorMessage.includes('already exists')) {
+        // This is a validation error - keep modal open and show error
+        // The item will show as "failed" in the processing list, which is appropriate
+        setError(`File "${file.name}" already exists in this workspace. Please choose a different file or rename it.`);
+        // Don't close modal, let user try again or cancel
+      } else {
+        // This is a processing error - close modal and let processing system handle it
+        handleClose();
+        // The processing system will show the error state in the processing list
+        console.error(`Processing error for ${file.name}:`, errorMessage);
+      }
     } finally {
       setIsUploading(false);
     }
