@@ -575,7 +575,7 @@ class FileStorageService:
             User = get_user_model()
             user = User.objects.get(id=user_id)
             
-            # Build query
+            # Build query - show all items regardless of processing status
             queryset = KnowledgeBaseItem.objects.filter(user=user)
             
             if content_type:
@@ -592,6 +592,7 @@ class FileStorageService:
                     'title': item.title,
                     'content_type': item.content_type,
                     'source_hash': item.source_hash,
+                    'processing_status': item.processing_status,  # Add processing status
                     'metadata': item.metadata or {},
                     'file_metadata': item.file_metadata or {},
                     'created_at': item.created_at.isoformat(),

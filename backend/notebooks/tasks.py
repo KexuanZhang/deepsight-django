@@ -138,14 +138,20 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
 
 
 @shared_task(bind=True)
-def process_file_upload_task(self, file_data, filename, notebook_id, user_id, upload_file_id=None, batch_job_id=None, batch_item_id=None):
-    """Process a single file upload asynchronously."""
+def process_file_upload_task(self, file_data, filename, notebook_id, user_id, upload_file_id=None, batch_job_id=None, batch_item_id=None, kb_item_id=None):
+    """Process a single file upload asynchronously with actual file processing."""
     try:
-        # Import services lazily to avoid circular imports
-        from .services.file_service import FileService
+        # Import services and processors lazily to avoid circular imports
+        from .processors.upload_processor import UploadProcessor
         from .services.notebook_service import NotebookService
+        from django.core.files.base import ContentFile
+        from django.shortcuts import get_object_or_404
+        from rag.rag import add_user_files
+        from django.db import transaction
+        from asgiref.sync import async_to_sync
         
-        file_service = FileService()
+        # Initialize processors and services
+        upload_processor = UploadProcessor()
         notebook_service = NotebookService()
         
         # Validate inputs
@@ -161,16 +167,85 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
             _update_batch_item_status(batch_item_id, 'processing')
         
         # Create a temporary file-like object from the file data
-        from django.core.files.base import ContentFile
         temp_file = ContentFile(file_data, name=filename)
         
-        # Process the upload using service
-        result = file_service.upload_file(
-            file=temp_file,
-            upload_file_id=upload_file_id or uuid4().hex,
-            user=user,
-            notebook=notebook
+        # Log file size for debugging and check limits
+        file_size_mb = len(file_data) / 1024 / 1024
+        logger.info(f"Processing file {filename}: {file_size_mb:.2f} MB")
+        
+        # Check file size limit (prevent worker crashes on huge files)
+        MAX_FILE_SIZE_MB = 500  # 500MB limit
+        if file_size_mb > MAX_FILE_SIZE_MB:
+            raise ValidationError(f"File too large: {file_size_mb:.2f}MB (max: {MAX_FILE_SIZE_MB}MB)")
+        
+        # Get the pre-created KnowledgeBaseItem if provided
+        kb_item = None
+        if kb_item_id:
+            try:
+                kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
+                # Update status to show processing has started
+                kb_item.processing_status = "in_progress"
+                kb_item.save(update_fields=["processing_status"])
+            except KnowledgeBaseItem.DoesNotExist:
+                logger.error(f"KnowledgeBaseItem {kb_item_id} not found for user {user_id}")
+        
+        # Process the file using upload processor
+        result = async_to_sync(upload_processor.process_upload)(
+            temp_file, upload_file_id or uuid4().hex, user_pk=user.pk, notebook_id=notebook.id
         )
+        
+        # Get the processed KnowledgeBaseItem from processor
+        processed_kb_item = get_object_or_404(KnowledgeBaseItem, id=result["file_id"], user=user)
+        
+        # Update our pre-created KnowledgeBaseItem with processed data
+        if kb_item:
+            with transaction.atomic():
+                # Refresh to get latest state
+                kb_item.refresh_from_db()
+                
+                # Update with processed data
+                kb_item.content = processed_kb_item.content
+                kb_item.file_object_key = processed_kb_item.file_object_key
+                kb_item.original_file_object_key = processed_kb_item.original_file_object_key
+                kb_item.file_metadata = processed_kb_item.file_metadata
+                kb_item.source_hash = processed_kb_item.source_hash
+                kb_item.tags = processed_kb_item.tags
+                kb_item.metadata = processed_kb_item.metadata
+                # Update any KnowledgeItems to use our kb_item FIRST
+                from .models import KnowledgeItem, KnowledgeBaseImage
+                for ki in KnowledgeItem.objects.filter(knowledge_base_item_id=processed_kb_item.id):
+                    # Check if a KnowledgeItem for (notebook, kb_item) already exists
+                    exists = KnowledgeItem.objects.filter(
+                        notebook=ki.notebook,
+                        knowledge_base_item=kb_item
+                    ).exists()
+                    if exists:
+                        # Delete the duplicate to avoid unique constraint error
+                        ki.delete()
+                    else:
+                        ki.knowledge_base_item = kb_item
+                        ki.save(update_fields=["knowledge_base_item"])
+                
+                # Update any KnowledgeBaseImage records to use our kb_item
+                KnowledgeBaseImage.objects.filter(knowledge_base_item_id=processed_kb_item.id).update(
+                    knowledge_base_item=kb_item
+                )
+                
+                # Delete the duplicate KnowledgeBaseItem created by processor
+                processed_kb_item.delete()
+                
+                # NOW update status and save - this will trigger the signal with correct KnowledgeItem links
+                kb_item.processing_status = "done"
+                kb_item.save()
+            
+            # Add to user's RAG collection
+            add_user_files(
+                user_id=user.pk,
+                kb_items=[kb_item],
+            )
+            
+            # Use our kb_item ID for the result
+            result["file_id"] = kb_item.id
         
         # Update batch item status on success
         if batch_item_id:
@@ -180,11 +255,26 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
         if batch_job_id:
             _check_batch_completion(batch_job_id)
         
-        logger.info(f"Successfully processed file upload: {filename}")
+        logger.info(f"Successfully processed file upload: {filename} (kb_item: {result['file_id']})")
+        
+        # Clean up memory
+        del file_data
+        del temp_file
+        
         return result
         
     except Exception as e:
         logger.error(f"Error processing file upload {filename}: {e}")
+        
+        # Update the KnowledgeBaseItem status to error if we have one
+        if kb_item_id:
+            try:
+                kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user_id=user_id)
+                kb_item.processing_status = "error"
+                kb_item.save(update_fields=["processing_status"])
+                logger.info(f"Updated kb_item {kb_item_id} status to error")
+            except KnowledgeBaseItem.DoesNotExist:
+                logger.error(f"Could not find kb_item {kb_item_id} to update error status")
         
         # Update batch item status on failure
         if batch_item_id:
