@@ -3,6 +3,7 @@ Celery configuration for Django project.
 """
 
 import os
+import sys
 from celery import Celery
 from django.conf import settings
 
@@ -17,6 +18,11 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 
 # Load task modules from all registered Django apps.
 app.autodiscover_tasks()
+
+# Fix for macOS fork() issues with Metal Performance Shaders
+if sys.platform == "darwin":  # macOS
+    import multiprocessing
+    multiprocessing.set_start_method('spawn', force=True)
 
 # Configure Celery settings
 app.conf.update(
@@ -47,6 +53,8 @@ app.conf.update(
     # Worker settings
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=50,
+    # Use solo pool on macOS to avoid fork() issues
+    worker_pool="solo" if sys.platform == "darwin" else "prefork",
     # Beat schedule for periodic tasks
     beat_schedule={
         "cleanup-old-podcast-jobs": {

@@ -205,6 +205,14 @@ class ApiService {
     return this.request(`/notebooks/${notebookId}/files/?limit=${limit}&offset=${offset}`);
   }
 
+  // Real-time file updates via Server-Sent Events
+  createFileListEventSource(notebookId: string): EventSource {
+    const url = `${this.baseUrl}/notebooks/${notebookId}/files/stream`;
+    return new EventSource(url, {
+      withCredentials: true // Include session cookies for authentication
+    });
+  }
+
   async getParsedFile(fileId: string): Promise<any> {
     // Get file content from knowledge base item
     // Use the correct notebooks endpoint structure

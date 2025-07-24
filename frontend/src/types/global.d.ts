@@ -121,6 +121,7 @@ export interface KnowledgeBaseItem {
   original_filename?: string;
   linked_to_notebook: boolean;
   metadata?: Record<string, any>;
+  processing_status?: string;
 }
 
 // Chat and messaging types (enhanced)

@@ -329,15 +329,11 @@ class SourceSerializer(serializers.ModelSerializer):
             "source_type",
             "title",
             "created_at",
-            "needs_processing",
-            "processing_status",
             "jobs",
             "knowledge_items",
         ]
         read_only_fields = [
             "id",
             "created_at",
-            "needs_processing",
-            "processing_status",
         ]
   

@@ -249,6 +249,156 @@ class FileStatusStreamView(APIView):
         return response
 
 
+from django.views import View
+from django.http import JsonResponse, StreamingHttpResponse
+
+class NotebookFileListStreamView(View):
+    """
+    GET /api/notebooks/{notebook_id}/files/stream
+    Server-Sent Events streaming endpoint for real-time notebook file list updates.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        # Check authentication manually
+        if not request.user.is_authenticated:
+            return JsonResponse({"detail": "Authentication required."}, status=401)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, notebook_id):
+        """Stream notebook file list changes in real-time using event-driven updates."""
+        # Re-enabled SSE for file completion notifications
+        try:
+            # Verify notebook access
+            from ..models import Notebook
+            try:
+                notebook = Notebook.objects.get(id=notebook_id, user=request.user)
+            except Notebook.DoesNotExist:
+                return JsonResponse({"detail": "Not found."}, status=404)
+            
+            def event_stream():
+                """Generator function for SSE events"""
+                import time
+                import json
+                from django.core.cache import cache
+                
+                max_duration = 300  # 5 minutes maximum (reduce from 30 minutes)
+                start_time = time.time()
+                check_interval = 2  # Check for events every 2 seconds (reduce frequency)
+                
+                # Send initial file list
+                try:
+                    knowledge_items = (
+                        KnowledgeItem.objects.filter(notebook=notebook)
+                        .select_related("knowledge_base_item", "source")
+                        .order_by("-added_at")
+                    )
+                    
+                    # Build file response data directly (inline helper)
+                    def build_file_response_data(ki):
+                        metadata = ki.knowledge_base_item.metadata or {}
+                        original_filename = metadata.get('original_filename', ki.knowledge_base_item.title)
+                        file_extension = metadata.get('file_extension', '')
+                        file_size = metadata.get('file_size', 0)
+                        
+                        return {
+                            "file_id": str(ki.knowledge_base_item.id),
+                            "title": ki.knowledge_base_item.title,
+                            "upload_timestamp": ki.added_at.isoformat() if ki.added_at else None,
+                            "parsing_status": ki.knowledge_base_item.processing_status,
+                            "original_filename": original_filename,
+                            "file_extension": file_extension,
+                            "file_size": file_size,
+                            "metadata": metadata,
+                            "knowledge_item_id": str(ki.id)
+                        }
+                    
+                    files = [build_file_response_data(ki) for ki in knowledge_items]
+                    
+                    initial_event = {
+                        "type": "initial",
+                        "files": files,
+                        "timestamp": time.time()
+                    }
+                    yield f"data: {json.dumps(initial_event)}\n\n"
+                    
+                except Exception as e:
+                    error_event = {"type": "error", "message": str(e)}
+                    yield f"data: {json.dumps(error_event)}\n\n"
+                    return
+                
+                # Track last processed event time to avoid duplicates
+                last_event_time = 0
+                last_heartbeat_time = time.time()
+                cache_key = f"notebook_file_changes_{notebook_id}"
+                heartbeat_interval = 30  # Send heartbeat every 30 seconds
+                
+                # Event-driven streaming loop
+                while time.time() - start_time < max_duration:
+                    try:
+                        current_time = time.time()
+                        
+                        # Check for new events in cache
+                        change_event = cache.get(cache_key)
+                        
+                        if change_event and change_event.get('timestamp', 0) > last_event_time:
+                            # New event detected - send updated file list
+                            last_event_time = change_event['timestamp']
+                            
+                            # Get fresh file list
+                            current_knowledge_items = (
+                                KnowledgeItem.objects.filter(notebook=notebook)
+                                .select_related("knowledge_base_item", "source")
+                                .order_by("-added_at")
+                            )
+                            
+                            current_files = [build_file_response_data(ki) for ki in current_knowledge_items]
+                            
+                            update_event = {
+                                "type": "file_change",
+                                "change_type": change_event.get('type', 'unknown'),
+                                "files": current_files,
+                                "timestamp": current_time,
+                                "file_data": change_event.get('file_data')
+                            }
+                            yield f"data: {json.dumps(update_event)}\n\n"
+                            
+                        # Send periodic heartbeat to keep connection alive (less frequently)
+                        elif current_time - last_heartbeat_time >= 60:  # Every 60 seconds instead of 30
+                            heartbeat_event = {
+                                "type": "heartbeat",
+                                "timestamp": current_time
+                            }
+                            yield f"data: {json.dumps(heartbeat_event)}\n\n"
+                            last_heartbeat_time = current_time
+                        
+                        time.sleep(check_interval)
+                        
+                    except Exception as e:
+                        error_event = {"type": "error", "message": str(e)}
+                        yield f"data: {json.dumps(error_event)}\n\n"
+                        break
+                
+                # Send final close event
+                close_event = {"type": "close", "message": "Stream ended"}
+                yield f"data: {json.dumps(close_event)}\n\n"
+
+            response = StreamingHttpResponse(
+                event_stream(), content_type="text/event-stream"
+            )
+            response["Cache-Control"] = "no-cache"
+            response["X-Accel-Buffering"] = "no"  # Disable nginx buffering
+            response["Access-Control-Allow-Origin"] = "*"
+            response["Access-Control-Allow-Headers"] = "Cache-Control"
+
+            return response
+            
+        except Exception as e:
+            return JsonResponse(
+                {"detail": f"Failed to create file list stream: {str(e)}"},
+                status=500
+            )
+
+
 class FileDeleteView(APIView):
     """
     DELETE /api/notebooks/{notebook_id}/files/{file_or_upload_id}/
