@@ -42,8 +42,6 @@ class URLService:
                 notebook=notebook,
                 source_type="url",
                 title=url,
-                needs_processing=False,
-                processing_status="done",
             )
 
 
@@ -159,8 +157,6 @@ class URLService:
                 notebook=notebook,
                 source_type="url",
                 title=url,
-                needs_processing=False,
-                processing_status="done",
             )
 
 
@@ -194,8 +190,6 @@ class URLService:
                 notebook=notebook,
                 source_type="url",
                 title=url,
-                needs_processing=False,
-                processing_status="done",
             )
 
 

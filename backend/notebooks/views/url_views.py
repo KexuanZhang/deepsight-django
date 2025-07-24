@@ -94,8 +94,6 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
             notebook=notebook,
             source_type="url",
             title=url,
-            needs_processing=False,
-            processing_status="done",
         )
 
 
@@ -281,8 +279,6 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
             notebook=notebook,
             source_type="url",
             title=url,
-            needs_processing=False,
-            processing_status="done",
         )
 
 

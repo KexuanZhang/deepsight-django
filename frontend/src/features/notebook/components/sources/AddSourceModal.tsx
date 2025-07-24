@@ -211,7 +211,14 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       
       if (response.success) {
         const items = response.data?.items || [];
-        setKnowledgeBaseItems(items);
+        // Deduplicate by id
+        const uniqueItemsMap = new Map();
+        for (const item of items) {
+          if (!uniqueItemsMap.has(item.id)) {
+            uniqueItemsMap.set(item.id, item);
+          }
+        }
+        setKnowledgeBaseItems(Array.from(uniqueItemsMap.values()));
       } else {
         throw new Error(response.error || "Failed to load knowledge base");
       }
@@ -785,6 +792,19 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                               {item.linked_to_notebook && (
                                 <Badge variant="outline" className="border-green-600 text-green-600 text-xs">
                                   Already linked
+                                </Badge>
+                              )}
+                              {item.processing_status && (
+                                <Badge variant="outline" className={
+                                  item.processing_status === 'done' || item.processing_status === 'completed'
+                                    ? 'border-blue-600 text-blue-600 text-xs'
+                                    : item.processing_status === 'pending' || item.processing_status === 'in_progress'
+                                    ? 'border-yellow-600 text-yellow-600 text-xs'
+                                    : item.processing_status === 'error'
+                                    ? 'border-red-600 text-red-600 text-xs'
+                                    : 'border-gray-400 text-gray-600 text-xs'
+                                }>
+                                  {item.processing_status.charAt(0).toUpperCase() + item.processing_status.slice(1).replace('_', ' ')}
                                 </Badge>
                               )}
                             </div>

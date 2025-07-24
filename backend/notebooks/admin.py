@@ -78,11 +78,9 @@ class SourceAdmin(admin.ModelAdmin):
         "notebook",
         "source_type",
         "title",
-        "processing_status",
-        "needs_processing",
         "created_at",
     )
-    list_filter = ("source_type", "processing_status", "needs_processing", "created_at")
+    list_filter = ("source_type", "created_at")
     search_fields = ("title", "notebook__name", "notebook__user__username")
     readonly_fields = ("created_at",)
     inlines = [ProcessingJobInline]
@@ -117,14 +115,16 @@ class KnowledgeBaseItemAdmin(admin.ModelAdmin):
         "user",
         "title",
         "content_type",
+        "processing_status",
+        "source",
         "get_file_status",
         "created_at",
     )
-    list_filter = ("content_type", "created_at", "user")
+    list_filter = ("content_type", "processing_status", "created_at", "user")
     search_fields = ("title", "content", "user__username", "user__email")
     readonly_fields = ("created_at", "updated_at", "source_hash")
     fieldsets = (
-        (None, {"fields": ("user", "title", "content_type")}),
+        (None, {"fields": ("user", "title", "content_type", "source", "processing_status")}),
         ("Content", {"fields": ("file_object_key", "original_file_object_key", "content", "tags")}),
         ("Metadata", {"fields": ("metadata", "source_hash"), "classes": ("collapse",)}),
         (
