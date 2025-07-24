@@ -74,8 +74,11 @@ class ApiService {
             } else {
               msg = err.detail;
             }
+          } else if (err.file && Array.isArray(err.file)) {
+            // Handle file validation errors directly (e.g., duplicate file errors)
+            msg = err.file[0]; // Get the first file error message
           } else if (err.details) {
-            // Handle validation errors with details structure (file validation)
+            // Handle validation errors with details structure
             if (err.details.file && Array.isArray(err.details.file)) {
               msg = err.details.file[0]; // Get the first file error message
             } else if (typeof err.details === 'string') {

@@ -134,6 +134,56 @@ def calculate_content_hash(content: Union[str, bytes]) -> str:
     return hashlib.sha256(content_bytes).hexdigest()
 
 
+def calculate_user_content_hash(content: str, user_id: int) -> str:
+    """
+    Calculate SHA256 hash of text content for duplicate detection of pasted text.
+    
+    Used specifically for pasted text content to detect identical content
+    regardless of generated filename. User-scoped to prevent cross-user conflicts.
+    
+    Args:
+        content: The actual text content
+        user_id: User ID to scope the hash per user
+        
+    Returns:
+        SHA256 hash as hexadecimal string
+    """
+    # Normalize content (strip whitespace, normalize line endings)
+    normalized_content = content.strip().replace('\r\n', '\n').replace('\r', '\n')
+    combined_content = f"{user_id}:{normalized_content}"
+    content_bytes = combined_content.encode('utf-8')
+    return hashlib.sha256(content_bytes).hexdigest()
+
+
+def check_content_duplicate(content: str, user_id: int):
+    """
+    Check if identical text content already exists for this user.
+    
+    Used for pasted text to detect duplicates based on actual content
+    rather than generated filename.
+    
+    Args:
+        content: The text content to check
+        user_id: User ID to check duplicates for
+        
+    Returns:
+        KnowledgeBaseItem if duplicate content found, None otherwise
+    """
+    from ..models import KnowledgeBaseItem
+    
+    # Normalize content for comparison (strip whitespace, normalize line endings)
+    normalized_content = content.strip().replace('\r\n', '\n').replace('\r', '\n')
+    
+    # Check existing items by comparing actual content field directly
+    # Filter by user and look for exact content match
+    duplicate_item = KnowledgeBaseItem.objects.filter(
+        user_id=user_id,
+        content=normalized_content
+    ).first()
+    
+    return duplicate_item
+
+
 def check_source_duplicate(source_identifier: str, user_id: int, notebook_id: str = None):
     """
     Check if source (filename or URL) already exists for the user.

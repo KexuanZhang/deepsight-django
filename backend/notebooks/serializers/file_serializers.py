@@ -10,7 +10,7 @@ from ..models import (
     KnowledgeBaseImage,
     KnowledgeItem,
 )
-from ..utils.helpers import check_source_duplicate
+from ..utils.helpers import check_source_duplicate, check_content_duplicate
 
 
 class FileUploadSerializer(serializers.Serializer):
@@ -20,7 +20,7 @@ class FileUploadSerializer(serializers.Serializer):
     upload_file_id = serializers.CharField(required=False)
     
     def validate(self, data):
-        """Check for duplicate filename before processing."""
+        """Check for duplicate filename or content before processing."""
         file = data.get('file')
         if not file:
             return data
@@ -35,11 +35,45 @@ class FileUploadSerializer(serializers.Serializer):
         if request and hasattr(request, 'user') and request.user.is_authenticated:
             user_id = request.user.id
             
-            # Check for source duplicate using original filename for this user
+            # Detect if this is pasted text (markdown files with generated names)
+            is_pasted_text = (
+                original_filename.endswith('.md') and 
+                file.content_type in ['text/markdown', 'text/plain'] and
+                file.size < 50000  # Reasonable limit for pasted text
+            )
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"[FileUploadSerializer] Validating file: {original_filename}, is_pasted_text: {is_pasted_text}, content_type: {file.content_type}, size: {file.size}")
+            
+            if is_pasted_text:
+                # For pasted text, check content hash instead of filename
+                try:
+                    file_content = file.read().decode('utf-8', errors='ignore')
+                    file.seek(0)  # Reset file pointer
+                    
+                    existing_item = check_content_duplicate(file_content, user_id)
+                    if existing_item:
+                        raise serializers.ValidationError({
+                            'file': f'This text content already exists in your workspace. Duplicate content detected.',
+                            'existing_item_id': str(existing_item.id)
+                        })
+                    # For pasted text, we only check content, not filename
+                    return data
+                except serializers.ValidationError:
+                    # Re-raise ValidationError so it's properly handled
+                    raise
+                except Exception as e:
+                    # If we can't read content, fall back to filename check
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Could not read file content for duplicate check: {e}")
+            
+            # For regular files, check source duplicate using original filename
             existing_item = check_source_duplicate(original_filename, user_id, notebook_id)
             if existing_item:
                 raise serializers.ValidationError({
-                    'file': f'File with name "{original_filename}" already exists. Check the knowledge base..',
+                    'file': f'File with name "{original_filename}" already exists. Check the knowledge base.',
                     'existing_item_id': str(existing_item.id)
                 })
         
@@ -124,7 +158,7 @@ class BatchFileUploadSerializer(serializers.Serializer):
                 existing_item = check_source_duplicate(file.name, user_id, notebook_id)
                 if existing_item:
                     raise serializers.ValidationError({
-                        'file': f'File with name "{file.name}" already exists. Check the knowledge base..',
+                        'file': f'File with name "{file.name}" already exists. Check the knowledge base.',
                         'existing_item_id': str(existing_item.id)
                     })
             
@@ -141,7 +175,7 @@ class BatchFileUploadSerializer(serializers.Serializer):
                 
                 if duplicate_files:
                     raise serializers.ValidationError({
-                        'files': 'Some files already exist. Check the knowledge base..',
+                        'files': 'Some files already exist. Check the knowledge base.',
                         'duplicates': duplicate_files
                     })
         

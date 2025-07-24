@@ -103,7 +103,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       
       // Check if this is a validation error (duplicate file)
-      if (errorMessage.includes('File validation failed') && errorMessage.includes('already exists')) {
+      if (errorMessage.includes('already exists')) {
         // This is a validation error - keep modal open and show error
         // The item will show as "failed" in the processing list, which is appropriate
         setError(`File "${file.name}" already exists in this workspace. Please choose a different file or rename it.`);
@@ -136,13 +136,11 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       const urlDomain = linkUrl.replace(/^https?:\/\//, '').split('/')[0];
       const displayName = `${urlDomain} - ${urlProcessingType || 'website'}`;
       
-      // Notify parent component that upload started
+      // Notify parent component that upload started IMMEDIATELY
+      // This makes the item show up in processing state right away (like files do)
       if (onUploadStarted) {
         onUploadStarted(uploadFileId, displayName, 'url');
       }
-      
-      // Close modal immediately after upload starts
-      handleClose();
       
       let response;
       if (urlProcessingType === 'media') {
@@ -154,14 +152,30 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       }
       
       if (response.success) {
-        // Refresh sources list (modal is already closed)
+        // Close modal and refresh sources list
+        handleClose();
         onSourcesAdded();
       } else {
         throw new Error(response.error || 'URL parsing failed');
       }
     } catch (error) {
       console.error('Error processing URL:', error);
-      setError(`Failed to process URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Parse the error message to check for duplicate URL detection
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check if this is a duplicate URL validation error
+      if (errorMessage.includes('already exists')) {
+        // This is a validation error - keep modal open and show error
+        // The item will show as "failed" in the processing list, which is appropriate
+        setError(`This URL already exists in your workspace. Please use a different URL.`);
+        // Don't close modal, let user try again or cancel
+      } else {
+        // This is a processing error - close modal and let processing system handle it
+        handleClose();
+        // The processing system will show the error state in the processing list
+        console.error(`Processing error for ${linkUrl}:`, errorMessage);
+      }
     } finally {
       setIsUploading(false);
     }
@@ -189,28 +203,35 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       
       const filename = words.length > 0 ? `${words.join('_').toLowerCase()}.md` : 'pasted_text.md';
       
-      // Notify parent component that upload started
-      if (onUploadStarted) {
-        onUploadStarted(uploadFileId, filename, 'md');
-      }
-      
-      // Close modal immediately after upload starts
-      handleClose();
-      
       const blob = new Blob([pasteText], { type: 'text/markdown' });
       const file = new File([blob], filename, { type: 'text/markdown' });
       
       const response = await apiService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
-        // Refresh sources list (modal is already closed)
+        // Notify parent component that upload started
+        if (onUploadStarted) {
+          onUploadStarted(uploadFileId, filename, 'md');
+        }
+        
+        // Close modal and refresh sources list
+        handleClose();
         onSourcesAdded();
       } else {
         throw new Error(response.error || 'Text upload failed');
       }
     } catch (error) {
       console.error('Error processing text:', error);
-      setError(`Failed to upload text: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Parse the error message to check for duplicate content detection
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check if this is a duplicate content validation error
+      if (errorMessage.includes('already exists') || errorMessage.includes('Duplicate content detected')) {
+        setError(`This text content already exists in your workspace. Please modify the text or use different content.`);
+      } else {
+        setError(`Failed to upload text: ${errorMessage}`);
+      }
     } finally {
       setIsUploading(false);
     }

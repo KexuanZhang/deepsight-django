@@ -29,7 +29,7 @@ class URLParseSerializer(serializers.Serializer):
             existing_item = check_source_duplicate(url, user_id, notebook_id)
             if existing_item:
                 raise serializers.ValidationError({
-                    'url': f'URL "{url}" already exists. Check the knowledge base..',
+                    'url': f'URL "{url}" already exists. Check the knowledge base.',
                     'existing_item_id': str(existing_item.id)
                 })
         
@@ -64,7 +64,7 @@ class URLParseWithMediaSerializer(serializers.Serializer):
             existing_item = check_source_duplicate(url, user_id, notebook_id)
             if existing_item:
                 raise serializers.ValidationError({
-                    'url': f'URL "{url}" already exists. Check the knowledge base..',
+                    'url': f'URL "{url}" already exists. Check the knowledge base.',
                     'existing_item_id': str(existing_item.id)
                 })
         
@@ -99,7 +99,7 @@ class URLParseDocumentSerializer(serializers.Serializer):
             existing_item = check_source_duplicate(url, user_id, notebook_id)
             if existing_item:
                 raise serializers.ValidationError({
-                    'url': f'URL "{url}" already exists. Check the knowledge base..',
+                    'url': f'URL "{url}" already exists. Check the knowledge base.',
                     'existing_item_id': str(existing_item.id)
                 })
         
@@ -142,7 +142,7 @@ class BatchURLParseSerializer(serializers.Serializer):
                 existing_item = check_source_duplicate(url, user_id, notebook_id)
                 if existing_item:
                     raise serializers.ValidationError({
-                        'url': f'URL "{url}" already exists. Check the knowledge base..',
+                        'url': f'URL "{url}" already exists. Check the knowledge base.',
                         'existing_item_id': str(existing_item.id)
                     })
             
@@ -159,7 +159,7 @@ class BatchURLParseSerializer(serializers.Serializer):
                 
                 if duplicate_urls:
                     raise serializers.ValidationError({
-                        'urls': 'Some URLs already exist. Check the knowledge base..',
+                        'urls': 'Some URLs already exist. Check the knowledge base.',
                         'duplicates': duplicate_urls
                     })
         
@@ -201,7 +201,7 @@ class BatchURLParseWithMediaSerializer(serializers.Serializer):
                 existing_item = check_source_duplicate(url, user_id, notebook_id)
                 if existing_item:
                     raise serializers.ValidationError({
-                        'url': f'URL "{url}" already exists. Check the knowledge base..',
+                        'url': f'URL "{url}" already exists. Check the knowledge base.',
                         'existing_item_id': str(existing_item.id)
                     })
             
@@ -218,7 +218,7 @@ class BatchURLParseWithMediaSerializer(serializers.Serializer):
                 
                 if duplicate_urls:
                     raise serializers.ValidationError({
-                        'urls': 'Some URLs already exist. Check the knowledge base..',
+                        'urls': 'Some URLs already exist. Check the knowledge base.',
                         'duplicates': duplicate_urls
                     })
         
