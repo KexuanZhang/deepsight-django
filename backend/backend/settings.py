@@ -38,7 +38,7 @@ DEBUG = True
 
 # Host Configuration - Set HOST_IP environment variable for server deployment
 HOST_IP = os.getenv("HOST_IP", "localhost")
-BACKEND_PORT = os.getenv("BACKEND_PORT", "8001")
+BACKEND_PORT = os.getenv("BACKEND_PORT", "8000")
 FRONTEND_PORT = os.getenv("FRONTEND_PORT", "5173")
 
 ALLOWED_HOSTS = [
