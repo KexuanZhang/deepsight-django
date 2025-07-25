@@ -49,7 +49,7 @@ export interface FileMetadata {
   textContent?: string;
   knowledge_item_id?: string;
   upload_file_id?: string;
-  parsing_status?: 'pending' | 'processing' | 'completed' | 'failed';
+  parsing_status?: 'pending' | 'processing' | 'in_progress' | 'completed' | 'failed';
   processing_status?: string;
   format?: string;
   fileSize?: string;
@@ -91,7 +91,7 @@ export interface FileSource {
   selected?: boolean;
   file?: string;
   upload_file_id?: string;
-  parsing_status?: 'pending' | 'processing' | 'completed' | 'failed';
+  parsing_status?: 'pending' | 'processing' | 'in_progress' | 'completed' | 'failed';
   title?: string;
   ext?: string;
   [key: string]: any;
@@ -109,7 +109,7 @@ export interface Source {
   file_id?: string;
   file?: string;
   upload_file_id?: string;
-  parsing_status?: 'pending' | 'processing' | 'completed' | 'failed';
+  parsing_status?: 'pending' | 'processing' | 'in_progress' | 'completed' | 'failed';
   title?: string;
   ext?: string;
 }
