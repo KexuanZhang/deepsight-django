@@ -30,10 +30,8 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
     """Process a single URL asynchronously."""
     try:
         # Import services lazily to avoid circular imports
-        from .services.url_service import URLService
         from .services.notebook_service import NotebookService
         
-        url_service = URLService()
         notebook_service = NotebookService()
         
         # Validate inputs
@@ -48,13 +46,54 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
         if batch_item_id:
             _update_batch_item_status(batch_item_id, 'processing')
         
-        # Process the URL using service
-        result = url_service.process_url(
-            url=url,
-            upload_url_id=upload_url_id or uuid4().hex,
-            user=user,
-            notebook=notebook
+        # Process the URL using url extractor directly
+        from .processors.url_extractor import URLExtractor
+        from rag.rag import add_user_files
+        from asgiref.sync import async_to_sync
+        
+        url_extractor = URLExtractor()
+        
+        # Process the URL using async function
+        async def process_url_async():
+            return await url_extractor.process_url(
+                url=url,
+                upload_url_id=upload_url_id or uuid4().hex,
+                user_id=user.pk,
+                notebook_id=notebook.id
+            )
+
+        # Run async processing using async_to_sync
+        result = async_to_sync(process_url_async)()
+
+        # Create source record
+        from .models import Source
+        source = Source.objects.create(
+            notebook=notebook,
+            source_type="url",
+            title=url,
         )
+
+        # Link to knowledge base
+        kb_item_id = result['file_id']
+        kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
+        
+        ki, _ = KnowledgeItem.objects.get_or_create(
+            notebook=notebook,
+            knowledge_base_item=kb_item,
+            defaults={
+                'source': source,
+                'notes': f"Processed from URL: {url}"
+            }
+        )
+
+        # Ingest KB item content for retrieval (embedding)
+        if result.get("file_id"):
+            kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
+            if kb_item and kb_item.content:  # Ensure content exists
+                try:
+                    add_user_files(user_id=user.pk, kb_items=[kb_item])
+                except Exception as e:
+                    logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
         
         # Update batch item status on success
         if batch_item_id:
@@ -86,10 +125,8 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
     """Process a single URL with media extraction asynchronously."""
     try:
         # Import services lazily to avoid circular imports
-        from .services.url_service import URLService
         from .services.notebook_service import NotebookService
         
-        url_service = URLService()
         notebook_service = NotebookService()
         
         # Validate inputs
@@ -104,13 +141,54 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
         if batch_item_id:
             _update_batch_item_status(batch_item_id, 'processing')
         
-        # Process the URL with media using service
-        result = url_service.process_url_with_media(
-            url=url,
-            upload_url_id=upload_url_id or uuid4().hex,
-            user=user,
-            notebook=notebook
+        # Process the URL with media using url extractor directly
+        from .processors.url_extractor import URLExtractor
+        from rag.rag import add_user_files
+        from asgiref.sync import async_to_sync
+        
+        url_extractor = URLExtractor()
+        
+        # Process the URL using async function with media extraction
+        async def process_url_with_media_async():
+            return await url_extractor.process_url_with_media(
+                url=url,
+                upload_url_id=upload_url_id or uuid4().hex,
+                user_id=user.pk,
+                notebook_id=notebook.id
+            )
+
+        # Run async processing using async_to_sync
+        result = async_to_sync(process_url_with_media_async)()
+
+        # Create source record
+        from .models import Source
+        source = Source.objects.create(
+            notebook=notebook,
+            source_type="url",
+            title=url,
         )
+
+        # Link to knowledge base
+        kb_item_id = result['file_id']
+        kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
+        
+        ki, _ = KnowledgeItem.objects.get_or_create(
+            notebook=notebook,
+            knowledge_base_item=kb_item,
+            defaults={
+                'source': source,
+                'notes': f"Processed from URL with media: {url}"
+            }
+        )
+
+        # Ingest KB item content for retrieval (embedding)
+        if result.get("file_id"):
+            kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
+            if kb_item and kb_item.content:  # Ensure content exists
+                try:
+                    add_user_files(user_id=user.pk, kb_items=[kb_item])
+                except Exception as e:
+                    logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
         
         # Update batch item status on success
         if batch_item_id:
@@ -135,6 +213,87 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
             _check_batch_completion(batch_job_id)
         
         raise URLProcessingError(f"Failed to process URL with media: {str(e)}")
+
+
+@shared_task(bind=True)
+def process_url_document_task(self, url, notebook_id, user_id, upload_url_id=None, batch_job_id=None, batch_item_id=None):
+    """Process a single document URL asynchronously."""
+    try:
+        # Import services lazily to avoid circular imports
+        from .services.notebook_service import NotebookService
+        
+        notebook_service = NotebookService()
+        
+        # Validate inputs
+        if not url or not notebook_id or not user_id:
+            raise ValidationError("Missing required parameters")
+        
+        # Get required objects
+        user = User.objects.get(id=user_id)
+        notebook = notebook_service.get_notebook_or_404(notebook_id, user)
+        
+        # Update batch item status if this is part of a batch
+        if batch_item_id:
+            _update_batch_item_status(batch_item_id, 'processing')
+        
+        # Process the document URL using url extractor directly
+        from .processors.url_extractor import URLExtractor
+        from asgiref.sync import async_to_sync
+        
+        url_extractor = URLExtractor()
+        
+        # Process document URL asynchronously
+        result = async_to_sync(url_extractor.process_url_document_only)(
+            url=url,
+            upload_url_id=upload_url_id or uuid4().hex,
+            user_id=user.pk,
+            notebook_id=notebook.id
+        )
+        
+        # Create source record
+        from .models import Source
+        source = Source.objects.create(
+            notebook=notebook,
+            source_type="url",
+            title=url,
+        )
+
+        # Link to knowledge base
+        kb_item_id = result['file_id']
+        kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
+        
+        ki, _ = KnowledgeItem.objects.get_or_create(
+            notebook=notebook,
+            knowledge_base_item=kb_item,
+            defaults={
+                'source': source,
+                'notes': f"Processed from document URL: {url}"
+            }
+        )
+        
+        # Update batch item status on success
+        if batch_item_id:
+            _update_batch_item_status(batch_item_id, 'completed', result_data=result)
+        
+        # Check if batch is complete
+        if batch_job_id:
+            _check_batch_completion(batch_job_id)
+        
+        logger.info(f"Successfully processed document URL: {url}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error processing document URL {url}: {e}")
+        
+        # Update batch item status on failure
+        if batch_item_id:
+            _update_batch_item_status(batch_item_id, 'failed', error_message=str(e))
+        
+        # Check if batch is complete
+        if batch_job_id:
+            _check_batch_completion(batch_job_id)
+        
+        raise URLProcessingError(f"Failed to process document URL: {str(e)}")
 
 
 @shared_task(bind=True)
