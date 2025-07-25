@@ -449,6 +449,118 @@ class URLExtractor:
             self.log_operation("process_url_error", f"Error processing URL {url}: {e}", "error")
             raise
     
+    async def process_url_update_existing(self, url: str, kb_item_id: str, extraction_options: Optional[Dict[str, Any]] = None, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
+        """Process URL content and update an existing KnowledgeBaseItem."""
+        try:
+            if not self._validate_url(url):
+                raise ValueError(f"Invalid URL: {url}")
+            
+            # Default extraction options for basic URL processing
+            options = {
+                "extract_links": True,
+                "extract_images": True,
+                "extract_metadata": True,
+                "wait_for_js": 2,
+                "timeout": 30
+            }
+            if extraction_options:
+                options.update(extraction_options)
+            
+            # Extract content using crawl4ai
+            features = await self._extract_with_crawl4ai(url, options)
+            
+            # Clean markdown content
+            cleaned_content = self._clean_markdown_content(features.get("content", ""), features)
+            
+            # Update existing KnowledgeBaseItem
+            await self._update_existing_kb_item(
+                kb_item_id=kb_item_id,
+                url=url,
+                content=cleaned_content,
+                features=features,
+                processing_type="url_content",
+                user_id=user_id
+            )
+            
+            return {
+                "file_id": kb_item_id,
+                "url": url,
+                "status": "completed",
+                "content_preview": cleaned_content[:500],
+                "title": features.get("title", ""),
+                "extraction_method": "crawl4ai"
+            }
+            
+        except Exception as e:
+            self.log_operation("process_url_update_error", f"Error updating KB item {kb_item_id} with URL {url}: {e}", "error")
+            raise
+    
+    async def process_url_with_media_update_existing(self, url: str, kb_item_id: str, extraction_options: Optional[Dict[str, Any]] = None, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
+        """Process URL content with media support and update an existing KnowledgeBaseItem."""
+        try:
+            if not self._validate_url(url):
+                raise ValueError(f"Invalid URL: {url}")
+            
+            # Check for media availability
+            media_info = await self._check_media_availability(url)
+            
+            content = ""
+            processing_type = "url_content"
+            features = {}  # Initialize features to avoid UnboundLocalError
+            
+            if media_info.get("has_media"):
+                # Download and transcribe media
+                media_result = await self._download_and_transcribe_media(url, media_info)
+                content = media_result.get("content", "")
+                processing_type = "media"
+                # For media content, create basic features dict
+                features = {
+                    "title": media_info.get("title", url),
+                    "url": url,
+                    "extraction_method": "media_transcription"
+                }
+            else:
+                # Fall back to regular web scraping
+                options = {
+                    "extract_links": True,
+                    "extract_images": True,
+                    "extract_metadata": True,
+                    "wait_for_js": 2,
+                    "timeout": 30
+                }
+                if extraction_options:
+                    options.update(extraction_options)
+                
+                features = await self._extract_with_crawl4ai(url, options)
+                content = features.get("content", "")
+            
+            # Clean markdown content
+            cleaned_content = self._clean_markdown_content(content, features)
+            
+            # Update existing KnowledgeBaseItem
+            await self._update_existing_kb_item(
+                kb_item_id=kb_item_id,
+                url=url,
+                content=cleaned_content,
+                features=features,
+                processing_type=processing_type,
+                user_id=user_id
+            )
+            
+            return {
+                "file_id": kb_item_id,
+                "url": url,
+                "status": "completed",
+                "content_preview": cleaned_content[:500],
+                "title": features.get("title", ""),
+                "has_media": media_info.get("has_media", False),
+                "processing_type": processing_type
+            }
+            
+        except Exception as e:
+            self.log_operation("process_url_media_update_error", f"Error updating KB item {kb_item_id} with media URL {url}: {e}", "error")
+            raise
+    
     async def process_url_with_media(self, url: str, extraction_options: Optional[Dict[str, Any]] = None, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
         """Process URL content with media support."""
         try:
@@ -605,6 +717,49 @@ class URLExtractor:
         except Exception as e:
             self.log_operation("process_url_media_only_error", f"Error processing URL media only {url}: {e}", "error")
             raise
+    
+    async def process_url_document_update_existing(self, url: str, kb_item_id: str, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
+        """Process URL as document download and update existing KnowledgeBaseItem."""
+        temp_file_path = None
+        try:
+            if not self._validate_url(url):
+                raise ValueError(f"Invalid URL: {url}")
+            
+            self.log_operation("document_download_start", f"Starting document download from {url}")
+            
+            # Download file to temporary location
+            temp_file_path = await self._download_document_to_temp(url)
+            
+            # Validate file format
+            file_info = await self._validate_document_format(temp_file_path)
+            
+            if not file_info["is_valid"]:
+                raise ValueError(f"Invalid document format. Expected PDF or PPTX, got: {file_info['detected_type']}")
+            
+            # Process the document and update existing KB item
+            await self._process_and_update_document_file(temp_file_path, file_info, url, kb_item_id, user_id)
+            
+            return {
+                "file_id": kb_item_id,
+                "url": url, 
+                "status": "completed",
+                "title": file_info.get("filename", url),
+                "processing_type": "document",
+                "file_extension": file_info["extension"],
+                "file_size": file_info["size"]
+            }
+            
+        except Exception as e:
+            self.log_operation("process_url_document_update_error", f"Error updating KB item {kb_item_id} with document URL {url}: {e}", "error")
+            raise
+        finally:
+            # Clean up temporary file
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                    self.log_operation("temp_cleanup", f"Cleaned up temporary file: {temp_file_path}")
+                except Exception as cleanup_error:
+                    self.log_operation("temp_cleanup_error", f"Error cleaning up {temp_file_path}: {cleanup_error}", "warning")
     
     async def process_url_document_only(self, url: str, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
         """Process URL as document download - validates format and only saves PDF/PPTX files."""
@@ -828,6 +983,42 @@ class URLExtractor:
             self.log_operation("document_processing_error", f"Error processing document file: {e}", "error")
             raise
     
+    async def _process_and_update_document_file(self, file_path: str, file_info: Dict, url: str, kb_item_id: str, user_id: int) -> None:
+        """Process the validated document file and update existing KnowledgeBaseItem."""
+        try:
+            # Create a Django UploadedFile object from the temporary file
+            with open(file_path, 'rb') as temp_file:
+                file_content = temp_file.read()
+            
+            # Create an InMemoryUploadedFile that acts like an uploaded file
+            django_file = InMemoryUploadedFile(
+                file=io.BytesIO(file_content),
+                field_name='file',
+                name=file_info["filename"],
+                content_type=file_info["mime_type"],
+                size=len(file_content),
+                charset=None,
+            )
+            
+            # Add source_url to the file metadata for duplicate detection
+            django_file._source_url = url
+            
+            # Process the file using upload processor to update existing KB item
+            result = await self.upload_processor.process_upload(
+                django_file, 
+                upload_file_id=uuid4().hex,
+                user_pk=user_id,
+                notebook_id=None,  # Not needed for update
+                kb_item_id=kb_item_id  # Update existing item
+            )
+            
+            # The upload processor will have updated the KB item content
+            self.log_operation("document_processed", f"Successfully processed and updated document from URL: {url}")
+            
+        except Exception as e:
+            self.log_operation("document_update_error", f"Error processing and updating document file: {e}", "error")
+            raise
+    
     async def _store_processed_content(self, url: str, content: str, features: Dict[str, Any], upload_url_id: Optional[str], processing_type: str, transcript_filename: Optional[str] = None, original_file_path: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> str:
         """Store processed URL content."""
         try:
@@ -909,4 +1100,47 @@ class URLExtractor:
             
         except Exception as e:
             self.log_operation("store_content_error", f"Error storing URL content: {e}", "error")
+            raise
+    
+    async def _update_existing_kb_item(self, kb_item_id: str, url: str, content: str, features: Dict[str, Any], processing_type: str, user_id: int) -> None:
+        """Update an existing KnowledgeBaseItem with processed content."""
+        try:
+            # Import models inside method to avoid circular imports
+            from ..models import KnowledgeBaseItem
+            from asgiref.sync import sync_to_async
+            
+            # Get the existing KB item
+            get_kb_item_sync = sync_to_async(KnowledgeBaseItem.objects.get, thread_sensitive=False)
+            kb_item = await get_kb_item_sync(id=kb_item_id, user_id=user_id)
+            
+            # Update the content and metadata
+            kb_item.content = content
+            kb_item.title = features.get("title", kb_item.title)
+            
+            # Update metadata while preserving existing fields
+            updated_metadata = kb_item.metadata or {}
+            updated_metadata.update({
+                "original_filename": f"{features.get('title', 'webpage')}.md",
+                "file_extension": ".md",
+                "content_type": "text/markdown",
+                "file_size": len(content.encode('utf-8')),
+                "parsing_status": "completed",
+                "processing_metadata": {
+                    "extraction_type": "url_extractor",
+                    "extraction_success": True,
+                    "extraction_method": features.get("extraction_method", "crawl4ai"),
+                    "content_length": len(content),
+                    "processing_type": processing_type
+                }
+            })
+            kb_item.metadata = updated_metadata
+            
+            # Save the updated item (but don't update processing_status here - that's done in the task)
+            save_kb_item_sync = sync_to_async(kb_item.save, thread_sensitive=False)
+            await save_kb_item_sync(update_fields=["content", "title", "metadata", "updated_at"])
+            
+            self.log_operation("update_kb_item", f"Updated existing KB item {kb_item_id} with URL content")
+            
+        except Exception as e:
+            self.log_operation("update_kb_item_error", f"Error updating existing KB item {kb_item_id}: {e}", "error")
             raise

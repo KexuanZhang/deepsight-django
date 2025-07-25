@@ -31,6 +31,7 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
     try:
         # Import services lazily to avoid circular imports
         from .services.notebook_service import NotebookService
+        from .utils.helpers import clean_title
         
         notebook_service = NotebookService()
         
@@ -46,26 +47,7 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
         if batch_item_id:
             _update_batch_item_status(batch_item_id, 'processing')
         
-        # Process the URL using url extractor directly
-        from .processors.url_extractor import URLExtractor
-        from rag.rag import add_user_files
-        from asgiref.sync import async_to_sync
-        
-        url_extractor = URLExtractor()
-        
-        # Process the URL using async function
-        async def process_url_async():
-            return await url_extractor.process_url(
-                url=url,
-                upload_url_id=upload_url_id or uuid4().hex,
-                user_id=user.pk,
-                notebook_id=notebook.id
-            )
-
-        # Run async processing using async_to_sync
-        result = async_to_sync(process_url_async)()
-
-        # Create source record
+        # Step 1: Create source record first
         from .models import Source
         source = Source.objects.create(
             notebook=notebook,
@@ -73,38 +55,85 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
             title=url,
         )
 
-        # Link to knowledge base
-        kb_item_id = result['file_id']
-        kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
-        
-        ki, _ = KnowledgeItem.objects.get_or_create(
-            notebook=notebook,
-            knowledge_base_item=kb_item,
-            defaults={
-                'source': source,
-                'notes': f"Processed from URL: {url}"
+        # Step 2: Create KnowledgeBaseItem in pending state
+        kb_item = KnowledgeBaseItem.objects.create(
+            user=user,
+            source=source,
+            processing_status="pending",  # Start in pending state
+            title=clean_title(url),
+            content_type="webpage",
+            metadata={
+                "source_url": url,
+                "upload_url_id": upload_url_id or uuid4().hex,
+                "processing_metadata": {
+                    "extraction_type": "url_extractor",
+                    "processing_type": "url_content"
+                }
             }
         )
 
-        # Ingest KB item content for retrieval (embedding)
-        if result.get("file_id"):
-            kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
-            if kb_item and kb_item.content:  # Ensure content exists
+        # Step 3: Create KnowledgeItem to link to notebook (this will trigger SSE to show pending item)
+        ki = KnowledgeItem.objects.create(
+            notebook=notebook,
+            knowledge_base_item=kb_item,
+            source=source,
+            notes=f"Processed from URL: {url}"
+        )
+
+        # Step 4: Now process the URL using url extractor
+        from .processors.url_extractor import URLExtractor
+        from rag.rag import add_user_files
+        from asgiref.sync import async_to_sync
+        
+        url_extractor = URLExtractor()
+        
+        # Process the URL using async function - but modify it to update existing item
+        async def process_url_async():
+            return await url_extractor.process_url_update_existing(
+                url=url,
+                kb_item_id=str(kb_item.id),
+                upload_url_id=upload_url_id or uuid4().hex,
+                user_id=user.pk,
+                notebook_id=notebook.id
+            )
+
+        try:
+            # Update status to in_progress before starting processing
+            kb_item.processing_status = "in_progress"
+            kb_item.save(update_fields=["processing_status"])
+            
+            # Run async processing using async_to_sync
+            result = async_to_sync(process_url_async)()
+            
+            # Step 5: Update status to done (this will trigger SSE update)
+            kb_item.processing_status = "done"
+            kb_item.save(update_fields=["processing_status"])
+
+            # Ingest KB item content for retrieval (embedding)
+            if kb_item.content:  # Ensure content exists
                 try:
                     add_user_files(user_id=user.pk, kb_items=[kb_item])
                 except Exception as e:
                     logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
+            
+            # Update batch item status on success
+            if batch_item_id:
+                _update_batch_item_status(batch_item_id, 'completed', result_data={"file_id": str(kb_item.id)})
+            
+            # Check if batch is complete
+            if batch_job_id:
+                _check_batch_completion(batch_job_id)
+            
+            logger.info(f"Successfully processed URL: {url}")
+            return {"file_id": str(kb_item.id), "url": url, "status": "completed"}
         
-        # Update batch item status on success
-        if batch_item_id:
-            _update_batch_item_status(batch_item_id, 'completed', result_data=result)
-        
-        # Check if batch is complete
-        if batch_job_id:
-            _check_batch_completion(batch_job_id)
-        
-        logger.info(f"Successfully processed URL: {url}")
-        return result
+        except Exception as processing_error:
+            # Update status to error (this will trigger SSE update)
+            kb_item.processing_status = "error"
+            kb_item.metadata = kb_item.metadata or {}
+            kb_item.metadata["error_message"] = str(processing_error)
+            kb_item.save(update_fields=["processing_status", "metadata"])
+            raise processing_error
         
     except Exception as e:
         logger.error(f"Error processing URL {url}: {e}")
@@ -126,6 +155,7 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
     try:
         # Import services lazily to avoid circular imports
         from .services.notebook_service import NotebookService
+        from .utils.helpers import clean_title
         
         notebook_service = NotebookService()
         
@@ -141,7 +171,40 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
         if batch_item_id:
             _update_batch_item_status(batch_item_id, 'processing')
         
-        # Process the URL with media using url extractor directly
+        # Step 1: Create source record first
+        from .models import Source
+        source = Source.objects.create(
+            notebook=notebook,
+            source_type="url",
+            title=url,
+        )
+
+        # Step 2: Create KnowledgeBaseItem in pending state
+        kb_item = KnowledgeBaseItem.objects.create(
+            user=user,
+            source=source,
+            processing_status="pending",  # Start in pending state
+            title=clean_title(url),
+            content_type="media",
+            metadata={
+                "source_url": url,
+                "upload_url_id": upload_url_id or uuid4().hex,
+                "processing_metadata": {
+                    "extraction_type": "url_extractor",
+                    "processing_type": "media"
+                }
+            }
+        )
+
+        # Step 3: Create KnowledgeItem to link to notebook (this will trigger SSE to show pending item)
+        KnowledgeItem.objects.create(
+            notebook=notebook,
+            knowledge_base_item=kb_item,
+            source=source,
+            notes=f"Processed from URL with media: {url}"
+        )
+
+        # Step 4: Now process the URL with media using url extractor
         from .processors.url_extractor import URLExtractor
         from rag.rag import add_user_files
         from asgiref.sync import async_to_sync
@@ -150,56 +213,51 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
         
         # Process the URL using async function with media extraction
         async def process_url_with_media_async():
-            return await url_extractor.process_url_with_media(
+            return await url_extractor.process_url_with_media_update_existing(
                 url=url,
+                kb_item_id=str(kb_item.id),
                 upload_url_id=upload_url_id or uuid4().hex,
                 user_id=user.pk,
                 notebook_id=notebook.id
             )
 
-        # Run async processing using async_to_sync
-        result = async_to_sync(process_url_with_media_async)()
+        try:
+            # Update status to in_progress before starting processing
+            kb_item.processing_status = "in_progress"
+            kb_item.save(update_fields=["processing_status"])
+            
+            # Run async processing using async_to_sync
+            result = async_to_sync(process_url_with_media_async)()
+            
+            # Step 5: Update status to done (this will trigger SSE update)
+            kb_item.processing_status = "done"
+            kb_item.save(update_fields=["processing_status"])
 
-        # Create source record
-        from .models import Source
-        source = Source.objects.create(
-            notebook=notebook,
-            source_type="url",
-            title=url,
-        )
-
-        # Link to knowledge base
-        kb_item_id = result['file_id']
-        kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
-        
-        ki, _ = KnowledgeItem.objects.get_or_create(
-            notebook=notebook,
-            knowledge_base_item=kb_item,
-            defaults={
-                'source': source,
-                'notes': f"Processed from URL with media: {url}"
-            }
-        )
-
-        # Ingest KB item content for retrieval (embedding)
-        if result.get("file_id"):
-            kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
-            if kb_item and kb_item.content:  # Ensure content exists
+            # Ingest KB item content for retrieval (embedding)
+            if kb_item.content:  # Ensure content exists
                 try:
                     add_user_files(user_id=user.pk, kb_items=[kb_item])
                 except Exception as e:
                     logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
+            
+            # Update batch item status on success
+            if batch_item_id:
+                _update_batch_item_status(batch_item_id, 'completed', result_data={"file_id": str(kb_item.id)})
+            
+            # Check if batch is complete
+            if batch_job_id:
+                _check_batch_completion(batch_job_id)
+            
+            logger.info(f"Successfully processed URL with media: {url}")
+            return {"file_id": str(kb_item.id), "url": url, "status": "completed"}
         
-        # Update batch item status on success
-        if batch_item_id:
-            _update_batch_item_status(batch_item_id, 'completed', result_data=result)
-        
-        # Check if batch is complete
-        if batch_job_id:
-            _check_batch_completion(batch_job_id)
-        
-        logger.info(f"Successfully processed URL with media: {url}")
-        return result
+        except Exception as processing_error:
+            # Update status to error (this will trigger SSE update)
+            kb_item.processing_status = "error"
+            kb_item.metadata = kb_item.metadata or {}
+            kb_item.metadata["error_message"] = str(processing_error)
+            kb_item.save(update_fields=["processing_status", "metadata"])
+            raise processing_error
         
     except Exception as e:
         logger.error(f"Error processing URL with media {url}: {e}")
@@ -221,6 +279,7 @@ def process_url_document_task(self, url, notebook_id, user_id, upload_url_id=Non
     try:
         # Import services lazily to avoid circular imports
         from .services.notebook_service import NotebookService
+        from .utils.helpers import clean_title
         
         notebook_service = NotebookService()
         
@@ -236,21 +295,7 @@ def process_url_document_task(self, url, notebook_id, user_id, upload_url_id=Non
         if batch_item_id:
             _update_batch_item_status(batch_item_id, 'processing')
         
-        # Process the document URL using url extractor directly
-        from .processors.url_extractor import URLExtractor
-        from asgiref.sync import async_to_sync
-        
-        url_extractor = URLExtractor()
-        
-        # Process document URL asynchronously
-        result = async_to_sync(url_extractor.process_url_document_only)(
-            url=url,
-            upload_url_id=upload_url_id or uuid4().hex,
-            user_id=user.pk,
-            notebook_id=notebook.id
-        )
-        
-        # Create source record
+        # Step 1: Create source record first
         from .models import Source
         source = Source.objects.create(
             notebook=notebook,
@@ -258,29 +303,77 @@ def process_url_document_task(self, url, notebook_id, user_id, upload_url_id=Non
             title=url,
         )
 
-        # Link to knowledge base
-        kb_item_id = result['file_id']
-        kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
-        
-        ki, _ = KnowledgeItem.objects.get_or_create(
-            notebook=notebook,
-            knowledge_base_item=kb_item,
-            defaults={
-                'source': source,
-                'notes': f"Processed from document URL: {url}"
+        # Step 2: Create KnowledgeBaseItem in pending state
+        kb_item = KnowledgeBaseItem.objects.create(
+            user=user,
+            source=source,
+            processing_status="pending",  # Start in pending state
+            title=clean_title(url),
+            content_type="document",
+            metadata={
+                "source_url": url,
+                "upload_url_id": upload_url_id or uuid4().hex,
+                "processing_metadata": {
+                    "extraction_type": "url_extractor",
+                    "processing_type": "document"
+                }
             }
         )
+
+        # Step 3: Create KnowledgeItem to link to notebook (this will trigger SSE to show pending item)
+        KnowledgeItem.objects.create(
+            notebook=notebook,
+            knowledge_base_item=kb_item,
+            source=source,
+            notes=f"Processed from document URL: {url}"
+        )
+
+        # Step 4: Now process the document URL using url extractor
+        from .processors.url_extractor import URLExtractor
+        from asgiref.sync import async_to_sync
         
-        # Update batch item status on success
-        if batch_item_id:
-            _update_batch_item_status(batch_item_id, 'completed', result_data=result)
+        url_extractor = URLExtractor()
         
-        # Check if batch is complete
-        if batch_job_id:
-            _check_batch_completion(batch_job_id)
+        # Process document URL asynchronously with existing KB item
+        async def process_document_async():
+            return await url_extractor.process_url_document_update_existing(
+                url=url,
+                kb_item_id=str(kb_item.id),
+                upload_url_id=upload_url_id or uuid4().hex,
+                user_id=user.pk,
+                notebook_id=notebook.id
+            )
         
-        logger.info(f"Successfully processed document URL: {url}")
-        return result
+        try:
+            # Update status to in_progress before starting processing
+            kb_item.processing_status = "in_progress"
+            kb_item.save(update_fields=["processing_status"])
+            
+            # Run async processing using async_to_sync
+            result = async_to_sync(process_document_async)()
+            
+            # Step 5: Update status to done (this will trigger SSE update)
+            kb_item.processing_status = "done"
+            kb_item.save(update_fields=["processing_status"])
+            
+            # Update batch item status on success
+            if batch_item_id:
+                _update_batch_item_status(batch_item_id, 'completed', result_data={"file_id": str(kb_item.id)})
+            
+            # Check if batch is complete
+            if batch_job_id:
+                _check_batch_completion(batch_job_id)
+            
+            logger.info(f"Successfully processed document URL: {url}")
+            return {"file_id": str(kb_item.id), "url": url, "status": "completed"}
+        
+        except Exception as processing_error:
+            # Update status to error (this will trigger SSE update)
+            kb_item.processing_status = "error"
+            kb_item.metadata = kb_item.metadata or {}
+            kb_item.metadata["error_message"] = str(processing_error)
+            kb_item.save(update_fields=["processing_status", "metadata"])
+            raise processing_error
         
     except Exception as e:
         logger.error(f"Error processing document URL {url}: {e}")
