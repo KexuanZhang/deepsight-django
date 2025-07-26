@@ -12,6 +12,7 @@ from .views import (
     FileStatusView,
     FileStatusStreamView,
     NotebookFileListStreamView,
+    NotebookFileStatusStreamView,
     FileDeleteView,
     KnowledgeBaseView,
     FileContentView,
@@ -104,6 +105,13 @@ urlpatterns = [
         "<uuid:notebook_id>/files/stream",
         NotebookFileListStreamView.as_view(),
         name="notebook-files-stream",
+    ),
+    
+    # 5.3) SSE streaming for individual file processing status
+    path(
+        "<uuid:notebook_id>/files/<uuid:file_id>/status-stream/",
+        NotebookFileStatusStreamView.as_view(),
+        name="notebook-file-status-stream",
     ),
 
     # 6) delete either an in‐flight upload or a completed file

@@ -45,24 +45,11 @@ export const useFileUploadStatus = () => {
   const [notebookId, setNotebookId] = useState<string | null>(null);
   const sseRef = useRef<EventSource | null>(null);
 
+  // SSE handles all status updates now - no need for polling
   const checkForCompletions = useCallback(async () => {
-    if (trackedUploads.size > 0 && notebookId) {
-      for (const [uploadFileId, tracker] of trackedUploads) {
-        try {
-          // Use getStatus instead of getFileStatus if that's the correct method
-          const response = await apiService.getStatus(tracker.notebookId, uploadFileId);
-          if (response.success && (response.status === 'completed' || response.status === 'error' || response.status === 'failed')) {
-            console.log(`Upload completed: ${uploadFileId} with status: ${response.status}`);
-            tracker.onComplete?.();
-            stopTracking(uploadFileId);
-          }
-        } catch (error) {
-          // Silently handle errors - file might not exist yet
-          console.debug(`Upload ${uploadFileId} still processing or not found`);
-        }
-      }
-    }
-  }, [trackedUploads, notebookId, stopTracking]);
+    console.log('[SSE_DEBUG] checkForCompletions called but SSE handles all updates now');
+    // No-op - SSE handles all status updates
+  }, []);
 
   // Start SSE connection when we have a notebook (not just when tracking uploads)
   useEffect(() => {
@@ -78,7 +65,9 @@ export const useFileUploadStatus = () => {
       
       const sseUrl = `/api/v1/notebooks/${notebookId}/files/stream`;
       console.log('[SSE_DEBUG] Connecting to SSE URL:', sseUrl);
-      const eventSource = new EventSource(sseUrl);
+      const eventSource = new EventSource(sseUrl, {
+        withCredentials: true // Include cookies for session authentication
+      });
       
       eventSource.onmessage = (event) => {
         try {
@@ -94,19 +83,21 @@ export const useFileUploadStatus = () => {
               console.log('[SSE_DEBUG] Status update received:', { status, file_id, trackedUploads: Array.from(trackedUploads.keys()) });
               
               if (status === 'done' || status === 'completed' || status === 'error' || status === 'failed') {
-                console.log('[SSE_DEBUG] Completion signal received - triggering callbacks for all tracked uploads');
+                console.log('[SSE_DEBUG] Completion signal received for file:', file_id);
                 
-                // Since we can't easily match SSE events to specific uploads, 
-                // trigger completion for ALL tracked uploads when ANY completion occurs
-                // This is safe because completion signals mean "refresh the list"
-                Array.from(trackedUploads.values()).forEach(tracker => {
-                  console.log(`[SSE_DEBUG] Triggering completion for tracked upload: ${tracker.uploadFileId}`);
+                // Check if this specific file is being tracked
+                const tracker = trackedUploads.get(file_id);
+                if (tracker) {
+                  console.log(`[SSE_DEBUG] Triggering completion for specific file: ${file_id}`);
                   tracker.onComplete?.();
-                  stopTracking(tracker.uploadFileId);
-                });
-                
-                if (trackedUploads.size === 0) {
-                  console.log('[SSE_DEBUG] No tracked uploads, but completion signal received - might be a manual upload');
+                  stopTracking(file_id);
+                } else {
+                  console.log('[SSE_DEBUG] File not in tracked uploads:', file_id);
+                  // Still trigger a general refresh if no specific file is tracked
+                  // This handles files uploaded through other means
+                  if (trackedUploads.size === 0) {
+                    console.log('[SSE_DEBUG] No tracked uploads, but completion signal received - might be a manual upload');
+                  }
                 }
               } else {
                 console.log('[SSE_DEBUG] Status not complete yet:', status);
@@ -145,7 +136,7 @@ export const useFileUploadStatus = () => {
     }
     // Stop polling when uploads are done or notebookId changes
     // This block is removed as per the edit hint.
-  }, [notebookId, activeUploads.size, checkForCompletions]);
+  }, [notebookId, activeUploads.size, stopTracking]);
 
   // Cleanup on unmount
   useEffect(() => {

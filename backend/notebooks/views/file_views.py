@@ -344,6 +344,11 @@ class NotebookFileListStreamView(View):
                             # New event detected - send updated file list
                             last_event_time = change_event['timestamp']
                             
+                            # Log the event for debugging
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.info(f"[SSE_DEBUG] Sending file change event: {change_event.get('type')}, file_data: {change_event.get('file_data')}")
+                            
                             # Get fresh file list
                             current_knowledge_items = (
                                 KnowledgeItem.objects.filter(notebook=notebook)
@@ -750,6 +755,93 @@ class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
             return response
         except Exception as e:
             raise Http404(f"File not accessible: {str(e)}")
+
+
+class NotebookFileStatusStreamView(View):
+    """
+    GET /api/notebooks/{notebook_id}/files/{file_id}/status-stream/
+    Server-Sent Events streaming endpoint for individual file processing status - mimics report generation pattern.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        # Check authentication manually
+        if not request.user.is_authenticated:
+            return JsonResponse({"detail": "Authentication required."}, status=401)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, notebook_id, file_id):
+        """Stream individual file processing status using direct database polling."""
+        try:
+            # Verify notebook access
+            from ..models import Notebook
+            try:
+                notebook = Notebook.objects.get(id=notebook_id, user=request.user)
+            except Notebook.DoesNotExist:
+                return JsonResponse({"detail": "Not found."}, status=404)
+            
+            def event_stream():
+                """Generator function for SSE events - polls database directly"""
+                import time
+                import json
+                
+                max_duration = 300  # 5 minutes maximum
+                start_time = time.time()
+                poll_interval = 2  # Poll every 2 seconds like reports
+                last_status = None
+                
+                while time.time() - start_time < max_duration:
+                    try:
+                        # Poll KnowledgeBaseItem status directly from database
+                        kb_item = KnowledgeBaseItem.objects.get(id=file_id, user=request.user)
+                        current_status = {
+                            'file_id': str(kb_item.id),
+                            'status': kb_item.processing_status,
+                            'title': kb_item.title,
+                            'updated_at': kb_item.updated_at.isoformat() if kb_item.updated_at else None
+                        }
+                        
+                        # Only send update if status changed
+                        if current_status != last_status:
+                            yield f"data: {json.dumps({'type': 'file_status', 'data': current_status})}\n\n"
+                            last_status = current_status
+                            
+                            # Log status change for debugging
+                            logger.info(f"[FILE_SSE] Status change for file {file_id}: {kb_item.processing_status}")
+                        
+                        # Stop streaming if processing is complete
+                        if kb_item.processing_status in ['done', 'error']:
+                            logger.info(f"[FILE_SSE] Processing complete for file {file_id}, closing stream")
+                            break
+                            
+                        time.sleep(poll_interval)
+                        
+                    except KnowledgeBaseItem.DoesNotExist:
+                        logger.warning(f"[FILE_SSE] KnowledgeBaseItem {file_id} not found, closing stream")
+                        break
+                    except Exception as e:
+                        logger.error(f"[FILE_SSE] Error polling file {file_id}: {e}")
+                        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                        break
+                
+                # Send final close event
+                yield f"data: {json.dumps({'type': 'close', 'message': 'Stream ended'})}\n\n"
+
+            response = StreamingHttpResponse(
+                event_stream(), content_type="text/event-stream"
+            )
+            response["Cache-Control"] = "no-cache"
+            response["X-Accel-Buffering"] = "no"  # Disable nginx buffering
+            response["Access-Control-Allow-Origin"] = "*"
+            response["Access-Control-Allow-Headers"] = "Cache-Control"
+
+            return response
+            
+        except Exception as e:
+            logger.error(f"[FILE_SSE] Failed to create file status stream for {file_id}: {e}")
+            return JsonResponse(
+                {"detail": f"Failed to create file status stream: {str(e)}"},
+                status=500
+            )
 
 
 class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
