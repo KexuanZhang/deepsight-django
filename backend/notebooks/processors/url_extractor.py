@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Any
 from urllib.parse import urljoin, urlparse, urlunparse
 from datetime import datetime, timedelta, timezone
 import re
+from uuid import uuid4
 
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import UploadedFile, InMemoryUploadedFile
@@ -737,7 +738,7 @@ class URLExtractor:
                 raise ValueError(f"Invalid document format. Expected PDF or PPTX, got: {file_info['detected_type']}")
             
             # Process the document and update existing KB item
-            await self._process_and_update_document_file(temp_file_path, file_info, url, kb_item_id, user_id)
+            await self._process_and_update_document_file(temp_file_path, file_info, url, kb_item_id, user_id, notebook_id)
             
             return {
                 "file_id": kb_item_id,
@@ -983,7 +984,7 @@ class URLExtractor:
             self.log_operation("document_processing_error", f"Error processing document file: {e}", "error")
             raise
     
-    async def _process_and_update_document_file(self, file_path: str, file_info: Dict, url: str, kb_item_id: str, user_id: int) -> None:
+    async def _process_and_update_document_file(self, file_path: str, file_info: Dict, url: str, kb_item_id: str, user_id: int, notebook_id: int = None) -> None:
         """Process the validated document file and update existing KnowledgeBaseItem."""
         try:
             # Create a Django UploadedFile object from the temporary file
@@ -1008,7 +1009,7 @@ class URLExtractor:
                 django_file, 
                 upload_file_id=uuid4().hex,
                 user_pk=user_id,
-                notebook_id=None,  # Not needed for update
+                notebook_id=notebook_id,
                 kb_item_id=kb_item_id  # Update existing item
             )
             
