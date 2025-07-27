@@ -455,6 +455,41 @@ class FileStorageService:
                     
                     self.log_operation("kb_item_updated", f"Updated existing KB item: {knowledge_item.id}")
                     
+                    # Generate object keys for MinIO storage using kb pattern with actual item ID
+                    base_key = f"{user_id}/kb/{knowledge_item.id}"
+                    
+                    # Store main content only if not skipped (for marker processing that provides better content)
+                    content_key = None
+                    if not processing_result.get('skip_content_file', False):
+                        content_filename = processing_result.get('content_filename', 'extracted_content.md')
+                        content_key = f"{base_key}/{content_filename}"
+                        
+                        content_bytes = content.encode('utf-8')
+                        if not self.minio_backend.store_file(content_key, content_bytes, 'text/markdown'):
+                            raise Exception("Failed to store content file for existing KB item")
+                    
+                    # Store original file if provided
+                    original_file_key = None
+                    if original_file_path and os.path.exists(original_file_path):
+                        with open(original_file_path, 'rb') as f:
+                            original_content = f.read()
+                        
+                        original_filename = metadata.get('original_filename', os.path.basename(original_file_path))
+                        original_file_key = f"{base_key}/{original_filename}"
+                        
+                        if not self.minio_backend.store_file(original_file_key, original_content, metadata.get('content_type')):
+                            self.log_operation("original_file_storage_failed", f"Failed to store original file for existing KB item: {original_filename}", "warning")
+                        else:
+                            self.log_operation("original_file_stored", f"Successfully stored original file for existing KB item: {original_filename}")
+                    
+                    # Update database record with the object keys
+                    knowledge_item.file_object_key = content_key
+                    knowledge_item.original_file_object_key = original_file_key
+                    knowledge_item.save()
+                    
+                    # Return early since we've processed the existing item
+                    return str(knowledge_item.id)
+                    
                 except KnowledgeBaseItem.DoesNotExist:
                     self.log_operation("kb_item_not_found", f"KB item {kb_item_id} not found, creating new one", "warning")
                     knowledge_item = None

@@ -507,12 +507,14 @@ class URLExtractor:
             
             content = ""
             processing_type = "url_content"
+            original_file_path = None
             features = {}  # Initialize features to avoid UnboundLocalError
             
             if media_info.get("has_media"):
                 # Download and transcribe media
                 media_result = await self._download_and_transcribe_media(url, media_info)
                 content = media_result.get("content", "")
+                original_file_path = media_result.get("original_file_path")  # Extract the original file path
                 processing_type = "media"
                 # For media content, create basic features dict
                 features = {
@@ -539,14 +541,28 @@ class URLExtractor:
             cleaned_content = self._clean_markdown_content(content, features)
             
             # Update existing KnowledgeBaseItem
-            await self._update_existing_kb_item(
-                kb_item_id=kb_item_id,
-                url=url,
-                content=cleaned_content,
-                features=features,
-                processing_type=processing_type,
-                user_id=user_id
-            )
+            try:
+                await self._update_existing_kb_item(
+                    kb_item_id=kb_item_id,
+                    url=url,
+                    content=cleaned_content,
+                    features=features,
+                    processing_type=processing_type,
+                    user_id=user_id,
+                    original_file_path=original_file_path  # Pass the original file path for MinIO storage
+                )
+            finally:
+                # Clean up temporary files after storage
+                if original_file_path and os.path.exists(original_file_path):
+                    try:
+                        # Clean up the temporary directory containing the downloaded file
+                        temp_dir = os.path.dirname(original_file_path)
+                        if temp_dir and os.path.exists(temp_dir) and "deepsight_media_" in temp_dir:
+                            import shutil
+                            shutil.rmtree(temp_dir)
+                            self.log_operation("temp_cleanup", f"Cleaned up temporary directory: {temp_dir}")
+                    except Exception as cleanup_err:
+                        self.log_operation("cleanup_error", f"Failed to cleanup temp files: {cleanup_err}", "warning")
             
             return {
                 "file_id": kb_item_id,
@@ -1103,7 +1119,7 @@ class URLExtractor:
             self.log_operation("store_content_error", f"Error storing URL content: {e}", "error")
             raise
     
-    async def _update_existing_kb_item(self, kb_item_id: str, url: str, content: str, features: Dict[str, Any], processing_type: str, user_id: int) -> None:
+    async def _update_existing_kb_item(self, kb_item_id: str, url: str, content: str, features: Dict[str, Any], processing_type: str, user_id: int, original_file_path: Optional[str] = None) -> None:
         """Update an existing KnowledgeBaseItem with processed content using proper minio storage."""
         try:
             # Import models inside method to avoid circular imports
@@ -1127,31 +1143,60 @@ class URLExtractor:
             
             notebook_id = knowledge_item.notebook_id
             
-            # Prepare file metadata for storage
-            file_metadata = {
-                "original_filename": f"{features.get('title', 'webpage')}.md",
-                "file_extension": ".md",
-                "content_type": "text/markdown",
-                "file_size": len(content.encode('utf-8')),
-                "parsing_status": "completed",
-                "source_url": url,
-                "processing_metadata": {
-                    "extraction_type": "url_extractor",
-                    "extraction_success": True,
-                    "extraction_method": features.get("extraction_method", "crawl4ai"),
-                    "content_length": len(content),
-                    "processing_type": processing_type
+            # Determine appropriate filename and metadata based on content type
+            if original_file_path and processing_type == "media":
+                # For media files, use the original video filename and metadata
+                original_basename = os.path.basename(original_file_path)
+                file_metadata = {
+                    "source_url": url,
+                    "original_filename": original_basename,
+                    "file_extension": os.path.splitext(original_basename)[1],
+                    "content_type": self._get_mime_type_from_extension(os.path.splitext(original_basename)[1]),
+                    "file_size": os.path.getsize(original_file_path) if os.path.exists(original_file_path) else len(content.encode('utf-8')),
+                    "parsing_status": "completed",
+                    "processing_metadata": {
+                        "extraction_type": "url_extractor",
+                        "extraction_success": True,
+                        "extraction_method": "yt-dlp",
+                        "content_length": len(content),
+                        "processing_type": processing_type
+                    }
                 }
-            }
-            
-            # Prepare processing result for storage
-            processing_result = {
-                "content": content,
-                "title": features.get("title", "webpage"),
-                "content_filename": f"{features.get('title', 'webpage')}.md",
-                "features_available": ["text_content"],
-                "metadata": features
-            }
+                
+                # For media processing, use transcript filename instead of default extracted_content.md
+                processing_result = {
+                    "content": content,
+                    "title": features.get("title", "media"),
+                    "content_filename": f"{features.get('title', 'media')}.md",
+                    "features_available": ["media_transcription"],
+                    "metadata": features
+                }
+            else:
+                # For non-media content, use markdown filename
+                file_metadata = {
+                    "original_filename": f"{features.get('title', 'webpage')}.md",
+                    "file_extension": ".md",
+                    "content_type": "text/markdown",
+                    "file_size": len(content.encode('utf-8')),
+                    "parsing_status": "completed",
+                    "source_url": url,
+                    "processing_metadata": {
+                        "extraction_type": "url_extractor",
+                        "extraction_success": True,
+                        "extraction_method": features.get("extraction_method", "crawl4ai"),
+                        "content_length": len(content),
+                        "processing_type": processing_type
+                    }
+                }
+                
+                # Prepare processing result for storage
+                processing_result = {
+                    "content": content,
+                    "title": features.get("title", "webpage"),
+                    "content_filename": f"{features.get('title', 'webpage')}.md",
+                    "features_available": ["text_content"],
+                    "metadata": features
+                }
             
             # Use the storage adapter to properly store content in minio and update database
             if not self.storage_adapter:
@@ -1165,6 +1210,7 @@ class URLExtractor:
                 processing_result=processing_result,
                 user_id=user_id,
                 notebook_id=notebook_id,
+                original_file_path=original_file_path,  # Pass the original file path for MinIO storage
                 source_identifier=url,  # Use URL as source identifier for duplicate detection
                 kb_item_id=kb_item_id   # Update existing KB item
             )
