@@ -1104,28 +1104,37 @@ class URLExtractor:
             raise
     
     async def _update_existing_kb_item(self, kb_item_id: str, url: str, content: str, features: Dict[str, Any], processing_type: str, user_id: int) -> None:
-        """Update an existing KnowledgeBaseItem with processed content."""
+        """Update an existing KnowledgeBaseItem with processed content using proper minio storage."""
         try:
             # Import models inside method to avoid circular imports
             from ..models import KnowledgeBaseItem
             from asgiref.sync import sync_to_async
             
-            # Get the existing KB item
+            # Get the existing KB item to get the notebook ID
             get_kb_item_sync = sync_to_async(KnowledgeBaseItem.objects.get, thread_sensitive=False)
             kb_item = await get_kb_item_sync(id=kb_item_id, user_id=user_id)
             
-            # Update the content and metadata
-            kb_item.content = content
-            kb_item.title = features.get("title", kb_item.title)
+            # Get the notebook ID from the associated KnowledgeItem
+            from ..models import KnowledgeItem
+            get_knowledge_item_sync = sync_to_async(
+                lambda: KnowledgeItem.objects.filter(knowledge_base_item_id=kb_item_id).first(), 
+                thread_sensitive=False
+            )
+            knowledge_item = await get_knowledge_item_sync()
             
-            # Update metadata while preserving existing fields
-            updated_metadata = kb_item.metadata or {}
-            updated_metadata.update({
+            if not knowledge_item:
+                raise Exception(f"No KnowledgeItem found for KnowledgeBaseItem {kb_item_id}")
+            
+            notebook_id = knowledge_item.notebook_id
+            
+            # Prepare file metadata for storage
+            file_metadata = {
                 "original_filename": f"{features.get('title', 'webpage')}.md",
                 "file_extension": ".md",
                 "content_type": "text/markdown",
                 "file_size": len(content.encode('utf-8')),
                 "parsing_status": "completed",
+                "source_url": url,
                 "processing_metadata": {
                     "extraction_type": "url_extractor",
                     "extraction_success": True,
@@ -1133,14 +1142,34 @@ class URLExtractor:
                     "content_length": len(content),
                     "processing_type": processing_type
                 }
-            })
-            kb_item.metadata = updated_metadata
+            }
             
-            # Save the updated item (but don't update processing_status here - that's done in the task)
-            save_kb_item_sync = sync_to_async(kb_item.save, thread_sensitive=False)
-            await save_kb_item_sync(update_fields=["content", "title", "metadata", "updated_at"])
+            # Prepare processing result for storage
+            processing_result = {
+                "content": content,
+                "title": features.get("title", "webpage"),
+                "content_filename": f"{features.get('title', 'webpage')}.md",
+                "features_available": ["text_content"],
+                "metadata": features
+            }
             
-            self.log_operation("update_kb_item", f"Updated existing KB item {kb_item_id} with URL content")
+            # Use the storage adapter to properly store content in minio and update database
+            if not self.storage_adapter:
+                raise Exception("Storage adapter not available")
+            
+            # Call store_processed_file with the existing kb_item_id to update it
+            store_file_sync = sync_to_async(self.storage_adapter.store_processed_file, thread_sensitive=False)
+            await store_file_sync(
+                content=content,
+                metadata=file_metadata,
+                processing_result=processing_result,
+                user_id=user_id,
+                notebook_id=notebook_id,
+                source_identifier=url,  # Use URL as source identifier for duplicate detection
+                kb_item_id=kb_item_id   # Update existing KB item
+            )
+            
+            self.log_operation("update_kb_item", f"Updated existing KB item {kb_item_id} with URL content using minio storage")
             
         except Exception as e:
             self.log_operation("update_kb_item_error", f"Error updating existing KB item {kb_item_id}: {e}", "error")
