@@ -149,7 +149,6 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     );
   }, [sources]);
 
-  // Sources panel already handles auto-refresh via SSE - no additional refresh needed
 
   // NO POLLING APPROACH:
   // - Sources list only updates when explicitly triggered

@@ -5,6 +5,41 @@ import { Badge } from "@/common/components/ui/badge";
 import apiService from "@/common/utils/api";
 import { KnowledgeBaseItem } from "@/features/notebook/type";
 import { COLORS } from "@/features/notebook/config/uiConfig";
+import { useFileStatus } from "@/features/notebook/hooks/generation/useFileStatus";
+
+// Component to handle individual knowledge base item status tracking with SSE
+const KnowledgeBaseStatusTracker: React.FC<{
+  itemId: string;
+  notebookId: string;
+  onStatusUpdate: (itemId: string, newStatus: string) => void;
+  onProcessingComplete: (itemId: string) => void;
+  onError: (itemId: string, error: string) => void;
+}> = ({ itemId, notebookId, onStatusUpdate, onProcessingComplete, onError }) => {
+  
+  const { status } = useFileStatus(
+    itemId,
+    notebookId,
+    (result) => {
+      console.log(`[KB_SSE] Processing completed for knowledge base item ${itemId}:`, result);
+      onStatusUpdate(itemId, 'done');
+      onProcessingComplete(itemId);
+    },
+    (error) => {
+      console.error(`[KB_SSE] Processing failed for knowledge base item ${itemId}:`, error);
+      onStatusUpdate(itemId, 'error');
+      onError(itemId, error);
+    }
+  );
+
+  // Update status when it changes (for intermediate status updates)
+  React.useEffect(() => {
+    if (status && status !== 'done' && status !== 'error') {
+      onStatusUpdate(itemId, status);
+    }
+  }, [status, itemId, onStatusUpdate]);
+
+  return null; // This component doesn't render anything
+};
 
 interface AddSourceModalProps {
   onClose: () => void;
@@ -271,51 +306,34 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
     }
   }, [onSourcesRemoved, activeTab]);
 
-  // Auto-refresh mechanism for knowledge base processing status
-  const [lastKnowledgeProcessingCount, setLastKnowledgeProcessingCount] = React.useState(0);
-
-  // Get processing knowledge base items
+  // Real-time status updates for processing knowledge base items using SSE
   const processingKnowledgeItems = React.useMemo(() => {
     return knowledgeBaseItems.filter(item => 
       item.processing_status && ['pending', 'in_progress', 'processing'].includes(item.processing_status)
     );
   }, [knowledgeBaseItems]);
 
-  // Auto-refresh when processing count decreases (items complete)
-  React.useEffect(() => {
-    const currentProcessingCount = processingKnowledgeItems.length;
-    
-    // If processing count decreased and we're on knowledge tab, trigger refresh
-    if (lastKnowledgeProcessingCount > 0 && 
-        currentProcessingCount < lastKnowledgeProcessingCount && 
-        activeTab === 'knowledge') {
-      console.log('Knowledge base processing count decreased, triggering auto-refresh in 2 seconds...');
-      const refreshTimer = setTimeout(() => {
-        console.log('Auto-refreshing knowledge base after processing completion');
-        loadKnowledgeBase();
-      }, 2000); // 2 second delay to allow backend to complete
-      
-      return () => clearTimeout(refreshTimer);
-    }
-    
-    setLastKnowledgeProcessingCount(currentProcessingCount);
-  }, [processingKnowledgeItems.length, lastKnowledgeProcessingCount, activeTab]);
+  // Handle knowledge base item status updates from SSE
+  const updateKnowledgeItemStatus = React.useCallback((itemId: string, newStatus: string) => {
+    console.log(`[KB_SSE] Updating status for knowledge base item ${itemId} to ${newStatus}`);
+    setKnowledgeBaseItems(prev => prev.map(item => 
+      item.id === itemId 
+        ? { ...item, processing_status: newStatus }
+        : item
+    ));
+  }, []);
 
-  // Periodic refresh for active processing items when on knowledge tab
-  React.useEffect(() => {
-    if (activeTab === 'knowledge' && processingKnowledgeItems.length > 0) {
-      console.log(`Starting periodic refresh for ${processingKnowledgeItems.length} processing knowledge base items`);
-      const interval = setInterval(() => {
-        console.log('Periodic refresh of knowledge base for processing items');
-        loadKnowledgeBase();
-      }, 5000); // Refresh every 5 seconds while items are processing
-      
-      return () => {
-        console.log('Stopping periodic refresh for knowledge base');
-        clearInterval(interval);
-      };
-    }
-  }, [activeTab, processingKnowledgeItems.length]);
+  // Handle processing completion
+  const handleKnowledgeItemProcessingComplete = React.useCallback((itemId: string) => {
+    console.log(`[KB_SSE] Processing completed for knowledge base item ${itemId}`);
+    // The status update is already handled by updateKnowledgeItemStatus
+  }, []);
+
+  // Handle processing errors
+  const handleKnowledgeItemError = React.useCallback((itemId: string, error: string) => {
+    console.error(`[KB_SSE] Processing error for knowledge base item ${itemId}:`, error);
+    // The status update is already handled by updateKnowledgeItemStatus
+  }, []);
 
   // Handle knowledge item selection
   const handleKnowledgeItemSelect = (itemId: string) => {
@@ -925,6 +943,18 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                       </div>
                     ))}
                   </div>
+
+                  {/* SSE Status Trackers for processing knowledge base items */}
+                  {processingKnowledgeItems.map(item => (
+                    <KnowledgeBaseStatusTracker
+                      key={`tracker-${item.id}`}
+                      itemId={item.id}
+                      notebookId={notebookId}
+                      onStatusUpdate={updateKnowledgeItemStatus}
+                      onProcessingComplete={handleKnowledgeItemProcessingComplete}
+                      onError={handleKnowledgeItemError}
+                    />
+                  ))}
                 </>
               )}
             </div>
