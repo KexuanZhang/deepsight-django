@@ -249,6 +249,161 @@ class FileStatusStreamView(APIView):
         return response
 
 
+from django.views import View
+from django.http import JsonResponse, StreamingHttpResponse
+
+class NotebookFileListStreamView(View):
+    """
+    GET /api/notebooks/{notebook_id}/files/stream
+    Server-Sent Events streaming endpoint for real-time notebook file list updates.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        # Check authentication manually
+        if not request.user.is_authenticated:
+            return JsonResponse({"detail": "Authentication required."}, status=401)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, notebook_id):
+        """Stream notebook file list changes in real-time using event-driven updates."""
+        # Re-enabled SSE for file completion notifications
+        try:
+            # Verify notebook access
+            from ..models import Notebook
+            try:
+                notebook = Notebook.objects.get(id=notebook_id, user=request.user)
+            except Notebook.DoesNotExist:
+                return JsonResponse({"detail": "Not found."}, status=404)
+            
+            def event_stream():
+                """Generator function for SSE events"""
+                import time
+                import json
+                from django.core.cache import cache
+                
+                max_duration = 300  # 5 minutes maximum (reduce from 30 minutes)
+                start_time = time.time()
+                check_interval = 2  # Check for events every 2 seconds (reduce frequency)
+                
+                # Send initial file list
+                try:
+                    knowledge_items = (
+                        KnowledgeItem.objects.filter(notebook=notebook)
+                        .select_related("knowledge_base_item", "source")
+                        .order_by("-added_at")
+                    )
+                    
+                    # Build file response data directly (inline helper)
+                    def build_file_response_data(ki):
+                        metadata = ki.knowledge_base_item.metadata or {}
+                        original_filename = metadata.get('original_filename', ki.knowledge_base_item.title)
+                        file_extension = metadata.get('file_extension', '')
+                        file_size = metadata.get('file_size', 0)
+                        
+                        return {
+                            "file_id": str(ki.knowledge_base_item.id),
+                            "title": ki.knowledge_base_item.title,
+                            "upload_timestamp": ki.added_at.isoformat() if ki.added_at else None,
+                            "parsing_status": ki.knowledge_base_item.processing_status,
+                            "original_filename": original_filename,
+                            "file_extension": file_extension,
+                            "file_size": file_size,
+                            "metadata": metadata,
+                            "knowledge_item_id": str(ki.id)
+                        }
+                    
+                    files = [build_file_response_data(ki) for ki in knowledge_items]
+                    
+                    initial_event = {
+                        "type": "initial",
+                        "files": files,
+                        "timestamp": time.time()
+                    }
+                    yield f"data: {json.dumps(initial_event)}\n\n"
+                    
+                except Exception as e:
+                    error_event = {"type": "error", "message": str(e)}
+                    yield f"data: {json.dumps(error_event)}\n\n"
+                    return
+                
+                # Track last processed event time to avoid duplicates
+                last_event_time = 0
+                last_heartbeat_time = time.time()
+                cache_key = f"notebook_file_changes_{notebook_id}"
+                heartbeat_interval = 30  # Send heartbeat every 30 seconds
+                
+                # Event-driven streaming loop
+                while time.time() - start_time < max_duration:
+                    try:
+                        current_time = time.time()
+                        
+                        # Check for new events in cache
+                        change_event = cache.get(cache_key)
+                        
+                        if change_event and change_event.get('timestamp', 0) > last_event_time:
+                            # New event detected - send updated file list
+                            last_event_time = change_event['timestamp']
+                            
+                            # Log the event for debugging
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.info(f"[SSE_DEBUG] Sending file change event: {change_event.get('type')}, file_data: {change_event.get('file_data')}")
+                            
+                            # Get fresh file list
+                            current_knowledge_items = (
+                                KnowledgeItem.objects.filter(notebook=notebook)
+                                .select_related("knowledge_base_item", "source")
+                                .order_by("-added_at")
+                            )
+                            
+                            current_files = [build_file_response_data(ki) for ki in current_knowledge_items]
+                            
+                            update_event = {
+                                "type": "file_change",
+                                "change_type": change_event.get('type', 'unknown'),
+                                "files": current_files,
+                                "timestamp": current_time,
+                                "file_data": change_event.get('file_data')
+                            }
+                            yield f"data: {json.dumps(update_event)}\n\n"
+                            
+                        # Send periodic heartbeat to keep connection alive (less frequently)
+                        elif current_time - last_heartbeat_time >= 60:  # Every 60 seconds instead of 30
+                            heartbeat_event = {
+                                "type": "heartbeat",
+                                "timestamp": current_time
+                            }
+                            yield f"data: {json.dumps(heartbeat_event)}\n\n"
+                            last_heartbeat_time = current_time
+                        
+                        time.sleep(check_interval)
+                        
+                    except Exception as e:
+                        error_event = {"type": "error", "message": str(e)}
+                        yield f"data: {json.dumps(error_event)}\n\n"
+                        break
+                
+                # Send final close event
+                close_event = {"type": "close", "message": "Stream ended"}
+                yield f"data: {json.dumps(close_event)}\n\n"
+
+            response = StreamingHttpResponse(
+                event_stream(), content_type="text/event-stream"
+            )
+            response["Cache-Control"] = "no-cache"
+            response["X-Accel-Buffering"] = "no"  # Disable nginx buffering
+            response["Access-Control-Allow-Origin"] = "*"
+            response["Access-Control-Allow-Headers"] = "Cache-Control"
+
+            return response
+            
+        except Exception as e:
+            return JsonResponse(
+                {"detail": f"Failed to create file list stream: {str(e)}"},
+                status=500
+            )
+
+
 class FileDeleteView(APIView):
     """
     DELETE /api/notebooks/{notebook_id}/files/{file_or_upload_id}/
@@ -600,6 +755,93 @@ class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
             return response
         except Exception as e:
             raise Http404(f"File not accessible: {str(e)}")
+
+
+class NotebookFileStatusStreamView(View):
+    """
+    GET /api/notebooks/{notebook_id}/files/{file_id}/status-stream/
+    Server-Sent Events streaming endpoint for individual file processing status - mimics report generation pattern.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        # Check authentication manually
+        if not request.user.is_authenticated:
+            return JsonResponse({"detail": "Authentication required."}, status=401)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, notebook_id, file_id):
+        """Stream individual file processing status using direct database polling."""
+        try:
+            # Verify notebook access
+            from ..models import Notebook
+            try:
+                notebook = Notebook.objects.get(id=notebook_id, user=request.user)
+            except Notebook.DoesNotExist:
+                return JsonResponse({"detail": "Not found."}, status=404)
+            
+            def event_stream():
+                """Generator function for SSE events - polls database directly"""
+                import time
+                import json
+                
+                max_duration = 300  # 5 minutes maximum
+                start_time = time.time()
+                poll_interval = 2  # Poll every 2 seconds like reports
+                last_status = None
+                
+                while time.time() - start_time < max_duration:
+                    try:
+                        # Poll KnowledgeBaseItem status directly from database
+                        kb_item = KnowledgeBaseItem.objects.get(id=file_id, user=request.user)
+                        current_status = {
+                            'file_id': str(kb_item.id),
+                            'status': kb_item.processing_status,
+                            'title': kb_item.title,
+                            'updated_at': kb_item.updated_at.isoformat() if kb_item.updated_at else None
+                        }
+                        
+                        # Only send update if status changed
+                        if current_status != last_status:
+                            yield f"data: {json.dumps({'type': 'file_status', 'data': current_status})}\n\n"
+                            last_status = current_status
+                            
+                            # Log status change for debugging
+                            logger.info(f"[FILE_SSE] Status change for file {file_id}: {kb_item.processing_status}")
+                        
+                        # Stop streaming if processing is complete
+                        if kb_item.processing_status in ['done', 'error']:
+                            logger.info(f"[FILE_SSE] Processing complete for file {file_id}, closing stream")
+                            break
+                            
+                        time.sleep(poll_interval)
+                        
+                    except KnowledgeBaseItem.DoesNotExist:
+                        logger.warning(f"[FILE_SSE] KnowledgeBaseItem {file_id} not found, closing stream")
+                        break
+                    except Exception as e:
+                        logger.error(f"[FILE_SSE] Error polling file {file_id}: {e}")
+                        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                        break
+                
+                # Send final close event
+                yield f"data: {json.dumps({'type': 'close', 'message': 'Stream ended'})}\n\n"
+
+            response = StreamingHttpResponse(
+                event_stream(), content_type="text/event-stream"
+            )
+            response["Cache-Control"] = "no-cache"
+            response["X-Accel-Buffering"] = "no"  # Disable nginx buffering
+            response["Access-Control-Allow-Origin"] = "*"
+            response["Access-Control-Allow-Headers"] = "Cache-Control"
+
+            return response
+            
+        except Exception as e:
+            logger.error(f"[FILE_SSE] Failed to create file status stream for {file_id}: {e}")
+            return JsonResponse(
+                {"detail": f"Failed to create file status stream: {str(e)}"},
+                status=500
+            )
 
 
 class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):

@@ -410,6 +410,7 @@ class FileStorageService:
         source_id: Optional[int] = None,
         original_file_path: Optional[str] = None,
         source_identifier: Optional[str] = None,
+        kb_item_id: Optional[str] = None,
     ) -> str:
         """Store processed file content in user's knowledge base."""
         try:
@@ -427,49 +428,119 @@ class FileStorageService:
                 # Fallback to content hash if no source identifier provided
                 source_hash = calculate_content_hash(content)
             
-            # Check for existing source first (primary check)
-            existing_item = KnowledgeBaseItem.objects.filter(
-                user=user, source_hash=source_hash
-            ).first()
+            # Check if we're updating an existing pre-created KnowledgeBaseItem
+            if kb_item_id:
+                try:
+                    knowledge_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
+                    
+                    # Update the existing record with processed data
+                    knowledge_item.content = content
+                    knowledge_item.source_hash = source_hash
+                    knowledge_item.metadata = {
+                        'file_extension': metadata.get('file_extension', ''),
+                        'file_size': metadata.get('file_size', len(content.encode('utf-8'))),
+                        'content_type': metadata.get('content_type', ''),
+                        'processing_status': 'completed',
+                        'original_filename': metadata.get('original_filename', 'Untitled'),
+                        'source_hash_used': source_hash,  # Track source hash used for deduplication
+                        **metadata  # Include all other metadata
+                    }
+                    knowledge_item.file_metadata = {
+                        'file_size': metadata.get('file_size', len(content.encode('utf-8'))),
+                        'content_type': metadata.get('content_type', ''),
+                        'processing_result': processing_result
+                    }
+                    # Don't change processing_status here - let the task handle it
+                    knowledge_item.save()
+                    
+                    self.log_operation("kb_item_updated", f"Updated existing KB item: {knowledge_item.id}")
+                    
+                    # Generate object keys for MinIO storage using kb pattern with actual item ID
+                    base_key = f"{user_id}/kb/{knowledge_item.id}"
+                    
+                    # Store main content only if not skipped (for marker processing that provides better content)
+                    content_key = None
+                    if not processing_result.get('skip_content_file', False):
+                        content_filename = processing_result.get('content_filename', 'extracted_content.md')
+                        content_key = f"{base_key}/{content_filename}"
+                        
+                        content_bytes = content.encode('utf-8')
+                        if not self.minio_backend.store_file(content_key, content_bytes, 'text/markdown'):
+                            raise Exception("Failed to store content file for existing KB item")
+                    
+                    # Store original file if provided
+                    original_file_key = None
+                    if original_file_path and os.path.exists(original_file_path):
+                        with open(original_file_path, 'rb') as f:
+                            original_content = f.read()
+                        
+                        original_filename = metadata.get('original_filename', os.path.basename(original_file_path))
+                        original_file_key = f"{base_key}/{original_filename}"
+                        
+                        if not self.minio_backend.store_file(original_file_key, original_content, metadata.get('content_type')):
+                            self.log_operation("original_file_storage_failed", f"Failed to store original file for existing KB item: {original_filename}", "warning")
+                        else:
+                            self.log_operation("original_file_stored", f"Successfully stored original file for existing KB item: {original_filename}")
+                    
+                    # Update database record with the object keys
+                    knowledge_item.file_object_key = content_key
+                    knowledge_item.original_file_object_key = original_file_key
+                    knowledge_item.save()
+                    
+                    # Return early since we've processed the existing item
+                    return str(knowledge_item.id)
+                    
+                except KnowledgeBaseItem.DoesNotExist:
+                    self.log_operation("kb_item_not_found", f"KB item {kb_item_id} not found, creating new one", "warning")
+                    knowledge_item = None
+            else:
+                knowledge_item = None
             
-            if existing_item:
-                self.log_operation("duplicate_source", f"Source already exists: {existing_item.id}")
-                return str(existing_item.id)
-            
-            # Secondary check: content-based deduplication for different filenames with same content
-            if source_identifier:  # Only do secondary check if we used source hash as primary
-                content_hash = calculate_content_hash(content)
-                existing_content = KnowledgeBaseItem.objects.filter(
-                    user=user,
-                    source_hash=content_hash  # Check if content hash exists in any source_hash
+            # If no existing item to update, check for duplicates and create new one
+            if not knowledge_item:
+                # Check for existing source first (primary check)
+                existing_item = KnowledgeBaseItem.objects.filter(
+                    user=user, source_hash=source_hash
                 ).first()
                 
-                if existing_content:
-                    self.log_operation("duplicate_content", f"Content already exists with different source: {existing_content.id}")
-                    return str(existing_content.id)
-            
-            # Create database record first to get the ID
-            knowledge_item = KnowledgeBaseItem.objects.create(
-                user=user,
-                title=metadata.get('original_filename', 'Untitled'),
-                content_type=metadata.get('source_type', 'document'),  # Map source_type to content_type
-                content=content,  # Store the actual content in the database
-                source_hash=source_hash,
-                metadata={
-                    'file_extension': metadata.get('file_extension', ''),
-                    'file_size': metadata.get('file_size', len(content.encode('utf-8'))),
-                    'content_type': metadata.get('content_type', ''),
-                    'processing_status': 'completed',
-                    'original_filename': metadata.get('original_filename', 'Untitled'),
-                    'source_hash_used': source_hash,  # Track source hash used for deduplication
-                    **metadata  # Include all other metadata
-                },
-                file_metadata={
-                    'file_size': metadata.get('file_size', len(content.encode('utf-8'))),
-                    'content_type': metadata.get('content_type', ''),
-                    'processing_result': processing_result
-                }
-            )
+                if existing_item:
+                    self.log_operation("duplicate_source", f"Source already exists: {existing_item.id}")
+                    return str(existing_item.id)
+                
+                # Secondary check: content-based deduplication for different filenames with same content
+                if source_identifier:  # Only do secondary check if we used source hash as primary
+                    content_hash = calculate_content_hash(content)
+                    existing_content = KnowledgeBaseItem.objects.filter(
+                        user=user,
+                        source_hash=content_hash  # Check if content hash exists in any source_hash
+                    ).first()
+                    
+                    if existing_content:
+                        self.log_operation("duplicate_content", f"Content already exists with different source: {existing_content.id}")
+                        return str(existing_content.id)
+                
+                # Create database record first to get the ID
+                knowledge_item = KnowledgeBaseItem.objects.create(
+                    user=user,
+                    title=metadata.get('original_filename', 'Untitled'),
+                    content_type=metadata.get('source_type', 'document'),  # Map source_type to content_type
+                    content=content,  # Store the actual content in the database
+                    source_hash=source_hash,
+                    metadata={
+                        'file_extension': metadata.get('file_extension', ''),
+                        'file_size': metadata.get('file_size', len(content.encode('utf-8'))),
+                        'content_type': metadata.get('content_type', ''),
+                        'processing_status': 'completed',
+                        'original_filename': metadata.get('original_filename', 'Untitled'),
+                        'source_hash_used': source_hash,  # Track source hash used for deduplication
+                        **metadata  # Include all other metadata
+                    },
+                    file_metadata={
+                        'file_size': metadata.get('file_size', len(content.encode('utf-8'))),
+                        'content_type': metadata.get('content_type', ''),
+                        'processing_result': processing_result
+                    }
+                )
             
             # Generate object keys for MinIO storage using kb pattern with actual item ID
             base_key = f"{user_id}/kb/{knowledge_item.id}"
@@ -503,14 +574,25 @@ class FileStorageService:
             knowledge_item.original_file_object_key = original_file_key
             knowledge_item.save()
             
-            # Link to notebook
+            # Link to notebook (only if link doesn't already exist)
             try:
                 notebook = Notebook.objects.get(id=notebook_id, user=user)
-                KnowledgeItem.objects.create(
+                
+                # Check if link already exists (could be from pre-creation)
+                existing_link = KnowledgeItem.objects.filter(
                     notebook=notebook,
                     knowledge_base_item=knowledge_item
-                )
-                self.log_operation("knowledge_item_linked", f"Linked to notebook {notebook_id}")
+                ).first()
+                
+                if not existing_link:
+                    KnowledgeItem.objects.create(
+                        notebook=notebook,
+                        knowledge_base_item=knowledge_item
+                    )
+                    self.log_operation("knowledge_item_linked", f"Linked to notebook {notebook_id}")
+                else:
+                    self.log_operation("knowledge_item_link_exists", f"Link already exists for notebook {notebook_id}")
+                    
             except Notebook.DoesNotExist:
                 self.log_operation("notebook_not_found", f"Notebook {notebook_id} not found", "warning")
             
@@ -584,7 +666,7 @@ class FileStorageService:
             User = get_user_model()
             user = User.objects.get(id=user_id)
             
-            # Build query
+            # Build query - show all items regardless of processing status
             queryset = KnowledgeBaseItem.objects.filter(user=user)
             
             if content_type:
@@ -601,6 +683,7 @@ class FileStorageService:
                     'title': item.title,
                     'content_type': item.content_type,
                     'source_hash': item.source_hash,
+                    'processing_status': item.processing_status,  # Add processing status
                     'metadata': item.metadata or {},
                     'file_metadata': item.file_metadata or {},
                     'created_at': item.created_at.isoformat(),

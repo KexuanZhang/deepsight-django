@@ -5,6 +5,41 @@ import { Badge } from "@/common/components/ui/badge";
 import apiService from "@/common/utils/api";
 import { KnowledgeBaseItem } from "@/features/notebook/type";
 import { COLORS } from "@/features/notebook/config/uiConfig";
+import { useFileStatus } from "@/features/notebook/hooks/generation/useFileStatus";
+
+// Component to handle individual knowledge base item status tracking with SSE
+const KnowledgeBaseStatusTracker: React.FC<{
+  itemId: string;
+  notebookId: string;
+  onStatusUpdate: (itemId: string, newStatus: string) => void;
+  onProcessingComplete: (itemId: string) => void;
+  onError: (itemId: string, error: string) => void;
+}> = ({ itemId, notebookId, onStatusUpdate, onProcessingComplete, onError }) => {
+  
+  const { status } = useFileStatus(
+    itemId,
+    notebookId,
+    (result) => {
+      console.log(`[KB_SSE] Processing completed for knowledge base item ${itemId}:`, result);
+      onStatusUpdate(itemId, 'done');
+      onProcessingComplete(itemId);
+    },
+    (error) => {
+      console.error(`[KB_SSE] Processing failed for knowledge base item ${itemId}:`, error);
+      onStatusUpdate(itemId, 'error');
+      onError(itemId, error);
+    }
+  );
+
+  // Update status when it changes (for intermediate status updates)
+  React.useEffect(() => {
+    if (status && status !== 'done' && status !== 'error') {
+      onStatusUpdate(itemId, status);
+    }
+  }, [status, itemId, onStatusUpdate]);
+
+  return null; // This component doesn't render anything
+};
 
 interface AddSourceModalProps {
   onClose: () => void;
@@ -244,7 +279,14 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       
       if (response.success) {
         const items = response.data?.items || [];
-        setKnowledgeBaseItems(items);
+        // Deduplicate by id
+        const uniqueItemsMap = new Map();
+        for (const item of items) {
+          if (!uniqueItemsMap.has(item.id)) {
+            uniqueItemsMap.set(item.id, item);
+          }
+        }
+        setKnowledgeBaseItems(Array.from(uniqueItemsMap.values()));
       } else {
         throw new Error(response.error || "Failed to load knowledge base");
       }
@@ -263,6 +305,35 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       loadKnowledgeBase();
     }
   }, [onSourcesRemoved, activeTab]);
+
+  // Real-time status updates for processing knowledge base items using SSE
+  const processingKnowledgeItems = React.useMemo(() => {
+    return knowledgeBaseItems.filter(item => 
+      item.processing_status && ['pending', 'in_progress', 'processing'].includes(item.processing_status)
+    );
+  }, [knowledgeBaseItems]);
+
+  // Handle knowledge base item status updates from SSE
+  const updateKnowledgeItemStatus = React.useCallback((itemId: string, newStatus: string) => {
+    console.log(`[KB_SSE] Updating status for knowledge base item ${itemId} to ${newStatus}`);
+    setKnowledgeBaseItems(prev => prev.map(item => 
+      item.id === itemId 
+        ? { ...item, processing_status: newStatus }
+        : item
+    ));
+  }, []);
+
+  // Handle processing completion
+  const handleKnowledgeItemProcessingComplete = React.useCallback((itemId: string) => {
+    console.log(`[KB_SSE] Processing completed for knowledge base item ${itemId}`);
+    // The status update is already handled by updateKnowledgeItemStatus
+  }, []);
+
+  // Handle processing errors
+  const handleKnowledgeItemError = React.useCallback((itemId: string, error: string) => {
+    console.error(`[KB_SSE] Processing error for knowledge base item ${itemId}:`, error);
+    // The status update is already handled by updateKnowledgeItemStatus
+  }, []);
 
   // Handle knowledge item selection
   const handleKnowledgeItemSelect = (itemId: string) => {
@@ -850,6 +921,19 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                                   Already linked
                                 </Badge>
                               )}
+                              {item.processing_status && (
+                                <Badge variant="outline" className={
+                                  item.processing_status === 'done' || item.processing_status === 'completed'
+                                    ? 'border-blue-600 text-blue-600 text-xs'
+                                    : item.processing_status === 'pending' || item.processing_status === 'in_progress'
+                                    ? 'border-yellow-600 text-yellow-600 text-xs'
+                                    : item.processing_status === 'error'
+                                    ? 'border-red-600 text-red-600 text-xs'
+                                    : 'border-gray-400 text-gray-600 text-xs'
+                                }>
+                                  {item.processing_status.charAt(0).toUpperCase() + item.processing_status.slice(1).replace('_', ' ')}
+                                </Badge>
+                              )}
                             </div>
                             <p className="text-xs text-gray-600 mt-1">
                               {item.metadata?.description || 'No description'}
@@ -859,6 +943,18 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                       </div>
                     ))}
                   </div>
+
+                  {/* SSE Status Trackers for processing knowledge base items */}
+                  {processingKnowledgeItems.map(item => (
+                    <KnowledgeBaseStatusTracker
+                      key={`tracker-${item.id}`}
+                      itemId={item.id}
+                      notebookId={notebookId}
+                      onStatusUpdate={updateKnowledgeItemStatus}
+                      onProcessingComplete={handleKnowledgeItemProcessingComplete}
+                      onError={handleKnowledgeItemError}
+                    />
+                  ))}
                 </>
               )}
             </div>

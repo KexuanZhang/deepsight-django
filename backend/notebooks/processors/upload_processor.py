@@ -409,6 +409,7 @@ class UploadProcessor:
         upload_file_id: Optional[str] = None,
         user_pk: Optional[int] = None,
         notebook_id: Optional[int] = None,
+        kb_item_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Main entry point for immediate file processing with MinIO storage."""
         temp_path = None
@@ -518,6 +519,7 @@ class UploadProcessor:
                 notebook_id=notebook_id,
                 original_file_path=temp_path,
                 source_identifier=source_identifier,  # Use URL for duplicate detection if available
+                kb_item_id=kb_item_id,  # Pass the pre-created KB item ID
             )
 
             # Run synchronous content indexing in executor

@@ -10,6 +10,8 @@ import { PANEL_HEADERS, COLORS } from "@/features/notebook/config/uiConfig";
 import { FileIcons } from "@/types";
 import { Source, FileMetadata, SourcesListProps, SourceItemProps } from "@/features/notebook/type";
 import { useFileUploadStatus } from "@/features/notebook/hooks/generation/useFileUploadStatus";
+import { useFileStatus } from "@/features/notebook/hooks/generation/useFileStatus";
+// import { useFileListSSE } from "@/features/notebook/hooks/data/useFileListSSE"; // Temporarily disabled
 import AddSourceModal from "./AddSourceModal";
 
 const fileIcons: FileIcons = {
@@ -34,6 +36,44 @@ const fileIcons: FileIcons = {
   media: Video
 };
 
+// Component to handle individual file status tracking with SSE
+const FileStatusTracker: React.FC<{
+  fileId: string;
+  notebookId: string;
+  onStatusUpdate: (fileId: string, newStatus: string) => void;
+  onProcessingComplete: (fileId: string) => void;
+  onError: (fileId: string, error: string) => void;
+}> = ({ fileId, notebookId, onStatusUpdate, onProcessingComplete, onError }) => {
+  
+  const { status } = useFileStatus(
+    fileId,
+    notebookId,
+    (result) => {
+      console.log(`[FILE_SSE] Processing completed for file ${fileId}:`, result);
+      onStatusUpdate(fileId, 'completed'); // Map 'done' to 'completed' for frontend
+      onProcessingComplete(fileId);
+    },
+    (error) => {
+      console.error(`[FILE_SSE] Processing failed for file ${fileId}:`, error);
+      onStatusUpdate(fileId, 'error');
+      onError(fileId, error);
+    }
+  );
+
+  // Update status when it changes (for intermediate status updates)
+  useEffect(() => {
+    if (status && status !== 'done' && status !== 'error') {
+      // Map backend status to frontend status
+      const frontendStatus = status === 'pending' ? 'pending' : 
+                           status === 'in_progress' ? 'processing' : 
+                           status;
+      onStatusUpdate(fileId, frontendStatus);
+    }
+  }, [status, fileId, onStatusUpdate]);
+
+  return null; // This component doesn't render anything
+};
+
 // Define ref interface for the SourcesList component
 interface SourcesListRef {
   getSelectedFiles: () => Source[];
@@ -41,6 +81,7 @@ interface SourcesListRef {
   clearSelection: () => void;
   refreshSources: () => Promise<void>;
   startUploadTracking: (uploadFileId: string) => void;
+  onProcessingComplete: (completedUploadId?: string) => void;
 }
 
 // Helper function to get principle file icon with visual indicator
@@ -73,8 +114,23 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
   // Group state
   const [isGrouped, setIsGrouped] = useState(false);
 
-  // Simple file upload status tracking (no SSE)
+  // Simple file upload status tracking with completion detection (for new uploads)
   const fileUploadStatus = useFileUploadStatus();
+  
+  // Set notebook ID for upload tracking
+  useEffect(() => {
+    fileUploadStatus.setNotebookId(notebookId);
+  }, [notebookId, fileUploadStatus]);
+
+  // Individual file status update handler - updates specific file in sources array
+  const updateFileStatus = useCallback((fileId: string, newStatus: string) => {
+    console.log(`[FILE_SSE] Updating status for file ${fileId} to ${newStatus}`);
+    setSources(prev => prev.map(source => 
+      source.file_id === fileId 
+        ? { ...source, parsing_status: newStatus }
+        : source
+    ));
+  }, []);
 
   // Load parsed files on component mount (only once)
   useEffect(() => {
@@ -84,21 +140,21 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     }
   }, []); // Keep empty dependency array - only run on mount
 
-  // Check for ongoing caption generation and poll for updates
-  useEffect(() => {
-    const hasOngoingCaptionGeneration = sources.some(source => {
-      const captionStatus = source.metadata?.file_metadata?.caption_generation_status || source.metadata?.caption_generation_status;
-      return captionStatus && ['pending', 'in_progress'].includes(captionStatus);
-    });
+  // Get processing files for individual SSE tracking
+  const processingFiles = useMemo(() => {
+    return sources.filter(source => 
+      source.file_id && 
+      source.parsing_status && 
+      ['pending', 'parsing', 'uploading', 'processing', 'in_progress'].includes(source.parsing_status)
+    );
+  }, [sources]);
 
-    if (hasOngoingCaptionGeneration && !isLoading) {
-      const pollInterval = setInterval(() => {
-        loadParsedFiles(); // Refresh data to get updated caption status
-      }, 5000); // Poll every 5 seconds
 
-      return () => clearInterval(pollInterval);
-    }
-  }, [sources, isLoading]);
+  // NO POLLING APPROACH:
+  // - Sources list only updates when explicitly triggered
+  // - Backend must signal completion through WebSocket, SSE, or callback
+  // - Parent components can call onProcessingComplete() when they receive completion signals
+  // - This eliminates unnecessary API calls and reduces server load
 
   const loadParsedFiles = async () => {
     try {
@@ -145,6 +201,35 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
       setIsLoading(false);
     }
   };
+
+  // Handle processing completion for specific files - defined after loadParsedFiles
+  const handleFileProcessingComplete = useCallback((fileId: string) => {
+    console.log(`[FILE_SSE] Processing completed for file ${fileId}`);
+    
+    // CRITICAL: Reload entire file list to get fresh content and metadata from backend
+    // This ensures preview content is updated and all components have latest data
+    loadParsedFiles();
+    
+    // Notify parent components (like AddSourceModal) about the change
+    // This updates knowledge base button status and other parent state
+    if (onSelectionChange) {
+      setTimeout(() => onSelectionChange(), 100);
+    }
+  }, [onSelectionChange]);
+
+  // Handle processing errors for specific files - defined after loadParsedFiles
+  const handleFileProcessingError = useCallback((fileId: string, error: string) => {
+    console.log(`[FILE_SSE] Processing error for file ${fileId}:`, error);
+    setError(`Processing failed for file: ${error}`);
+    
+    // Also reload file list to get latest status from backend
+    loadParsedFiles();
+    
+    // Notify parent components about the error state change
+    if (onSelectionChange) {
+      setTimeout(() => onSelectionChange(), 100);
+    }
+  }, [onSelectionChange]);
 
   // Simple helper to get original filename
   const getOriginalFilename = (metadata: FileMetadata) => {
@@ -315,6 +400,25 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
   };
 
 
+  // Method to handle backend completion signals
+  const handleProcessingComplete = useCallback((completedUploadId?: string) => {
+    console.log('Processing completion signal received', completedUploadId ? `for: ${completedUploadId}` : '(global)');
+    
+    // Stop tracking for specific upload if provided
+    if (completedUploadId) {
+      fileUploadStatus.stopTracking(completedUploadId);
+    }
+    
+    // Refresh the entire list to get latest status from backend
+    loadParsedFiles();
+  }, [loadParsedFiles, fileUploadStatus]);
+
+  // Manual refresh - just reload the file list
+  const handleManualRefresh = useCallback(async () => {
+    console.log('Manual refresh triggered - reloading file list');
+    loadParsedFiles();
+  }, [loadParsedFiles]);
+
   // Expose methods to parent components
   useImperativeHandle(ref, (): SourcesListRef => ({
     getSelectedFiles: () => {
@@ -333,7 +437,9 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     refreshSources: loadParsedFiles,
     startUploadTracking: (uploadFileId: string) => {
       fileUploadStatus.startTracking(uploadFileId);
-    }
+    },
+    // New method for handling processing completion signals
+    onProcessingComplete: handleProcessingComplete
   }));
 
   const toggleSource = useCallback((id: string | number) => {
@@ -526,10 +632,13 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
             
             setSources(prev => [tempSource, ...prev]);
             
-            // Simple tracking (no SSE)
-            fileUploadStatus.startTracking(uploadFileId);
+            // Start tracking with completion callback
+            fileUploadStatus.startTracking(uploadFileId, notebookId, () => {
+              console.log(`Upload completed for ${uploadFileId}, refreshing sources`);
+              handleProcessingComplete(uploadFileId);
+            });
           }}
-          onKnowledgeBaseItemsDeleted={(deletedItemIds: string[]) => {
+          onKnowledgeBaseItemsDeleted={(_deletedItemIds: string[]) => {
             // Refresh the entire sources list from the backend
             // This ensures we get the current state after deletion
             loadParsedFiles();
@@ -544,8 +653,8 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
 
 
   const renderFileStatus = (source: Source) => {
-    const isProcessing = source.parsing_status && ['pending', 'parsing', 'uploading', 'processing'].includes(source.parsing_status);
-    const isFailed = source.parsing_status === 'failed';
+    const isProcessing = source.parsing_status && ['pending', 'parsing', 'uploading', 'processing', 'in_progress'].includes(source.parsing_status);
+    const isFailed = source.parsing_status === 'failed' || source.parsing_status === 'error';
     
     // Check if this is a file with images and caption generation status
     const captionGenerationStatus = source.metadata?.file_metadata?.caption_generation_status || source.metadata?.caption_generation_status;
@@ -567,6 +676,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
             {source.parsing_status === 'uploading' ? 'Uploading...' : 
              source.parsing_status === 'pending' ? 'Queued...' : 
              source.parsing_status === 'processing' ? 'Processing...' :
+             source.parsing_status === 'in_progress' ? 'Processing...' :
              'Parsing...'}
           </span>
         </div>
@@ -577,7 +687,9 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
       return (
         <div className="flex items-center space-x-1">
           <AlertCircle className="h-3 w-3 text-red-500" />
-          <span className="text-xs text-red-500">Failed</span>
+          <span className="text-xs text-red-500">
+            {source.parsing_status === 'error' ? 'Error' : 'Failed'}
+          </span>
         </div>
       );
     }
@@ -672,6 +784,20 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
             <Button
               variant="ghost"
               size="sm"
+              className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleManualRefresh();
+              }}
+              disabled={isLoading}
+              title="Manual refresh (auto-updates via SSE)"
+            >
+              <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
               onClick={(e) => {
                 e.preventDefault();
@@ -699,6 +825,23 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
             {isLoading && (
               <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />
             )}
+            {(() => {
+              const processingCount = sources.filter(s => 
+                s.parsing_status && ['pending', 'parsing', 'uploading', 'processing', 'in_progress'].includes(s.parsing_status)
+              ).length;
+              
+              if (processingCount > 0) {
+                return (
+                  <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" 
+                       title={`${processingCount} files processing - SSE listening for completion`} />
+                );
+              }
+              
+              return (
+                <div className="h-2 w-2 bg-green-500 rounded-full" 
+                     title="All files processed - SSE ready" />
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -885,6 +1028,18 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
           </div>
         )}
       </div>
+
+      {/* Individual file status trackers - hidden components that handle SSE for each processing file */}
+      {processingFiles.map(file => (
+        <FileStatusTracker
+          key={`status-tracker-${file.file_id}`}
+          fileId={file.file_id!}
+          notebookId={notebookId}
+          onStatusUpdate={updateFileStatus}
+          onProcessingComplete={handleFileProcessingComplete}
+          onError={handleFileProcessingError}
+        />
+      ))}
 
 
 
