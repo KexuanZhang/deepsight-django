@@ -271,6 +271,52 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
     }
   }, [onSourcesRemoved, activeTab]);
 
+  // Auto-refresh mechanism for knowledge base processing status
+  const [lastKnowledgeProcessingCount, setLastKnowledgeProcessingCount] = React.useState(0);
+
+  // Get processing knowledge base items
+  const processingKnowledgeItems = React.useMemo(() => {
+    return knowledgeBaseItems.filter(item => 
+      item.processing_status && ['pending', 'in_progress', 'processing'].includes(item.processing_status)
+    );
+  }, [knowledgeBaseItems]);
+
+  // Auto-refresh when processing count decreases (items complete)
+  React.useEffect(() => {
+    const currentProcessingCount = processingKnowledgeItems.length;
+    
+    // If processing count decreased and we're on knowledge tab, trigger refresh
+    if (lastKnowledgeProcessingCount > 0 && 
+        currentProcessingCount < lastKnowledgeProcessingCount && 
+        activeTab === 'knowledge') {
+      console.log('Knowledge base processing count decreased, triggering auto-refresh in 2 seconds...');
+      const refreshTimer = setTimeout(() => {
+        console.log('Auto-refreshing knowledge base after processing completion');
+        loadKnowledgeBase();
+      }, 2000); // 2 second delay to allow backend to complete
+      
+      return () => clearTimeout(refreshTimer);
+    }
+    
+    setLastKnowledgeProcessingCount(currentProcessingCount);
+  }, [processingKnowledgeItems.length, lastKnowledgeProcessingCount, activeTab]);
+
+  // Periodic refresh for active processing items when on knowledge tab
+  React.useEffect(() => {
+    if (activeTab === 'knowledge' && processingKnowledgeItems.length > 0) {
+      console.log(`Starting periodic refresh for ${processingKnowledgeItems.length} processing knowledge base items`);
+      const interval = setInterval(() => {
+        console.log('Periodic refresh of knowledge base for processing items');
+        loadKnowledgeBase();
+      }, 5000); // Refresh every 5 seconds while items are processing
+      
+      return () => {
+        console.log('Stopping periodic refresh for knowledge base');
+        clearInterval(interval);
+      };
+    }
+  }, [activeTab, processingKnowledgeItems.length]);
+
   // Handle knowledge item selection
   const handleKnowledgeItemSelect = (itemId: string) => {
     setSelectedKnowledgeItems(prev => {

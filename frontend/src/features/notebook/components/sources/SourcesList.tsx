@@ -149,6 +149,8 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     );
   }, [sources]);
 
+  // Sources panel already handles auto-refresh via SSE - no additional refresh needed
+
   // NO POLLING APPROACH:
   // - Sources list only updates when explicitly triggered
   // - Backend must signal completion through WebSocket, SSE, or callback
@@ -637,7 +639,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
               handleProcessingComplete(uploadFileId);
             });
           }}
-          onKnowledgeBaseItemsDeleted={(deletedItemIds: string[]) => {
+          onKnowledgeBaseItemsDeleted={(_deletedItemIds: string[]) => {
             // Refresh the entire sources list from the backend
             // This ensures we get the current state after deletion
             loadParsedFiles();
