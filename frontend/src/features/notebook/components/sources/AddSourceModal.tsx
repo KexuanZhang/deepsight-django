@@ -935,9 +935,11 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                                 </Badge>
                               )}
                             </div>
-                            <p className="text-xs text-gray-600 mt-1">
-                              {item.metadata?.description || 'No description'}
-                            </p>
+                            {item.metadata?.description && (
+                              <p className="text-xs text-gray-600 mt-1">
+                                {item.metadata.description}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>

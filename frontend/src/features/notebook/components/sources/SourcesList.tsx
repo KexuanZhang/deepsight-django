@@ -127,7 +127,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     console.log(`[FILE_SSE] Updating status for file ${fileId} to ${newStatus}`);
     setSources(prev => prev.map(source => 
       source.file_id === fileId 
-        ? { ...source, parsing_status: newStatus }
+        ? { ...source, parsing_status: newStatus as Source['parsing_status'] }
         : source
     ));
   }, []);
