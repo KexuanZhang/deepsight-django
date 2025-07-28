@@ -23,7 +23,6 @@ export { useChat } from './chat/useChat';
 
 // Data management
 export { useNotebookData } from './data/useNotebookData';
-export { useFileListSSE } from './data/useFileListSSE';
 
 // File handling
 export { useFileUpload } from './file/useFileUpload';

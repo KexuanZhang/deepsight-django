@@ -11,7 +11,6 @@ import { FileIcons } from "@/types";
 import { Source, FileMetadata, SourcesListProps, SourceItemProps } from "@/features/notebook/type";
 import { useFileUploadStatus } from "@/features/notebook/hooks/generation/useFileUploadStatus";
 import { useFileStatus } from "@/features/notebook/hooks/generation/useFileStatus";
-// import { useFileListSSE } from "@/features/notebook/hooks/data/useFileListSSE"; // Temporarily disabled
 import AddSourceModal from "./AddSourceModal";
 
 const fileIcons: FileIcons = {
@@ -127,7 +126,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     console.log(`[FILE_SSE] Updating status for file ${fileId} to ${newStatus}`);
     setSources(prev => prev.map(source => 
       source.file_id === fileId 
-        ? { ...source, parsing_status: newStatus }
+        ? { ...source, parsing_status: newStatus as Source['parsing_status'] }
         : source
     ));
   }, []);
