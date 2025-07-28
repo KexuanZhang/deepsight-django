@@ -11,7 +11,6 @@ import { FileIcons } from "@/types";
 import { Source, FileMetadata, SourcesListProps, SourceItemProps } from "@/features/notebook/type";
 import { useFileUploadStatus } from "@/features/notebook/hooks/generation/useFileUploadStatus";
 import { useFileStatus } from "@/features/notebook/hooks/generation/useFileStatus";
-// import { useFileListSSE } from "@/features/notebook/hooks/data/useFileListSSE"; // Temporarily disabled
 import AddSourceModal from "./AddSourceModal";
 
 const fileIcons: FileIcons = {
