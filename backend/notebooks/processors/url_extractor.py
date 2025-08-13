@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Any
 from urllib.parse import urljoin, urlparse, urlunparse
 from datetime import datetime, timedelta, timezone
 import re
+from uuid import uuid4
 
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import UploadedFile, InMemoryUploadedFile
@@ -449,6 +450,134 @@ class URLExtractor:
             self.log_operation("process_url_error", f"Error processing URL {url}: {e}", "error")
             raise
     
+    async def process_url_update_existing(self, url: str, kb_item_id: str, extraction_options: Optional[Dict[str, Any]] = None, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
+        """Process URL content and update an existing KnowledgeBaseItem."""
+        try:
+            if not self._validate_url(url):
+                raise ValueError(f"Invalid URL: {url}")
+            
+            # Default extraction options for basic URL processing
+            options = {
+                "extract_links": True,
+                "extract_images": True,
+                "extract_metadata": True,
+                "wait_for_js": 2,
+                "timeout": 30
+            }
+            if extraction_options:
+                options.update(extraction_options)
+            
+            # Extract content using crawl4ai
+            features = await self._extract_with_crawl4ai(url, options)
+            
+            # Clean markdown content
+            cleaned_content = self._clean_markdown_content(features.get("content", ""), features)
+            
+            # Update existing KnowledgeBaseItem
+            await self._update_existing_kb_item(
+                kb_item_id=kb_item_id,
+                url=url,
+                content=cleaned_content,
+                features=features,
+                processing_type="url_content",
+                user_id=user_id
+            )
+            
+            return {
+                "file_id": kb_item_id,
+                "url": url,
+                "status": "completed",
+                "content_preview": cleaned_content[:500],
+                "title": features.get("title", ""),
+                "extraction_method": "crawl4ai"
+            }
+            
+        except Exception as e:
+            self.log_operation("process_url_update_error", f"Error updating KB item {kb_item_id} with URL {url}: {e}", "error")
+            raise
+    
+    async def process_url_with_media_update_existing(self, url: str, kb_item_id: str, extraction_options: Optional[Dict[str, Any]] = None, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
+        """Process URL content with media support and update an existing KnowledgeBaseItem."""
+        try:
+            if not self._validate_url(url):
+                raise ValueError(f"Invalid URL: {url}")
+            
+            # Check for media availability
+            media_info = await self._check_media_availability(url)
+            
+            content = ""
+            processing_type = "url_content"
+            original_file_path = None
+            features = {}  # Initialize features to avoid UnboundLocalError
+            
+            if media_info.get("has_media"):
+                # Download and transcribe media
+                media_result = await self._download_and_transcribe_media(url, media_info)
+                content = media_result.get("content", "")
+                original_file_path = media_result.get("original_file_path")  # Extract the original file path
+                processing_type = "media"
+                # For media content, create basic features dict
+                features = {
+                    "title": media_info.get("title", url),
+                    "url": url,
+                    "extraction_method": "media_transcription"
+                }
+            else:
+                # Fall back to regular web scraping
+                options = {
+                    "extract_links": True,
+                    "extract_images": True,
+                    "extract_metadata": True,
+                    "wait_for_js": 2,
+                    "timeout": 30
+                }
+                if extraction_options:
+                    options.update(extraction_options)
+                
+                features = await self._extract_with_crawl4ai(url, options)
+                content = features.get("content", "")
+            
+            # Clean markdown content
+            cleaned_content = self._clean_markdown_content(content, features)
+            
+            # Update existing KnowledgeBaseItem
+            try:
+                await self._update_existing_kb_item(
+                    kb_item_id=kb_item_id,
+                    url=url,
+                    content=cleaned_content,
+                    features=features,
+                    processing_type=processing_type,
+                    user_id=user_id,
+                    original_file_path=original_file_path  # Pass the original file path for MinIO storage
+                )
+            finally:
+                # Clean up temporary files after storage
+                if original_file_path and os.path.exists(original_file_path):
+                    try:
+                        # Clean up the temporary directory containing the downloaded file
+                        temp_dir = os.path.dirname(original_file_path)
+                        if temp_dir and os.path.exists(temp_dir) and "deepsight_media_" in temp_dir:
+                            import shutil
+                            shutil.rmtree(temp_dir)
+                            self.log_operation("temp_cleanup", f"Cleaned up temporary directory: {temp_dir}")
+                    except Exception as cleanup_err:
+                        self.log_operation("cleanup_error", f"Failed to cleanup temp files: {cleanup_err}", "warning")
+            
+            return {
+                "file_id": kb_item_id,
+                "url": url,
+                "status": "completed",
+                "content_preview": cleaned_content[:500],
+                "title": features.get("title", ""),
+                "has_media": media_info.get("has_media", False),
+                "processing_type": processing_type
+            }
+            
+        except Exception as e:
+            self.log_operation("process_url_media_update_error", f"Error updating KB item {kb_item_id} with media URL {url}: {e}", "error")
+            raise
+    
     async def process_url_with_media(self, url: str, extraction_options: Optional[Dict[str, Any]] = None, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
         """Process URL content with media support."""
         try:
@@ -605,6 +734,49 @@ class URLExtractor:
         except Exception as e:
             self.log_operation("process_url_media_only_error", f"Error processing URL media only {url}: {e}", "error")
             raise
+    
+    async def process_url_document_update_existing(self, url: str, kb_item_id: str, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
+        """Process URL as document download and update existing KnowledgeBaseItem."""
+        temp_file_path = None
+        try:
+            if not self._validate_url(url):
+                raise ValueError(f"Invalid URL: {url}")
+            
+            self.log_operation("document_download_start", f"Starting document download from {url}")
+            
+            # Download file to temporary location
+            temp_file_path = await self._download_document_to_temp(url)
+            
+            # Validate file format
+            file_info = await self._validate_document_format(temp_file_path)
+            
+            if not file_info["is_valid"]:
+                raise ValueError(f"Invalid document format. Expected PDF or PPTX, got: {file_info['detected_type']}")
+            
+            # Process the document and update existing KB item
+            await self._process_and_update_document_file(temp_file_path, file_info, url, kb_item_id, user_id, notebook_id)
+            
+            return {
+                "file_id": kb_item_id,
+                "url": url, 
+                "status": "completed",
+                "title": file_info.get("filename", url),
+                "processing_type": "document",
+                "file_extension": file_info["extension"],
+                "file_size": file_info["size"]
+            }
+            
+        except Exception as e:
+            self.log_operation("process_url_document_update_error", f"Error updating KB item {kb_item_id} with document URL {url}: {e}", "error")
+            raise
+        finally:
+            # Clean up temporary file
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                    self.log_operation("temp_cleanup", f"Cleaned up temporary file: {temp_file_path}")
+                except Exception as cleanup_error:
+                    self.log_operation("temp_cleanup_error", f"Error cleaning up {temp_file_path}: {cleanup_error}", "warning")
     
     async def process_url_document_only(self, url: str, upload_url_id: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> Dict[str, Any]:
         """Process URL as document download - validates format and only saves PDF/PPTX files."""
@@ -828,6 +1000,42 @@ class URLExtractor:
             self.log_operation("document_processing_error", f"Error processing document file: {e}", "error")
             raise
     
+    async def _process_and_update_document_file(self, file_path: str, file_info: Dict, url: str, kb_item_id: str, user_id: int, notebook_id: int = None) -> None:
+        """Process the validated document file and update existing KnowledgeBaseItem."""
+        try:
+            # Create a Django UploadedFile object from the temporary file
+            with open(file_path, 'rb') as temp_file:
+                file_content = temp_file.read()
+            
+            # Create an InMemoryUploadedFile that acts like an uploaded file
+            django_file = InMemoryUploadedFile(
+                file=io.BytesIO(file_content),
+                field_name='file',
+                name=file_info["filename"],
+                content_type=file_info["mime_type"],
+                size=len(file_content),
+                charset=None,
+            )
+            
+            # Add source_url to the file metadata for duplicate detection
+            django_file._source_url = url
+            
+            # Process the file using upload processor to update existing KB item
+            result = await self.upload_processor.process_upload(
+                django_file, 
+                upload_file_id=uuid4().hex,
+                user_pk=user_id,
+                notebook_id=notebook_id,
+                kb_item_id=kb_item_id  # Update existing item
+            )
+            
+            # The upload processor will have updated the KB item content
+            self.log_operation("document_processed", f"Successfully processed and updated document from URL: {url}")
+            
+        except Exception as e:
+            self.log_operation("document_update_error", f"Error processing and updating document file: {e}", "error")
+            raise
+    
     async def _store_processed_content(self, url: str, content: str, features: Dict[str, Any], upload_url_id: Optional[str], processing_type: str, transcript_filename: Optional[str] = None, original_file_path: Optional[str] = None, user_id: int = None, notebook_id: int = None) -> str:
         """Store processed URL content."""
         try:
@@ -909,4 +1117,106 @@ class URLExtractor:
             
         except Exception as e:
             self.log_operation("store_content_error", f"Error storing URL content: {e}", "error")
+            raise
+    
+    async def _update_existing_kb_item(self, kb_item_id: str, url: str, content: str, features: Dict[str, Any], processing_type: str, user_id: int, original_file_path: Optional[str] = None) -> None:
+        """Update an existing KnowledgeBaseItem with processed content using proper minio storage."""
+        try:
+            # Import models inside method to avoid circular imports
+            from ..models import KnowledgeBaseItem
+            from asgiref.sync import sync_to_async
+            
+            # Get the existing KB item to get the notebook ID
+            get_kb_item_sync = sync_to_async(KnowledgeBaseItem.objects.get, thread_sensitive=False)
+            kb_item = await get_kb_item_sync(id=kb_item_id, user_id=user_id)
+            
+            # Get the notebook ID from the associated KnowledgeItem
+            from ..models import KnowledgeItem
+            get_knowledge_item_sync = sync_to_async(
+                lambda: KnowledgeItem.objects.filter(knowledge_base_item_id=kb_item_id).first(), 
+                thread_sensitive=False
+            )
+            knowledge_item = await get_knowledge_item_sync()
+            
+            if not knowledge_item:
+                raise Exception(f"No KnowledgeItem found for KnowledgeBaseItem {kb_item_id}")
+            
+            notebook_id = knowledge_item.notebook_id
+            
+            # Determine appropriate filename and metadata based on content type
+            if original_file_path and processing_type == "media":
+                # For media files, use the original video filename and metadata
+                original_basename = os.path.basename(original_file_path)
+                file_metadata = {
+                    "source_url": url,
+                    "original_filename": original_basename,
+                    "file_extension": os.path.splitext(original_basename)[1],
+                    "content_type": self._get_mime_type_from_extension(os.path.splitext(original_basename)[1]),
+                    "file_size": os.path.getsize(original_file_path) if os.path.exists(original_file_path) else len(content.encode('utf-8')),
+                    "parsing_status": "completed",
+                    "processing_metadata": {
+                        "extraction_type": "url_extractor",
+                        "extraction_success": True,
+                        "extraction_method": "yt-dlp",
+                        "content_length": len(content),
+                        "processing_type": processing_type
+                    }
+                }
+                
+                # For media processing, use transcript filename instead of default extracted_content.md
+                processing_result = {
+                    "content": content,
+                    "title": features.get("title", "media"),
+                    "content_filename": f"{features.get('title', 'media')}.md",
+                    "features_available": ["media_transcription"],
+                    "metadata": features
+                }
+            else:
+                # For non-media content, use markdown filename
+                file_metadata = {
+                    "original_filename": f"{features.get('title', 'webpage')}.md",
+                    "file_extension": ".md",
+                    "content_type": "text/markdown",
+                    "file_size": len(content.encode('utf-8')),
+                    "parsing_status": "completed",
+                    "source_url": url,
+                    "processing_metadata": {
+                        "extraction_type": "url_extractor",
+                        "extraction_success": True,
+                        "extraction_method": features.get("extraction_method", "crawl4ai"),
+                        "content_length": len(content),
+                        "processing_type": processing_type
+                    }
+                }
+                
+                # Prepare processing result for storage
+                processing_result = {
+                    "content": content,
+                    "title": features.get("title", "webpage"),
+                    "content_filename": f"{features.get('title', 'webpage')}.md",
+                    "features_available": ["text_content"],
+                    "metadata": features
+                }
+            
+            # Use the storage adapter to properly store content in minio and update database
+            if not self.storage_adapter:
+                raise Exception("Storage adapter not available")
+            
+            # Call store_processed_file with the existing kb_item_id to update it
+            store_file_sync = sync_to_async(self.storage_adapter.store_processed_file, thread_sensitive=False)
+            await store_file_sync(
+                content=content,
+                metadata=file_metadata,
+                processing_result=processing_result,
+                user_id=user_id,
+                notebook_id=notebook_id,
+                original_file_path=original_file_path,  # Pass the original file path for MinIO storage
+                source_identifier=url,  # Use URL as source identifier for duplicate detection
+                kb_item_id=kb_item_id   # Update existing KB item
+            )
+            
+            self.log_operation("update_kb_item", f"Updated existing KB item {kb_item_id} with URL content using minio storage")
+            
+        except Exception as e:
+            self.log_operation("update_kb_item_error", f"Error updating existing KB item {kb_item_id}: {e}", "error")
             raise

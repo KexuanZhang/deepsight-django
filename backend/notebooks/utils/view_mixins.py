@@ -153,6 +153,18 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
         kb_item = ki.knowledge_base_item
         source = ki.source
 
+        # Determine parsing status based on processing_status and content availability
+        parsing_status = "completed"  # Default for completed items
+        if hasattr(kb_item, 'processing_status'):
+            if kb_item.processing_status == "in_progress":
+                parsing_status = "in_progress"  # Keep original status name
+            elif kb_item.processing_status == "error":
+                parsing_status = "error"
+            elif kb_item.processing_status == "pending":
+                parsing_status = "pending"
+            elif kb_item.processing_status == "done":
+                parsing_status = "completed"  # Map "done" to "completed" for frontend
+
         file_data = {
             "file_id": str(kb_item.id),
             "knowledge_item_id": ki.id,
@@ -167,10 +179,11 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             "has_file": bool(kb_item.file_object_key),
             "has_content": bool(kb_item.content),
             "has_original_file": bool(kb_item.original_file_object_key),
-            "parsing_status": "completed",
-            # Extract metadata
+            "parsing_status": parsing_status,
+            "processing_status": getattr(kb_item, 'processing_status', 'done'),
+            # Extract metadata - for processing items, get from source if available
             "original_filename": self.extract_original_filename(
-                kb_item.metadata, kb_item.title
+                kb_item.metadata, source.title if source and not kb_item.metadata else kb_item.title
             ),
             "file_extension": self.extract_file_extension(kb_item.metadata),
             "file_size": self.extract_file_size(kb_item.metadata),
@@ -184,8 +197,6 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             file_data.update({
                 "source_type": source.source_type,
                 "source_title": source.title,
-                "processing_status": source.processing_status,
-                "needs_processing": source.needs_processing,
             })
 
             # Add URL-specific data

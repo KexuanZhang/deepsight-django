@@ -25,48 +25,70 @@ class FileService:
         # Keep original upload processor for full pipeline
         self.upload_processor = UploadProcessor()
     
-    @transaction.atomic
     def handle_single_file_upload(self, file_obj, upload_id, notebook, user):
         """Process single file upload"""
+        kb_item = None
         try:
-            # 1) Process & save to KnowledgeBaseItem using original processor
-            # (This handles the full upload pipeline including storage)
-            result = async_to_sync(self.upload_processor.process_upload)(
-                file_obj, upload_id, user_pk=user.pk, notebook_id=notebook.id
-            )
-            kb_item = get_object_or_404(KnowledgeBaseItem, id=result["file_id"], user=user)
+            # Step 1: Create records immediately in separate transaction
+            with transaction.atomic():
+                # Create Source record immediately
+                source = Source.objects.create(
+                    notebook=notebook,
+                    source_type="file",
+                    title=file_obj.name,
+                )
+                
+                # Create KnowledgeBaseItem with processing_status="in_progress" and link to source
+                kb_item = KnowledgeBaseItem.objects.create(
+                    user=user,
+                    title=file_obj.name,
+                    content_type="document",
+                    source=source,
+                    processing_status="in_progress"
+                )
+                
+                # Create KnowledgeItem link
+                ki = KnowledgeItem.objects.create(
+                    notebook=notebook,
+                    knowledge_base_item=kb_item,
+                    source=source,
+                    notes=f"Processing {file_obj.name}"
+                )
 
-            # 2) Create or update the link in KnowledgeItem
-            source = Source.objects.create(
-                notebook=notebook,
-                source_type="file",
-                title=file_obj.name,
-                needs_processing=False,
-                processing_status="done",
-            )
-            
-            ki, created = KnowledgeItem.objects.get_or_create(
-                notebook=notebook,
-                knowledge_base_item=kb_item,
-                defaults={"source": source, "notes": f"Processed {file_obj.name}"}
-            )
-            
-            if not created and not ki.source:
-                ki.source = source
-                ki.save(update_fields=["source"])
-            
-            # 3) Add to user's RAG collection
-            add_user_files(
-                user_id=user.pk,
-                kb_items=[kb_item],
-            )
-
+            # Step 2: Queue file processing to Celery (async)
+            try:
+                # Read file data for Celery task
+                file_data = file_obj.read()
+                file_obj.seek(0)  # Reset file pointer
+                
+                # Queue the processing task
+                from ..tasks import process_file_upload_task
+                process_file_upload_task.delay(
+                    file_data=file_data,
+                    filename=file_obj.name,
+                    notebook_id=notebook.id,
+                    user_id=user.pk,
+                    upload_file_id=upload_id,
+                    kb_item_id=str(kb_item.id)  # Pass our pre-created kb_item ID
+                )
+                
+                logger.info(f"Queued file processing task for {file_obj.name} (kb_item: {kb_item.id})")
+                
+            except Exception as queue_error:
+                # Update processing status to error if queueing fails
+                kb_item.processing_status = "error"
+                kb_item.save(update_fields=["processing_status"])
+                logger.error(f"Failed to queue processing for {file_obj.name}: {queue_error}")
+                # Don't re-raise - return success so frontend shows the item with error status
+                
             return {
                 "success": True,
                 "file_id": kb_item.id,
                 "knowledge_item_id": ki.id,
+                "upload_id": upload_id,
                 "status_code": status.HTTP_201_CREATED,
-                "refresh_source_list": True  # Signal frontend to refresh source list
+                "message": "File uploaded and processing started",
+                "refresh_source_list": True,  # Trigger frontend refresh when processing complete
             }
 
         except Exception as e:
@@ -85,15 +107,39 @@ class FileService:
                 status='processing'
             )
 
-            # Process each file
+            # Process each file and create source/knowledge base items immediately
             for file_obj in files:
                 upload_id = uuid4().hex
                 data = file_obj.read()
                 file_obj.seek(0)
 
+                # Create Source record immediately
+                source = Source.objects.create(
+                    notebook=notebook,
+                    source_type="file",
+                    title=file_obj.name,
+                )
+                
+                # Create KnowledgeBaseItem with processing_status="in_progress" and link to source
+                kb_item = KnowledgeBaseItem.objects.create(
+                    user=user,
+                    title=file_obj.name,
+                    content_type="document",
+                    source=source,
+                    processing_status="in_progress"
+                )
+                
+                # Create KnowledgeItem link
+                ki = KnowledgeItem.objects.create(
+                    notebook=notebook,
+                    knowledge_base_item=kb_item,
+                    source=source,
+                    notes=f"Processing {file_obj.name}"
+                )
+
                 batch_item = BatchJobItem.objects.create(
                     batch_job=batch_job,
-                    item_data={'filename': file_obj.name, 'size': len(data)},
+                    item_data={'filename': file_obj.name, 'size': len(data), 'kb_item_id': str(kb_item.id)},
                     upload_id=upload_id,
                     status='pending'
                 )
@@ -107,7 +153,8 @@ class FileService:
                     user_id=user.pk,
                     upload_file_id=upload_id,
                     batch_job_id=batch_job.id,
-                    batch_item_id=batch_item.id
+                    batch_item_id=batch_item.id,
+                    kb_item_id=str(kb_item.id)  # Pass the kb_item_id to the task
                 )
 
             return {

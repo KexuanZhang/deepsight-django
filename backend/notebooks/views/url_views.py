@@ -4,26 +4,19 @@ URL Views - Handle URL processing operations only
 import logging
 from uuid import uuid4
 
-from asgiref.sync import async_to_sync
-from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import Source, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
+from ..models import BatchJob, BatchJobItem
 from ..serializers import (
     URLParseSerializer, URLParseWithMediaSerializer, URLParseDocumentSerializer,
     BatchURLParseSerializer, BatchURLParseWithMediaSerializer
 )
 from ..utils.view_mixins import StandardAPIView, NotebookPermissionMixin
-from ..processors.url_extractor import URLExtractor
-from rag.rag import add_user_files  # Add this import at the top
 
 logger = logging.getLogger(__name__)
-
-# Initialize URL extractor
-url_extractor = URLExtractor()
 
 
 class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
@@ -79,65 +72,27 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
             )
     
     def _handle_single_url_parse(self, url, upload_url_id, notebook, user):
-        """Handle single URL parsing (original behavior)."""
-        from asgiref.sync import async_to_sync
-
-        # Process the URL using async function
-        async def process_url_async():
-            return await url_extractor.process_url(
-                url=url,
-                upload_url_id=upload_url_id,
-                user_id=user.pk,
-                notebook_id=notebook.id
-            )
-
-        # Run async processing using async_to_sync
-        result = async_to_sync(process_url_async)()
-
-        # Create source record
-        from ..models import Source
-        source = Source.objects.create(
-            notebook=notebook,
-            source_type="url",
-            title=url,
-            needs_processing=False,
-            processing_status="done",
-        )
-
-
-        # Link to knowledge base
-        kb_item_id = result['file_id']
-        kb_item = get_object_or_404(KnowledgeBaseItem, id=kb_item_id, user=user)
+        """Handle single URL parsing using celery worker."""
+        from ..tasks import process_url_task
         
-        ki, _ = KnowledgeItem.objects.get_or_create(
-            notebook=notebook,
-            knowledge_base_item=kb_item,
-            defaults={
-                'source': source,
-                'notes': f"Processed from URL: {url}"
-            }
+        # Start async processing using celery task
+        task_result = process_url_task.delay(
+            url=url,
+            notebook_id=notebook.id,
+            user_id=user.id,
+            upload_url_id=upload_url_id
         )
-
-        # Ingest KB item content for retrieval (embedding)
-        if result.get("file_id"):
-            kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
-            if kb_item and kb_item.content:  # Ensure content exists
-                try:
-                    add_user_files(user_id=user.pk, kb_items=[kb_item])
-                except Exception as e:
-                    logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
-
+        
         return Response(
             {
                 "success": True,
-                "file_id": kb_item_id,
-                "knowledge_item_id": ki.id,
-                "url": result.get("url", url),
-                "title": result.get("title", ""),
-                "extraction_method": result.get("extraction_method", "crawl4ai"),
-                "content_preview": result.get("content_preview", ""),
+                "task_id": task_result.id,
+                "url": url,
+                "upload_url_id": upload_url_id,
+                "status": "processing",
+                "message": "URL processing started. Check task status for completion."
             },
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_202_ACCEPTED,
         )
     
     def _handle_batch_url_parse(self, validated_data, notebook, user):
@@ -195,7 +150,7 @@ class SimpleTestView(APIView):
     permission_classes = []
     """Ultra simple test view to check basic functionality"""
     
-    def get(self, request, notebook_id):
+    def get(self, _request, notebook_id):
         return Response({
             "message": "Simple GET works", 
             "notebook_id": notebook_id,
@@ -272,66 +227,27 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
             )
     
     def _handle_single_url_parse_with_media(self, url, upload_url_id, notebook, user):
-        """Handle single URL parsing with media extraction."""
-        from asgiref.sync import async_to_sync
+        """Handle single URL parsing with media extraction using celery worker."""
+        from ..tasks import process_url_media_task
         
-        # Process the URL using async function with media extraction
-        async def process_url_with_media_async():
-            return await url_extractor.process_url_with_media(
-                url=url,
-                upload_url_id=upload_url_id,
-                user_id=user.pk,
-                notebook_id=notebook.id
-            )
-
-        # Run async processing using async_to_sync
-        result = async_to_sync(process_url_with_media_async)()
-
-        # Create source record
-        from ..models import Source
-        source = Source.objects.create(
-            notebook=notebook,
-            source_type="url",
-            title=url,
-            needs_processing=False,
-            processing_status="done",
+        # Start async processing using celery task
+        task_result = process_url_media_task.delay(
+            url=url,
+            notebook_id=notebook.id,
+            user_id=user.id,
+            upload_url_id=upload_url_id
         )
-
-
-        # Link to knowledge base
-        kb_item_id = result['file_id']
-        kb_item = get_object_or_404(KnowledgeBaseItem, id=kb_item_id, user=user)
         
-        ki, _ = KnowledgeItem.objects.get_or_create(
-            notebook=notebook,
-            knowledge_base_item=kb_item,
-            defaults={
-                'source': source,
-                'notes': f"Processed from URL with media: {url}"
-            }
-        )
-
-        # Ingest KB item content for retrieval (embedding)
-        if result.get("file_id"):
-            kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
-            if kb_item and kb_item.content:  # Ensure content exists
-                try:
-                    add_user_files(user_id=user.pk, kb_items=[kb_item])
-                except Exception as e:
-                    logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
-
         return Response(
             {
                 "success": True,
-                "file_id": kb_item_id,
-                "knowledge_item_id": ki.id,
-                "url": result.get("url", url),
-                "title": result.get("title", ""),
-                "extraction_method": result.get("extraction_method", "yt-dlp"),
-                "content_preview": result.get("content_preview", ""),
-                "media_info": result.get("media_info", {}),
+                "task_id": task_result.id,
+                "url": url,
+                "upload_url_id": upload_url_id,
+                "status": "processing",
+                "message": "URL media processing started. Check task status for completion."
             },
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_202_ACCEPTED,
         )
     
     def _handle_batch_url_parse_with_media(self, validated_data, notebook, user):
@@ -410,26 +326,23 @@ class URLParseDocumentView(StandardAPIView, NotebookPermissionMixin):
             url = validated_data['url']
             upload_url_id = validated_data.get('upload_url_id')
             
-            # Process document URL asynchronously
-            result = async_to_sync(url_extractor.process_url_document_only)(
+            # Start async processing using celery task
+            from ..tasks import process_url_document_task
+            task_result = process_url_document_task.delay(
                 url=url,
-                upload_url_id=upload_url_id,
+                notebook_id=notebook.id,
                 user_id=request.user.pk,
-                notebook_id=notebook.id
+                upload_url_id=upload_url_id
             )
             
             return Response({
                 'success': True,
-                'file_id': result['file_id'],
-                'url': result['url'],
-                'status': result['status'],
-                'title': result['title'],
-                'processing_type': result['processing_type'],
-                'file_extension': result['file_extension'],
-                'file_size': result['file_size'],
-                'content_preview': result.get('content_preview', ''),
-                'upload_url_id': upload_url_id
-            }, status=status.HTTP_201_CREATED)
+                'task_id': task_result.id,
+                'url': url,
+                'upload_url_id': upload_url_id,
+                'status': 'processing',
+                'message': 'Document URL processing started. Check task status for completion.'
+            }, status=status.HTTP_202_ACCEPTED)
             
         except ValueError as e:
             # File format validation errors - provide user-friendly messages

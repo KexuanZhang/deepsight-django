@@ -3,7 +3,7 @@ Celery configuration for Django project.
 """
 
 import os
-import logging
+import sys
 from celery import Celery
 from celery.signals import worker_init
 from django.conf import settings
@@ -20,32 +20,10 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 # Load task modules from all registered Django apps.
 app.autodiscover_tasks()
 
-# Custom logging filter to suppress WARNING messages in Celery workers
-class CeleryWarningFilter(logging.Filter):
-    def filter(self, record):
-        # Suppress WARNING level messages, allow DEBUG, INFO, ERROR, CRITICAL
-        return record.levelno != logging.WARNING
-
-# Configure logging for Celery workers to suppress streaming character warnings
-def setup_celery_logging():
-    """Configure Celery logging to suppress WARNING messages."""
-    # Get the root logger and add filter
-    root_logger = logging.getLogger()
-    root_logger.addFilter(CeleryWarningFilter())
-    
-    # Also add filter to specific loggers that might generate these warnings
-    for logger_name in ['strands', 'openai', 'httpx']:
-        logger = logging.getLogger(logger_name)
-        logger.addFilter(CeleryWarningFilter())
-
-# Set up logging configuration when Celery starts
-setup_celery_logging()
-
-# Also set up logging when workers initialize
-@worker_init.connect
-def configure_worker_logging(sender=None, conf=None, **kwargs):
-    """Configure logging when Celery worker initializes."""
-    setup_celery_logging()
+# Fix for macOS fork() issues with Metal Performance Shaders
+if sys.platform == "darwin":  # macOS
+    import multiprocessing
+    multiprocessing.set_start_method('spawn', force=True)
 
 # Configure Celery settings
 app.conf.update(
@@ -60,6 +38,7 @@ app.conf.update(
         "reports.tasks.validate_report_configuration": {"queue": "validation"},
         "notebooks.tasks.process_url_task": {"queue": "notebook_processing"},
         "notebooks.tasks.process_url_media_task": {"queue": "notebook_processing"},
+        "notebooks.tasks.process_url_document_task": {"queue": "notebook_processing"},
         "notebooks.tasks.process_file_upload_task": {"queue": "notebook_processing"},
         "notebooks.tasks.generate_image_captions_task": {"queue": "notebook_processing"},
         "notebooks.tasks.test_caption_generation_task": {"queue": "notebook_processing"},
@@ -76,6 +55,8 @@ app.conf.update(
     # Worker settings
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=50,
+    # Use solo pool on macOS to avoid fork() issues
+    worker_pool="solo" if sys.platform == "darwin" else "prefork",
     # Beat schedule for periodic tasks
     beat_schedule={
         "cleanup-old-podcast-jobs": {

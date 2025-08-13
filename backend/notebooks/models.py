@@ -47,12 +47,6 @@ class Source(models.Model):
         ("url", "URL"),
         ("text", "Pasted Text"),
     ]
-    PROCESSING_STATUS_CHOICES = [
-        ("pending", "Pending"),
-        ("in_progress", "In Progress"),
-        ("done", "Done"),
-        ("error", "Error"),
-    ]
 
     notebook = models.ForeignKey(
         Notebook,
@@ -69,15 +63,6 @@ class Source(models.Model):
         help_text="Optional display title or original filename/URL",
     )
     created_at = models.DateTimeField(auto_now_add=True)
-    needs_processing = models.BooleanField(
-        default=False,
-        help_text="Whether this source must go through a background processing job",
-    )
-    processing_status = models.CharField(
-        max_length=20,
-        choices=PROCESSING_STATUS_CHOICES,
-        default="pending",
-    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -156,12 +141,33 @@ class KnowledgeBaseItem(models.Model):
     These are the processed, searchable content items.
     """
     
+    PROCESSING_STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("in_progress", "In Progress"),
+        ("done", "Done"),
+        ("error", "Error"),
+    ]
+    
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="knowledge_base_items",
         help_text="Owner of this knowledge item",
+    )
+    source = models.ForeignKey(
+        'Source',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="knowledge_base_items",
+        help_text="Source that created this knowledge base item",
+    )
+    processing_status = models.CharField(
+        max_length=20,
+        choices=PROCESSING_STATUS_CHOICES,
+        default="pending",
+        help_text="Processing status of this knowledge base item",
     )
     title = models.CharField(
         max_length=512, help_text="Title or identifier for this knowledge item"
