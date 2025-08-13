@@ -62,7 +62,7 @@ langchain-openai
 faiss-cpu
 crawl4ai
 toml
-marker-pdf
+marker-pdf==1.7.5
 django-storages
 boto3
 PyPDF2

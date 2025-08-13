@@ -15,10 +15,6 @@ services:
     entrypoint: >
       /bin/sh -c "
         /usr/bin/docker-entrypoint.sh server /data --console-address ':9001' &
-        sleep 5 &&
-        mc alias set local http://localhost:9000 minioadmin minioadmin &&
-        mc mb --ignore-existing local/deepsight-media &&
-        mc policy set public local/deepsight-media
         wait
       "
     environment:
