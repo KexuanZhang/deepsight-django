@@ -1,30 +1,27 @@
-from django.shortcuts import render, get_object_or_404
-from django.http import Http404, FileResponse, StreamingHttpResponse, HttpResponse
-from rest_framework import status, permissions, authentication
-from rest_framework.decorators import api_view, permission_classes
+from django.shortcuts import get_object_or_404
+from django.http import StreamingHttpResponse, HttpResponse
+from rest_framework import status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 import logging
 import json
 import time
 import redis
-from pathlib import Path
 from django.conf import settings
 
-from .models import PodcastJob
+from .models import Podcast
 from .serializers import (
-    PodcastJobSerializer,
-    PodcastJobListSerializer,
-    NotebookPodcastJobCreateSerializer,
+    PodcastSerializer,
+    PodcastListSerializer,
+    NotebookPodcastCreateSerializer,
 )
-from .orchestrator import podcast_orchestrator
 from notebooks.models import Notebook
 
 logger = logging.getLogger(__name__)
 
 
 # Notebook-specific views
-class NotebookPodcastJobListCreateView(APIView):
+class NotebookPodcastListCreateView(APIView):
     """List and create podcast-jobs for a specific notebook"""
     permission_classes = [permissions.IsAuthenticated]
 
@@ -39,9 +36,9 @@ class NotebookPodcastJobListCreateView(APIView):
         """List podcast-jobs for a specific notebook"""
         try:
             notebook = self.get_notebook(notebook_id)
-            jobs = PodcastJob.objects.filter(
+            jobs = Podcast.objects.filter(
                 user=request.user,
-                notebooks=notebook
+                notebook=notebook
             ).order_by('-created_at')
             
             # Calculate last modified time for caching
@@ -49,7 +46,7 @@ class NotebookPodcastJobListCreateView(APIView):
             if jobs:
                 last_modified = max(job.updated_at for job in jobs)
             
-            serializer = PodcastJobListSerializer(jobs, many=True)
+            serializer = PodcastListSerializer(jobs, many=True)
             response = Response(serializer.data)
             
             # Add caching headers
@@ -73,7 +70,7 @@ class NotebookPodcastJobListCreateView(APIView):
         """Create a new podcast-job for a specific notebook"""
         try:
             notebook = self.get_notebook(notebook_id)
-            serializer = NotebookPodcastJobCreateSerializer(data=request.data)
+            serializer = NotebookPodcastCreateSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
 
             # Extract data
@@ -81,19 +78,15 @@ class NotebookPodcastJobListCreateView(APIView):
             title = serializer.validated_data.get("title", "Generated Podcast")
             description = serializer.validated_data.get("description", "")
 
-            # Create job metadata
-            job_metadata = {
-                "title": title,
-                "description": description,
-                "source_metadata": {},  # Will be populated by worker
-            }
-
-            # Create podcast-job with notebook association
-            job = podcast_orchestrator.create_podcast_job(
-                source_file_ids=source_file_ids,
-                job_metadata=job_metadata,
+            # Create podcast job directly using Django model
+            job = Podcast.objects.create(
                 user=request.user,
                 notebook=notebook,
+                title=title,
+                description=description,
+                source_file_ids=source_file_ids,
+                source_metadata={},  # Will be populated by worker
+                status="pending"
             )
 
             # Queue the job for background processing
@@ -106,7 +99,7 @@ class NotebookPodcastJobListCreateView(APIView):
             job.save()
 
             # Return job details
-            response_serializer = PodcastJobSerializer(job)
+            response_serializer = PodcastSerializer(job)
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
@@ -117,7 +110,7 @@ class NotebookPodcastJobListCreateView(APIView):
             )
 
 
-class NotebookPodcastJobDetailView(APIView):
+class NotebookPodcastDetailView(APIView):
     """Retrieve, update, or delete a specific podcast-job within a notebook"""
     permission_classes = [permissions.IsAuthenticated]
 
@@ -128,7 +121,7 @@ class NotebookPodcastJobDetailView(APIView):
             pk=notebook_id
         )
         return get_object_or_404(
-            PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
+            Podcast.objects.filter(user=self.request.user, notebook=notebook),
             id=job_id
         )
 
@@ -136,7 +129,7 @@ class NotebookPodcastJobDetailView(APIView):
         """Get detailed status of a specific podcast-job"""
         try:
             job = self.get_job(notebook_id, job_id)
-            serializer = PodcastJobSerializer(job)
+            serializer = PodcastSerializer(job)
             return Response(serializer.data)
         except Exception as e:
             logger.error(f"Error retrieving podcast-job {job_id} for notebook {notebook_id}: {e}")
@@ -181,7 +174,7 @@ class NotebookPodcastJobDetailView(APIView):
             )
 
 
-class NotebookPodcastJobCancelView(APIView):
+class NotebookPodcastCancelView(APIView):
     """Cancel a podcast-job within a notebook"""
     permission_classes = [permissions.IsAuthenticated]
 
@@ -192,7 +185,7 @@ class NotebookPodcastJobCancelView(APIView):
             pk=notebook_id
         )
         return get_object_or_404(
-            PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
+            Podcast.objects.filter(user=self.request.user, notebook=notebook),
             id=job_id
         )
 
@@ -202,15 +195,20 @@ class NotebookPodcastJobCancelView(APIView):
             job = self.get_job(notebook_id, job_id)
 
             if job.status in ["pending", "generating"]:
-                # Use orchestrator for cancellation (same pattern as reports)
-                success = podcast_orchestrator.cancel_podcast_job(str(job.id))
-
-                if success:
-                    serializer = PodcastJobSerializer(job)
+                # Cancel the background task using the Celery task from tasks.py
+                from .tasks import cancel_podcast_generation
+                
+                task_result = cancel_podcast_generation.delay(str(job.id))
+                result = task_result.get(timeout=10)  # Wait up to 10 seconds
+                
+                if result.get("status") == "cancelled":
+                    # Refresh job from database to get updated status
+                    job.refresh_from_db()
+                    serializer = PodcastSerializer(job)
                     return Response(serializer.data)
                 else:
                     return Response(
-                        {"error": "Failed to cancel job"},
+                        {"error": result.get("message", "Failed to cancel job")},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     )
             else:
@@ -227,7 +225,7 @@ class NotebookPodcastJobCancelView(APIView):
             )
 
 
-class NotebookPodcastJobAudioView(APIView):
+class NotebookPodcastAudioView(APIView):
     """Serve audio files for podcast-jobs within a notebook"""
     permission_classes = [permissions.IsAuthenticated]
 
@@ -238,7 +236,7 @@ class NotebookPodcastJobAudioView(APIView):
             pk=notebook_id
         )
         return get_object_or_404(
-            PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
+            Podcast.objects.filter(user=self.request.user, notebook=notebook),
             id=job_id
         )
 
@@ -282,7 +280,7 @@ class NotebookPodcastJobAudioView(APIView):
             )
 
 
-class NotebookPodcastJobDownloadView(APIView):
+class NotebookPodcastDownloadView(APIView):
     """Download audio files for podcast-jobs within a notebook"""
     permission_classes = [permissions.IsAuthenticated]
 
@@ -293,7 +291,7 @@ class NotebookPodcastJobDownloadView(APIView):
             pk=notebook_id
         )
         return get_object_or_404(
-            PodcastJob.objects.filter(user=self.request.user, notebooks=notebook),
+            Podcast.objects.filter(user=self.request.user, notebook=notebook),
             id=job_id
         )
 
@@ -384,10 +382,10 @@ def notebook_job_status_stream(request, notebook_id, job_id):
             Notebook.objects.filter(user=request.user),
             pk=notebook_id
         )
-        if not PodcastJob.objects.filter(
+        if not Podcast.objects.filter(
             id=job_id, 
             user=request.user, 
-            notebooks=notebook
+            notebook=notebook
         ).exists():
             response = StreamingHttpResponse(
                 f"data: {json.dumps({'type': 'error', 'message': 'Job not found'})}\n\n",
@@ -409,8 +407,8 @@ def notebook_job_status_stream(request, notebook_id, job_id):
             while time.time() - start_time < max_duration:
                 try:
                     # Check if job still exists and get current status
-                    current_job = PodcastJob.objects.filter(
-                        id=job_id, user=request.user, notebooks=notebook
+                    current_job = Podcast.objects.filter(
+                        id=job_id, user=request.user, notebook=notebook
                     ).first()
                     if not current_job:
                         yield f"data: {json.dumps({'type': 'error', 'message': 'Job not found'})}\n\n"

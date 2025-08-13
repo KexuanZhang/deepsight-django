@@ -1,14 +1,14 @@
 from rest_framework import serializers
-from .models import PodcastJob
+from .models import Podcast
 
 
-class PodcastJobSerializer(serializers.ModelSerializer):
+class PodcastSerializer(serializers.ModelSerializer):
     job_id = serializers.UUIDField(source='id', read_only=True)
     audio_url = serializers.SerializerMethodField()
     notebook_id = serializers.SerializerMethodField()
 
     class Meta:
-        model = PodcastJob
+        model = Podcast
         fields = [
             "job_id",
             "title",
@@ -40,10 +40,10 @@ class PodcastJobSerializer(serializers.ModelSerializer):
         return obj.audio_url
     
     def get_notebook_id(self, obj):
-        return obj.notebooks.pk if obj.notebooks else None
+        return obj.notebook.pk if obj.notebook else None
 
 
-class NotebookPodcastJobCreateSerializer(serializers.Serializer):
+class NotebookPodcastCreateSerializer(serializers.Serializer):
     """Serializer for creating podcast jobs within a specific notebook context."""
     source_file_ids = serializers.ListField(
         child=serializers.CharField(),
@@ -66,13 +66,13 @@ class NotebookPodcastJobCreateSerializer(serializers.Serializer):
         return value
 
 
-class PodcastJobListSerializer(serializers.ModelSerializer):
+class PodcastListSerializer(serializers.ModelSerializer):
     job_id = serializers.UUIDField(source='id', read_only=True)
     audio_url = serializers.SerializerMethodField()
     notebook_id = serializers.SerializerMethodField()
 
     class Meta:
-        model = PodcastJob
+        model = Podcast
         fields = [
             "job_id",
             "title",
@@ -90,4 +90,4 @@ class PodcastJobListSerializer(serializers.ModelSerializer):
         return obj.audio_url
     
     def get_notebook_id(self, obj):
-        return obj.notebooks.pk if obj.notebooks else None
+        return obj.notebook.pk if obj.notebook else None
