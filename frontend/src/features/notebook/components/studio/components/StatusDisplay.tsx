@@ -81,7 +81,7 @@ const StatusDisplay: React.FC<StatusDisplayProps> = ({
 
   // Map specific progress messages to a deterministic progress percentage
   const getProgressPercentage = (msg?: string): number => {
-    if (!msg) return 0;
+    if (!msg || typeof msg !== 'string') return 0;
     const lower = msg.toLowerCase();
     
     // Extract percentage from progress message if it contains (XX%)

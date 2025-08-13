@@ -1,246 +1,213 @@
 """
-Celery tasks for podcast generation.
+Simplified Celery tasks for podcast generation using Panel Discussion Framework.
 """
 
 import logging
+import json
 import asyncio
+import redis
 from celery import shared_task
+from django.utils import timezone
+from django.conf import settings
 
-from .models import PodcastJob
-from .orchestrator import podcast_orchestrator
-from notebooks.utils.storage_adapter import get_storage_adapter
-from notebooks.models import KnowledgeBaseItem
+from .models import Podcast
+from .service import PodcastService
 
 logger = logging.getLogger(__name__)
 
 
+def update_job_status(job, redis_client=None):
+    """Update job status in both database and Redis cache"""
+    job.save()
+    
+    if not redis_client:
+        redis_client = redis.Redis.from_url(settings.CELERY_BROKER_URL)
+    
+    # Create status data for Redis
+    status_data = {
+        "job_id": str(job.id),
+        "status": job.status,
+        "progress": job.progress,
+        "error_message": job.error_message,
+        "audio_file_url": job.get_audio_url() if hasattr(job, 'get_audio_url') else None,
+        "title": job.title,
+        "status_message": getattr(job, 'status_message', None),
+    }
+    
+    # Update Redis cache with 1 hour expiration
+    redis_client.setex(
+        f"podcast_job_status:{job.id}",
+        3600,  # 1 hour
+        json.dumps(status_data)
+    )
+
+
 @shared_task(bind=True)
 def process_podcast_generation(self, job_id: str):
-    """Process podcast generation job - this runs in the background worker"""
+    """
+    Simplified podcast generation using panel discussion framework.
+    
+    Args:
+        job_id: UUID of the Podcast to process
+    """
     try:
-        # Get the job
-        job = PodcastJob.objects.get(id=job_id)
+        # Get the job and Redis client
+        job = Podcast.objects.get(id=job_id)
+        redis_client = redis.Redis.from_url(settings.CELERY_BROKER_URL)
+        logger.info(f"Starting podcast generation for job {job_id}")
 
         # Check if job was cancelled before we start
         if job.status == "cancelled":
             logger.info(f"Job {job_id} was cancelled before processing started")
             return {"status": "cancelled", "message": "Job was cancelled"}
 
-        # Update job status to processing (10% progress)
-        podcast_orchestrator.update_job_progress(
-            job_id, "Starting podcast generation (10%)", "generating"
-        )
+        # Update job status to processing
+        job.status = "generating"
+        job.progress = 10
+        job.status_message = "Preparing content from selected sources..."
+        job.processing_started_at = timezone.now()
+        update_job_status(job, redis_client)
+        # Get selected item IDs from job metadata
+        selected_item_ids = job.source_file_ids or []
+        
 
-        # Get content from source files (20% progress)
-        podcast_orchestrator.update_job_progress(
-            job_id, "Gathering content from source files (20%)", "generating"
-        )
-
-        # Check if job was cancelled
-        job.refresh_from_db()
-        if job.status == "cancelled":
-            logger.info(f"Job {job_id} was cancelled during content gathering")
-            return {"status": "cancelled", "message": "Job was cancelled"}
-
-        combined_content = ""
-        source_metadata = []
-
-        # Initialize storage adapter
-        storage_adapter = get_storage_adapter()
-
-        for file_id in job.source_file_ids:
-            try:
-                # Get parsed file content using synchronous method
-                content = storage_adapter.get_file_content(
-                    file_id, user_id=job.user.id if job.user else None
-                )
-
-                if content:
-                    # Get metadata from knowledge base item
-                    try:
-                        kb_item = KnowledgeBaseItem.objects.get(id=file_id)
-                        metadata = {
-                            "filename": kb_item.title,
-                            "content_type": kb_item.content_type,
-                            "id": str(kb_item.id),
-                            **kb_item.metadata,
-                        }
-                    except KnowledgeBaseItem.DoesNotExist:
-                        metadata = {"filename": f"File {file_id}", "id": str(file_id)}
-
-                    combined_content += (
-                        f"\n\n--- {metadata.get('filename', 'Unknown File')} ---\n\n"
-                    )
-                    combined_content += content
-                    source_metadata.append(metadata)
-                else:
-                    logger.warning(f"No content found for file {file_id}")
-            except Exception as e:
-                logger.warning(f"Error getting content for file {file_id}: {e}")
-
-        if not combined_content.strip():
-            raise ValueError("No content available from source files")
-
-        # Check if job was cancelled before conversation generation
-        job.refresh_from_db()
-        if job.status == "cancelled":
-            logger.info(f"Job {job_id} was cancelled before conversation generation")
-            return {"status": "cancelled", "message": "Job was cancelled"}
-
-        podcast_orchestrator.update_job_progress(
-            job_id, "Generating podcast conversation and title (40%)", "generating"
-        )
-
-        # Generate podcast conversation using asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        try:
-            conversation_text = loop.run_until_complete(
-                podcast_orchestrator.generate_podcast_conversation(
-                    combined_content, {"sources": source_metadata}
-                )
-            )
+        # Update job status to generating panel discussion
+        job.status_message = "Generating panel discussion..."
+        update_job_status(job, redis_client)
+        # Generate the podcast using service instance
+        podcast_service = PodcastService()
+        result = asyncio.run(podcast_service.create_podcast_with_panel_crew(
+            selected_item_ids=selected_item_ids,
+            user_id=job.user.id,
+            podcast_id=str(job.id),
+            notebook_id=job.notebook.id if job.notebook else None,
+            custom_instruction=getattr(job, 'custom_instruction', None)
+        ))
+        
+        # Update progress - generating audio
+        job.progress = 70
+        job.status_message = "Converting conversation to audio..."
+        update_job_status(job, redis_client)
+        
+        if result["status"] == "completed":
+            # Update job with results
+            job.status = "completed"
+            job.progress = 100
+            job.status_message = "Podcast generation completed successfully"
+            job.processing_completed_at = timezone.now()
             
-            # Generate title based on content and conversation (first stage)
-            if job.title == "Generated Podcast" or not job.title.strip():
-                # Generate a better title based on the content
-                title_prompt = f"Based on this podcast conversation, generate a concise, engaging title (max 50 characters):\n\n{conversation_text[:500]}..."
-                try:
-                    generated_title = podcast_orchestrator.generate_title(title_prompt)
-                    if generated_title and generated_title.strip():
-                        job.title = generated_title.strip()[:50]  # Limit to 50 characters
-                        logger.info(f"Generated title for job {job_id}: {job.title}")
-                except Exception as e:
-                    logger.warning(f"Failed to generate title for job {job_id}: {e}")
-                    # Keep the original title if generation fails
+            # Store the audio object key in the database
+            job.audio_object_key = result.get("audio_object_key")
             
-            # Save conversation_text, source_metadata, and title immediately after generation (first stage)
-            job.conversation_text = conversation_text
-            job.source_metadata = source_metadata
-            job.save()
-            
-            logger.info(f"Saved conversation script, source metadata, and title for job {job_id}")
-            
-            # Update progress to reflect completion of first stage (70% progress)
-            podcast_orchestrator.update_job_progress(
-                job_id, "Conversation script and title generated - preparing audio generation (70%)", "generating"
-            )
-
-            # Check if job was cancelled before audio generation
-            job.refresh_from_db()
-            if job.status == "cancelled":
-                logger.info(f"Job {job_id} was cancelled before audio generation")
-                return {"status": "cancelled", "message": "Job was cancelled"}
-
-            podcast_orchestrator.update_job_progress(
-                job_id, "Generating podcast audio (80%)", "generating"
-            )
-
-            # Generate audio file using MinIO storage
-            from notebooks.utils.storage import get_minio_backend
-            import tempfile
-            import os
-            import re
-            
-            # Generate audio filename using title
-            # Sanitize title for filename
-            safe_title = re.sub(r'[<>:"/\\|?*]', '_', job.title)
-            audio_filename = f"{safe_title}.mp3"
-            
-            # Create MinIO key: userId/notebook/notebookID/podcast/podcastID/title.mp3
-            minio_key = f"{job.user.id}/notebook/{job.notebooks.id}/podcast/{job.id}/{audio_filename}"
-            
-            # Create temporary file for audio generation
-            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
-                temp_audio_path = temp_file.name
-            
-            try:
-                # Generate audio to temporary file
-                podcast_orchestrator.generate_podcast_audio(
-                    conversation_text, temp_audio_path
-                )
-                
-                # Upload to MinIO
-                minio_backend = get_minio_backend()
-                with open(temp_audio_path, 'rb') as f:
-                    file_content = f.read()
-                    file_size = len(file_content)
-                    
-                    # Use MinIO client directly to upload with specific key
-                    from io import BytesIO
-                    content_stream = BytesIO(file_content)
-                    minio_backend.client.put_object(
-                        bucket_name=minio_backend.bucket_name,
-                        object_name=minio_key,
-                        data=content_stream,
-                        length=file_size,
-                        content_type="audio/mpeg"
-                    )
-                
-                # Save MinIO key to database
-                job.audio_object_key = minio_key
-                
-                # Store file metadata including size
+            # Store file metadata
+            if result.get("audio_object_key"):
                 job.file_metadata = {
-                    "filename": audio_filename,
-                    "size": file_size,
+                    "filename": f"podcast_{job.id}.mp3",
                     "content_type": "audio/mpeg",
-                    "minio_key": minio_key
+                    "object_key": result["audio_object_key"],
+                    "participants": result["metadata"]["participants"],
+                    "conversation_turns": result["metadata"]["total_turns"]
                 }
-                job.save()
-                
-                # Update progress to show audio upload completed (95% progress)
-                podcast_orchestrator.update_job_progress(
-                    job_id, "Audio file uploaded successfully (95%)", "generating"
-                )
-                
-            finally:
-                # Clean up temporary file
-                if os.path.exists(temp_audio_path):
-                    os.unlink(temp_audio_path)
-
-            # Prepare result
-            result = {
-                "job_id": job_id,
-                "title": job.title,
-                "description": job.description,
-                "audio_url": job.get_audio_url(),
-                "source_metadata": source_metadata,
-                "conversation_text": conversation_text,
-                "file_metadata": job.file_metadata,
+            
+            # Store conversation text for search/display
+            conversation_text = "\n\n".join([
+                f"{turn['speaker']}: {turn['content']}" 
+                for turn in result["conversation_turns"]
+            ])
+            job.conversation_text = conversation_text
+            
+            # Store the results
+            job.result_data = json.dumps({
+                "conversation_turns": result["metadata"]["total_turns"],
+                "participants": result["metadata"]["participants"],
+                "audio_object_key": result.get("audio_object_key"),
+                "generated_at": result["metadata"]["generated_at"],
+                "selected_items_count": result["metadata"]["selected_items_count"],
+                "topic": result["metadata"]["topic"]
+            })
+            
+            # Conversation JSON formatting available via utils if needed in the future
+            
+            update_job_status(job, redis_client)
+            
+            logger.info(f"Podcast generation completed successfully for job {job_id}")
+            return {
+                "status": "completed",
+                "message": "Podcast generated successfully",
+                "audio_object_key": result["audio_object_key"],
+                "conversation_turns": result["metadata"]["total_turns"]
             }
-
-            # Update job with success
-            podcast_orchestrator.update_job_result(job_id, result, "completed")
-
-            logger.info(f"Successfully completed podcast generation for job {job_id}")
-            return result
-
-        finally:
-            loop.close()
-
-    except PodcastJob.DoesNotExist:
+        else:
+            # Handle failure
+            job.status = "error"
+            job.progress = 0
+            job.status_message = f"Generation failed: {result['error']}"
+            job.processing_completed_at = timezone.now()
+            update_job_status(job, redis_client)
+            
+            logger.error(f"Podcast generation failed for job {job_id}: {result['error']}")
+            return {
+                "status": "failed",
+                "message": result["error"]
+            }
+            
+    except Podcast.DoesNotExist:
         logger.error(f"Job {job_id} not found")
-        raise
-    except KeyboardInterrupt:
-        logger.info(f"Job {job_id} was interrupted")
-        try:
-            # Make sure the job status is updated to cancelled
-            job = PodcastJob.objects.get(id=job_id)
-            if job.status != "cancelled":
-                job.status = "cancelled"
-                job.error_message = "Job was interrupted"
-                job.progress = "Job cancelled"
-                job.save()
-                # Update status cache for frontend
-                podcast_orchestrator.update_job_progress(job_id, "Job cancelled", "cancelled")
-        except PodcastJob.DoesNotExist:
-            pass
-        return {"status": "cancelled", "message": "Job was cancelled"}
+        return {"status": "failed", "message": "Job not found"}
+        
     except Exception as e:
-        logger.error(f"Error processing podcast generation job {job_id}: {e}")
-        podcast_orchestrator.update_job_error(job_id, str(e))
+        logger.error(f"Unexpected error in podcast generation for job {job_id}: {e}")
+        try:
+            job = Podcast.objects.get(id=job_id)
+            redis_client = redis.Redis.from_url(settings.CELERY_BROKER_URL)
+            job.status = "error"
+            job.progress = 0
+            job.status_message = f"Unexpected error: {str(e)}"
+            job.processing_completed_at = timezone.now()
+            update_job_status(job, redis_client)
+        except:
+            pass
+            
+        return {"status": "failed", "message": str(e)}
+
+
+
+@shared_task(bind=True)
+def cancel_podcast_generation(self, job_id: str):
+    """Cancel a podcast generation job"""
+    try:
+        logger.info(f"Cancelling podcast generation for job {job_id}")
+        
+        # Get the job
+        job = Podcast.objects.get(id=job_id)
+        
+        # Cancel the background task if it's running
+        if job.celery_task_id:
+            try:
+                from backend.celery import app as celery_app
+                celery_app.control.revoke(
+                    job.celery_task_id, terminate=True, signal="SIGTERM"
+                )
+                logger.info(f"Revoked Celery task {job.celery_task_id} for job {job_id}")
+            except Exception as e:
+                logger.warning(f"Failed to revoke Celery task for job {job_id}: {e}")
+        
+        # Update job status in database and Redis
+        redis_client = redis.Redis.from_url(settings.CELERY_BROKER_URL)
+        job.status = "cancelled"
+        job.error_message = "Job cancelled by user"
+        job.progress = 0
+        job.status_message = "Job cancelled"
+        update_job_status(job, redis_client)
+        
+        logger.info(f"Successfully cancelled podcast generation for job {job_id}")
+        return {"status": "cancelled", "job_id": job_id}
+    
+    except Podcast.DoesNotExist:
+        logger.error(f"Job {job_id} not found")
+        return {"status": "failed", "job_id": job_id, "message": "Job not found"}
+    except Exception as e:
+        logger.error(f"Error cancelling podcast generation for job {job_id}: {e}")
         raise
 
 
@@ -253,19 +220,20 @@ def cleanup_old_podcast_jobs():
     try:
         # Delete jobs older than 30 days that are completed or failed
         cutoff_date = timezone.now() - timedelta(days=30)
-        old_jobs = PodcastJob.objects.filter(
-            created_at__lt=cutoff_date, status__in=["completed", "error", "cancelled"]
+        old_jobs = Podcast.objects.filter(
+            created_at__lt=cutoff_date, 
+            status__in=["completed", "error", "cancelled"]
         )
 
         deleted_count = 0
         for job in old_jobs:
             try:
-                # Delete associated audio file if it exists
-                if job.audio_object_key:
+                # Delete associated audio file from MinIO if it exists
+                if hasattr(job, 'audio_object_key') and job.audio_object_key:
                     try:
-                        from notebooks.utils.storage import get_minio_backend
-                        minio_backend = get_minio_backend()
-                        minio_backend.delete_file(job.audio_object_key)
+                        from .storage import PodcastStorageService
+                        storage_service = PodcastStorageService()
+                        storage_service.delete_podcast_audio(job.audio_object_key)
                     except Exception as e:
                         logger.error(f"Error deleting audio file from MinIO: {e}")
 
@@ -280,44 +248,4 @@ def cleanup_old_podcast_jobs():
 
     except Exception as e:
         logger.error(f"Error during podcast job cleanup: {e}")
-        raise
-
-
-@shared_task(bind=True)
-def cancel_podcast_generation(self, job_id: str):
-    """Cancel a podcast generation job"""
-    try:
-        logger.info(f"Cancelling podcast generation for job {job_id}")
-        
-        # Get the job
-        job = PodcastJob.objects.get(id=job_id)
-        
-        # Cancel the background task if it's running
-        if job.celery_task_id:
-            try:
-                from backend.celery import app as celery_app
-                celery_app.control.revoke(
-                    job.celery_task_id, terminate=True, signal="SIGTERM"
-                )
-                logger.info(f"Revoked Celery task {job.celery_task_id} for job {job_id}")
-            except Exception as e:
-                logger.warning(f"Failed to revoke Celery task for job {job_id}: {e}")
-        
-        # Update job status in database
-        job.status = "cancelled"
-        job.error_message = "Job cancelled by user"
-        job.progress = "Job cancelled"
-        job.save()
-        
-        # Update status cache for frontend
-        podcast_orchestrator.update_job_progress(job_id, "Job cancelled", "cancelled")
-        
-        logger.info(f"Successfully cancelled podcast generation for job {job_id}")
-        return {"status": "cancelled", "job_id": job_id}
-    
-    except PodcastJob.DoesNotExist:
-        logger.error(f"Job {job_id} not found")
-        return {"status": "failed", "job_id": job_id, "message": "Job not found"}
-    except Exception as e:
-        logger.error(f"Error cancelling podcast generation for job {job_id}: {e}")
         raise

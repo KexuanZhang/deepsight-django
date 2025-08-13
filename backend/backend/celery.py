@@ -5,6 +5,7 @@ Celery configuration for Django project.
 import os
 import sys
 from celery import Celery
+from celery.signals import worker_init
 from django.conf import settings
 
 # Set the default Django settings module for the 'celery' program.

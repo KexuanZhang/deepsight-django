@@ -1,4 +1,4 @@
-aiofiles>=23.2.1
+aiofiles
 anthropic
 backoff
 diskcache
@@ -19,11 +19,11 @@ imagehash
 langchain_huggingface
 langchain_qdrant
 langchain_text_splitters
-langchain_milvus==0.1.6
-litellm==1.59.3
+langchain_milvus
+litellm
 markdown-pdf
-numpy>=2.0.0
-pymilvus==2.4.8
+numpy
+pymilvus
 open-clip-torch
 openai
 pandas
@@ -54,7 +54,7 @@ ujson
 uvicorn
 whisper
 faster-whisper
-wikipedia==1.4.0
+wikipedia
 yt_dlp
 celery
 langchain_community
@@ -62,7 +62,7 @@ langchain-openai
 faiss-cpu
 crawl4ai
 toml
-marker-pdf==1.7.5
+marker-pdf
 django-storages
 boto3
 PyPDF2
@@ -70,4 +70,6 @@ minio
 python-pptx
 weasyprint
 mammoth
-aiohttp==3.12.13
+aiohttp
+crewai==0.150.0 
+crewai-tools==0.58.0

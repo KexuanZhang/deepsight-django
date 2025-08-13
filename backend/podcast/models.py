@@ -5,7 +5,7 @@ import uuid
 User = get_user_model()
 
 
-class PodcastJob(models.Model):
+class Podcast(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),
         ("generating", "Generating"),
@@ -18,7 +18,7 @@ class PodcastJob(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     
     # Required linking to a notebook - breaking change for dev phase
-    notebooks = models.ForeignKey(
+    notebook = models.ForeignKey(
         'notebooks.Notebook',
         on_delete=models.CASCADE,
         null=False,
@@ -33,10 +33,16 @@ class PodcastJob(models.Model):
     # Job metadata
     title = models.CharField(max_length=200, default="Generated Podcast")
     description = models.TextField(blank=True, default="")
+    custom_instruction = models.TextField(blank=True, null=True, help_text="Custom discussion instruction")
 
     # Status tracking
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
-    progress = models.TextField(default="Job queued for processing")
+    progress = models.IntegerField(default=0, help_text="Progress percentage (0-100)")
+    status_message = models.TextField(default="Job queued for processing")
+    
+    # Processing timestamps
+    processing_started_at = models.DateTimeField(null=True, blank=True)
+    processing_completed_at = models.DateTimeField(null=True, blank=True)
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -64,6 +70,9 @@ class PodcastJob(models.Model):
     # Source files reference (JSON field to store file IDs)
     source_file_ids = models.JSONField(default=list)
     source_metadata = models.JSONField(default=dict)
+    
+    # Result data storage
+    result_data = models.JSONField(default=dict, blank=True, help_text="Generated podcast result data")
 
     # Audio metadata moved to file_metadata JSON field
 
@@ -77,7 +86,7 @@ class PodcastJob(models.Model):
         ]
 
     def __str__(self):
-        return f"PodcastJob {self.id} - {self.title} ({self.status})"
+        return f"Podcast {self.id} - {self.title} ({self.status})"
 
     def get_audio_url(self, expires=3600):
         """Get pre-signed URL for audio access"""

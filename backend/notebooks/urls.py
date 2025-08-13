@@ -181,11 +181,11 @@ urlpatterns = [
     # ===============================
     # PODCAST ENDPOINTS
     # ===============================
-    path("<uuid:notebook_id>/podcast-jobs/", podcast_views.NotebookPodcastJobListCreateView.as_view(), name="notebook-podcast-jobs"),
-    path("<uuid:notebook_id>/podcast-jobs/<str:job_id>/", podcast_views.NotebookPodcastJobDetailView.as_view(), name="notebook-podcast-job-detail"),
-    path("<uuid:notebook_id>/podcast-jobs/<str:job_id>/cancel/", podcast_views.NotebookPodcastJobCancelView.as_view(), name="notebook-podcast-job-cancel"),
-    path("<uuid:notebook_id>/podcast-jobs/<str:job_id>/audio/", podcast_views.NotebookPodcastJobAudioView.as_view(), name="notebook-podcast-job-audio"),
-    path("<uuid:notebook_id>/podcast-jobs/<str:job_id>/download/", podcast_views.NotebookPodcastJobDownloadView.as_view(), name="notebook-podcast-job-download"),
+    path("<uuid:notebook_id>/podcast-jobs/", podcast_views.NotebookPodcastListCreateView.as_view(), name="notebook-podcast-jobs"),
+    path("<uuid:notebook_id>/podcast-jobs/<str:job_id>/", podcast_views.NotebookPodcastDetailView.as_view(), name="notebook-podcast-job-detail"),
+    path("<uuid:notebook_id>/podcast-jobs/<str:job_id>/cancel/", podcast_views.NotebookPodcastCancelView.as_view(), name="notebook-podcast-job-cancel"),
+    path("<uuid:notebook_id>/podcast-jobs/<str:job_id>/audio/", podcast_views.NotebookPodcastAudioView.as_view(), name="notebook-podcast-job-audio"),
+    path("<uuid:notebook_id>/podcast-jobs/<str:job_id>/download/", podcast_views.NotebookPodcastDownloadView.as_view(), name="notebook-podcast-job-download"),
     
     # Stream endpoint for podcast job status updates
     path(

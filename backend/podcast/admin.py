@@ -1,9 +1,9 @@
 from django.contrib import admin
-from .models import PodcastJob
+from .models import Podcast
 
 
-@admin.register(PodcastJob)
-class PodcastJobAdmin(admin.ModelAdmin):
+@admin.register(Podcast)
+class PodcastAdmin(admin.ModelAdmin):
     list_display = ["id", "title", "status", "user", "created_at", "updated_at"]
     list_filter = ["status", "created_at", "updated_at"]
     search_fields = ["title", "id", "user__username"]
@@ -18,5 +18,5 @@ class PodcastJobAdmin(admin.ModelAdmin):
     )
 
     def has_add_permission(self, request):
-        # Prevent manual creation of jobs through admin
+        # Prevent manual creation of podcasts through admin
         return False
