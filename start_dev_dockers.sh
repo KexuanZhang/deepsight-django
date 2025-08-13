@@ -28,15 +28,15 @@ start_compose() {
     
     if command_exists docker-compose; then
         if [ -n "$services" ]; then
-            docker-compose -f "$compose_file" up -d $services
+            docker-compose -f "$compose_file" up -d --remove-orphans $services
         else
-            docker-compose -f "$compose_file" up -d
+            docker-compose -f "$compose_file" up -d --remove-orphans
         fi
     else
         if [ -n "$services" ]; then
-            docker compose -f "$compose_file" up -d $services
+            docker compose -f "$compose_file" up -d --remove-orphans $services
         else
-            docker compose -f "$compose_file" up -d
+            docker compose -f "$compose_file" up -d --remove-orphans
         fi
     fi
     
@@ -45,17 +45,13 @@ start_compose() {
 
 # Start Milvus ecosystem (etcd, minio, milvus)
 echo "📦 Starting Milvus ecosystem (etcd, minio, milvus)..."
-cd milvus
-start_compose "docker-compose.yml" "Milvus"
-cd ..
+start_compose "milvus/docker-compose.yml" "Milvus"
 
 # Wait a moment for Milvus services to initialize
 echo "⏳ Waiting for Milvus services to initialize..."
 sleep 10
 
-# Start only Redis (skip PostgreSQL for dev)
-echo "📦 Starting Redis service..."
-start_compose "docker-compose.yml" "Redis" "redis"
+# (No additional root-level Docker Compose file; all services are under milvus/)
 
 # Wait for services to be ready
 echo "⏳ Waiting for all services to be ready..."
@@ -81,9 +77,6 @@ check_service() {
 if command_exists nc; then
     echo "🏥 Running health checks..."
     
-    # Check Redis
-    check_service "Redis" 6379
-    
     # Check etcd
     check_service "etcd" 2379
     
@@ -102,7 +95,6 @@ fi
 
 echo ""
 echo "📋 Development Service Summary:"
-echo "  - Redis:           localhost:6379"
 echo "  - etcd:            localhost:2379"
 echo "  - MinIO API:       localhost:9000"
 echo "  - MinIO Console:   localhost:9001"
