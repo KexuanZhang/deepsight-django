@@ -1,4 +1,4 @@
-import apiService from '@/common/utils/api';
+import sourceService from '@/features/notebook/services/SourceService';
 
 // API Base URL for raw file access (should match the one in api.js)
 import { config } from '@/config';
@@ -210,7 +210,7 @@ async function generateTextPreview(fileId: string, metadata: FileMetadata, sourc
     } else if (useMinIOUrls) {
       // Use MinIO content endpoint if available (for files with images like PPTX)
       try {
-        const response = await apiService.getFileContentWithMinIOUrls(fileId);
+        const response = await sourceService.getFileContentWithMinIOUrls(fileId);
         if (response.success && response.data.content) {
           content = response.data.content;
           console.log('Text content: Using MinIO URLs for content with images');
@@ -220,7 +220,7 @@ async function generateTextPreview(fileId: string, metadata: FileMetadata, sourc
       } catch (minioError) {
         console.log('MinIO content not available, trying regular endpoint:', minioError);
         // Fall back to regular endpoint
-        const response = await apiService.getParsedFile(fileId);
+        const response = await sourceService.getParsedFile(fileId);
         if (!response.success) {
           throw new Error('Failed to fetch file content');
         }
@@ -228,7 +228,7 @@ async function generateTextPreview(fileId: string, metadata: FileMetadata, sourc
       }
     } else {
       // Fetch from API for regular files
-      const response = await apiService.getParsedFile(fileId);
+      const response = await sourceService.getParsedFile(fileId);
       if (!response.success) {
         throw new Error('Failed to fetch file content');
       }
@@ -334,7 +334,7 @@ async function generateAudioPreview(fileId: string, metadata: FileMetadata, note
   let wordCount = 0;
   
   try {
-    const response = await apiService.getParsedFile(fileId);
+    const response = await sourceService.getParsedFile(fileId);
     if (response.success && response.data.content) {
       transcriptContent = response.data.content;
       hasTranscript = transcriptContent.trim().length > 0;
@@ -414,7 +414,7 @@ async function generateVideoPreview(fileId: string, metadata: FileMetadata, note
   let wordCount = 0;
   
   try {
-    const response = await apiService.getParsedFile(fileId);
+    const response = await sourceService.getParsedFile(fileId);
     if (response.success && response.data.content) {
       transcriptContent = response.data.content;
       hasTranscript = transcriptContent.trim().length > 0;
@@ -473,7 +473,7 @@ async function generatePdfPreview(fileId: string, metadata: FileMetadata, notebo
     } else if (useMinIOUrls) {
       // Use MinIO content endpoint if available
       try {
-        const response = await apiService.getFileContentWithMinIOUrls(fileId);
+        const response = await sourceService.getFileContentWithMinIOUrls(fileId);
         if (response.success && response.data.content) {
           pdfContent = response.data.content;
           hasParsedContent = pdfContent.trim().length > 0;
@@ -483,7 +483,7 @@ async function generatePdfPreview(fileId: string, metadata: FileMetadata, notebo
       } catch (minioError) {
         console.log('MinIO content not available for PDF, trying regular endpoint:', minioError);
         // Fall back to regular endpoint
-        const response = await apiService.getParsedFile(fileId);
+        const response = await sourceService.getParsedFile(fileId);
         if (response.success && response.data.content) {
           pdfContent = response.data.content;
           hasParsedContent = pdfContent.trim().length > 0;
@@ -491,7 +491,7 @@ async function generatePdfPreview(fileId: string, metadata: FileMetadata, notebo
         }
       }
     } else {
-      const response = await apiService.getParsedFile(fileId);
+      const response = await sourceService.getParsedFile(fileId);
       if (response.success && response.data.content) {
         pdfContent = response.data.content;
         hasParsedContent = pdfContent.trim().length > 0;
@@ -603,7 +603,7 @@ export function formatDate(dateString: string): string {
  */
 export async function getFileContentWithMinIOUrls(fileId: string, expires: number = 86400): Promise<any> {
   try {
-    const response = await apiService.getFileContentWithMinIOUrls(fileId, expires);
+    const response = await sourceService.getFileContentWithMinIOUrls(fileId, expires);
     if (response.success) {
       return response.data;
     } else {

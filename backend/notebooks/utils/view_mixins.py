@@ -165,6 +165,11 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             elif kb_item.processing_status == "done":
                 parsing_status = "completed"  # Map "done" to "completed" for frontend
 
+        # Combine metadata and file_metadata for frontend compatibility
+        combined_metadata = {**(kb_item.metadata or {})}
+        if kb_item.file_metadata:
+            combined_metadata['file_metadata'] = kb_item.file_metadata
+            
         file_data = {
             "file_id": str(kb_item.id),
             "knowledge_item_id": ki.id,
@@ -175,7 +180,7 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             "updated_at": kb_item.updated_at.isoformat(),
             "added_to_notebook_at": ki.added_at.isoformat(),
             "notes": ki.notes,
-            "metadata": kb_item.metadata or {},
+            "metadata": combined_metadata,
             "has_file": bool(kb_item.file_object_key),
             "has_content": bool(kb_item.content),
             "has_original_file": bool(kb_item.original_file_object_key),
@@ -188,8 +193,6 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             "file_extension": self.extract_file_extension(kb_item.metadata),
             "file_size": self.extract_file_size(kb_item.metadata),
             "uploaded_at": kb_item.created_at.isoformat(),
-            # Include file_metadata for caption generation status and other metadata
-            "file_metadata": kb_item.file_metadata or {},
         }
 
         # Add source information if available

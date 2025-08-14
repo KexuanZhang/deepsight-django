@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from '@/common/components/ui/use-toast';
-import ChatService from '@/features/notebook/services/ChatService';
+import chatService from '@/features/notebook/services/ChatService';
 import type { NotebookChatMessage } from '@/features/notebook/type';
 
 // File interface
@@ -83,7 +83,7 @@ export const useChat = (notebookId: string, sourcesListRef: SourcesListRef): Use
   // Fetch chat history
   const fetchChatHistory = useCallback(async () => {
     try {
-      const messages = await ChatService.getChatHistory(notebookId);
+      const messages = await chatService.getChatHistory(notebookId);
       setMessages(messages);
       
       // Load cached suggestions if there are messages
@@ -110,7 +110,7 @@ export const useChat = (notebookId: string, sourcesListRef: SourcesListRef): Use
   // Fetch suggested questions
   const fetchSuggestions = useCallback(async () => {
     try {
-      const suggestions = await ChatService.getSuggestedQuestions(notebookId);
+      const suggestions = await chatService.getSuggestedQuestions(notebookId);
       setSuggestedQuestions(suggestions);
       return suggestions;
     } catch (err) {
@@ -164,7 +164,7 @@ export const useChat = (notebookId: string, sourcesListRef: SourcesListRef): Use
     }
 
     try {
-      const response = await ChatService.sendChatMessage(notebookId, selectedFileIds, userMessage.content);
+      const response = await chatService.sendChatMessage(notebookId, selectedFileIds, userMessage.content);
 
       const assistantMessage: NotebookChatMessage = {
         id: response.message.id,
@@ -201,7 +201,7 @@ export const useChat = (notebookId: string, sourcesListRef: SourcesListRef): Use
   // Clear chat history
   const clearChatHistory = useCallback(async () => {
     try {
-      await ChatService.clearChatHistory(notebookId);
+      await chatService.clearChatHistory(notebookId);
 
       setMessages([]);
       setSuggestedQuestions([]);

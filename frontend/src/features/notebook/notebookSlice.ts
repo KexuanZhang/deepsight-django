@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, createSelector } from '@reduxjs/toolkit';
-import NotebookService from './services/NotebookService';
+import notebookService from './services/NotebookService';
 import type { 
   Notebook, 
   NotebookState, 
@@ -25,7 +25,7 @@ export const fetchNotebooks = createAsyncThunk(
   'notebook/fetchAll',
   async (_, { rejectWithValue, getState }) => {
     try {
-      const data = await NotebookService.getNotebooks();
+      const data = await notebookService.getNotebooks();
       return { data, timestamp: Date.now() };
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch notebooks');
@@ -37,7 +37,7 @@ export const fetchNotebook = createAsyncThunk(
   'notebook/fetchOne',
   async (id: string, { rejectWithValue }) => {
     try {
-      const data = await NotebookService.getNotebook(id);
+      const data = await notebookService.getNotebook(id);
       return data;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch notebook');
@@ -49,7 +49,7 @@ export const createNotebook = createAsyncThunk(
   'notebook/create',
   async ({ name, description }: { name: string; description: string }, { rejectWithValue }) => {
     try {
-      const data = await NotebookService.createNotebook(name, description);
+      const data = await notebookService.createNotebook(name, description);
       return data;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Failed to create notebook');
@@ -61,7 +61,7 @@ export const updateNotebook = createAsyncThunk(
   'notebook/update',
   async ({ id, updates }: { id: string; updates: UpdateNotebookRequest }, { rejectWithValue }) => {
     try {
-      const data = await NotebookService.updateNotebook(id, updates);
+      const data = await notebookService.updateNotebook(id, updates);
       return { ...data };
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Failed to update notebook');
@@ -73,7 +73,7 @@ export const deleteNotebook = createAsyncThunk(
   'notebook/delete',
   async (id: string, { rejectWithValue }) => {
     try {
-      await NotebookService.deleteNotebook(id);
+      await notebookService.deleteNotebook(id);
       return id;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Failed to delete notebook');

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { config } from '@/config';
-import apiService from '@/common/utils/api';
+import studioService from '@/features/notebook/services/StudioService';
 
 class AbortError extends Error {
   constructor() {
@@ -80,8 +80,8 @@ export const useJobStatus = (
     try {
       // Use the appropriate API service method to get the correct SSE URL
       const sseUrl = jobType === 'report'
-        ? apiService.getReportJobStatusStreamUrl(currentJobIdRef.current, currentNotebookIdRef.current)
-        : apiService.getPodcastJobStatusStreamUrl(currentJobIdRef.current, currentNotebookIdRef.current);
+        ? studioService.getReportJobStatusStreamUrl(currentJobIdRef.current, currentNotebookIdRef.current)
+        : studioService.getPodcastJobStatusStreamUrl(currentJobIdRef.current, currentNotebookIdRef.current);
       
       console.log(`Connecting to ${jobType} SSE:`, sseUrl);
       
@@ -221,8 +221,8 @@ export const useJobStatus = (
     
     try {
       const success = jobType === 'report'
-        ? await apiService.cancelReportJob(currentJobIdRef.current, currentNotebookIdRef.current)
-        : await apiService.cancelPodcastJob(currentJobIdRef.current, currentNotebookIdRef.current);
+        ? await studioService.cancelReportJob(currentJobIdRef.current, currentNotebookIdRef.current)
+        : await studioService.cancelPodcastJob(currentJobIdRef.current, currentNotebookIdRef.current);
       
       if (success) {
         jobCompletedRef.current = true;

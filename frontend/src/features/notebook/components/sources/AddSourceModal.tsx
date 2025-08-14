@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback } from "react";
 import { Trash2, Plus, X, Upload, Link2, FileText, Globe, Youtube, Loader2, RefreshCw, FileIcon } from "lucide-react";
 import { Button } from "@/common/components/ui/button";
 import { Badge } from "@/common/components/ui/badge";
-import apiService from "@/common/utils/api";
+import sourceService from "@/features/notebook/services/SourceService";
 import { KnowledgeBaseItem } from "@/features/notebook/type";
 import { COLORS } from "@/features/notebook/config/uiConfig";
 import { useFileStatus } from "@/features/notebook/hooks/generation/useFileStatus";
@@ -122,7 +122,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
         onUploadStarted(uploadFileId, file.name, validation.extension);
       }
       
-      const response = await apiService.parseFile(file, uploadFileId, notebookId);
+      const response = await sourceService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
         // Close modal and refresh sources list on success
@@ -178,11 +178,11 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       
       let response;
       if (urlProcessingType === 'media') {
-        response = await apiService.parseUrlWithMedia(linkUrl, notebookId, 'cosine', uploadFileId);
+        response = await sourceService.parseUrlWithMedia(linkUrl, notebookId, 'cosine', uploadFileId);
       } else if (urlProcessingType === 'document') {
-        response = await apiService.parseDocumentUrl(linkUrl, notebookId, 'cosine', uploadFileId);
+        response = await sourceService.parseDocumentUrl(linkUrl, notebookId, 'cosine', uploadFileId);
       } else {
-        response = await apiService.parseUrl(linkUrl, notebookId, 'cosine', uploadFileId);
+        response = await sourceService.parseUrl(linkUrl, notebookId, 'cosine', uploadFileId);
       }
       
       if (response.success) {
@@ -240,7 +240,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       const blob = new Blob([pasteText], { type: 'text/markdown' });
       const file = new File([blob], filename, { type: 'text/markdown' });
       
-      const response = await apiService.parseFile(file, uploadFileId, notebookId);
+      const response = await sourceService.parseFile(file, uploadFileId, notebookId);
       
       if (response.success) {
         // Notify parent component that upload started
@@ -275,7 +275,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
   const loadKnowledgeBase = async () => {
     try {
       setIsLoadingKnowledgeBase(true);
-      const response = await apiService.getKnowledgeBase(notebookId);
+      const response = await sourceService.getKnowledgeBase(notebookId);
       
       if (response.success) {
         const items = response.data?.items || [];
@@ -360,7 +360,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
 
     try {
       const linkPromises = Array.from(selectedKnowledgeItems).map(itemId =>
-        apiService.linkKnowledgeBaseItem(notebookId, itemId)
+        sourceService.linkKnowledgeBaseItem(notebookId, itemId)
       );
 
       const results = await Promise.all(linkPromises);
@@ -397,7 +397,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
 
     try {
       const deletePromises = Array.from(selectedKnowledgeItems).map(itemId =>
-        apiService.deleteKnowledgeBaseItem(notebookId, itemId)
+        sourceService.deleteKnowledgeBaseItem(notebookId, itemId)
       );
 
       const results = await Promise.all(deletePromises);

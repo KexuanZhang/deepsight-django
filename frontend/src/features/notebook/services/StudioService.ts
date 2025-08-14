@@ -1,283 +1,331 @@
-// ====== DEPENDENCY INVERSION PRINCIPLE (DIP) ======
-// Abstracting dependencies and inverting control from concrete to abstract
+import httpClient, { getCookie } from '@/common/utils/httpClient';
 
-import type { GenerationConfig } from '@/types/global';
-import { config } from '@/config';
-
-// Helper to get CSRF token from cookie
-function getCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
-  return match ? decodeURIComponent(match[2]) : null;
+interface GenerationConfig {
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+  system_prompt?: string;
+  [key: string]: any;
 }
 
-// API Client interface
-interface ApiClient {
-  get(url: string): Promise<any>;
-  post(url: string, data?: any): Promise<any>;
-  delete(url: string): Promise<any>;
-  put(url: string, data?: any): Promise<any>;
-  downloadReportFile?(jobId: string, notebookId: string, filename?: string): Promise<Blob>;
-  downloadReportPdf?(jobId: string, notebookId: string): Promise<Blob>;
-}
+/**
+ * Service class for studio-related operations
+ * Handles all functionality for the Studio panel
+ */
+class StudioService {
 
-// Abstract service interface - components depend on this abstraction, not concrete implementation
-export abstract class IStudioService {
-  abstract generateReport(config: GenerationConfig): Promise<any>;
-  abstract generatePodcast(config: GenerationConfig): Promise<any>;
-  abstract cancelGeneration(jobId: string): Promise<any>;
-  abstract getAvailableModels(): Promise<string[]>;
-  abstract loadReports(notebookId: string): Promise<any>;
-  abstract loadPodcasts(notebookId: string): Promise<any>;
-  abstract getPodcast(podcastId: string): Promise<any>;
-  abstract loadReportContent(reportId: string): Promise<any>;
-  abstract downloadFile(fileId: string, filename: string): Promise<any>;
-  abstract deleteFile(fileId: string): Promise<any>;
-  abstract updateFile(fileId: string, content: string): Promise<any>;
-  abstract loadAudio(podcastId: string): Promise<string>;
-}
+  // ─── REPORTS & AI GENERATION ─────────────────────────────────────────────
 
-// Concrete implementation using the new get/post methods
-export class ApiStudioService extends IStudioService {
-  private api: ApiClient;
-  private notebookId: string;
-
-  constructor(apiClient: ApiClient, notebookId: string) {
-    super();
-    this.api = apiClient; // Dependency injection
-    this.notebookId = notebookId; // Store notebook ID for API calls
-  }
-
-  async generateReport(config: GenerationConfig): Promise<any> {
-    const response = await this.api.post(`/notebooks/${this.notebookId}/report-jobs/`, config);
-    return response;
-  }
-
-  async generatePodcast(config: GenerationConfig): Promise<any> {
-    // Convert config to FormData as expected by the API
-    const formData = new FormData();
-    
-    // Add all config fields to FormData
-    Object.keys(config).forEach(key => {
-      if (config[key] !== undefined && config[key] !== null) {
-        if (Array.isArray(config[key])) {
-          // Handle arrays (like selected_files)
-          config[key].forEach(item => {
-            formData.append(key, item);
-          });
-        } else {
-          formData.append(key, config[key]);
-        }
-      }
-    });
-
-    const response = await this.api.post(`/notebooks/${this.notebookId}/podcast-jobs/`, formData);
-    return response;
-  }
-
-  async cancelGeneration(jobId: string): Promise<any> {
-    // For now, we'll determine the type and call the appropriate cancel method
-    // This could be improved by storing job type metadata
+  async getAvailableModels(): Promise<{ providers: string[]; retrievers: string[]; time_ranges: string[]; }> {
     try {
-      // Try report cancel first
-      const reportUrl = `/notebooks/${this.notebookId}/report-jobs/${jobId}/cancel/`;
-      const result = await this.api.post(reportUrl);
-      return result;
+      const response = await httpClient.get('/notebooks/reports/models/');
+      return {
+        providers: response.model_providers || ['openai', 'google'],
+        retrievers: response.retrievers || ['tavily', 'brave', 'serper', 'you', 'bing', 'duckduckgo', 'searxng'],
+        time_ranges: response.time_ranges || ['day', 'week', 'month', 'year'],
+      };
     } catch (error) {
-      // If report cancel fails, try podcast cancel
-      try {
-        const podcastUrl = `/notebooks/${this.notebookId}/podcast-jobs/${jobId}/cancel/`;
-        const result = await this.api.post(podcastUrl);
-        return result;
-      } catch (podcastError) {
-        throw podcastError;
-      }
+      console.warn('Failed to load available models, using defaults:', error);
+      return {
+        providers: ['openai', 'google'],
+        retrievers: ['tavily', 'brave', 'serper', 'you', 'bing', 'duckduckgo', 'searxng'],
+        time_ranges: ['day', 'week', 'month', 'year'],
+      };
     }
   }
 
-  async getAvailableModels(): Promise<any> {
-    const response = await this.api.get('/notebooks/reports/models/');
-    return {
-      model_providers: response.model_providers || response.providers || [],
-      retrievers: response.retrievers || []
+  async generateReport(config: GenerationConfig, notebookId: string): Promise<any> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for report generation');
+    }
+    
+    return httpClient.post(`/notebooks/${notebookId}/report-jobs/`, config);
+  }
+
+  async generateReportWithSourceIds(requestData: any, notebookId: string): Promise<any> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for report generation');
+    }
+    
+    return httpClient.post(`/notebooks/${notebookId}/report-jobs/`, requestData);
+  }
+
+  async listReportJobs(notebookId: string): Promise<{ jobs: any[]; }> {
+    const response = await httpClient.get(`/notebooks/${notebookId}/report-jobs/`);
+    return { 
+      jobs: response.reports || response.jobs || response || []
     };
   }
 
-  async loadReports(notebookId: string): Promise<any> {
-    const response = await this.api.get(`/notebooks/${notebookId}/report-jobs/`);
-    return response.reports || response.jobs || response || [];
+  async getReportContent(jobId: string, notebookId: string): Promise<any> {
+    return httpClient.get(`/notebooks/${notebookId}/report-jobs/${jobId}/content/`);
   }
 
-  async loadPodcasts(notebookId: string): Promise<any> {
-    const response = await this.api.get(`/notebooks/${notebookId}/podcast-jobs/`);
-    return response.results || response.jobs || response || [];
+  async getReportStatus(jobId: string, notebookId: string): Promise<any> {
+    return httpClient.get(`/notebooks/${notebookId}/report-jobs/${jobId}/`);
   }
 
-  async getPodcast(podcastId: string): Promise<any> {
-    const response = await this.api.get(`/notebooks/${this.notebookId}/podcast-jobs/${podcastId}/`);
-    return response;
-  }
-
-  async loadReportContent(reportId: string): Promise<any> {
-    const response = await this.api.get(`/notebooks/${this.notebookId}/report-jobs/${reportId}/content/`);
-    return response;
-  }
-
-  async downloadFile(fileId: string, filename: string): Promise<any> {
+  async listReportFiles(jobId: string, notebookId: string): Promise<any> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for listing report files');
+    }
     
+    return httpClient.get(`/notebooks/${notebookId}/report-jobs/${jobId}/files/`);
+  }
+
+  async downloadReportFile(jobId: string, notebookId: string, filename: string | null = null): Promise<Blob> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for downloading report files');
+    }
+    
+    if (!jobId) {
+      throw new Error('jobId is required for downloading report files');
+    }
+    
+    let url = `/notebooks/${notebookId}/report-jobs/${jobId}/download/`;
+    if (filename) {
+      url += `?filename=${encodeURIComponent(filename)}`;
+    }
+    
+    let response;
     try {
-      let blob: Blob;
+      response = await fetch(`${httpClient.baseUrl}${url}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken') ?? '',
+        },
+        redirect: 'manual'
+      });
+    } catch (fetchError: unknown) {
+      console.error('=== FETCH ERROR ===');
+      console.error('Error type:', (fetchError as Error).constructor.name);
+      console.error('Error message:', (fetchError as Error).message);
+      console.error('Error stack:', (fetchError as Error).stack);
       
-      // Check if the API client has the downloadReportFile method (from the main API service)
-      if (this.api.downloadReportFile) {
-        // Use the proper download method that returns a Blob
-        // Don't pass filename to avoid backend filename mismatch issues
-        blob = await this.api.downloadReportFile(fileId, this.notebookId);
-      } else {
-        // Fallback: direct fetch for binary data (without filename parameter to avoid mismatch)
-        const downloadUrl = `${config.API_BASE_URL}/notebooks/${this.notebookId}/report-jobs/${fileId}/download/`;
-        
-        // Always use manual redirect handling to avoid CORS issues with MinIO
-        let response;
-        try {
-          response = await fetch(downloadUrl, {
-            method: 'GET',
-            credentials: 'include',
-            headers: {
-              'X-CSRFToken': getCookie('csrftoken') ?? '',
-            },
-            redirect: 'manual' // Always handle redirects manually
-          });
-        } catch (fetchError) {
-          console.error('=== STUDIO SERVICE FETCH ERROR ===');
-          console.error('Error type:', fetchError.constructor.name);
-          console.error('Error message:', fetchError.message);
-          console.error('Download URL:', downloadUrl);
-          console.error('================================');
-          throw new Error(`StudioService network request failed: ${fetchError.message}`);
-        }
-
-
-        // Handle redirects to MinIO
-        if (response.status === 302 || response.status === 301) {
-          const redirectUrl = response.headers.get('Location');
-          if (redirectUrl) {
-            const minioResponse = await fetch(redirectUrl, {
-              method: 'GET',
-              credentials: 'omit', // Critical: no credentials for MinIO
-              mode: 'cors'
-            });
-            
-            
-            if (minioResponse.ok) {
-              blob = await minioResponse.blob();
-            } else {
-              throw new Error(`MinIO download failed: ${minioResponse.status} ${minioResponse.statusText}`);
-            }
-          } else {
-            throw new Error('No redirect URL found');
-          }
-        } else if (response.ok) {
-          // Handle direct responses (no redirect)
-          blob = await response.blob();
-        } else {
-          // Handle errors
-          throw new Error(`Download failed: ${response.status} ${response.statusText}`);
-        }
+      if ((fetchError as Error).name === 'TypeError' && (fetchError as Error).message.includes('Failed to fetch')) {
+        console.error('This looks like a network connectivity or CORS issue');
+      } else if ((fetchError as Error).message.includes('NetworkError') || (fetchError as Error).message.includes('net::ERR_FAILED')) {
+        console.error('This looks like a network error (possibly server down or DNS issue)');
       }
       
-      // Create download link
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename || `report_${fileId}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      // Clean up the blob URL
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url);
-      }, 1000);
-    } catch (error) {
-      console.error('Download failed:', error);
-      throw error;
+      console.error('==================');
+      throw new Error(`Network request failed (HTTP 0): ${(fetchError as Error).message}. Check console for details.`);
     }
-  }
 
-  async deleteFile(fileId: string): Promise<any> {
-    // Try to delete as report first, then as podcast
+    if (response.status === 302 || response.status === 301) {
+      const redirectUrl = response.headers.get('Location');
+      if (redirectUrl) {
+        const minioResponse = await fetch(redirectUrl, {
+          method: 'GET',
+          credentials: 'omit',
+          mode: 'cors'
+        });
+        
+        if (minioResponse.ok) {
+          return minioResponse.blob();
+        } else {
+          throw new Error(`MinIO download failed: ${minioResponse.status} ${minioResponse.statusText}`);
+        }
+      } else {
+        throw new Error('No redirect URL found in response headers');
+      }
+    }
+
+    if (response.ok) {
+      return response.blob();
+    }
+
+    let errorMessage = `HTTP ${response.status}`;
     try {
-      return await this.api.delete(`/notebooks/${this.notebookId}/report-jobs/${fileId}/`);
-    } catch (error) {
-      return await this.api.delete(`/notebooks/${this.notebookId}/podcast-jobs/${fileId}/`);
+      const errorData = await response.json();
+      errorMessage = errorData.error || errorData.detail || errorMessage;
+    } catch (e) {
+      errorMessage = response.statusText || errorMessage;
     }
+    throw new Error(errorMessage);
   }
 
-  async updateFile(fileId: string, content: string): Promise<any> {
+  async downloadReportPdf(jobId: string, notebookId: string): Promise<Blob> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for downloading report PDF');
+    }
     
-    // Use the dedicated updateReport method if available, otherwise fallback
-    if ('updateReport' in this.api) {
-      return await (this.api as any).updateReport(fileId, this.notebookId, content);
-    } else {
-      return await this.api.put(`/notebooks/${this.notebookId}/report-jobs/${fileId}/`, { content });
+    const url = `/notebooks/${notebookId}/report-jobs/${jobId}/download-pdf/`;
+    
+    const response = await fetch(`${httpClient.baseUrl}${url}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken') ?? '',
+      },
+      redirect: 'manual'
+    });
+
+    if (response.status === 302 || response.status === 301) {
+      const redirectUrl = response.headers.get('Location');
+      if (redirectUrl) {
+        const minioResponse = await fetch(redirectUrl, {
+          method: 'GET',
+          credentials: 'omit',
+        });
+        
+        if (!minioResponse.ok) {
+          throw new Error(`MinIO PDF download failed: ${minioResponse.status}`);
+        }
+        
+        return minioResponse.blob();
+      }
     }
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.detail || errorMessage;
+      } catch (e) {
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.blob();
   }
 
-  async loadAudio(podcastId: string): Promise<string> {
-    // TODO: Implement downloadPodcastAudio in ApiService
-    const response = await this.api.get(`/notebooks/${this.notebookId}/podcasts/${podcastId}/download/`);
-    const blob = new Blob([response], { type: 'audio/mpeg' });
-    return window.URL.createObjectURL(blob);
+  async cancelReportJob(jobId: string, notebookId: string): Promise<any> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for cancelling report jobs');
+    }
+    
+    return httpClient.post(`/notebooks/${notebookId}/report-jobs/${jobId}/cancel/`);
   }
 
-  // Convenience methods for job recovery
-  async getReports() {
-    return await this.loadReports(this.notebookId);
+  async deleteReport(jobId: string, notebookId: string): Promise<any> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for deleting report');
+    }
+    
+    return httpClient.delete(`/notebooks/${notebookId}/report-jobs/${jobId}/`);
   }
 
-  async getPodcasts() {
-    return await this.loadPodcasts(this.notebookId);
+  async updateReport(jobId: string, notebookId: string, content: string): Promise<any> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for updating report');
+    }
+    
+    if (!content) {
+      throw new Error('content is required for updating report');
+    }
+    
+    return httpClient.put(`/notebooks/${notebookId}/report-jobs/${jobId}/`, { content });
+  }
+
+  async getReportJobStatus(jobId: string, notebookId: string): Promise<any> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for getting report job status');
+    }
+    
+    return httpClient.get(`/notebooks/${notebookId}/report-jobs/${jobId}/`);
+  }
+
+  getReportJobStatusStreamUrl(jobId: string, notebookId: string): string {
+    if (!notebookId) {
+      throw new Error('notebookId is required for report job status stream');
+    }
+    
+    return `${httpClient.baseUrl}/notebooks/${notebookId}/report-jobs/${jobId}/stream/`;
+  }
+
+  // ─── PODCASTS ────────────────────────────────────────────────────────────
+
+  async generatePodcast(formData: FormData, notebookId: string): Promise<any> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for podcast generation');
+    }
+    
+    return httpClient.post(`/notebooks/${notebookId}/podcast-jobs/`, formData);
+  }
+
+  async listPodcastJobs(notebookId: string): Promise<{ jobs: any[]; }> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for listing podcast jobs');
+    }
+    
+    const response = await httpClient.get(`/notebooks/${notebookId}/podcast-jobs/`);
+    return { 
+      jobs: response.results || response || []
+    };
+  }
+
+  async cancelPodcastJob(jobId: string, notebookId: string): Promise<any> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for cancelling podcast jobs');
+    }
+    
+    return httpClient.post(`/notebooks/${notebookId}/podcast-jobs/${jobId}/cancel/`);
+  }
+
+  async getPodcastJobStatus(jobId: string, notebookId: string): Promise<any> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for getting podcast job status');
+    }
+    
+    return httpClient.get(`/notebooks/${notebookId}/podcast-jobs/${jobId}/`);
+  }
+
+  async downloadPodcastAudio(jobId: string, notebookId: string): Promise<Blob> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for downloading podcast audio');
+    }
+    
+    const response = await fetch(`${httpClient.baseUrl}/notebooks/${notebookId}/podcast-jobs/${jobId}/audio/`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken') ?? '',
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.detail || errorMessage;
+      } catch (e) {
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    if (!data.audio_url) {
+      throw new Error('No audio URL returned from server');
+    }
+    
+    const audioResponse = await fetch(data.audio_url);
+    if (!audioResponse.ok) {
+      throw new Error('Failed to download audio file');
+    }
+    
+    return audioResponse.blob();
+  }
+
+  async deletePodcast(jobId: string, notebookId: string): Promise<any> {
+    if (!notebookId) {
+      throw new Error('notebookId is required for deleting podcast');
+    }
+    
+    return httpClient.delete(`/notebooks/${notebookId}/podcast-jobs/${jobId}/`);
+  }
+
+  getPodcastJobStatusStreamUrl(jobId: string, notebookId: string): string {
+    if (!notebookId) {
+      throw new Error('notebookId is required for podcast job status stream');
+    }
+    
+    return `${httpClient.baseUrl}/notebooks/${notebookId}/podcast-jobs/${jobId}/stream/`;
   }
 }
 
-// Job management service - separated concern
-export abstract class IJobService {
-  abstract subscribe(jobId: string, onUpdate: (data: any) => void): void;
-  abstract unsubscribe(jobId: string): void;
-  abstract saveJob(jobId: string, jobData: any): void;
-  abstract getJob(jobId: string): any;
-  abstract clearJob(jobId: string): void;
-}
-
-export class LocalStorageJobService extends IJobService {
-  private subscribers: Map<string, (data: any) => void>;
-
-  constructor() {
-    super();
-    this.subscribers = new Map();
-  }
-
-  subscribe(jobId: string, onUpdate: (data: any) => void): void {
-    this.subscribers.set(jobId, onUpdate);
-  }
-
-  unsubscribe(jobId: string): void {
-    this.subscribers.delete(jobId);
-  }
-
-  saveJob(jobId: string, jobData: any): void {
-    const key = `studio_job_${jobId}`;
-    localStorage.setItem(key, JSON.stringify(jobData));
-  }
-
-  getJob(jobId: string): any {
-    const key = `studio_job_${jobId}`;
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
-  }
-
-  clearJob(jobId: string): void {
-    const key = `studio_job_${jobId}`;
-    localStorage.removeItem(key);
-  }
-}
+export default new StudioService();

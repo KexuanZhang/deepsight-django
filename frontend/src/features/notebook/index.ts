@@ -31,8 +31,9 @@ export { useChat } from './hooks/chat/useChat';
 
 // Services
 export { default as NotebookService } from './services/NotebookService';
-export { default as FileService } from './services/FileService';
+export { default as SourceService } from './services/SourceService';
 export { default as ChatService } from './services/ChatService';
+export { default as StudioService } from './services/StudioService';
 
 // Configuration
 export * from './config/fileConfig';

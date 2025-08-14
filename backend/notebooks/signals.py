@@ -88,10 +88,8 @@ def on_knowledge_base_item_saved(sender, instance, created, **kwargs):
             if 'processing_status' in update_fields or not update_fields:
                 # Find all notebooks this item is linked to
                 knowledge_items = KnowledgeItem.objects.filter(knowledge_base_item=instance)
-                logger.info(f"[SSE_DEBUG] KnowledgeBaseItem {instance.id} status updated to '{instance.processing_status}', found {knowledge_items.count()} linked notebooks")
                 
                 for ki in knowledge_items:
-                    logger.info(f"[SSE_DEBUG] Sending file_status_updated signal for notebook {ki.notebook.id}")
                     # Map processing status to parsing status for consistency with API
                     parsing_status = "completed"  # Default for completed items
                     if instance.processing_status == "in_progress":

@@ -707,6 +707,28 @@ def generate_image_captions_task(self, kb_item_id):
             kb_item.file_metadata['caption_generation_status'] = 'completed'
             kb_item.file_metadata['caption_generation_completed_at'] = datetime.now().isoformat()
             kb_item.save()
+
+            # Proactively notify notebooks via SSE that associated file has updated
+            try:
+                from .signals import NotebookFileChangeNotifier
+                linked_items = KnowledgeItem.objects.filter(knowledge_base_item=kb_item)
+                for ki in linked_items:
+                    NotebookFileChangeNotifier.notify_file_change(
+                        notebook_id=ki.notebook.id,
+                        change_type='file_status_updated',
+                        file_data={
+                            'file_id': str(kb_item.id),
+                            'title': kb_item.title,
+                            # Use completed to indicate post-processing (captions) finished
+                            'status': 'completed',
+                            'processing_status': kb_item.processing_status,
+                            # Include updated metadata so frontend knows captions are done
+                            'metadata': kb_item.metadata,
+                            'file_metadata': kb_item.file_metadata,
+                        }
+                    )
+            except Exception as notify_err:
+                logger.warning(f"Failed to send SSE caption completion notification for KB item {kb_item_id}: {notify_err}")
             
             logger.info(f"Successfully generated captions for {updated_count} images in KB item {kb_item_id} ({ai_generated_count} AI-generated)")
             

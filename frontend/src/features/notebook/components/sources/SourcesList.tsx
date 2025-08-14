@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/common/components/ui/button";
 import { Alert, AlertDescription } from "@/common/components/ui/alert";
 import { Badge } from "@/common/components/ui/badge";
-import apiService from "@/common/utils/api";
+import sourceService from "@/features/notebook/services/SourceService";
 import { supportsPreview } from "@/features/notebook/utils/filePreview";
 import { PANEL_HEADERS, COLORS } from "@/features/notebook/config/uiConfig";
 import { FileIcons } from "@/types";
@@ -47,13 +47,11 @@ const FileStatusTracker: React.FC<{
   const { status } = useFileStatus(
     fileId,
     notebookId,
-    (result) => {
-      console.log(`[FILE_SSE] Processing completed for file ${fileId}:`, result);
-      onStatusUpdate(fileId, 'completed'); // Map 'done' to 'completed' for frontend
+    () => {
+      onStatusUpdate(fileId, 'completed');
       onProcessingComplete(fileId);
     },
     (error) => {
-      console.error(`[FILE_SSE] Processing failed for file ${fileId}:`, error);
       onStatusUpdate(fileId, 'error');
       onError(fileId, error);
     }
@@ -104,7 +102,7 @@ const getPrincipleFileIcon = (source: Source) => {
 };
 
 
-const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, onSelectionChange, onToggleCollapse, isCollapsed, onOpenModal, onCloseModal, onSourcesRemoved, sourcesRemovedTrigger }, ref) => {
+const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, onSelectionChange, onToggleCollapse, onOpenModal, onCloseModal, sourcesRemovedTrigger }, ref) => {
   const [sources, setSources] = useState<Source[]>([]);
 
   const [error, setError] = useState<string | null>(null);
@@ -119,11 +117,17 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
   // Set notebook ID for upload tracking
   useEffect(() => {
     fileUploadStatus.setNotebookId(notebookId);
+    // Ensure any completion (including caption generation completion events) triggers a refresh
+    fileUploadStatus.setOnAnyFileComplete(() => {
+      loadParsedFiles();
+      if (onSelectionChange) {
+        setTimeout(() => onSelectionChange(), 100);
+      }
+    });
   }, [notebookId, fileUploadStatus]);
 
   // Individual file status update handler - updates specific file in sources array
   const updateFileStatus = useCallback((fileId: string, newStatus: string) => {
-    console.log(`[FILE_SSE] Updating status for file ${fileId} to ${newStatus}`);
     setSources(prev => prev.map(source => 
       source.file_id === fileId 
         ? { ...source, parsing_status: newStatus as Source['parsing_status'] }
@@ -149,27 +153,21 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
   }, [sources]);
 
 
-  // NO POLLING APPROACH:
-  // - Sources list only updates when explicitly triggered
-  // - Backend must signal completion through WebSocket, SSE, or callback
-  // - Parent components can call onProcessingComplete() when they receive completion signals
-  // - This eliminates unnecessary API calls and reduces server load
 
   const loadParsedFiles = async () => {
     try {
       setIsLoading(true);
       setError(null);
       
-      const response = await apiService.listParsedFiles(notebookId);
-
+      const response = await sourceService.listParsedFiles(notebookId);
       
       if (response.success) {
         const parsedSources = response.data.map((metadata: FileMetadata) => ({
           id: metadata.file_id || 'unknown',
           name: generatePrincipleTitle(metadata),
-          title: generatePrincipleTitle(metadata), // Generate appropriate title based on source type
-          authors: generatePrincipleFileDescription(metadata), // Use principle file description
-          ext: getPrincipleFileExtension(metadata), // Get original file extension
+          title: generatePrincipleTitle(metadata),
+          authors: generatePrincipleFileDescription(metadata),
+          ext: getPrincipleFileExtension(metadata),
           selected: false,
           type: "parsed" as const,
           createdAt: metadata.upload_timestamp || new Date().toISOString(),
@@ -178,16 +176,14 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
           parsing_status: metadata.parsing_status,
           metadata: {
             ...metadata,
-            knowledge_item_id: metadata.knowledge_item_id // Store the knowledge item ID for unlinking
+            knowledge_item_id: metadata.knowledge_item_id
           },
           error_message: metadata.error_message,
-          // Store both original and processed info for processing
           originalFile: getPrincipleFileInfo(metadata)
         }));
         
         setSources(parsedSources);
         
-        // Clear all upload tracking since we have fresh data from backend
         fileUploadStatus.stopAllTracking();
       } else {
         throw new Error(response.error || "Failed to load files");
@@ -201,30 +197,20 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     }
   };
 
-  // Handle processing completion for specific files - defined after loadParsedFiles
-  const handleFileProcessingComplete = useCallback((fileId: string) => {
-    console.log(`[FILE_SSE] Processing completed for file ${fileId}`);
-    
-    // CRITICAL: Reload entire file list to get fresh content and metadata from backend
-    // This ensures preview content is updated and all components have latest data
+  // Handle processing completion for specific files - reload to get fresh data
+  const handleFileProcessingComplete = useCallback(() => {
     loadParsedFiles();
     
-    // Notify parent components (like AddSourceModal) about the change
-    // This updates knowledge base button status and other parent state
     if (onSelectionChange) {
       setTimeout(() => onSelectionChange(), 100);
     }
   }, [onSelectionChange]);
 
-  // Handle processing errors for specific files - defined after loadParsedFiles
-  const handleFileProcessingError = useCallback((fileId: string, error: string) => {
-    console.log(`[FILE_SSE] Processing error for file ${fileId}:`, error);
+  // Handle processing errors for specific files
+  const handleFileProcessingError = useCallback((_fileId: string, error: string) => {
     setError(`Processing failed for file: ${error}`);
-    
-    // Also reload file list to get latest status from backend
     loadParsedFiles();
     
-    // Notify parent components about the error state change
     if (onSelectionChange) {
       setTimeout(() => onSelectionChange(), 100);
     }
@@ -399,22 +385,17 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
   };
 
 
-  // Method to handle backend completion signals
+  // Handle backend completion signals
   const handleProcessingComplete = useCallback((completedUploadId?: string) => {
-    console.log('Processing completion signal received', completedUploadId ? `for: ${completedUploadId}` : '(global)');
-    
-    // Stop tracking for specific upload if provided
     if (completedUploadId) {
       fileUploadStatus.stopTracking(completedUploadId);
     }
     
-    // Refresh the entire list to get latest status from backend
     loadParsedFiles();
   }, [loadParsedFiles, fileUploadStatus]);
 
-  // Manual refresh - just reload the file list
+  // Manual refresh
   const handleManualRefresh = useCallback(async () => {
-    console.log('Manual refresh triggered - reloading file list');
     loadParsedFiles();
   }, [loadParsedFiles]);
 
@@ -527,31 +508,22 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     }
 
     
-    // Track which deletions succeed
     const deletionResults = [];
     const unlinkedKnowledgeItems = [];
-    
-    // Delete files from backend
     for (const source of selectedSources) {
       try {
         let result;
         let knowledgeItemId = null;
         
-        // Priority order for unlink operations:
-        // 1. knowledge_item_id (best for unlinking from notebook)
-        // 2. file_id (knowledge base item ID - also good for unlinking)
-        // 3. upload_file_id (upload tracking ID - fallback)
         
         if (source.metadata?.knowledge_item_id) {
           knowledgeItemId = source.metadata.knowledge_item_id;
-          result = await apiService.deleteParsedFile(source.metadata.knowledge_item_id, notebookId);
+          result = await sourceService.deleteParsedFile(source.metadata.knowledge_item_id, notebookId);
         } else if (source.file_id) {
           knowledgeItemId = source.file_id;
-          result = await apiService.deleteParsedFile(source.file_id, notebookId);
+          result = await sourceService.deleteParsedFile(source.file_id, notebookId);
         } else if (source.upload_file_id) {
-          result = await apiService.deleteFileByUploadId(source.upload_file_id, notebookId);
-          
-          // Stop any upload status tracking for this file
+          result = await sourceService.deleteFileByUploadId(source.upload_file_id, notebookId);
           fileUploadStatus.stopTracking(source.upload_file_id);
         } else {
           console.warn('Source has no valid ID for deletion:', source);
@@ -560,7 +532,6 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
         
         if (result.success) {
           deletionResults.push({ source, success: true });
-          // Track knowledge items that were successfully unlinked
           if (knowledgeItemId) {
             unlinkedKnowledgeItems.push(knowledgeItemId);
           }
@@ -573,23 +544,18 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
       }
     }
     
-    // Remove successfully deleted sources from frontend state
     const successfullyDeleted = deletionResults
       .filter(result => result.success)
       .map(result => result.source.id);
     
     setSources((prev) => prev.filter((source) => !successfullyDeleted.includes(source.id)));
     
-    // Notify parent component about unlinked knowledge base items
-    // This will trigger a refresh of the knowledge base state in AddSourceModal
     if (unlinkedKnowledgeItems.length > 0 && onSelectionChange) {
-      // Use a slight delay to ensure the backend state is updated
       setTimeout(() => {
         onSelectionChange();
       }, 100);
     }
     
-    // Show error for failed deletions
     const failedDeletions = deletionResults.filter(result => !result.success);
     if (failedDeletions.length > 0) {
       const errorMessage = `Failed to delete ${failedDeletions.length} file(s): ${failedDeletions.map(f => f.source.title).join(', ')}`;
@@ -631,15 +597,11 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
             
             setSources(prev => [tempSource, ...prev]);
             
-            // Start tracking with completion callback
             fileUploadStatus.startTracking(uploadFileId, notebookId, () => {
-              console.log(`Upload completed for ${uploadFileId}, refreshing sources`);
               handleProcessingComplete(uploadFileId);
             });
           }}
-          onKnowledgeBaseItemsDeleted={(_deletedItemIds: string[]) => {
-            // Refresh the entire sources list from the backend
-            // This ensures we get the current state after deletion
+          onKnowledgeBaseItemsDeleted={() => {
             loadParsedFiles();
           }}
           onSourcesRemoved={sourcesRemovedTrigger}
@@ -660,6 +622,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     const hasImages = (source.metadata?.file_metadata?.image_count && source.metadata.file_metadata.image_count > 0) || 
                       (source.metadata?.image_count && source.metadata.image_count > 0);
     const imagesRequiringCaptions = source.metadata?.file_metadata?.images_requiring_captions || source.metadata?.images_requiring_captions;
+    
     
     // Show caption generation status for completed files with images
     const showCaptionStatus = source.parsing_status === 'completed' && 
@@ -1035,15 +998,10 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
           fileId={file.file_id!}
           notebookId={notebookId}
           onStatusUpdate={updateFileStatus}
-          onProcessingComplete={handleFileProcessingComplete}
+          onProcessingComplete={() => handleFileProcessingComplete()}
           onError={handleFileProcessingError}
         />
       ))}
-
-
-
-
-
     </div>
   );
 });

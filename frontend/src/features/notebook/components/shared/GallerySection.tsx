@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/common/components/ui/button';
 import { Settings, Image as ImageIcon, Loader2, X, ZoomIn, ChevronDown, ChevronUp, Camera } from 'lucide-react';
-import apiService from '@/common/utils/api';
+import sourceService from '@/features/notebook/services/SourceService';
 import { config } from '@/config';
 // Define the missing types locally
 interface GalleryImage {
@@ -253,7 +253,7 @@ const GallerySection: React.FC<GallerySectionProps> = ({ videoFileId, notebookId
         extract_interval: extractInterval,
         min_words: minWords,
       };
-      const response = await apiService.extractVideoImages(notebookId, payload);
+      const response = await sourceService.extractVideoImages(notebookId, payload);
       setExtractResult(response);
       
       // Clear existing images and reload to ensure fresh data

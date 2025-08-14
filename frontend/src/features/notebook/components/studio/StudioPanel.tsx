@@ -8,8 +8,8 @@ import { useToast } from '@/common/components/ui/use-toast';
 
 // ====== DEPENDENCY INVERSION PRINCIPLE (DIP) ======
 // Import service abstractions, not concrete implementations
-import { ApiStudioService, LocalStorageJobService } from '@/features/notebook/services/StudioService';
-import apiService from '@/common/utils/api';
+import { jobStorage } from '@/features/notebook/utils/jobStorage';
+import studioService from '@/features/notebook/services/StudioService';
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused custom hooks for specific concerns
@@ -37,8 +37,6 @@ import {
 
 // ====== DEPENDENCY INVERSION PRINCIPLE (DIP) ======
 // Service instances - can be injected for testing
-// Note: studioService will be created inside component with notebookId
-const jobService = new LocalStorageJobService();
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Main container component focused on orchestration and state coordination
@@ -66,9 +64,6 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
   const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
   const [selectedSources, setSelectedSources] = useState<SourceItem[]>([]);
 
-  // ====== DEPENDENCY INVERSION: Create service instance with notebookId ======
-  const studioService = useMemo(() => new ApiStudioService(apiService, notebookId), [notebookId]);
-  
   // ====== DEPENDENCY INVERSION: Use abstracted services ======
   const studioData = useStudioData(notebookId, studioService);
 
@@ -103,7 +98,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     reportGeneration.completeGeneration();
     studioData.loadReports(); // Refresh the entire list to get updated titles
     if (reportGeneration.currentJobId) {
-      jobService.clearJob(reportGeneration.currentJobId);
+      jobStorage.clearJob(reportGeneration.currentJobId);
     }
     toast({
       title: "Report Generated",
@@ -122,7 +117,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       // If the result doesn't have an audio_url, try to fetch complete data
       if (!result.audio_url && result.job_id) {
         try {
-          const freshPodcast = await studioService.getPodcast(result.job_id);
+          const freshPodcast = await studioService.getPodcastJobStatus(result.job_id, notebookId);
           Object.assign(completeResult, freshPodcast);
         } catch (error) {
           console.error('Failed to fetch complete podcast data:', error);
@@ -138,13 +133,13 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     }
     
     if (podcastGeneration.currentJobId) {
-      jobService.clearJob(podcastGeneration.currentJobId);
+      jobStorage.clearJob(podcastGeneration.currentJobId);
     }
     toast({
       title: "Podcast Generated", 
       description: "Your panel discussion has been generated successfully."
     });
-  }, [podcastGeneration, studioData, studioService, toast]);
+  }, [podcastGeneration, studioData, studioService, notebookId, toast]);
 
   // ====== SINGLE RESPONSIBILITY: Job status monitoring ======
   const handleReportError = useCallback((error: string) => {
@@ -184,7 +179,8 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     const recoverRunningJobs = async () => {
       try {
         // Fetch current reports to check for running jobs
-        const reports = await studioService.getReports();
+        const response = await studioService.listReportJobs(notebookId);
+        const reports = response.jobs;
         
         // Find running report jobs
         const runningReport = reports.find((report: any) => 
@@ -192,7 +188,8 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         );
         
         // Find running podcast jobs
-        const podcasts = await studioService.getPodcasts();
+        const podcastResponse = await studioService.listPodcastJobs(notebookId);
+        const podcasts = podcastResponse.jobs;
         const runningPodcast = podcasts.find((podcast: any) => 
           podcast.status === 'generating' || podcast.status === 'pending'
         );
@@ -259,9 +256,9 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         model: configOverrides?.model || reportGeneration.config.model || 'gpt-4'
       };
 
-      const response = await studioService.generateReport(config);
+      const response = await studioService.generateReport(config, notebookId);
       reportGeneration.startGeneration(response.job_id);
-      jobService.saveJob(response.job_id, { 
+      jobStorage.saveJob(response.job_id, { 
         type: 'report', 
         config, 
         created_at: new Date().toISOString() 
@@ -289,10 +286,24 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         model: configOverrides?.model || podcastGeneration.config.model || 'gpt-4'
       };
 
-      const response = await studioService.generatePodcast(config);
+      // Convert config to FormData as expected by the API
+      const formData = new FormData();
+      Object.keys(config).forEach(key => {
+        if (config[key] !== undefined && config[key] !== null) {
+          if (Array.isArray(config[key])) {
+            config[key].forEach((item: any) => {
+              formData.append(key, item);
+            });
+          } else {
+            formData.append(key, config[key]);
+          }
+        }
+      });
+      
+      const response = await studioService.generatePodcast(formData, notebookId);
       podcastGeneration.startGeneration(response.job_id);
       podcastGeneration.updateProgress('Starting podcast generation (10%)');
-      jobService.saveJob(response.job_id, { 
+      jobStorage.saveJob(response.job_id, { 
         type: 'podcast', 
         config, 
         created_at: new Date().toISOString() 
@@ -315,7 +326,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       // Validate job ID is not empty or invalid
       if (reportGeneration.currentJobId.trim() === '') {
         reportGeneration.cancelGeneration();
-        jobService.clearJob(reportGeneration.currentJobId);
+        jobStorage.clearJob(reportGeneration.currentJobId);
         toast({
           title: "Invalid Job",
           description: "Invalid job detected. Status has been reset.",
@@ -325,10 +336,10 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       }
       
       try {
-        await studioService.cancelGeneration(reportGeneration.currentJobId);
+        await studioService.cancelReportJob(reportGeneration.currentJobId, notebookId);
         
         // Don't set local state immediately - let SSE handle the status update
-        jobService.clearJob(reportGeneration.currentJobId);
+        jobStorage.clearJob(reportGeneration.currentJobId);
         
         toast({
           title: "Cancelled",
@@ -338,7 +349,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         // Check if it's a 404 (job not found) - clean up state
         if ((error as any)?.response?.status === 404) {
           reportGeneration.cancelGeneration();
-          jobService.clearJob(reportGeneration.currentJobId);
+          jobStorage.clearJob(reportGeneration.currentJobId);
           toast({
             title: "Job Not Found",
             description: "Job no longer exists. Status has been reset.",
@@ -365,15 +376,15 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         });
       }
     }
-  }, [reportGeneration, studioService, jobService, toast]);
+  }, [reportGeneration, jobStorage, toast]);
 
   const handleCancelPodcast = useCallback(async () => {
     if (podcastGeneration.currentJobId) {
       try {
-        await studioService.cancelGeneration(podcastGeneration.currentJobId);
+        await studioService.cancelPodcastJob(podcastGeneration.currentJobId, notebookId);
         // Don't set local state immediately - let SSE handle the status update
         // podcastGeneration.cancelGeneration();
-        jobService.clearJob(podcastGeneration.currentJobId);
+        jobStorage.clearJob(podcastGeneration.currentJobId);
       } catch (error) {
         console.error('Failed to cancel podcast generation:', error);
         // Only set local state if API call failed
@@ -409,7 +420,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         throw new Error('Report ID not found');
       }
       
-      const content = await studioService.loadReportContent(reportId);
+      const content = await studioService.getReportContent(reportId, notebookId);
       setSelectedFile(report);
       setSelectedFileContent(content.content || content.markdown_content || '');
       setViewMode('preview');
@@ -423,7 +434,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         variant: "destructive"
       });
     }
-  }, [studioService, toast]);
+  }, [studioService, notebookId, toast]);
 
   const handlePodcastClick = useCallback((podcast: PodcastItem) => {
     const podcastId = podcast.id || podcast.job_id || '';
@@ -458,9 +469,9 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       
       const filename = `${report.title || report.article_title || 'report'}.pdf`;
       
-      // Use apiService.downloadReportPdf directly instead of studioService.downloadFile
+      // Use notebookService.downloadReportPdf directly instead of studioService.downloadFile
       // This ensures we're using the correct PDF download endpoint
-      const blob = await apiService.downloadReportPdf(reportId, notebookId);
+      const blob = await studioService.downloadReportPdf(reportId, notebookId);
       
       // Create download link
       const url = window.URL.createObjectURL(blob);
@@ -488,7 +499,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         variant: "destructive"
       });
     }
-  }, [apiService, notebookId, toast]);
+  }, [studioService, notebookId, toast]);
 
   const handleDownloadPodcast = useCallback(async (podcast: PodcastItem) => {
     try {
@@ -498,7 +509,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       }
       
       // Use the API service to download the podcast audio as a blob
-      const blob = await apiService.downloadPodcastAudio(podcastId, notebookId);
+      const blob = await studioService.downloadPodcastAudio(podcastId, notebookId);
       
       // Create download link and trigger download
       const url = window.URL.createObjectURL(blob);
@@ -540,7 +551,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       }
       
       // Delete from backend database using the proper API call
-      const result = await apiService.deleteReport(reportId, notebookId);
+      const result = await studioService.deleteReport(reportId, notebookId);
       
       // Verify the deletion was successful by checking the response
       if (!result || (result.error && result.error !== null)) {
@@ -581,7 +592,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         throw new Error('Podcast ID not found');
       }
       
-      const result = await apiService.deletePodcast(podcastId, notebookId);
+      const result = await studioService.deletePodcast(podcastId, notebookId);
       
       // Verify the deletion was successful by checking the response
       // For podcasts, successful deletion returns HTTP 204 (no content)
@@ -622,7 +633,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
       }
       
       console.log('Saving file:', { fileId, notebookId, contentLength: content.length });
-      await studioService.updateFile(fileId, content);
+      await studioService.updateReport(fileId, notebookId, content);
       setSelectedFileContent(content);
       
       // Refresh the report data to ensure it's synchronized

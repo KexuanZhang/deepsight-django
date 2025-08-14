@@ -296,9 +296,15 @@ class NotebookFileListStreamView(View):
                     # Build file response data directly (inline helper)
                     def build_file_response_data(ki):
                         metadata = ki.knowledge_base_item.metadata or {}
+                        file_metadata = ki.knowledge_base_item.file_metadata or {}
                         original_filename = metadata.get('original_filename', ki.knowledge_base_item.title)
                         file_extension = metadata.get('file_extension', '')
                         file_size = metadata.get('file_size', 0)
+                        
+                        # Include file_metadata in the main metadata for frontend compatibility
+                        combined_metadata = {**metadata}
+                        if file_metadata:
+                            combined_metadata['file_metadata'] = file_metadata
                         
                         return {
                             "file_id": str(ki.knowledge_base_item.id),
@@ -308,7 +314,7 @@ class NotebookFileListStreamView(View):
                             "original_filename": original_filename,
                             "file_extension": file_extension,
                             "file_size": file_size,
-                            "metadata": metadata,
+                            "metadata": combined_metadata,
                             "knowledge_item_id": str(ki.id)
                         }
                     
@@ -344,10 +350,6 @@ class NotebookFileListStreamView(View):
                             # New event detected - send updated file list
                             last_event_time = change_event['timestamp']
                             
-                            # Log the event for debugging
-                            import logging
-                            logger = logging.getLogger(__name__)
-                            logger.info(f"[SSE_DEBUG] Sending file change event: {change_event.get('type')}, file_data: {change_event.get('file_data')}")
                             
                             # Get fresh file list
                             current_knowledge_items = (
@@ -805,21 +807,17 @@ class NotebookFileStatusStreamView(View):
                             yield f"data: {json.dumps({'type': 'file_status', 'data': current_status})}\n\n"
                             last_status = current_status
                             
-                            # Log status change for debugging
-                            logger.info(f"[FILE_SSE] Status change for file {file_id}: {kb_item.processing_status}")
                         
                         # Stop streaming if processing is complete
                         if kb_item.processing_status in ['done', 'error']:
-                            logger.info(f"[FILE_SSE] Processing complete for file {file_id}, closing stream")
                             break
                             
                         time.sleep(poll_interval)
                         
                     except KnowledgeBaseItem.DoesNotExist:
-                        logger.warning(f"[FILE_SSE] KnowledgeBaseItem {file_id} not found, closing stream")
                         break
                     except Exception as e:
-                        logger.error(f"[FILE_SSE] Error polling file {file_id}: {e}")
+                        logger.error(f"Error polling file {file_id}: {e}")
                         yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
                         break
                 
@@ -837,7 +835,7 @@ class NotebookFileStatusStreamView(View):
             return response
             
         except Exception as e:
-            logger.error(f"[FILE_SSE] Failed to create file status stream for {file_id}: {e}")
+            logger.error(f"Failed to create file status stream for {file_id}: {e}")
             return JsonResponse(
                 {"detail": f"Failed to create file status stream: {str(e)}"},
                 status=500

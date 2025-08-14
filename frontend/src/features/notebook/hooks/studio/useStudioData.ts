@@ -30,7 +30,8 @@ export const useStudioData = (notebookId: string, studioService: any) => {
     setErrors(prev => ({ ...prev, reports: null }));
     
     try {
-      const data = await studioService.loadReports(notebookId);
+      const response = await studioService.listReportJobs(notebookId);
+      const data = response.jobs;
       // Filter to only show completed reports
       const completedReports = data.filter((report: any) => report.status === 'completed');
       setReports(completedReports);
@@ -49,7 +50,8 @@ export const useStudioData = (notebookId: string, studioService: any) => {
     setErrors(prev => ({ ...prev, podcasts: null }));
     
     try {
-      const data = await studioService.loadPodcasts(notebookId);
+      const response = await studioService.listPodcastJobs(notebookId);
+      const data = response.jobs;
       // Filter to only show completed podcasts
       const completedPodcasts = data.filter((podcast: any) => podcast.status === 'completed');
       setPodcasts(completedPodcasts);
