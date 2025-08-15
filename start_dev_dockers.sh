@@ -45,7 +45,7 @@ start_compose() {
 
 # Start Milvus ecosystem (etcd, minio, milvus)
 echo "📦 Starting Milvus ecosystem (etcd, minio, milvus)..."
-start_compose "milvus/docker-compose.yml" "Milvus"
+start_compose "docker/development/docker-compose.yml" "Milvus"
 
 # Wait a moment for Milvus services to initialize
 echo "⏳ Waiting for Milvus services to initialize..."
