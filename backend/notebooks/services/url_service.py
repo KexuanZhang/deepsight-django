@@ -7,7 +7,7 @@ from asgiref.sync import async_to_sync
 from django.db import transaction
 from rest_framework import status
 
-from ..models import Source, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
+from ..models import KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.url_extractor import URLExtractor
 from rag.rag import add_user_files
 
@@ -37,17 +37,13 @@ class URLService:
             # Run async processing using async_to_sync
             result = async_to_sync(process_url_async)()
 
-            # Create source record
-            source = Source.objects.create(
-                notebook=notebook,
-                source_type="url",
-                title=url,
-            )
+            # Create KnowledgeBaseItem with processing_status="processing" directly in notebook
 
 
             # Ingest the KB item content for this URL
             if result.get("file_id"):
-                kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], user=user).first()
+                # Security: Verify the knowledge base item belongs to the verified notebook
+                kb_item = KnowledgeBaseItem.objects.filter(id=result["file_id"], notebook=notebook).first()
                 if kb_item:
                     add_user_files(user_id=user.pk, kb_items=[kb_item])
 
@@ -152,12 +148,7 @@ class URLService:
 
             result = async_to_sync(process_url_with_media_async)()
 
-            # Create source record
-            source = Source.objects.create(
-                notebook=notebook,
-                source_type="url",
-                title=url,
-            )
+            # Create KnowledgeBaseItem with processing_status="processing" directly in notebook
 
 
             return {
@@ -185,12 +176,7 @@ class URLService:
 
             result = async_to_sync(process_document_url_async)()
 
-            # Create source record
-            source = Source.objects.create(
-                notebook=notebook,
-                source_type="url",
-                title=url,
-            )
+            # Create KnowledgeBaseItem with processing_status="processing" directly in notebook
 
 
             return {

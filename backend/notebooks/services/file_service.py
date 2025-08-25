@@ -8,7 +8,7 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 
-from ..models import Source, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
+from ..models import KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.upload_processor import UploadProcessor
 from ..processors import FileProcessor
 from rag.rag import add_user_files
@@ -29,29 +29,14 @@ class FileService:
         """Process single file upload"""
         kb_item = None
         try:
-            # Step 1: Create records immediately in separate transaction
+            # Step 1: Create KnowledgeBaseItem immediately in separate transaction
             with transaction.atomic():
-                # Create Source record immediately
-                source = Source.objects.create(
-                    notebook=notebook,
-                    source_type="file",
-                    title=file_obj.name,
-                )
-                
-                # Create KnowledgeBaseItem with processing_status="in_progress" and link to source
+                # Create KnowledgeBaseItem with processing_status="processing" directly in notebook
                 kb_item = KnowledgeBaseItem.objects.create(
-                    user=user,
+                    notebook=notebook,
                     title=file_obj.name,
                     content_type="document",
-                    source=source,
-                    processing_status="in_progress"
-                )
-                
-                # Create KnowledgeItem link
-                ki = KnowledgeItem.objects.create(
-                    notebook=notebook,
-                    knowledge_base_item=kb_item,
-                    source=source,
+                    processing_status="processing",
                     notes=f"Processing {file_obj.name}"
                 )
 
@@ -84,7 +69,7 @@ class FileService:
             return {
                 "success": True,
                 "file_id": kb_item.id,
-                "knowledge_item_id": ki.id,
+                "knowledge_item_id": kb_item.id,
                 "upload_id": upload_id,
                 "status_code": status.HTTP_201_CREATED,
                 "message": "File uploaded and processing started",
@@ -113,28 +98,12 @@ class FileService:
                 data = file_obj.read()
                 file_obj.seek(0)
 
-                # Create Source record immediately
-                source = Source.objects.create(
-                    notebook=notebook,
-                    source_type="file",
-                    title=file_obj.name,
-                )
-                
-                # Create KnowledgeBaseItem with processing_status="in_progress" and link to source
+                # Create KnowledgeBaseItem with processing_status="processing" directly in notebook
                 kb_item = KnowledgeBaseItem.objects.create(
-                    user=user,
+                    notebook=notebook,
                     title=file_obj.name,
                     content_type="document",
-                    source=source,
-                    processing_status="in_progress"
-                )
-                
-                # Create KnowledgeItem link
-                ki = KnowledgeItem.objects.create(
-                    notebook=notebook,
-                    knowledge_base_item=kb_item,
-                    source=source,
-                    notes=f"Processing {file_obj.name}"
+                    processing_status="processing"
                 )
 
                 batch_item = BatchJobItem.objects.create(

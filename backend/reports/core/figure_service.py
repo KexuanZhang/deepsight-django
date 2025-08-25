@@ -260,10 +260,12 @@ class FigureDataService:
         """
         try:
             # Import here to avoid circular imports
-            from notebooks.models import KnowledgeBaseItem
+            from notebooks.models import KnowledgeBaseItem, Notebook
             
             # Get the knowledge base item to find its actual creation date
-            kb_item = KnowledgeBaseItem.objects.filter(id=file_id, user=user_id).first()
+            # Since KnowledgeBaseItems are now notebook-specific, we need to find via notebook ownership
+            user_notebooks = Notebook.objects.filter(user=user_id)
+            kb_item = KnowledgeBaseItem.objects.filter(id=file_id, notebook__in=user_notebooks).first()
             
             if kb_item:
                 # Use the actual creation date
@@ -362,10 +364,12 @@ class FigureDataService:
         """
         try:
             # Import here to avoid circular imports
-            from notebooks.models import KnowledgeBaseItem
+            from notebooks.models import KnowledgeBaseItem, Notebook
             
             # Get the knowledge base item to find its actual creation date
-            kb_item = KnowledgeBaseItem.objects.filter(id=file_id, user=user_id).first()
+            # Since KnowledgeBaseItems are now notebook-specific, we need to find via notebook ownership
+            user_notebooks = Notebook.objects.filter(user=user_id)
+            kb_item = KnowledgeBaseItem.objects.filter(id=file_id, notebook__in=user_notebooks).first()
             
             if kb_item:
                 # Use the actual creation date

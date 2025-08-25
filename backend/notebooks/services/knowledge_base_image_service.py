@@ -37,7 +37,8 @@ class KnowledgeBaseImageService:
             # Validate access to knowledge base item
             kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
             if user_id:
-                kb_item_query = kb_item_query.filter(user=user_id)
+                # Knowledge base items are now notebook-specific, filter by notebook owner
+                kb_item_query = kb_item_query.filter(notebook__user=user_id)
             
             kb_item = kb_item_query.first()
             if not kb_item:
@@ -108,7 +109,8 @@ class KnowledgeBaseImageService:
             
             image_query = KnowledgeBaseImage.objects.filter(figure_id=figure_id)
             if user_id:
-                image_query = image_query.filter(knowledge_base_item__user=user_id)
+                # Knowledge base items are now notebook-specific, filter by notebook owner
+                image_query = image_query.filter(knowledge_base_item__notebook__user=user_id)
             
             image = image_query.first()
             if not image:
@@ -144,7 +146,8 @@ class KnowledgeBaseImageService:
             # Validate access to knowledge base item
             kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
             if user_id:
-                kb_item_query = kb_item_query.filter(user=user_id)
+                # Knowledge base items are now notebook-specific, filter by notebook owner
+                kb_item_query = kb_item_query.filter(notebook__user=user_id)
             
             kb_item = kb_item_query.first()
             if not kb_item:
@@ -248,7 +251,8 @@ class KnowledgeBaseImageService:
             
             image_query = KnowledgeBaseImage.objects.filter(figure_id=figure_id)
             if user_id:
-                image_query = image_query.filter(knowledge_base_item__user=user_id)
+                # Knowledge base items are now notebook-specific, filter by notebook owner
+                image_query = image_query.filter(knowledge_base_item__notebook__user=user_id)
             
             image = image_query.first()
             if not image:
@@ -293,7 +297,8 @@ class KnowledgeBaseImageService:
             
             image_query = KnowledgeBaseImage.objects.filter(figure_id=figure_id)
             if user_id:
-                image_query = image_query.filter(knowledge_base_item__user=user_id)
+                # Knowledge base items are now notebook-specific, filter by notebook owner
+                image_query = image_query.filter(knowledge_base_item__notebook__user=user_id)
             
             image = image_query.first()
             if not image:
@@ -322,7 +327,8 @@ class KnowledgeBaseImageService:
             # Validate access to knowledge base item
             kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
             if user_id:
-                kb_item_query = kb_item_query.filter(user=user_id)
+                # Knowledge base items are now notebook-specific, filter by notebook owner
+                kb_item_query = kb_item_query.filter(notebook__user=user_id)
             
             kb_item = kb_item_query.first()
             if not kb_item:
@@ -362,7 +368,8 @@ class KnowledgeBaseImageService:
             # Validate access to knowledge base item
             kb_item_query = KnowledgeBaseItem.objects.filter(id=kb_item_id)
             if user_id:
-                kb_item_query = kb_item_query.filter(user=user_id)
+                # Knowledge base items are now notebook-specific, filter by notebook owner
+                kb_item_query = kb_item_query.filter(notebook__user=user_id)
             
             kb_item = kb_item_query.first()
             if not kb_item:
@@ -394,19 +401,13 @@ class KnowledgeBaseImageService:
             return False
     
     def _get_markdown_content(self, kb_item):
-        """Get markdown content from knowledge base item."""
+        """Get markdown content from knowledge base item using model manager."""
         try:
-            # First try to get content from the content field
-            if kb_item.content:
-                return kb_item.content
+            from ..models import KnowledgeBaseItem
             
-            # If no inline content, try to get from MinIO file
-            if kb_item.file_object_key:
-                content = kb_item.get_file_content()
-                if content:
-                    return content
-            
-            return None
+            # Use the model manager to get content
+            content = KnowledgeBaseItem.objects.get_content(str(kb_item.id), kb_item.notebook.user.pk)
+            return content
             
         except Exception as e:
             self.logger.error(f"Error getting markdown content for KB item {kb_item.id}: {e}")

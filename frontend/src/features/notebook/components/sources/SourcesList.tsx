@@ -404,8 +404,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     getSelectedFiles: () => {
       return sources.filter(source => 
         source.selected && 
-        (source.file_id || source.file) && 
-        source.parsing_status === 'completed'
+        (source.file_id || source.file)
       );
     },
     getSelectedSources: () => {
@@ -576,30 +575,49 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
               setTimeout(() => onSelectionChange(), 100);
             }
           }}
-          onUploadStarted={(uploadFileId: string, filename: string, fileType: string) => {
-            // Add temporary upload item to sources list
-            const tempSource: Source = {
-              id: uploadFileId,
-              name: filename,
-              title: filename,
-              authors: `${fileType.toUpperCase()} • Processing...`,
-              ext: fileType,
-              selected: false,
-              type: "parsed" as const,
-              createdAt: new Date().toISOString(),
-              upload_file_id: uploadFileId,
-              parsing_status: 'processing',
-              metadata: {
-                filename: filename,
-                file_extension: `.${fileType}`
-              }
-            };
-            
-            setSources(prev => [tempSource, ...prev]);
-            
-            fileUploadStatus.startTracking(uploadFileId, notebookId, () => {
-              handleProcessingComplete(uploadFileId);
-            });
+          onUploadStarted={(uploadFileId: string, filename: string, fileType: string, oldUploadFileId?: string) => {
+            if (oldUploadFileId) {
+              // Update existing temp source with real file_id
+              setSources(prev => prev.map(source => 
+                source.id === oldUploadFileId ? {
+                  ...source,
+                  id: uploadFileId,
+                  file_id: uploadFileId, // Update to real file_id for tracking
+                  upload_file_id: uploadFileId
+                } : source
+              ));
+              
+              // Stop tracking old ID and start tracking new ID
+              fileUploadStatus.stopTracking(oldUploadFileId);
+              fileUploadStatus.startTracking(uploadFileId, notebookId, () => {
+                handleProcessingComplete(uploadFileId);
+              });
+            } else {
+              // Add new temporary upload item to sources list
+              const tempSource: Source = {
+                id: uploadFileId,
+                file_id: uploadFileId, // Use uploadFileId as file_id for tracking
+                name: filename,
+                title: filename,
+                authors: `${fileType.toUpperCase()} • Processing...`,
+                ext: fileType,
+                selected: false,
+                type: "parsed" as const,
+                createdAt: new Date().toISOString(),
+                upload_file_id: uploadFileId,
+                parsing_status: 'processing',
+                metadata: {
+                  filename: filename,
+                  file_extension: `.${fileType}`
+                }
+              };
+              
+              setSources(prev => [tempSource, ...prev]);
+              
+              fileUploadStatus.startTracking(uploadFileId, notebookId, () => {
+                handleProcessingComplete(uploadFileId);
+              });
+            }
           }}
           onKnowledgeBaseItemsDeleted={() => {
             loadParsedFiles();

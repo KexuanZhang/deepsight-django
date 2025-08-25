@@ -19,7 +19,7 @@ from ..utils.view_mixins import StandardAPIView, NotebookPermissionMixin
 logger = logging.getLogger(__name__)
 
 
-class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
+class URLParseView(StandardAPIView, NotebookPermissionMixin):
     """Handle URL parsing without media extraction - supports both single and batch processing."""
     
     parser_classes = [JSONParser]
@@ -74,19 +74,41 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
     def _handle_single_url_parse(self, url, upload_url_id, notebook, user):
         """Handle single URL parsing using celery worker."""
         from ..tasks import process_url_task
+        from ..models import KnowledgeBaseItem
+        from ..utils.helpers import clean_title
+        from uuid import uuid4
         
-        # Start async processing using celery task
+        # Step 1: Create KnowledgeBaseItem immediately so frontend can track it
+        kb_item = KnowledgeBaseItem.objects.create(
+            notebook=notebook,
+            processing_status="processing",
+            title=clean_title(url),
+            content_type="webpage",
+            notes=f"Processing URL: {url}",
+            metadata={
+                "source_url": url,
+                "upload_url_id": upload_url_id or uuid4().hex,
+                "processing_metadata": {
+                    "extraction_type": "url_extractor",
+                    "processing_type": "url_content"
+                }
+            }
+        )
+        
+        # Step 2: Start async processing using celery task
         task_result = process_url_task.delay(
             url=url,
-            notebook_id=notebook.id,
+            notebook_id=str(notebook.id),  # Convert UUID to string for Celery serialization
             user_id=user.id,
-            upload_url_id=upload_url_id
+            upload_url_id=upload_url_id,
+            kb_item_id=str(kb_item.id)  # Pass the created KB item ID to the task
         )
         
         return Response(
             {
                 "success": True,
                 "task_id": task_result.id,
+                "file_id": str(kb_item.id),  # Return the KB item ID for frontend tracking
                 "url": url,
                 "upload_url_id": upload_url_id,
                 "status": "processing",
@@ -127,10 +149,10 @@ class URLParseViewNew(StandardAPIView, NotebookPermissionMixin):
             process_url_task.delay(
                 url=url,
                 upload_url_id=upload_url_id,
-                notebook_id=notebook.id,
+                notebook_id=str(notebook.id),  # Convert UUID to string for Celery serialization
                 user_id=user.id,
                 batch_job_id=batch_job_id,
-                batch_item_id=batch_item.id
+                batch_item_id=str(batch_item.id)  # Convert UUID to string for Celery serialization
             )
         
         return self.success_response(
@@ -170,8 +192,6 @@ class SimpleTestView(APIView):
         })
 
 
-# Keep the old name for backward compatibility
-URLParseView = URLParseViewNew
 
 
 class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
@@ -233,7 +253,7 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
         # Start async processing using celery task
         task_result = process_url_media_task.delay(
             url=url,
-            notebook_id=notebook.id,
+            notebook_id=str(notebook.id),  # Convert UUID to string for Celery serialization
             user_id=user.id,
             upload_url_id=upload_url_id
         )
@@ -282,10 +302,10 @@ class URLParseWithMediaView(StandardAPIView, NotebookPermissionMixin):
             process_url_media_task.delay(
                 url=url,
                 upload_url_id=upload_url_id,
-                notebook_id=notebook.id,
+                notebook_id=str(notebook.id),  # Convert UUID to string for Celery serialization
                 user_id=user.id,
                 batch_job_id=batch_job_id,
-                batch_item_id=batch_item.id
+                batch_item_id=str(batch_item.id)  # Convert UUID to string for Celery serialization
             )
         
         return self.success_response(
@@ -330,7 +350,7 @@ class URLParseDocumentView(StandardAPIView, NotebookPermissionMixin):
             from ..tasks import process_url_document_task
             task_result = process_url_document_task.delay(
                 url=url,
-                notebook_id=notebook.id,
+                notebook_id=str(notebook.id),  # Convert UUID to string for Celery serialization
                 user_id=request.user.pk,
                 upload_url_id=upload_url_id
             )

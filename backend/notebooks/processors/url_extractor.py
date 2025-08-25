@@ -1128,20 +1128,10 @@ class URLExtractor:
             
             # Get the existing KB item to get the notebook ID
             get_kb_item_sync = sync_to_async(KnowledgeBaseItem.objects.get, thread_sensitive=False)
-            kb_item = await get_kb_item_sync(id=kb_item_id, user_id=user_id)
+            kb_item = await get_kb_item_sync(id=kb_item_id)
             
-            # Get the notebook ID from the associated KnowledgeItem
-            from ..models import KnowledgeItem
-            get_knowledge_item_sync = sync_to_async(
-                lambda: KnowledgeItem.objects.filter(knowledge_base_item_id=kb_item_id).first(), 
-                thread_sensitive=False
-            )
-            knowledge_item = await get_knowledge_item_sync()
-            
-            if not knowledge_item:
-                raise Exception(f"No KnowledgeItem found for KnowledgeBaseItem {kb_item_id}")
-            
-            notebook_id = knowledge_item.notebook_id
+            # Get the notebook ID directly from KnowledgeBaseItem (now notebook-specific)
+            notebook_id = kb_item.notebook_id
             
             # Determine appropriate filename and metadata based on content type
             if original_file_path and processing_type == "media":

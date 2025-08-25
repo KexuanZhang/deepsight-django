@@ -15,14 +15,56 @@ class ChatService {
     return httpClient.get<string[]>(`/notebooks/${notebookId}/suggested-questions/`);
   }
 
+  // Get suggested questions with fetch (for consistency with existing ChatPanel implementation)
+  async getSuggestedQuestionsWithFetch(notebookId: string): Promise<any> {
+    const response = await fetch(`${httpClient.baseUrl}/notebooks/${notebookId}/suggested-questions/`, {
+      credentials: 'include',
+    });
+    
+    if (!response.ok) {
+      throw new Error("Failed to fetch suggestions");
+    }
+    
+    return response.json();
+  }
+
   // Get chat history for a notebook
   async getChatHistory(notebookId: string): Promise<NotebookChatMessage[]> {
     return httpClient.get<NotebookChatMessage[]>(`/notebooks/${notebookId}/chat-history/`);
   }
 
+  // Get chat history with fetch (for consistency with existing ChatPanel implementation)
+  async getChatHistoryWithFetch(notebookId: string): Promise<any> {
+    const response = await fetch(`${httpClient.baseUrl}/notebooks/${notebookId}/chat-history/`, {
+      credentials: 'include',
+    });
+    
+    if (!response.ok) {
+      throw new Error("Failed to fetch chat history");
+    }
+    
+    return response.json();
+  }
+
   // Clear chat history for a notebook
   async clearChatHistory(notebookId: string): Promise<{ success: boolean }> {
     return httpClient.delete<{ success: boolean }>(`/notebooks/${notebookId}/chat-history/clear/`);
+  }
+
+  // Clear chat history with fetch (for consistency with existing ChatPanel implementation)
+  async clearChatHistoryWithFetch(notebookId: string): Promise<void> {
+    const response = await fetch(`${httpClient.baseUrl}/notebooks/${notebookId}/chat-history/clear/`, {
+      method: "DELETE",
+      credentials: 'include',
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": this.getCookie("csrftoken") || "",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to clear chat");
+    }
   }
 
   // Send a chat message
@@ -31,6 +73,35 @@ class ChatService {
       file_ids: fileIds,
       question: question
     });
+  }
+
+  // Send a chat message with streaming response
+  async sendChatMessageStream(notebookId: string, fileIds: string[], question: string): Promise<Response> {
+    const response = await fetch(`${httpClient.baseUrl}/notebooks/${notebookId}/chat/`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": this.getCookie("csrftoken") || "",
+      },
+      body: JSON.stringify({
+        file_ids: fileIds,
+        question: question,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response;
+  }
+
+  // Helper method to get cookie value
+  private getCookie(name: string): string | null {
+    const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+    return match ? decodeURIComponent(match[2]) : null;
   }
 
   // Get chat message by ID

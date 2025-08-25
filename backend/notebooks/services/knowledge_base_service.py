@@ -6,7 +6,7 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 
-from ..models import KnowledgeItem, KnowledgeBaseItem, BatchJob
+from ..models import KnowledgeBaseItem, BatchJob
 from ..utils.storage import get_storage_adapter
 
 logger = logging.getLogger(__name__)
@@ -19,26 +19,38 @@ class KnowledgeBaseService:
         self.storage_adapter = get_storage_adapter()
     
     def get_user_knowledge_base(self, user_id, notebook, content_type=None, limit=None, offset=None):
-        """Get user's entire knowledge base with linkage status"""
+        """Get knowledge base items for this specific notebook"""
         try:
-            # Get knowledge base items
-            knowledge_base = self.storage_adapter.get_user_knowledge_base(
-                user_id=user_id,
-                content_type=content_type,
-                limit=limit,
-                offset=offset,
-            )
-
-            # Check which items are already linked to this notebook
-            linked_kb_item_ids = set(
-                KnowledgeItem.objects.filter(notebook=notebook).values_list(
-                    "knowledge_base_item_id", flat=True
-                )
-            )
-
-            # Add linked status to each item
-            for item in knowledge_base:
-                item["linked_to_notebook"] = item["id"] in linked_kb_item_ids
+            # Since knowledge base items are now notebook-specific, just get items for this notebook
+            queryset = KnowledgeBaseItem.objects.filter(notebook=notebook)
+            
+            # Apply content type filter if specified
+            if content_type:
+                queryset = queryset.filter(content_type=content_type)
+                
+            # Apply pagination
+            if offset:
+                queryset = queryset[offset:]
+            if limit:
+                queryset = queryset[:limit]
+                
+            # Convert to dictionary format for API compatibility
+            knowledge_base = []
+            for kb_item in queryset.order_by('-created_at'):
+                item_data = {
+                    "id": str(kb_item.id),
+                    "title": kb_item.title,
+                    "content_type": kb_item.content_type,
+                    "processing_status": kb_item.processing_status,
+                    "metadata": kb_item.metadata or {},
+                    "file_metadata": kb_item.file_metadata or {},
+                    "created_at": kb_item.created_at.isoformat(),
+                    "updated_at": kb_item.updated_at.isoformat(),
+                    "linked_to_notebook": True,  # All items are now linked to the notebook
+                    "notes": kb_item.notes,
+                    "tags": kb_item.tags,
+                }
+                knowledge_base.append(item_data)
 
             return {
                 "success": True,
@@ -114,11 +126,11 @@ class KnowledgeBaseService:
                 "details": {"error": str(e)},
             }
 
-    def get_knowledge_base_images(self, file_id, user):
+    def get_knowledge_base_images(self, file_id, notebook):
         """Get all images for a knowledge base item"""
         try:
-            # Get the knowledge base item
-            kb_item = get_object_or_404(KnowledgeBaseItem, id=file_id, user=user)
+            # Get the knowledge base item from the notebook
+            kb_item = get_object_or_404(KnowledgeBaseItem, id=file_id, notebook=notebook)
             
             # Get all images for this knowledge base item
             from ..models import KnowledgeBaseImage

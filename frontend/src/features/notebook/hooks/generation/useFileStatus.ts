@@ -80,10 +80,16 @@ export const useFileStatus = (
     ctrlRef.current = ctrl;
     
     try {
-      // Build SSE URL for per-file status monitoring
-      const sseUrl = `${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/files/${currentFileIdRef.current}/status-stream/`;
+      // Determine if this is an upload file (string) or processed file (UUID)
+      const fileId = currentFileIdRef.current;
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(fileId);
       
-      console.log('Connecting to file SSE:', sseUrl);
+      // Build SSE URL based on file type
+      const sseUrl = isUUID 
+        ? `${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/files/${fileId}/status-stream/`
+        : `${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/files/${fileId}/status/stream`;
+      
+      console.log('Connecting to file SSE:', sseUrl, 'isUUID:', isUUID);
       
       fetchEventSource(sseUrl, {
         method: 'GET',

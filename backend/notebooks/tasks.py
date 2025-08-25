@@ -7,10 +7,11 @@ import tempfile
 import os
 from celery import shared_task
 from django.core.exceptions import ObjectDoesNotExist
+from django.shortcuts import get_object_or_404
 from asgiref.sync import async_to_sync
 from uuid import uuid4
 
-from .models import Source, KnowledgeItem, KnowledgeBaseItem, Notebook, BatchJob, BatchJobItem
+from .models import KnowledgeBaseItem, Notebook, BatchJob, BatchJobItem
 from .exceptions import (
     FileProcessingError,
     URLProcessingError,
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True)
-def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_job_id=None, batch_item_id=None):
+def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_job_id=None, batch_item_id=None, kb_item_id=None):
     """Process a single URL asynchronously."""
     try:
         # Import services lazily to avoid circular imports
@@ -47,38 +48,34 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
         if batch_item_id:
             _update_batch_item_status(batch_item_id, 'processing')
         
-        # Step 1: Create source record first
-        from .models import Source
-        source = Source.objects.create(
-            notebook=notebook,
-            source_type="url",
-            title=url,
-        )
-
-        # Step 2: Create KnowledgeBaseItem in pending state
-        kb_item = KnowledgeBaseItem.objects.create(
-            user=user,
-            source=source,
-            processing_status="pending",  # Start in pending state
-            title=clean_title(url),
-            content_type="webpage",
-            metadata={
-                "source_url": url,
-                "upload_url_id": upload_url_id or uuid4().hex,
-                "processing_metadata": {
-                    "extraction_type": "url_extractor",
-                    "processing_type": "url_content"
+        # Step 1: Get or create KnowledgeBaseItem
+        kb_item = None
+        if kb_item_id:
+            # Use existing KnowledgeBaseItem (created by the view)
+            try:
+                kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, notebook=notebook)
+            except KnowledgeBaseItem.DoesNotExist:
+                logger.error(f"Pre-created KnowledgeBaseItem {kb_item_id} not found")
+                # Fallback: create new one
+                kb_item = None
+        
+        if not kb_item:
+            # Create new KnowledgeBaseItem (fallback or batch processing)
+            kb_item = KnowledgeBaseItem.objects.create(
+                notebook=notebook,
+                processing_status="processing",  # Start in processing state
+                title=clean_title(url),
+                content_type="webpage",
+                notes=f"Processing URL: {url}",
+                metadata={
+                    "source_url": url,
+                    "upload_url_id": upload_url_id or uuid4().hex,
+                    "processing_metadata": {
+                        "extraction_type": "url_extractor",
+                        "processing_type": "url_content"
+                    }
                 }
-            }
-        )
-
-        # Step 3: Create KnowledgeItem to link to notebook (this will trigger SSE to show pending item)
-        ki = KnowledgeItem.objects.create(
-            notebook=notebook,
-            knowledge_base_item=kb_item,
-            source=source,
-            notes=f"Processed from URL: {url}"
-        )
+            )
 
         # Step 4: Now process the URL using url extractor
         from .processors.url_extractor import URLExtractor
@@ -94,7 +91,7 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
                 kb_item_id=str(kb_item.id),
                 upload_url_id=upload_url_id or uuid4().hex,
                 user_id=user.pk,
-                notebook_id=notebook.id
+                notebook_id=str(notebook.id)
             )
 
         try:
@@ -171,19 +168,10 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
         if batch_item_id:
             _update_batch_item_status(batch_item_id, 'processing')
         
-        # Step 1: Create source record first
-        from .models import Source
-        source = Source.objects.create(
-            notebook=notebook,
-            source_type="url",
-            title=url,
-        )
-
-        # Step 2: Create KnowledgeBaseItem in pending state
+        # Step 1: Create KnowledgeBaseItem directly in notebook with processing status
         kb_item = KnowledgeBaseItem.objects.create(
-            user=user,
-            source=source,
-            processing_status="pending",  # Start in pending state
+            notebook=notebook,
+            processing_status="processing",  # Start in processing state
             title=clean_title(url),
             content_type="media",
             metadata={
@@ -196,13 +184,6 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
             }
         )
 
-        # Step 3: Create KnowledgeItem to link to notebook (this will trigger SSE to show pending item)
-        KnowledgeItem.objects.create(
-            notebook=notebook,
-            knowledge_base_item=kb_item,
-            source=source,
-            notes=f"Processed from URL with media: {url}"
-        )
 
         # Step 4: Now process the URL with media using url extractor
         from .processors.url_extractor import URLExtractor
@@ -295,19 +276,10 @@ def process_url_document_task(self, url, notebook_id, user_id, upload_url_id=Non
         if batch_item_id:
             _update_batch_item_status(batch_item_id, 'processing')
         
-        # Step 1: Create source record first
-        from .models import Source
-        source = Source.objects.create(
-            notebook=notebook,
-            source_type="url",
-            title=url,
-        )
-
-        # Step 2: Create KnowledgeBaseItem in pending state
+        # Step 1: Create KnowledgeBaseItem directly in notebook with processing status
         kb_item = KnowledgeBaseItem.objects.create(
-            user=user,
-            source=source,
-            processing_status="pending",  # Start in pending state
+            notebook=notebook,
+            processing_status="processing",  # Start in processing state
             title=clean_title(url),
             content_type="document",
             metadata={
@@ -320,13 +292,6 @@ def process_url_document_task(self, url, notebook_id, user_id, upload_url_id=Non
             }
         )
 
-        # Step 3: Create KnowledgeItem to link to notebook (this will trigger SSE to show pending item)
-        KnowledgeItem.objects.create(
-            notebook=notebook,
-            knowledge_base_item=kb_item,
-            source=source,
-            notes=f"Processed from document URL: {url}"
-        )
 
         # Step 4: Now process the document URL using url extractor
         from .processors.url_extractor import URLExtractor
@@ -434,12 +399,13 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
         kb_item = None
         if kb_item_id:
             try:
-                kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
+                # Security: Verify the knowledge base item belongs to the verified notebook
+                kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, notebook=notebook)
                 # Update status to show processing has started
                 kb_item.processing_status = "in_progress"
                 kb_item.save(update_fields=["processing_status"])
             except KnowledgeBaseItem.DoesNotExist:
-                logger.error(f"KnowledgeBaseItem {kb_item_id} not found for user {user_id}")
+                logger.error(f"KnowledgeBaseItem {kb_item_id} not found in notebook {notebook_id}")
         
         # Process the file using upload processor
         result = async_to_sync(upload_processor.process_upload)(
@@ -449,7 +415,7 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
         # If we had a pre-created kb_item, the processor updated it directly
         if kb_item_id:
             # Get the updated KnowledgeBaseItem
-            kb_item = get_object_or_404(KnowledgeBaseItem, id=kb_item_id, user=user)
+            kb_item = get_object_or_404(KnowledgeBaseItem, id=kb_item_id, notebook=notebook)
             
             # Update status to done - this will trigger the signal
             kb_item.processing_status = "done"
@@ -465,7 +431,7 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
             result["file_id"] = kb_item.id
         else:
             # No pre-created item, processor created new one
-            processed_kb_item = get_object_or_404(KnowledgeBaseItem, id=result["file_id"], user=user)
+            processed_kb_item = get_object_or_404(KnowledgeBaseItem, id=result["file_id"], notebook=notebook)
             
             # Add to user's RAG collection
             add_user_files(
@@ -495,11 +461,15 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
         # Update the KnowledgeBaseItem status to error if we have one
         if kb_item_id:
             try:
-                kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user_id=user_id)
-                kb_item.processing_status = "error"
+                # Get notebook for security verification (needed since we're in exception handler)
+                user = User.objects.get(id=user_id)
+                notebook = Notebook.objects.get(id=notebook_id, user=user)
+                # Security: Verify the knowledge base item belongs to the verified notebook
+                kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, notebook=notebook)
+                kb_item.processing_status = "failed"  # Use "failed" status
                 kb_item.save(update_fields=["processing_status"])
-                logger.info(f"Updated kb_item {kb_item_id} status to error")
-            except KnowledgeBaseItem.DoesNotExist:
+                logger.info(f"Updated kb_item {kb_item_id} status to failed")
+            except (KnowledgeBaseItem.DoesNotExist, Notebook.DoesNotExist):
                 logger.error(f"Could not find kb_item {kb_item_id} to update error status")
         
         # Update batch item status on failure
@@ -630,15 +600,15 @@ def generate_image_captions_task(self, kb_item_id):
             updated_count = 0
             ai_generated_count = 0
             
-            # Get markdown content for caption extraction
-            markdown_content = None
-            if kb_item.content:
-                markdown_content = kb_item.content
-            elif kb_item.file_object_key:
-                try:
-                    markdown_content = kb_item.get_file_content()
-                except Exception as e:
-                    logger.warning(f"Could not get markdown content for KB item {kb_item_id}: {e}")
+            # Get markdown content for caption extraction using model manager
+            try:
+                markdown_content = KnowledgeBaseItem.objects.get_content(
+                    str(kb_item.id), 
+                    user_id=kb_item.notebook.user.pk
+                )
+            except Exception as e:
+                logger.warning(f"Could not get markdown content for KB item {kb_item_id}: {e}")
+                markdown_content = None
             
             # Extract figure data from markdown if available
             figure_data = []
@@ -711,10 +681,10 @@ def generate_image_captions_task(self, kb_item_id):
             # Proactively notify notebooks via SSE that associated file has updated
             try:
                 from .signals import NotebookFileChangeNotifier
-                linked_items = KnowledgeItem.objects.filter(knowledge_base_item=kb_item)
-                for ki in linked_items:
+                # Since KnowledgeBaseItem is now directly linked to notebook
+                if kb_item.notebook:
                     NotebookFileChangeNotifier.notify_file_change(
-                        notebook_id=ki.notebook.id,
+                        notebook_id=kb_item.notebook.id,
                         change_type='file_status_updated',
                         file_data={
                             'file_id': str(kb_item.id),

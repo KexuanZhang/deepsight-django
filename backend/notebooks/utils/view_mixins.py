@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import permissions, authentication
 
-from ..models import Notebook, KnowledgeBaseItem, KnowledgeItem
+from ..models import Notebook, KnowledgeBaseItem
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +31,20 @@ class NotebookPermissionMixin:
 class KnowledgeBasePermissionMixin:
     """Mixin to handle knowledge base item ownership verification."""
 
-    def get_user_kb_item(self, kb_item_id: str, user):
-        """Get knowledge base item owned by user or raise 404."""
-        return get_object_or_404(KnowledgeBaseItem, id=kb_item_id, user=user)
+    def get_notebook_kb_item(self, kb_item_id: str, notebook):
+        """Get knowledge base item from specific notebook or raise 404."""
+        return get_object_or_404(KnowledgeBaseItem, id=kb_item_id, notebook=notebook)
 
-    def verify_kb_item_access(self, kb_item_id: str, user) -> bool:
-        """Verify user has access to knowledge base item."""
-        return KnowledgeBaseItem.objects.filter(id=kb_item_id, user=user).exists()
+    def verify_kb_item_access(self, kb_item_id: str, notebook) -> bool:
+        """Verify knowledge base item exists in the specified notebook."""
+        return KnowledgeBaseItem.objects.filter(id=kb_item_id, notebook=notebook).exists()
+
+    # Legacy method for backward compatibility
+    def get_user_kb_item(self, kb_item_id: str, user):
+        """Legacy method - knowledge base items are now notebook-specific."""
+        # This method is deprecated since knowledge base items are now notebook-specific
+        # Kept for backward compatibility but will require notebook context
+        raise NotImplementedError("Use get_notebook_kb_item with notebook parameter instead")
 
 
 class StandardAPIView(APIView):
@@ -80,23 +87,12 @@ class FileAccessValidatorMixin:
     ) -> tuple:
         """
         Validate user has access to file through notebook.
-        Returns (notebook, kb_item, knowledge_item) or raises appropriate error.
+        Returns (notebook, kb_item) or raises appropriate error.
         """
         notebook = get_object_or_404(Notebook, id=notebook_id, user=user)
-        kb_item = get_object_or_404(KnowledgeBaseItem, id=file_id, user=user)
+        kb_item = get_object_or_404(KnowledgeBaseItem, id=file_id, notebook=notebook)
 
-        knowledge_item = KnowledgeItem.objects.filter(
-            notebook=notebook, knowledge_base_item=kb_item
-        ).first()
-
-        if not knowledge_item:
-            logger.warning(
-                f"User {user.id} attempted unauthorized access: "
-                f"notebook={notebook_id}, file={file_id}"
-            )
-            raise Http404("File not linked to this notebook")
-
-        return notebook, kb_item, knowledge_item
+        return notebook, kb_item
 
 
 class PaginationMixin:
@@ -148,10 +144,8 @@ class FileMetadataExtractorMixin:
 class FileListResponseMixin(FileMetadataExtractorMixin):
     """Mixin for generating standardized file list responses."""
 
-    def build_file_response_data(self, ki: KnowledgeItem) -> Dict[str, Any]:
-        """Build standardized file response data from KnowledgeItem."""
-        kb_item = ki.knowledge_base_item
-        source = ki.source
+    def build_file_response_data(self, kb_item: KnowledgeBaseItem) -> Dict[str, Any]:
+        """Build standardized file response data from KnowledgeBaseItem."""
 
         # Determine parsing status based on processing_status and content availability
         parsing_status = "completed"  # Default for completed items
@@ -172,42 +166,25 @@ class FileListResponseMixin(FileMetadataExtractorMixin):
             
         file_data = {
             "file_id": str(kb_item.id),
-            "knowledge_item_id": ki.id,
             "title": kb_item.title,
             "content_type": kb_item.content_type,
             "tags": kb_item.tags,
             "created_at": kb_item.created_at.isoformat(),
             "updated_at": kb_item.updated_at.isoformat(),
-            "added_to_notebook_at": ki.added_at.isoformat(),
-            "notes": ki.notes,
+            "notes": kb_item.notes,
             "metadata": combined_metadata,
             "has_file": bool(kb_item.file_object_key),
             "has_content": bool(kb_item.content),
             "has_original_file": bool(kb_item.original_file_object_key),
             "parsing_status": parsing_status,
             "processing_status": getattr(kb_item, 'processing_status', 'done'),
-            # Extract metadata - for processing items, get from source if available
+            # Extract metadata from knowledge base item
             "original_filename": self.extract_original_filename(
-                kb_item.metadata, source.title if source and not kb_item.metadata else kb_item.title
+                kb_item.metadata, kb_item.title
             ),
             "file_extension": self.extract_file_extension(kb_item.metadata),
             "file_size": self.extract_file_size(kb_item.metadata),
             "uploaded_at": kb_item.created_at.isoformat(),
         }
-
-        # Add source information if available
-        if source:
-            file_data.update({
-                "source_type": source.source_type,
-                "source_title": source.title,
-            })
-
-            # Add URL-specific data
-            if source.source_type == "url":
-                file_data.update({
-                    # "original_url": source.original_url,  # <-- FIXED
-                    "url_title": source.title,
-                    # "url_status": source.status,
-                })
 
         return file_data

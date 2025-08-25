@@ -415,11 +415,13 @@ class FileStorageService:
         """Store processed file content in user's knowledge base."""
         try:
             # Import here to avoid circular imports
-            from ..models import KnowledgeBaseItem, KnowledgeItem, Notebook, Source
+            from ..models import KnowledgeBaseItem, Notebook
             from django.contrib.auth import get_user_model
             
             User = get_user_model()
             user = User.objects.get(id=user_id)
+            # Verify notebook ownership for security
+            notebook = Notebook.objects.get(id=notebook_id, user=user)
             
             # Calculate source hash (primary) - use source_identifier if provided
             if source_identifier:
@@ -431,7 +433,8 @@ class FileStorageService:
             # Check if we're updating an existing pre-created KnowledgeBaseItem
             if kb_item_id:
                 try:
-                    knowledge_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
+                    # Security: Verify the knowledge base item belongs to the verified notebook
+                    knowledge_item = KnowledgeBaseItem.objects.get(id=kb_item_id, notebook=notebook)
                     
                     # Update the existing record with processed data
                     knowledge_item.content = content
@@ -521,7 +524,7 @@ class FileStorageService:
                 
                 # Create database record first to get the ID
                 knowledge_item = KnowledgeBaseItem.objects.create(
-                    user=user,
+                    notebook=notebook,
                     title=metadata.get('original_filename', 'Untitled'),
                     content_type=metadata.get('source_type', 'document'),  # Map source_type to content_type
                     content=content,  # Store the actual content in the database
@@ -574,27 +577,8 @@ class FileStorageService:
             knowledge_item.original_file_object_key = original_file_key
             knowledge_item.save()
             
-            # Link to notebook (only if link doesn't already exist)
-            try:
-                notebook = Notebook.objects.get(id=notebook_id, user=user)
-                
-                # Check if link already exists (could be from pre-creation)
-                existing_link = KnowledgeItem.objects.filter(
-                    notebook=notebook,
-                    knowledge_base_item=knowledge_item
-                ).first()
-                
-                if not existing_link:
-                    KnowledgeItem.objects.create(
-                        notebook=notebook,
-                        knowledge_base_item=knowledge_item
-                    )
-                    self.log_operation("knowledge_item_linked", f"Linked to notebook {notebook_id}")
-                else:
-                    self.log_operation("knowledge_item_link_exists", f"Link already exists for notebook {notebook_id}")
-                    
-            except Notebook.DoesNotExist:
-                self.log_operation("notebook_not_found", f"Notebook {notebook_id} not found", "warning")
+            # Knowledge base item is already directly linked to notebook via foreign key
+            # No additional linking needed as the item was created with notebook=notebook
             
             self.log_operation("file_stored", f"Stored file with ID: {knowledge_item.id}")
             return str(knowledge_item.id)
@@ -606,13 +590,15 @@ class FileStorageService:
     def get_file_content(self, file_id: str, user_id: int) -> Optional[str]:
         """Retrieve file content by ID."""
         try:
-            from ..models import KnowledgeBaseItem
+            from ..models import KnowledgeBaseItem, Notebook
             from django.contrib.auth import get_user_model
             
             User = get_user_model()
             user = User.objects.get(id=user_id)
             
-            knowledge_item = KnowledgeBaseItem.objects.get(id=file_id, user=user)
+            # Security: Find knowledge base item through user's notebooks
+            user_notebooks = Notebook.objects.filter(user=user)
+            knowledge_item = KnowledgeBaseItem.objects.get(id=file_id, notebook__in=user_notebooks)
             
             # First, try to get content from the database field
             if knowledge_item.content:
@@ -633,13 +619,15 @@ class FileStorageService:
     def get_file_url(self, file_id: str, user_id: int, file_type: str = 'content') -> Optional[str]:
         """Get pre-signed URL for file access."""
         try:
-            from ..models import KnowledgeBaseItem
+            from ..models import KnowledgeBaseItem, Notebook
             from django.contrib.auth import get_user_model
             
             User = get_user_model()
             user = User.objects.get(id=user_id)
             
-            knowledge_item = KnowledgeBaseItem.objects.get(id=file_id, user=user)
+            # Security: Find knowledge base item through user's notebooks
+            user_notebooks = Notebook.objects.filter(user=user)
+            knowledge_item = KnowledgeBaseItem.objects.get(id=file_id, notebook__in=user_notebooks)
             
             object_key = None
             if file_type == 'content':
@@ -663,11 +651,13 @@ class FileStorageService:
             from ..models import KnowledgeBaseItem
             from django.contrib.auth import get_user_model
             
+            from ..models import Notebook
             User = get_user_model()
             user = User.objects.get(id=user_id)
             
-            # Build query - show all items regardless of processing status
-            queryset = KnowledgeBaseItem.objects.filter(user=user)
+            # Build query - show all items from user's notebooks regardless of processing status
+            user_notebooks = Notebook.objects.filter(user=user)
+            queryset = KnowledgeBaseItem.objects.filter(notebook__in=user_notebooks)
             
             if content_type:
                 queryset = queryset.filter(content_type=content_type)
@@ -698,88 +688,31 @@ class FileStorageService:
             return []
     
     def link_knowledge_item_to_notebook(self, kb_item_id: str, notebook_id: int, user_id: int, notes: str = "") -> bool:
-        """Link an existing knowledge base item to a notebook."""
-        try:
-            from ..models import KnowledgeBaseItem, KnowledgeItem, Notebook
-            from django.contrib.auth import get_user_model
-            
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
-            
-            # Get the knowledge base item
-            kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
-            
-            # Get the notebook
-            notebook = Notebook.objects.get(id=notebook_id, user=user)
-            
-            # Check if link already exists
-            existing_link = KnowledgeItem.objects.filter(
-                notebook=notebook,
-                knowledge_base_item=kb_item
-            ).first()
-            
-            if existing_link:
-                self.log_operation("link_exists", f"KB item {kb_item_id} already linked to notebook {notebook_id}")
-                return True
-            
-            # Create the link
-            KnowledgeItem.objects.create(
-                notebook=notebook,
-                knowledge_base_item=kb_item,
-                notes=notes
-            )
-            
-            self.log_operation("link_created", f"Linked KB item {kb_item_id} to notebook {notebook_id}")
-            return True
-            
-        except Exception as e:
-            self.log_operation("link_error", f"Failed to link KB item {kb_item_id} to notebook {notebook_id}: {e}", "error")
-            return False
+        """Legacy method - Knowledge items are now notebook-specific by default."""
+        # This method is no longer needed since KnowledgeBaseItems are created directly in notebooks
+        # Kept for backward compatibility but returns True since items are already linked
+        self.log_operation("legacy_link_called", f"Legacy link method called for KB item {kb_item_id} - items are now notebook-specific")
+        return True
     
     def delete_knowledge_base_item(self, kb_item_id: str, user_id: int) -> bool:
-        """Delete a knowledge base item and its entire folder from MinIO."""
+        """Delete a notebook-specific knowledge base item and its MinIO files."""
         try:
-            from ..models import KnowledgeBaseItem, KnowledgeItem, Source
-            from django.contrib.auth import get_user_model
+            from ..models import KnowledgeBaseItem
             
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
+            # Get the knowledge base item (no longer filtered by user since it's notebook-specific)
+            kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id)
             
-            # Get the knowledge base item
-            kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
+            # Delete files from MinIO
+            if kb_item.file_object_key:
+                self.minio_backend.delete_file(kb_item.file_object_key)
+            if kb_item.original_file_object_key:
+                self.minio_backend.delete_file(kb_item.original_file_object_key)
             
-            # Find all KnowledgeItems that link to this KB item
-            knowledge_items = KnowledgeItem.objects.filter(knowledge_base_item=kb_item)
-            
-            # Collect all Source records that created this KB item
-            source_ids_to_delete = []
-            for ki in knowledge_items:
-                if ki.source:
-                    source_ids_to_delete.append(ki.source.id)
-                    self.log_operation("source_marked_for_deletion", 
-                        f"Source {ki.source.id} will be deleted (created KB item {kb_item_id})")
-            
-            # Delete entire folder by prefix (using trailing slash to indicate prefix)
-            prefix = f"{user_id}/kb/{kb_item_id}/"
-            folder_deletion_success = self.minio_backend.delete_folder(prefix)
-            
-            # Delete the KB item (this will cascade delete KnowledgeItems due to FK constraint)
+            # Delete the KB item directly
             kb_item.delete()
             
-            # Delete the Source records that created this KB item
-            if source_ids_to_delete:
-                deleted_sources = Source.objects.filter(id__in=source_ids_to_delete).delete()
-                self.log_operation("sources_deleted", 
-                    f"Deleted {deleted_sources[0]} Source record(s) that created KB item {kb_item_id}")
+            self.log_operation("kb_item_deleted", f"Deleted KB item {kb_item_id}")
             
-            if not folder_deletion_success:
-                self.log_operation("kb_item_deleted_with_issues", 
-                    f"Deleted KB item: {kb_item_id}, but had issues deleting folder: {prefix}", 
-                    "warning")
-            else:
-                self.log_operation("kb_item_deleted", f"Deleted KB item: {kb_item_id} and entire folder: {prefix}")
-            
-            # Return True as long as database deletion succeeded
             return True
             
         except Exception as e:
@@ -787,34 +720,92 @@ class FileStorageService:
             return False
     
     def unlink_knowledge_item_from_notebook(self, kb_item_id: str, notebook_id: int, user_id: int) -> bool:
-        """Remove a knowledge item link from a specific notebook."""
+        """Legacy method - Knowledge items are now notebook-specific and cannot be unlinked."""
+        # Since knowledge items are now directly bound to notebooks, unlinking means deleting
+        # This method is kept for backward compatibility but redirects to delete_notebook_knowledge_item
+        self.log_operation("legacy_unlink_called", f"Legacy unlink method called for KB item {kb_item_id} - redirecting to delete")
+        return self.delete_notebook_knowledge_item(notebook_id, kb_item_id)
+
+    def get_notebook_knowledge_items(self, notebook_id: str, content_type: str = None, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """Get all knowledge base items for a specific notebook."""
         try:
-            from ..models import KnowledgeBaseItem, KnowledgeItem, Notebook
-            from django.contrib.auth import get_user_model
+            from ..models import KnowledgeBaseItem, Notebook
             
-            User = get_user_model()
-            user = User.objects.get(id=user_id)
+            # Get the notebook (this will validate it exists)
+            notebook = Notebook.objects.get(id=notebook_id)
             
-            # Get the knowledge base item and notebook
-            kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, user=user)
-            notebook = Notebook.objects.get(id=notebook_id, user=user)
+            # Build query - show all items regardless of processing status
+            queryset = KnowledgeBaseItem.objects.filter(notebook=notebook)
             
-            # Find and delete the link
-            link = KnowledgeItem.objects.filter(
-                notebook=notebook,
-                knowledge_base_item=kb_item
-            ).first()
+            if content_type:
+                queryset = queryset.filter(content_type=content_type)
             
-            if link:
-                link.delete()
-                self.log_operation("link_removed", f"Unlinked KB item {kb_item_id} from notebook {notebook_id}")
-                return True
-            else:
-                self.log_operation("link_not_found", f"No link found between KB item {kb_item_id} and notebook {notebook_id}")
-                return False
+            # Apply pagination
+            queryset = queryset.order_by('-created_at')[offset:offset + limit]
+            
+            # Convert to list of dictionaries
+            items = []
+            for item in queryset:
+                items.append({
+                    'id': str(item.id),
+                    'title': item.title,
+                    'content_type': item.content_type,
+                    'source_hash': item.source_hash,
+                    'processing_status': item.processing_status,
+                    'metadata': item.metadata or {},
+                    'file_metadata': item.file_metadata or {},
+                    'notes': item.notes,
+                    'created_at': item.created_at.isoformat(),
+                    'updated_at': item.updated_at.isoformat(),
+                })
+            
+            self.log_operation("get_notebook_kb", f"Retrieved {len(items)} items for notebook {notebook_id}")
+            return items
             
         except Exception as e:
-            self.log_operation("unlink_error", f"Failed to unlink KB item {kb_item_id} from notebook {notebook_id}: {e}", "error")
+            self.log_operation("get_notebook_kb_error", f"Failed to get knowledge base for notebook {notebook_id}: {e}", "error")
+            return []
+
+    def get_file_by_upload_id(self, upload_file_id: str, user_pk: int = None) -> Optional[Dict[str, Any]]:
+        """
+        Legacy method - not implemented in current MinIO storage system.
+        The upload system now uses direct KnowledgeBaseItem creation.
+        """
+        self.log_operation("legacy_get_file_by_upload_id", f"Legacy method called for upload_id {upload_file_id}")
+        return None
+
+    def delete_notebook_knowledge_item(self, notebook_id: str, kb_item_id: str) -> bool:
+        """Delete a knowledge base item from a specific notebook."""
+        try:
+            from ..models import KnowledgeBaseItem, Notebook
+            
+            # Get the notebook (validates ownership through notebook access)
+            notebook = Notebook.objects.get(id=notebook_id)
+            
+            # Get and delete the knowledge base item
+            kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, notebook=notebook)
+            
+            # Clean up any associated files from MinIO
+            if kb_item.file_object_key:
+                try:
+                    self.minio_backend.delete_file(kb_item.file_object_key)
+                except Exception as e:
+                    self.log_operation("minio_delete_error", f"Failed to delete processed file {kb_item.file_object_key}: {e}", "error")
+            
+            if kb_item.original_file_object_key:
+                try:
+                    self.minio_backend.delete_file(kb_item.original_file_object_key)
+                except Exception as e:
+                    self.log_operation("minio_delete_error", f"Failed to delete original file {kb_item.original_file_object_key}: {e}", "error")
+            
+            # Delete the database record
+            kb_item.delete()
+            
+            self.log_operation("kb_item_deleted", f"Deleted KB item {kb_item_id} from notebook {notebook_id}")
+            return True
+            
+        except Exception as e:
+            self.log_operation("delete_kb_item_error", f"Failed to delete KB item {kb_item_id} from notebook {notebook_id}: {e}", "error")
             return False
 
 

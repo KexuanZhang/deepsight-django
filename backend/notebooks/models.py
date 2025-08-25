@@ -7,6 +7,211 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+import logging
+
+
+logger = logging.getLogger(__name__)
+
+
+class KnowledgeBaseItemManager(models.Manager):
+    """Custom manager for KnowledgeBaseItem with content retrieval methods."""
+    
+    def get_content(self, item_id: str, user_id: int):
+        """
+        Get content for a knowledge base item using the same logic as FileContentView.
+        
+        Args:
+            item_id: Knowledge base item ID
+            user_id: User ID for security verification
+            
+        Returns:
+            Content string or None if not found
+        """
+        try:
+            from django.contrib.auth import get_user_model
+            from .utils.storage_adapter import get_storage_adapter
+            
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            
+            # Security: Find knowledge base item through user's notebooks
+            item = self.select_related('notebook').get(
+                id=item_id, 
+                notebook__user=user
+            )
+            
+            # Use storage adapter to get content (same as FileContentView)
+            storage_adapter = get_storage_adapter()
+            content = storage_adapter.get_file_content(item_id, user_id=user_id)
+            
+            return content
+            
+        except Exception as e:
+            logger.error(f"Failed to get content for KB item {item_id}: {e}")
+            return None
+    
+    def get_multiple_contents(self, item_ids: list, user_id: int):
+        """
+        Get content for multiple knowledge base items.
+        
+        Args:
+            item_ids: List of knowledge base item IDs
+            user_id: User ID for security verification
+            
+        Returns:
+            Dictionary mapping item_id to content (or None if not found)
+        """
+        results = {}
+        for item_id in item_ids:
+            content = self.get_content(item_id, user_id)
+            results[item_id] = content
+        return results
+    
+    def get_items_with_content(self, item_ids: list, user_id: int):
+        """
+        Get knowledge base items with their content and metadata.
+        Only returns items that have actual content.
+        
+        Args:
+            item_ids: List of knowledge base item IDs  
+            user_id: User ID for security verification
+            
+        Returns:
+            List of dictionaries with item data and content
+        """
+        try:
+            from django.contrib.auth import get_user_model
+            
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            
+            # Security: Find items through user's notebooks
+            items = self.select_related('notebook').filter(
+                id__in=item_ids,
+                notebook__user=user
+            )
+            
+            results = []
+            for item in items:
+                content = self.get_content(str(item.id), user_id)
+                
+                # Skip items with no content
+                if not content or not content.strip():
+                    logger.debug(f"Skipping item {item.id} - no content available")
+                    continue
+                    
+                results.append({
+                    'id': str(item.id),
+                    'title': item.title,
+                    'content': content,
+                    'content_type': item.content_type,
+                    'metadata': item.metadata or {},
+                    'processing_status': item.processing_status,
+                })
+                
+            logger.info(f"Retrieved {len(results)} items with content out of {len(item_ids)} requested")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Failed to get knowledge base items with content: {e}")
+            return []
+    
+    def get_content_with_minio_urls(self, item_id: str, user_id: int, expires: int = 86400):
+        """
+        Get content with all image links converted to direct MinIO pre-signed URLs.
+        
+        Args:
+            item_id: Knowledge base item ID
+            user_id: User ID for access control
+            expires: URL expiration time in seconds (default: 24 hours)
+            
+        Returns:
+            Content with MinIO URLs for images
+        """
+        try:
+            from django.contrib.auth import get_user_model
+            from django.apps import apps
+            from .utils.storage import get_minio_backend
+            
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            
+            # Security: Find knowledge base item through user's notebooks  
+            item = self.select_related('notebook').get(
+                id=item_id,
+                notebook__user=user
+            )
+            
+            # Get base content using our standard method
+            content = self.get_content(item_id, user_id)
+            if not content:
+                return None
+            
+            # Get all images for this knowledge base item
+            KnowledgeBaseImage = apps.get_model('notebooks', 'KnowledgeBaseImage')
+            images = KnowledgeBaseImage.objects.filter(knowledge_base_item=item)
+            
+            # Create mapping of filenames to MinIO URLs
+            image_url_mapping = {}
+            minio_backend = get_minio_backend()
+            
+            for image in images:
+                try:
+                    presigned_url = minio_backend.get_presigned_url(image.minio_object_key, expires)
+                    # Extract filename from object key or use figure_id as fallback
+                    import os
+                    filename = os.path.basename(image.minio_object_key) if image.minio_object_key else f"{image.figure_id}.jpg"
+                    image_url_mapping[filename] = presigned_url
+                except Exception as e:
+                    logger.error(f"Failed to generate URL for image {image.figure_id}: {e}")
+            
+            # Update content with MinIO URLs
+            if image_url_mapping:
+                content = self._update_image_links_to_minio_urls(content, image_url_mapping)
+                logger.info(f"Retrieved content with {len(image_url_mapping)} MinIO image URLs")
+            
+            return content
+            
+        except Exception as e:
+            logger.error(f"Failed to get content with MinIO URLs for {item_id}: {e}")
+            return None
+    
+    def _update_image_links_to_minio_urls(self, content: str, image_url_mapping: dict) -> str:
+        """
+        Update all image links in content to use MinIO pre-signed URLs.
+        
+        Args:
+            content: Original content with image references
+            image_url_mapping: Dictionary mapping filenames to MinIO URLs
+            
+        Returns:
+            Updated content with MinIO URLs
+        """
+        import re
+        import os
+        
+        # Pattern to match markdown image syntax: ![alt](filename)
+        pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+        
+        def replace_image_url(match):
+            alt_text = match.group(1)
+            original_filename = match.group(2)
+            
+            # Extract just the filename (remove path if present)
+            filename = os.path.basename(original_filename)
+            
+            # Get MinIO URL for this filename
+            minio_url = image_url_mapping.get(filename)
+            if minio_url:
+                return f'![{alt_text}]({minio_url})'
+            else:
+                # Keep original if no mapping found
+                return match.group(0)
+        
+        # Replace all image URLs
+        updated_content = re.sub(pattern, replace_image_url, content)
+        
+        return updated_content
 
 
 class Notebook(models.Model):
@@ -33,140 +238,32 @@ class Notebook(models.Model):
         return self.name
 
 
-class Source(models.Model):
-    """
-    A generic "source" that the user adds to a notebook:
-    • File upload
-    • URL
-    • Pasted text
-    """
-    
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    SOURCE_TYPE_CHOICES = [
-        ("file", "File Upload"),
-        ("url", "URL"),
-        ("text", "Pasted Text"),
-    ]
-
-    notebook = models.ForeignKey(
-        Notebook,
-        on_delete=models.CASCADE,
-        related_name="sources",
-    )
-    source_type = models.CharField(
-        max_length=20,
-        choices=SOURCE_TYPE_CHOICES,
-    )
-    title = models.CharField(
-        max_length=512,
-        blank=True,
-        help_text="Optional display title or original filename/URL",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        return self.title or f"Source {self.id}"
-
-
-
-class ProcessingJob(models.Model):
-    """
-    A background job to process binaries or downloaded media (OCR, transcription, PDF→MD, etc.).
-    """
-    
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    JOB_STATUS_CHOICES = [
-        ("queued", "Queued"),
-        ("running", "Running"),
-        ("finished", "Finished"),
-        ("failed", "Failed"),
-    ]
-
-    source = models.ForeignKey(
-        Source,
-        on_delete=models.CASCADE,
-        related_name="jobs",
-    )
-    job_type = models.CharField(
-        max_length=50,
-        help_text="E.g. ocr, transcribe, pdf2md…",
-    )
-    status = models.CharField(
-        max_length=20,
-        choices=JOB_STATUS_CHOICES,
-        default="queued",
-    )
-    
-    # MinIO-native storage
-    result_file_object_key = models.CharField(
-        max_length=255, 
-        blank=True, 
-        null=True, 
-        db_index=True,
-        help_text="MinIO object key for generated result file"
-    )
-    result_file_metadata = models.JSONField(
-        default=dict,
-        help_text="Result file metadata (name, size, content_type, etc.)"
-    )
-    
-    error_message = models.TextField(
-        blank=True,
-        help_text="Error details if processing failed",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    completed_at = models.DateTimeField(null=True, blank=True)
-
-    def __str__(self):
-        return f"ProcessingJob {self.id} ({self.job_type}) for Source {self.source_id}"
-    
-    def get_result_file_url(self, expires=86400):
-        """Get pre-signed URL for result file"""
-        if self.result_file_object_key:
-            try:
-                from .utils.storage import get_minio_backend
-                backend = get_minio_backend()
-                return backend.get_presigned_url(self.result_file_object_key, expires)
-            except Exception:
-                return None
-        return None
 
 
 class KnowledgeBaseItem(models.Model):
     """
-    User-wide knowledge base items that can be shared across notebooks.
-    These are the processed, searchable content items.
+    Notebook-specific knowledge base items that contain processed, searchable content.
+    Each item belongs to a specific notebook.
     """
     
     PROCESSING_STATUS_CHOICES = [
-        ("pending", "Pending"),
+        ("processing", "Processing"),
         ("in_progress", "In Progress"),
         ("done", "Done"),
-        ("error", "Error"),
+        ("failed", "Failed"),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
+    notebook = models.ForeignKey(
+        Notebook,
         on_delete=models.CASCADE,
         related_name="knowledge_base_items",
-        help_text="Owner of this knowledge item",
-    )
-    source = models.ForeignKey(
-        'Source',
-        on_delete=models.SET_NULL,
-        blank=True,
-        null=True,
-        related_name="knowledge_base_items",
-        help_text="Source that created this knowledge base item",
+        help_text="Notebook this knowledge item belongs to",
     )
     processing_status = models.CharField(
         max_length=20,
         choices=PROCESSING_STATUS_CHOICES,
-        default="pending",
+        default="processing",
         help_text="Processing status of this knowledge base item",
     )
     title = models.CharField(
@@ -201,6 +298,10 @@ class KnowledgeBaseItem(models.Model):
         default=list,
         help_text="Tags for categorization and search",
     )
+    notes = models.TextField(
+        blank=True,
+        help_text="User notes about this knowledge item",
+    )
     
     # MinIO-native storage fields (replaces Django FileFields)
     file_object_key = models.CharField(
@@ -225,12 +326,15 @@ class KnowledgeBaseItem(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Custom manager for content retrieval
+    objects = KnowledgeBaseItemManager()
+
     class Meta:
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["user", "-created_at"]),
-            models.Index(fields=["user", "source_hash"]),
-            models.Index(fields=["user", "content_type"]),
+            models.Index(fields=["notebook", "-created_at"]),
+            models.Index(fields=["notebook", "source_hash"]),
+            models.Index(fields=["notebook", "content_type"]),
             # MinIO-specific indexes
             models.Index(fields=["file_object_key"]),
             models.Index(fields=["original_file_object_key"]),
@@ -261,30 +365,7 @@ class KnowledgeBaseItem(models.Model):
                 return None
         return None
 
-    def get_file_content(self):
-        """Get the content from either inline field, processed file, or original file"""
-        if self.content:
-            return self.content
-        elif self.file_object_key:
-            try:
-                from .utils.storage import get_minio_backend
-                backend = get_minio_backend()
-                content = backend.get_file(self.file_object_key)
-                return content.decode('utf-8') if isinstance(content, bytes) else content
-            except Exception:
-                pass  # Fall through to try original file
-        
-        # If no processed content, try the original file (useful for .md files)
-        if self.original_file_object_key:
-            try:
-                from .utils.storage import get_minio_backend
-                backend = get_minio_backend()
-                content = backend.get_file(self.original_file_object_key)
-                return content.decode('utf-8') if isinstance(content, bytes) else content
-            except Exception:
-                pass
-        
-        return ""
+    # Removed get_file_content() instance method - use KnowledgeBaseItem.objects.get_content() instead
 
     def has_minio_storage(self):
         """Check if this item uses MinIO storage"""
@@ -299,58 +380,6 @@ class KnowledgeBaseItem(models.Model):
         }
 
 
-class KnowledgeItem(models.Model):
-    """
-    Links between notebooks and knowledge base items.
-    This allows sharing knowledge items across multiple notebooks.
-    """
-    
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    notebook = models.ForeignKey(
-        Notebook,
-        on_delete=models.CASCADE,
-        related_name="knowledge_items",
-    )
-    knowledge_base_item = models.ForeignKey(
-        KnowledgeBaseItem,
-        on_delete=models.CASCADE,
-        related_name="notebook_links",
-    )
-    source = models.ForeignKey(
-        Source,
-        on_delete=models.SET_NULL,
-        blank=True,
-        null=True,
-        related_name="knowledge_items",
-        help_text="Original source that created this knowledge item (if any)",
-    )
-    added_at = models.DateTimeField(auto_now_add=True)
-    notes = models.TextField(
-        blank=True,
-        help_text="User notes about this knowledge item in this notebook",
-    )
-
-    class Meta:
-        ordering = ["-added_at"]
-        unique_together = ["notebook", "knowledge_base_item"]
-        indexes = [
-            models.Index(fields=["notebook", "-added_at"]),
-            models.Index(fields=["knowledge_base_item"]),
-        ]
-
-    def clean(self):
-        # Ensure the knowledge base item belongs to the same user as the notebook
-        if (
-            self.notebook
-            and self.knowledge_base_item
-            and self.notebook.user != self.knowledge_base_item.user
-        ):
-            raise ValidationError(
-                "Knowledge base item must belong to the same user as the notebook."
-            )
-
-    def __str__(self):
-        return f"{self.notebook.name} -> {self.knowledge_base_item.title}"
 
 
 class BatchJob(models.Model):

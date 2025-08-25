@@ -12,7 +12,7 @@ from rest_framework import status
 from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
 
-from ..models import KnowledgeItem, KnowledgeBaseItem, BatchJob
+from ..models import KnowledgeBaseItem, BatchJob
 from ..utils.view_mixins import (
     StandardAPIView, NotebookPermissionMixin, PaginationMixin, FileAccessValidatorMixin
 )
@@ -31,7 +31,7 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
     parser_classes = [JSONParser, MultiPartParser]
 
     def get(self, request, notebook_id):
-        """Get user's entire knowledge base with linkage status."""
+        """Get notebook's knowledge base items directly."""
         try:
             # Verify notebook ownership
             notebook = self.get_user_notebook(notebook_id, request.user)
@@ -40,31 +40,13 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
             content_type = request.GET.get("content_type")
             limit, offset = self.get_pagination_params(request)
 
-            # Get knowledge base items
-            knowledge_base = storage_adapter.get_user_knowledge_base(
-                user_id=request.user.pk,
+            # Get knowledge base items directly from notebook
+            knowledge_base = storage_adapter.get_notebook_knowledge_items(
+                notebook_id=notebook_id,
                 content_type=content_type,
                 limit=limit,
                 offset=offset,
             )
-
-            # Check which items are already linked to this notebook
-            linked_kb_item_ids = set(
-                KnowledgeItem.objects.filter(notebook=notebook).values_list(
-                    "knowledge_base_item_id", flat=True
-                )
-            )
-
-            # Add linked status to each item
-            from uuid import UUID
-            for item in knowledge_base:
-                try:
-                    # Convert item["id"] to UUID for comparison since linked_kb_item_ids contains UUID objects
-                    item_uuid = UUID(str(item["id"]))
-                    item["linked_to_notebook"] = item_uuid in linked_kb_item_ids
-                except (ValueError, TypeError):
-                    # If conversion fails, assume not linked
-                    item["linked_to_notebook"] = False
 
             return self.success_response(
                 {
@@ -82,52 +64,40 @@ class KnowledgeBaseView(StandardAPIView, NotebookPermissionMixin, PaginationMixi
             )
 
     def post(self, request, notebook_id):
-        """Link a knowledge base item to this notebook."""
+        """Create a new knowledge base item directly in this notebook."""
+        try:
+            # Verify notebook ownership
+            notebook = self.get_user_notebook(notebook_id, request.user)
+
+            # This endpoint is now mainly used by file upload pipeline
+            # Most creation will happen automatically during file processing
+            return self.error_response(
+                "Knowledge base items are created automatically during file processing",
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception as e:
+            return self.error_response(
+                "Operation failed",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                details={"error": str(e)},
+            )
+
+    def delete(self, request, notebook_id):
+        """Delete a knowledge base item from this notebook."""
         try:
             # Verify notebook ownership
             notebook = self.get_user_notebook(notebook_id, request.user)
 
             # Validate request data
             kb_item_id = request.data.get("knowledge_base_item_id")
-            notes = request.data.get("notes", "")
-
             if not kb_item_id:
                 return self.error_response("knowledge_base_item_id is required")
 
-            # Link the item
-            success = storage_adapter.link_knowledge_item_to_notebook(
-                kb_item_id=kb_item_id,
+            # Delete the knowledge base item from this notebook
+            success = storage_adapter.delete_notebook_knowledge_item(
                 notebook_id=notebook_id,
-                user_id=request.user.pk,
-                notes=notes,
-            )
-
-            if success:
-                return self.success_response({"linked": True})
-            else:
-                return self.error_response("Failed to link knowledge item")
-
-        except Exception as e:
-            return self.error_response(
-                "Link operation failed",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                details={"error": str(e)},
-            )
-
-    def delete(self, request, notebook_id):
-        """Delete a knowledge base item entirely from user's knowledge base."""
-        try:
-            # Verify notebook ownership (for permission check)
-            self.get_user_notebook(notebook_id, request.user)
-
-            # Validate request data
-            kb_item_id = request.data.get("knowledge_base_item_id")
-            if not kb_item_id:
-                return self.error_response("knowledge_base_item_id is required")
-
-            # Delete the knowledge base item entirely
-            success = storage_adapter.delete_knowledge_base_item(
-                kb_item_id, request.user.pk
+                kb_item_id=kb_item_id
             )
 
             if success:

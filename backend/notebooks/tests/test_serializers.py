@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from ..models import Notebook, Source, KnowledgeBaseItem
+from ..models import Notebook, KnowledgeBaseItem
 from ..serializers import (
     NotebookSerializer,
     FileUploadSerializer,

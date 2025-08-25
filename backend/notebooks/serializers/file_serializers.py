@@ -4,11 +4,8 @@ File upload and processing serializers for the notebooks module.
 
 from rest_framework import serializers
 from ..models import (
-    Source,
-    ProcessingJob,
     KnowledgeBaseItem,
     KnowledgeBaseImage,
-    KnowledgeItem,
 )
 from ..utils.helpers import check_source_duplicate, check_content_duplicate
 
@@ -52,7 +49,7 @@ class FileUploadSerializer(serializers.Serializer):
                     file_content = file.read().decode('utf-8', errors='ignore')
                     file.seek(0)  # Reset file pointer
                     
-                    existing_item = check_content_duplicate(file_content, user_id)
+                    existing_item = check_content_duplicate(file_content, user_id, notebook_id)
                     if existing_item:
                         raise serializers.ValidationError({
                             'file': f'This text content already exists in your workspace. Duplicate content detected.',
@@ -182,33 +179,6 @@ class BatchFileUploadSerializer(serializers.Serializer):
         return data
 
 
-class ProcessingJobSerializer(serializers.ModelSerializer):
-    """Serializer for processing jobs with MinIO object key support."""
-    
-    result_file_url = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = ProcessingJob
-        fields = [
-            "id",
-            "job_type",
-            "status",
-            "result_file_object_key",
-            "result_file_url",
-            "result_file_metadata",
-            "error_message",
-            "created_at",
-            "completed_at",
-        ]
-        read_only_fields = [
-            "id",
-            "created_at",
-            "completed_at"
-        ]
-    
-    def get_result_file_url(self, obj):
-        """Get pre-signed URL for result file."""
-        return obj.get_result_file_url() if obj.result_file_object_key else None
 
 
 class KnowledgeBaseItemSerializer(serializers.ModelSerializer):
@@ -297,43 +267,4 @@ class KnowledgeBaseImageCreateUpdateSerializer(serializers.ModelSerializer):
     # validate_figure_name method removed as field no longer exists
 
 
-class KnowledgeItemSerializer(serializers.ModelSerializer):
-    """Serializer for notebook-knowledge base item links."""
-
-    knowledge_base_item = KnowledgeBaseItemSerializer(read_only=True)
-
-    class Meta:
-        model = KnowledgeItem
-        fields = [
-            "id",
-            "notebook",
-            "knowledge_base_item",
-            "source",
-            "added_at",
-            "notes",
-        ]
-        read_only_fields = ["id", "added_at"]
-
-
-class SourceSerializer(serializers.ModelSerializer):
-    """Serializer for source models with related data."""
-
-    jobs = ProcessingJobSerializer(many=True, read_only=True)
-    knowledge_items = KnowledgeItemSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = Source
-        fields = [
-            "id",
-            "notebook",
-            "source_type",
-            "title",
-            "created_at",
-            "jobs",
-            "knowledge_items",
-        ]
-        read_only_fields = [
-            "id",
-            "created_at",
-        ]
   

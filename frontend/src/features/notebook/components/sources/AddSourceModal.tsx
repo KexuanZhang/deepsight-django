@@ -1,53 +1,15 @@
 import React, { useState, useRef, useCallback } from "react";
-import { Trash2, Plus, X, Upload, Link2, FileText, Globe, Youtube, Loader2, RefreshCw, FileIcon } from "lucide-react";
+import { X, Upload, Link2, FileText, Globe, Youtube, Loader2 } from "lucide-react";
 import { Button } from "@/common/components/ui/button";
-import { Badge } from "@/common/components/ui/badge";
 import sourceService from "@/features/notebook/services/SourceService";
-import { KnowledgeBaseItem } from "@/features/notebook/type";
 import { COLORS } from "@/features/notebook/config/uiConfig";
-import { useFileStatus } from "@/features/notebook/hooks/generation/useFileStatus";
 
-// Component to handle individual knowledge base item status tracking with SSE
-const KnowledgeBaseStatusTracker: React.FC<{
-  itemId: string;
-  notebookId: string;
-  onStatusUpdate: (itemId: string, newStatus: string) => void;
-  onProcessingComplete: (itemId: string) => void;
-  onError: (itemId: string, error: string) => void;
-}> = ({ itemId, notebookId, onStatusUpdate, onProcessingComplete, onError }) => {
-  
-  const { status } = useFileStatus(
-    itemId,
-    notebookId,
-    (result) => {
-      console.log(`[KB_SSE] Processing completed for knowledge base item ${itemId}:`, result);
-      onStatusUpdate(itemId, 'done');
-      onProcessingComplete(itemId);
-    },
-    (error) => {
-      console.error(`[KB_SSE] Processing failed for knowledge base item ${itemId}:`, error);
-      onStatusUpdate(itemId, 'error');
-      onError(itemId, error);
-    }
-  );
-
-  // Update status when it changes (for intermediate status updates)
-  React.useEffect(() => {
-    if (status && status !== 'done' && status !== 'error') {
-      onStatusUpdate(itemId, status);
-    }
-  }, [status, itemId, onStatusUpdate]);
-
-  return null; // This component doesn't render anything
-};
 
 interface AddSourceModalProps {
   onClose: () => void;
   notebookId: string;
   onSourcesAdded: () => void;
-  onUploadStarted?: (uploadFileId: string, filename: string, fileType: string) => void;
-  onKnowledgeBaseItemsDeleted?: (deletedItemIds: string[]) => void;
-  onSourcesRemoved?: number;
+  onUploadStarted?: (uploadFileId: string, filename: string, fileType: string, oldUploadFileId?: string) => void;
 }
 
 const AddSourceModal: React.FC<AddSourceModalProps> = ({
@@ -55,8 +17,6 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
   notebookId,
   onSourcesAdded,
   onUploadStarted,
-  onKnowledgeBaseItemsDeleted,
-  onSourcesRemoved
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
@@ -66,11 +26,6 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   
-  // Knowledge base management state
-  const [knowledgeBaseItems, setKnowledgeBaseItems] = useState<KnowledgeBaseItem[]>([]);
-  const [isLoadingKnowledgeBase, setIsLoadingKnowledgeBase] = useState(false);
-  const [selectedKnowledgeItems, setSelectedKnowledgeItems] = useState<Set<string>>(new Set());
-  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // File validation function
@@ -79,52 +34,41 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
     const maxSize = 100 * 1024 * 1024; // 100MB
     const minSize = 100; // 100 bytes minimum
-    
-    const errors = [];
-    
-    if (!extension) {
+      const errors = [];
+      if (!extension) {
       errors.push("File must have an extension");
     } else if (!allowedExtensions.includes(extension)) {
       errors.push(`File type "${extension}" is not supported. Allowed types: ${allowedExtensions.join(', ')}`);
     }
-    
-    if (file.size > maxSize) {
+      if (file.size > maxSize) {
       errors.push(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds maximum allowed size of 100MB`);
     } else if (file.size < minSize) {
       errors.push("File is very small and may be empty");
     }
-    
-    if (/[<>:"|?*]/.test(file.name)) {
+      if (/[<>:"|?*]/.test(file.name)) {
       errors.push("Filename contains invalid characters");
     }
-    
-    return { valid: errors.length === 0, errors, extension };
+      return { valid: errors.length === 0, errors, extension };
   };
 
   // Handle file upload
   const handleFileUpload = async (file: File) => {
     const validation = validateFile(file);
-    
-    if (!validation.valid) {
+      if (!validation.valid) {
       setError(`File validation failed: ${validation.errors.join(', ')}`);
       return;
     }
-    
-    setError(null);
+      setError(null);
     setIsUploading(true);
-    
-    try {
+      try {
       const uploadFileId = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-      
-      // Notify parent component that upload started IMMEDIATELY
+          // Notify parent component that upload started IMMEDIATELY
       // This makes the item show up in processing state right away (like URLs do)
       if (onUploadStarted) {
         onUploadStarted(uploadFileId, file.name, validation.extension);
       }
-      
-      const response = await sourceService.parseFile(file, uploadFileId, notebookId);
-      
-      if (response.success) {
+          const response = await sourceService.parseFile(file, uploadFileId, notebookId);
+          if (response.success) {
         // Close modal and refresh sources list on success
         handleClose();
         onSourcesAdded();
@@ -133,10 +77,8 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       }
     } catch (error) {
       console.error('Error uploading file:', error);
-      
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
-      // Check if this is a validation error (duplicate file)
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          // Check if this is a validation error (duplicate file)
       if (errorMessage.includes('already exists')) {
         // This is a validation error - keep modal open and show error
         // The item will show as "failed" in the processing list, which is appropriate
@@ -162,16 +104,13 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
 
     setError(null);
     setIsUploading(true);
-    
-    try {
+      try {
       const uploadFileId = `link_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-      
-      // Get display name for URL
+          // Get display name for URL
       const urlDomain = linkUrl.replace(/^https?:\/\//, '').split('/')[0];
       const displayName = `${urlDomain} - ${urlProcessingType || 'website'}`;
-      
-      // Notify parent component that upload started IMMEDIATELY
-      // This makes the item show up in processing state right away (like files do)
+          
+      // Show temp processing item BEFORE API call
       if (onUploadStarted) {
         onUploadStarted(uploadFileId, displayName, 'url');
       }
@@ -184,21 +123,27 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       } else {
         response = await sourceService.parseUrl(linkUrl, notebookId, 'cosine', uploadFileId);
       }
-      
-      if (response.success) {
-        // Close modal and refresh sources list
+          if (response.success) {
+        // Update temp source with real file_id from API for proper tracking
+        if (onUploadStarted && response.file_id && response.file_id !== uploadFileId) {
+          // Call onUploadStarted again with the real file_id to update the temp source
+          onUploadStarted(response.file_id, displayName, 'url', uploadFileId);
+        }
+        // Close modal - DON'T refresh sources list immediately
+        // The URL will be processed asynchronously and appear when ready
         handleClose();
-        onSourcesAdded();
+        // Note: We don't call onSourcesAdded() here because:
+        // 1. We already called onUploadStarted() to show the processing item
+        // 2. The URL processing happens asynchronously via Celery
+        // 3. Real-time updates will show when processing is complete
       } else {
         throw new Error(response.error || 'URL parsing failed');
       }
     } catch (error) {
       console.error('Error processing URL:', error);
-      
-      // Parse the error message to check for duplicate URL detection
+          // Parse the error message to check for duplicate URL detection
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
-      // Check if this is a duplicate URL validation error
+          // Check if this is a duplicate URL validation error
       if (errorMessage.includes('already exists')) {
         // This is a validation error - keep modal open and show error
         // The item will show as "failed" in the processing list, which is appropriate
@@ -224,31 +169,24 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
 
     setError(null);
     setIsUploading(true);
-    
-    try {
+      try {
       const uploadFileId = `text_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-      
-      // Generate filename from first 5 words
+          // Generate filename from first 5 words
       const words = pasteText.trim()
         .split(/\s+/)
         .slice(0, 5)
         .map((word: string) => word.replace(/[^a-zA-Z0-9]/g, ''))
         .filter((word: string) => word.length > 0);
-      
-      const filename = words.length > 0 ? `${words.join('_').toLowerCase()}.md` : 'pasted_text.md';
-      
-      const blob = new Blob([pasteText], { type: 'text/markdown' });
+          const filename = words.length > 0 ? `${words.join('_').toLowerCase()}.md` : 'pasted_text.md';
+          const blob = new Blob([pasteText], { type: 'text/markdown' });
       const file = new File([blob], filename, { type: 'text/markdown' });
-      
-      const response = await sourceService.parseFile(file, uploadFileId, notebookId);
-      
-      if (response.success) {
+          const response = await sourceService.parseFile(file, uploadFileId, notebookId);
+          if (response.success) {
         // Notify parent component that upload started
         if (onUploadStarted) {
           onUploadStarted(uploadFileId, filename, 'md');
         }
-        
-        // Close modal and refresh sources list
+              // Close modal and refresh sources list
         handleClose();
         onSourcesAdded();
       } else {
@@ -256,11 +194,9 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       }
     } catch (error) {
       console.error('Error processing text:', error);
-      
-      // Parse the error message to check for duplicate content detection
+          // Parse the error message to check for duplicate content detection
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
-      // Check if this is a duplicate content validation error
+          // Check if this is a duplicate content validation error
       if (errorMessage.includes('already exists') || errorMessage.includes('Duplicate content detected')) {
         setError(`This text content already exists in your workspace. Please modify the text or use different content.`);
       } else {
@@ -271,162 +207,8 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
     }
   };
 
-  // Load knowledge base items
-  const loadKnowledgeBase = async () => {
-    try {
-      setIsLoadingKnowledgeBase(true);
-      const response = await sourceService.getKnowledgeBase(notebookId);
-      
-      if (response.success) {
-        const items = response.data?.items || [];
-        // Deduplicate by id
-        const uniqueItemsMap = new Map();
-        for (const item of items) {
-          if (!uniqueItemsMap.has(item.id)) {
-            uniqueItemsMap.set(item.id, item);
-          }
-        }
-        setKnowledgeBaseItems(Array.from(uniqueItemsMap.values()));
-      } else {
-        throw new Error(response.error || "Failed to load knowledge base");
-      }
-    } catch (error) {
-      console.error('Error loading knowledge base:', error);
-      setError(`Failed to load knowledge base: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsLoadingKnowledgeBase(false);
-    }
-  };
 
-  // Listen for sources removal to refresh knowledge base
-  React.useEffect(() => {
-    if (onSourcesRemoved && onSourcesRemoved > 0 && activeTab === 'knowledge') {
-      // Refresh knowledge base when sources are removed
-      loadKnowledgeBase();
-    }
-  }, [onSourcesRemoved, activeTab]);
 
-  // Real-time status updates for processing knowledge base items using SSE
-  const processingKnowledgeItems = React.useMemo(() => {
-    return knowledgeBaseItems.filter(item => 
-      item.processing_status && ['pending', 'in_progress', 'processing'].includes(item.processing_status)
-    );
-  }, [knowledgeBaseItems]);
-
-  // Handle knowledge base item status updates from SSE
-  const updateKnowledgeItemStatus = React.useCallback((itemId: string, newStatus: string) => {
-    console.log(`[KB_SSE] Updating status for knowledge base item ${itemId} to ${newStatus}`);
-    setKnowledgeBaseItems(prev => prev.map(item => 
-      item.id === itemId 
-        ? { ...item, processing_status: newStatus }
-        : item
-    ));
-  }, []);
-
-  // Handle processing completion
-  const handleKnowledgeItemProcessingComplete = React.useCallback((itemId: string) => {
-    console.log(`[KB_SSE] Processing completed for knowledge base item ${itemId}`);
-    // The status update is already handled by updateKnowledgeItemStatus
-  }, []);
-
-  // Handle processing errors
-  const handleKnowledgeItemError = React.useCallback((itemId: string, error: string) => {
-    console.error(`[KB_SSE] Processing error for knowledge base item ${itemId}:`, error);
-    // The status update is already handled by updateKnowledgeItemStatus
-  }, []);
-
-  // Handle knowledge item selection
-  const handleKnowledgeItemSelect = (itemId: string) => {
-    setSelectedKnowledgeItems(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(itemId)) {
-        newSet.delete(itemId);
-      } else {
-        newSet.add(itemId);
-      }
-      return newSet;
-    });
-  };
-
-  // Handle linking selected knowledge items
-  const handleLinkSelectedKnowledgeItems = async () => {
-    if (selectedKnowledgeItems.size === 0) {
-      setError('Please select at least one knowledge base item to link');
-      return;
-    }
-
-    setError(null);
-    setIsUploading(true);
-
-    try {
-      const linkPromises = Array.from(selectedKnowledgeItems).map(itemId =>
-        sourceService.linkKnowledgeBaseItem(notebookId, itemId)
-      );
-
-      const results = await Promise.all(linkPromises);
-      const failedLinks = results.filter(result => !result.success);
-
-      if (failedLinks.length === 0) {
-        // Refresh sources list and close modal immediately
-        onSourcesAdded();
-        handleClose();
-      } else {
-        throw new Error(`Failed to link ${failedLinks.length} item(s)`);
-      }
-    } catch (error) {
-      console.error('Error linking knowledge base items:', error);
-      setError(`Failed to link items: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  // Handle deleting knowledge base items
-  const handleDeleteKnowledgeBaseItems = async () => {
-    if (selectedKnowledgeItems.size === 0) {
-      setError('Please select at least one knowledge base item to delete');
-      return;
-    }
-
-    if (!confirm(`Are you sure you want to permanently delete ${selectedKnowledgeItems.size} knowledge base item(s)? This action cannot be undone and will remove them from all notebooks.`)) {
-      return;
-    }
-
-    setError(null);
-    setIsUploading(true);
-
-    try {
-      const deletePromises = Array.from(selectedKnowledgeItems).map(itemId =>
-        sourceService.deleteKnowledgeBaseItem(notebookId, itemId)
-      );
-
-      const results = await Promise.all(deletePromises);
-      const successfulDeletes = Array.from(selectedKnowledgeItems).filter((_, index) =>
-        results[index].success !== false
-      );
-
-      setKnowledgeBaseItems(prev =>
-        prev.filter(item => !successfulDeletes.includes(item.id))
-      );
-
-      setSelectedKnowledgeItems(new Set());
-
-      // Notify parent component about deleted items
-      if (onKnowledgeBaseItemsDeleted && successfulDeletes.length > 0) {
-        onKnowledgeBaseItemsDeleted(successfulDeletes);
-      }
-
-      const failedDeletes = results.filter(result => result.success === false);
-      if (failedDeletes.length > 0) {
-        setError(`Failed to delete ${failedDeletes.length} item(s)`);
-      }
-    } catch (error) {
-      console.error('Error deleting knowledge base items:', error);
-      setError(`Failed to delete items: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsUploading(false);
-    }
-  };
 
   // Drag and drop handlers
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -450,8 +232,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
-    
-    const files = Array.from(e.dataTransfer.files);
+      const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
       handleFileUpload(files[0]);
     }
@@ -462,7 +243,6 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
     setActiveTab('file');
     setLinkUrl('');
     setPasteText('');
-    setSelectedKnowledgeItems(new Set());
     setError(null);
     setIsUploading(false);
     onClose();
@@ -488,45 +268,10 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
           </Button>
         </div>
 
-        {/* Tab Navigation - Fixed at top */}
-        <div className={`flex space-x-1 mb-2 ${COLORS.tw.secondary.bg[100]} p-1 rounded-lg`}>
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              // Only switch to 'file' if not already on an upload tab
-              if (activeTab === 'knowledge') {
-                setActiveTab('file');
-                // Reset URL processing type selection when switching back to upload
-                setUrlProcessingType('');
-              }
-            }}
-            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-              (activeTab === 'file' || activeTab === 'link' || activeTab === 'text')
-                ? `${COLORS.tw.primary.bg[600]} text-white`
-                : `${COLORS.tw.secondary.text[600]} ${COLORS.tw.secondary.text[900]} hover:bg-gray-200`
-            }`}
-            disabled={isUploading}
-          >
-            Upload Source
-          </button>
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setActiveTab('knowledge');
-              // Always reload knowledge base when switching to this tab to ensure fresh data
-              loadKnowledgeBase();
-            }}
-            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'knowledge'
-                ? `${COLORS.tw.primary.bg[600]} text-white`
-                : `${COLORS.tw.secondary.text[600]} hover:${COLORS.tw.secondary.text[900]} hover:bg-gray-200`
-            }`}
-            disabled={isUploading}
-          >
-            知识库
-          </button>
+        {/* Header - Sources are now notebook-specific */}
+        <div className="mb-4">
+          <h2 className="text-xl font-semibold text-gray-900">Add Source</h2>
+          <p className="text-gray-600 text-sm">Add files, links, or text to this notebook</p>
         </div>
 
         {/* Custom Error Display - Now in header for better visibility */}
@@ -563,8 +308,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
 
 
 
-      {/* Main Upload Area - Only show when not in knowledge base mode */}
-      {activeTab !== 'knowledge' && (
+      {/* Main Upload Area */}
         <div
           className={`border-2 border-dashed rounded-xl p-6 mb-6 text-center transition-all duration-200 mt-10 ${
             isDragOver 
@@ -602,10 +346,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
             Supported file types: pdf, txt, markdown, pptx, docx, Audio (mp3, wav, m4a), Video (mp4, avi, mov, mkv, webm, wmv, m4v)
           </p>
         </div>
-      )}
-
-      {/* Upload Options */}
-      {activeTab !== 'knowledge' && (
+          {/* Upload Options */}
         <div className="space-y-6">
           {/* Link Section */}
           <div className="bg-white border border-gray-200 rounded-xl p-6">
@@ -615,8 +356,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
               </div>
               <h3 className="text-lg font-semibold text-gray-900">Link</h3>
             </div>
-            
-            <div className="space-y-3">
+                      <div className="space-y-3">
               <div className="grid grid-cols-3 gap-3">
                 <button 
                   className={`flex items-center space-x-2 p-3 rounded-lg transition-colors ${
@@ -682,8 +422,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                   }`}>Video</span>
                 </button>
               </div>
-              
-              {activeTab === 'link' && (
+                          {activeTab === 'link' && (
                 <div className="space-y-3">
                   <input
                     type="url"
@@ -735,8 +474,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
               </div>
               <h3 className="text-lg font-semibold text-gray-900">Paste text</h3>
             </div>
-            
-            <div className="space-y-3">
+                      <div className="space-y-3">
               <div className="grid grid-cols-3 gap-3">
                 <button 
                   className={`flex items-center space-x-2 p-3 rounded-lg transition-colors ${
@@ -760,8 +498,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
                 }`}>Copied text</span>
               </button>
               </div>
-              
-              {activeTab === 'text' && (
+                          {activeTab === 'text' && (
                 <div className="space-y-3">
                   <textarea
                     placeholder="Paste your text content here..."
@@ -793,214 +530,6 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
             </div>
           </div>
         </div>
-      )}
-
-      {/* Knowledge Base Management */}
-      {activeTab === 'knowledge' && (
-        <div className="space-y-6 mt-5">
-          {/* Knowledge Base Header */}
-          <div className="py-3">
-            <div className="flex items-center space-x-3 mb-2">
-              <div className={`w-10 h-10 ${COLORS.tw.primary.bg[600]} rounded-full flex items-center justify-center`}>
-                <FileIcon className="h-5 w-5 text-white" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900">知识库管理</h3>
-            </div>
-            <p className="text-gray-600 text-sm ml-13">
-              管理您的知识库项目 • 链接到当前笔记本或永久删除
-            </p>
-          </div>
-          
-          <div className="bg-white border border-gray-200 rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-md font-medium text-gray-900">知识库项目</h4>
-              <div className="flex items-center space-x-2">
-                <Button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    loadKnowledgeBase();
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="border-gray-300 text-gray-600 hover:bg-gray-100"
-                  disabled={isLoadingKnowledgeBase}
-                >
-                  {isLoadingKnowledgeBase ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            {/* Knowledge Base Items List */}
-            <div className="space-y-3">
-              {isLoadingKnowledgeBase ? (
-                <div className="flex items-center justify-center py-8">
-                  <RefreshCw className="h-6 w-6 animate-spin text-gray-500" />
-                  <span className="ml-2 text-gray-500">Loading knowledge base...</span>
-                </div>
-              ) : knowledgeBaseItems.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <FileIcon className="h-12 w-12 mx-auto mb-2 text-gray-400" />
-                  <p>No items in knowledge base</p>
-                </div>
-              ) : (
-                <>
-                  {/* Select All */}
-                  <div className="flex items-center justify-between p-3 bg-gray-100 rounded-lg">
-                    <label className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedKnowledgeItems.size === knowledgeBaseItems.length && knowledgeBaseItems.length > 0}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedKnowledgeItems(new Set(knowledgeBaseItems.map(item => item.id)));
-                          } else {
-                            setSelectedKnowledgeItems(new Set());
-                          }
-                        }}
-                        className={`h-4 w-4 rounded border-gray-400 ${COLORS.tw.primary.text[600]} focus:ring-red-500`}
-                        disabled={isUploading}
-                      />
-                      <span className="text-sm text-gray-700">
-                        Select All ({knowledgeBaseItems.length} items)
-                      </span>
-                    </label>
-                    {selectedKnowledgeItems.size > 0 && (
-                      <Badge variant="outline" className={`${COLORS.tw.primary.border[600]} ${COLORS.tw.primary.text[600]}`}>
-                        {selectedKnowledgeItems.size} selected
-                      </Badge>
-                    )}
-                  </div>
-
-                  {/* Knowledge Base Items */}
-                  <div className="max-h-64 overflow-y-auto space-y-2">
-                    {knowledgeBaseItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className={`p-3 rounded-lg border transition-colors cursor-pointer ${
-                          selectedKnowledgeItems.has(item.id)
-                            ? 'bg-red-50 border-red-300'
-                            : item.linked_to_notebook
-                            ? 'bg-gray-50 border-gray-300 hover:border-gray-400'
-                            : 'bg-gray-50 border-gray-300 hover:border-gray-400'
-                        }`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (!isUploading) {
-                            handleKnowledgeItemSelect(item.id);
-                          }
-                        }}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <input
-                            type="checkbox"
-                            checked={selectedKnowledgeItems.has(item.id)}
-                            onChange={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (!isUploading) {
-                                handleKnowledgeItemSelect(item.id);
-                              }
-                            }}
-                            className={`h-4 w-4 rounded border-gray-400 ${COLORS.tw.primary.text[600]} focus:ring-red-500`}
-                            onClick={(e) => e.stopPropagation()}
-                            disabled={isUploading}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center space-x-2">
-                              <h4 className="text-sm font-medium text-gray-900 truncate">
-                                {item.title || item.filename || 'Untitled'}
-                              </h4>
-                              {item.linked_to_notebook && (
-                                <Badge variant="outline" className="border-green-600 text-green-600 text-xs">
-                                  Already linked
-                                </Badge>
-                              )}
-                              {item.processing_status && (
-                                <Badge variant="outline" className={
-                                  item.processing_status === 'done' || item.processing_status === 'completed'
-                                    ? 'border-blue-600 text-blue-600 text-xs'
-                                    : item.processing_status === 'pending' || item.processing_status === 'in_progress'
-                                    ? 'border-yellow-600 text-yellow-600 text-xs'
-                                    : item.processing_status === 'error'
-                                    ? 'border-red-600 text-red-600 text-xs'
-                                    : 'border-gray-400 text-gray-600 text-xs'
-                                }>
-                                  {item.processing_status.charAt(0).toUpperCase() + item.processing_status.slice(1).replace('_', ' ')}
-                                </Badge>
-                              )}
-                            </div>
-                            {item.metadata?.description && (
-                              <p className="text-xs text-gray-600 mt-1">
-                                {item.metadata.description}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* SSE Status Trackers for processing knowledge base items */}
-                  {processingKnowledgeItems.map(item => (
-                    <KnowledgeBaseStatusTracker
-                      key={`tracker-${item.id}`}
-                      itemId={item.id}
-                      notebookId={notebookId}
-                      onStatusUpdate={updateKnowledgeItemStatus}
-                      onProcessingComplete={handleKnowledgeItemProcessingComplete}
-                      onError={handleKnowledgeItemError}
-                    />
-                  ))}
-                </>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            {selectedKnowledgeItems.size > 0 && (
-              <div className="flex space-x-3 mt-6 pt-4 border-t border-gray-300">
-                <Button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleLinkSelectedKnowledgeItems();
-                  }}
-                  className={`flex-1 ${COLORS.tw.primary.bg[600]} ${COLORS.tw.primary.hover.bg[700]} text-white`}
-                  disabled={selectedKnowledgeItems.size === 0 || Array.from(selectedKnowledgeItems).every(id => 
-                    knowledgeBaseItems.find(item => item.id === id)?.linked_to_notebook
-                  ) || isUploading}
-                >
-                  {isUploading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Plus className="h-4 w-4 mr-2" />
-                  )}
-                  Link to Notebook ({selectedKnowledgeItems.size})
-                </Button>
-                <Button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleDeleteKnowledgeBaseItems();
-                  }}
-                  variant="outline"
-                  className={`${COLORS.tw.primary.border[600]} ${COLORS.tw.primary.text[600]} hover:bg-red-50`}
-                  disabled={isUploading}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete ({selectedKnowledgeItems.size})
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
 
       {/* Hidden File Input */}
       <input

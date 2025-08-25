@@ -11,7 +11,6 @@ from ..models import (
     Notebook, 
     Source, 
     KnowledgeBaseItem, 
-    KnowledgeItem, 
     BatchJob,
     BatchJobItem
 )

@@ -299,7 +299,8 @@ class RAGChatbot:
         k_global: int = 3,
         extra_collections: Optional[List[str]] = None,
     ):
-        self.user_id = str(user_id)
+        self.user_id_int = user_id  # Keep original integer for database queries
+        self.user_id = str(user_id)  # String version for collection names
         self.k_local = k_local
         self.k_global = k_global
         self.extra_collections = extra_collections or []
@@ -339,6 +340,7 @@ class RAGChatbot:
         history: Optional[List[Tuple[str, str]]] = None,
         file_ids: Optional[List[str]] = None,
         extra_collections: Optional[List[str]] = None,  # <-- allow override per call
+        use_full_content: bool = False,  # <-- new parameter for full content mode
     ) -> Generator[str, None, None]:
         history = history or []
 
@@ -355,34 +357,43 @@ class RAGChatbot:
         # Build retriever for these collections
         global_retriever = get_rag_chain(collections_to_use).retriever
 
-        clauses = [f'user_id=="{self.user_id}"']
-        if file_ids:
-            quoted = ",".join(f'"{fid}"' for fid in file_ids)
-            clauses.append(f"kb_item_id in [{quoted}]")
-        expr = " and ".join(clauses)
-        local_ret = self.store.as_retriever(search_kwargs={"k": self.k_local, "expr": expr})
-
-        # Retrieve local and global docs separately
-        local_docs = local_ret.get_relevant_documents(question)[:self.k_local]
-        global_docs = []
-        if not file_ids:
-            combined = CombinedRetriever(
-                local_retriever=local_ret,
-                global_retriever=global_retriever,
-                k_local=self.k_local,
-                k_global=self.k_global,
-                filter_sources=None,
-            )
-            docs = combined.get_relevant_documents(question)
+        # Handle full content mode vs RAG mode
+        if use_full_content and file_ids:
+            # Use full content from selected files
+            docs = self._get_full_content_docs(file_ids)
+            local_docs = docs
+            global_docs = []
         else:
-            # If file_ids are set, only retrieve global docs for reference
-            global_docs = global_retriever.get_relevant_documents(question)[:self.k_global]
-            docs = local_docs + global_docs
+            # Use traditional RAG approach with embeddings
+            clauses = [f'user_id=="{self.user_id}"']
+            if file_ids:
+                quoted = ",".join(f'"{fid}"' for fid in file_ids)
+                clauses.append(f"kb_item_id in [{quoted}]")
+            expr = " and ".join(clauses)
+            local_ret = self.store.as_retriever(search_kwargs={"k": self.k_local, "expr": expr})
+
+            # Retrieve local and global docs separately
+            local_docs = local_ret.get_relevant_documents(question)[:self.k_local]
+            global_docs = []
+            if not file_ids:
+                combined = CombinedRetriever(
+                    local_retriever=local_ret,
+                    global_retriever=global_retriever,
+                    k_local=self.k_local,
+                    k_global=self.k_global,
+                    filter_sources=None,
+                )
+                docs = combined.get_relevant_documents(question)
+            else:
+                # If file_ids are set, only retrieve global docs for reference
+                global_docs = global_retriever.get_relevant_documents(question)[:self.k_global]
+                docs = local_docs + global_docs
 
         print(f"Retrieved {len(docs)} documents for question: {question}")
         print("Retrieved kb_item_ids:", [d.metadata.get("kb_item_id") for d in docs])
         print("Selected file_ids:", file_ids)
         print("Extra collections used:", collections_to_use)
+        print(f"Using full content mode: {use_full_content}")
 
         # emit metadata
         meta = {"type": "metadata", "docs": [
@@ -392,12 +403,22 @@ class RAGChatbot:
         yield f"data: {json.dumps(meta)}\n\n"
 
         # prepare context with emphasis
-        local_context = "\n\n---\n\n".join(
-            f"Source: {d.metadata.get('source')} (User Selected)\n{d.page_content[:500]}" for d in local_docs
-        )
-        global_context = "\n\n---\n\n".join(
-            f"Source: {d.metadata.get('source')} (Global Reference)\n{d.page_content[:500]}" for d in global_docs
-        )
+        if use_full_content:
+            # In full content mode, use complete content without truncation
+            local_context = "\n\n---\n\n".join(
+                f"Source: {d.metadata.get('source')} (User Selected)\n{d.page_content}" for d in local_docs
+            )
+            global_context = "\n\n---\n\n".join(
+                f"Source: {d.metadata.get('source')} (Global Reference)\n{d.page_content}" for d in global_docs
+            )
+        else:
+            # In RAG mode, use truncated content as before
+            local_context = "\n\n---\n\n".join(
+                f"Source: {d.metadata.get('source')} (User Selected)\n{d.page_content[:500]}" for d in local_docs
+            )
+            global_context = "\n\n---\n\n".join(
+                f"Source: {d.metadata.get('source')} (Global Reference)\n{d.page_content[:500]}" for d in global_docs
+            )
 
         if local_context and global_context:
             context = (
@@ -411,8 +432,9 @@ class RAGChatbot:
         else:
             context = f"GLOBAL/REFERENCE DOCUMENTS:\n{global_context}"
 
+        content_mode_note = "FULL CONTENT" if use_full_content else "SNIPPETS"
         system_prompt = (
-            "You are an expert research assistant. Use the following snippets to answer the question.\n"
+            f"You are an expert research assistant. Use the following {content_mode_note.lower()} to answer the question.\n"
             "Give highest priority to information from USER SELECTED FILES. Use GLOBAL/REFERENCE DOCUMENTS only if needed for additional context or clarification.\n\n"
             f"{context}\n\nHistory:\n{history}\n\nQuestion:\n{question}\n\nAnswer:"
         )
@@ -432,6 +454,30 @@ class RAGChatbot:
             yield f"data: {json.dumps({'type':'token','text':token})}\n\n"
         yield "event: done\ndata: {}\n\n"
 
+    def _get_full_content_docs(self, file_ids):
+        """Retrieve full content from Django models for selected files using model manager"""
+        from django.apps import apps
+        
+        # Get the KnowledgeBaseItem model and use its manager
+        KnowledgeBaseItem = apps.get_model('notebooks', 'KnowledgeBaseItem')
+        
+        # Use the custom manager to get items with content
+        items = KnowledgeBaseItem.objects.get_items_with_content(file_ids, user_id=self.user_id_int)
+        
+        docs = []
+        for item in items:
+            doc = Document(
+                page_content=item['content'],
+                metadata={
+                    'source': item['title'],
+                    'kb_item_id': item['id'],
+                    'content_type': item['content_type']
+                }
+            )
+            docs.append(doc)
+            
+        print(f"[DEBUG] Retrieved {len(docs)} documents with content using model manager")
+        return docs
 
 
 class SuggestionRAGAgent:

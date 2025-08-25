@@ -155,9 +155,9 @@ def calculate_user_content_hash(content: str, user_id: int) -> str:
     return hashlib.sha256(content_bytes).hexdigest()
 
 
-def check_content_duplicate(content: str, user_id: int):
+def check_content_duplicate(content: str, user_id: int, notebook_id: str = None):
     """
-    Check if identical text content already exists for this user.
+    Check if identical text content already exists within the specific notebook.
     
     Used for pasted text to detect duplicates based on actual content
     rather than generated filename.
@@ -165,48 +165,69 @@ def check_content_duplicate(content: str, user_id: int):
     Args:
         content: The text content to check
         user_id: User ID to check duplicates for
+        notebook_id: Notebook ID to check within (required since content is now notebook-specific)
         
     Returns:
         KnowledgeBaseItem if duplicate content found, None otherwise
     """
-    from ..models import KnowledgeBaseItem
+    from django.contrib.auth import get_user_model
+    from ..models import KnowledgeBaseItem, Notebook
+    
+    if not notebook_id:
+        return None
     
     # Normalize content for comparison (strip whitespace, normalize line endings)
     normalized_content = content.strip().replace('\r\n', '\n').replace('\r', '\n')
     
     # Check existing items by comparing actual content field directly
-    # Filter by user and look for exact content match
-    duplicate_item = KnowledgeBaseItem.objects.filter(
-        user_id=user_id,
-        content=normalized_content
-    ).first()
-    
-    return duplicate_item
+    # Filter by notebook and look for exact content match
+    User = get_user_model()
+    try:
+        user = User.objects.get(id=user_id)
+        notebook = Notebook.objects.get(id=notebook_id, user=user)
+        duplicate_item = KnowledgeBaseItem.objects.filter(
+            notebook=notebook,
+            content=normalized_content
+        ).first()
+        return duplicate_item
+    except (User.DoesNotExist, Notebook.DoesNotExist):
+        return None
 
 
 def check_source_duplicate(source_identifier: str, user_id: int, notebook_id: str = None):
     """
-    Check if source (filename or URL) already exists for the user.
+    Check if source (filename or URL) already exists within the specific notebook.
+    Since sources are now notebook-specific, we only check within the given notebook.
     
     Args:
         source_identifier: Original filename or raw URL
         user_id: User ID to check within
-        notebook_id: Optional notebook ID (not used in current implementation as duplicates are checked per user)
+        notebook_id: Notebook ID to check within (required for notebook-specific sources)
         
     Returns:
         KnowledgeBaseItem if duplicate found, None otherwise
     """
-    from ..models import KnowledgeBaseItem
+    from ..models import KnowledgeBaseItem, Notebook
+    from django.contrib.auth import get_user_model
     
+    # notebook_id is required for notebook-specific duplicate checking
+    if not notebook_id:
+        return None
+        
     source_hash = calculate_source_hash(source_identifier, user_id)
     
-    # Check for duplicates per user (same user, same filename/URL)
-    duplicate_item = KnowledgeBaseItem.objects.filter(
-        user_id=user_id,
-        source_hash=source_hash
-    ).first()
-    
-    return duplicate_item
+    # Check for duplicates within the specific notebook only
+    User = get_user_model()
+    try:
+        user = User.objects.get(id=user_id)
+        notebook = Notebook.objects.get(id=notebook_id, user=user)
+        duplicate_item = KnowledgeBaseItem.objects.filter(
+            notebook=notebook,
+            source_hash=source_hash
+        ).first()
+        return duplicate_item
+    except (User.DoesNotExist, Notebook.DoesNotExist):
+        return None
 
 
 def extract_domain(url: str) -> str:

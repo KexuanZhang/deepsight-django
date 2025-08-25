@@ -11,12 +11,13 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.exceptions import ValidationError
 from django.http import Http404, FileResponse
 from django.shortcuts import get_object_or_404
+from django.views import View
 from rest_framework import status, permissions, authentication
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.response import Response
 
-from ..models import Source, KnowledgeItem, KnowledgeBaseItem, BatchJob, BatchJobItem
+from ..models import KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..serializers import FileUploadSerializer, BatchFileUploadSerializer
 from ..utils.view_mixins import (
     StandardAPIView, NotebookPermissionMixin, KnowledgeBasePermissionMixin,
@@ -120,15 +121,14 @@ class FileListView(StandardAPIView, NotebookPermissionMixin, FileListResponseMix
             # Verify notebook access
             notebook = self.get_user_notebook(notebook_id, request.user)
 
-            # Get all KnowledgeItems for this notebook with optimized query
-            knowledge_items = (
-                KnowledgeItem.objects.filter(notebook=notebook)
-                .select_related("knowledge_base_item", "source")
-                .order_by("-added_at")
+            # Get all KnowledgeBaseItems for this notebook directly (no linking table)
+            knowledge_base_items = (
+                KnowledgeBaseItem.objects.filter(notebook=notebook)
+                .order_by("-created_at")
             )
 
-            # Build response data using mixin
-            files = [self.build_file_response_data(ki) for ki in knowledge_items]
+            # Build response data using direct KnowledgeBaseItem data
+            files = [self.build_file_response_data(kb_item) for kb_item in knowledge_base_items]
 
             return self.success_response(files)
 
@@ -165,25 +165,27 @@ class FileStatusView(APIView):
         return Response({"success": True, **status_obj})
 
 
-class FileStatusStreamView(APIView):
+class FileStatusStreamView(View):
     """
     GET /api/notebooks/{notebook_id}/files/{upload_file_id}/status/stream
     Server-Sent Events streaming endpoint for real-time upload status updates.
     """
-
-    permission_classes = [permissions.IsAuthenticated]
-    authentication_classes = [authentication.SessionAuthentication]
+    
+    def dispatch(self, request, *args, **kwargs):
+        # Check authentication manually
+        if not request.user.is_authenticated:
+            return JsonResponse({"detail": "Authentication required."}, status=401)
+        return super().dispatch(request, *args, **kwargs)
 
     def get(self, request, notebook_id, upload_file_id):
         # Verify notebook ownership
         from ..models import Notebook
-        from rest_framework import permissions, authentication
         import time
         import json
-        from django.http import StreamingHttpResponse
+        from django.http import StreamingHttpResponse, JsonResponse
         
         if not Notebook.objects.filter(id=notebook_id, user=request.user).exists():
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+            return JsonResponse({"detail": "Not found."}, status=404)
 
         def event_stream():
             """Generator function for SSE events"""
@@ -242,7 +244,6 @@ class FileStatusStreamView(APIView):
             event_stream(), content_type="text/event-stream"
         )
         response["Cache-Control"] = "no-cache"
-        response["Connection"] = "keep-alive"
         response["Access-Control-Allow-Origin"] = "*"
         response["Access-Control-Allow-Headers"] = "Cache-Control"
 
@@ -287,17 +288,16 @@ class NotebookFileListStreamView(View):
                 
                 # Send initial file list
                 try:
-                    knowledge_items = (
-                        KnowledgeItem.objects.filter(notebook=notebook)
-                        .select_related("knowledge_base_item", "source")
-                        .order_by("-added_at")
+                    knowledge_base_items = (
+                        KnowledgeBaseItem.objects.filter(notebook=notebook)
+                        .order_by("-created_at")
                     )
                     
                     # Build file response data directly (inline helper)
-                    def build_file_response_data(ki):
-                        metadata = ki.knowledge_base_item.metadata or {}
-                        file_metadata = ki.knowledge_base_item.file_metadata or {}
-                        original_filename = metadata.get('original_filename', ki.knowledge_base_item.title)
+                    def build_file_response_data(kb_item):
+                        metadata = kb_item.metadata or {}
+                        file_metadata = kb_item.file_metadata or {}
+                        original_filename = metadata.get('original_filename', kb_item.title)
                         file_extension = metadata.get('file_extension', '')
                         file_size = metadata.get('file_size', 0)
                         
@@ -307,18 +307,17 @@ class NotebookFileListStreamView(View):
                             combined_metadata['file_metadata'] = file_metadata
                         
                         return {
-                            "file_id": str(ki.knowledge_base_item.id),
-                            "title": ki.knowledge_base_item.title,
-                            "upload_timestamp": ki.added_at.isoformat() if ki.added_at else None,
-                            "parsing_status": ki.knowledge_base_item.processing_status,
+                            "file_id": str(kb_item.id),
+                            "title": kb_item.title,
+                            "upload_timestamp": kb_item.created_at.isoformat() if kb_item.created_at else None,
+                            "parsing_status": kb_item.processing_status,
                             "original_filename": original_filename,
                             "file_extension": file_extension,
                             "file_size": file_size,
-                            "metadata": combined_metadata,
-                            "knowledge_item_id": str(ki.id)
+                            "metadata": combined_metadata
                         }
                     
-                    files = [build_file_response_data(ki) for ki in knowledge_items]
+                    files = [build_file_response_data(kb_item) for kb_item in knowledge_base_items]
                     
                     initial_event = {
                         "type": "initial",
@@ -352,13 +351,12 @@ class NotebookFileListStreamView(View):
                             
                             
                             # Get fresh file list
-                            current_knowledge_items = (
-                                KnowledgeItem.objects.filter(notebook=notebook)
-                                .select_related("knowledge_base_item", "source")
-                                .order_by("-added_at")
+                            current_knowledge_base_items = (
+                                KnowledgeBaseItem.objects.filter(notebook=notebook)
+                                .order_by("-created_at")
                             )
                             
-                            current_files = [build_file_response_data(ki) for ki in current_knowledge_items]
+                            current_files = [build_file_response_data(kb_item) for kb_item in current_knowledge_base_items]
                             
                             update_event = {
                                 "type": "file_change",
@@ -427,68 +425,39 @@ class FileDeleteView(APIView):
         force_delete = request.GET.get("force", "false").lower() == "true"
         deleted = False
 
-        # Strategy 1: Try to find by knowledge_item_id (direct database ID)
+        # Strategy 1: Try to find by knowledge_base_item_id (direct database ID)
         if not deleted:
             try:
-                # Try as UUID string directly (no int conversion needed)
-                ki = KnowledgeItem.objects.filter(
+                # Try as UUID string directly 
+                kb_item = KnowledgeBaseItem.objects.filter(
                     id=file_or_upload_id, notebook=notebook
                 ).first()
 
-                if ki:
+                if kb_item:
                     if force_delete:
                         # Delete the knowledge base item entirely
                         success = storage_adapter.delete_knowledge_base_item(
-                            str(ki.knowledge_base_item.id), request.user.pk
+                            str(kb_item.id), request.user.pk
                         )
                         if success:
                             deleted = True
                     else:
-                        # Just delete the link
-                        ki.delete()
+                        # Delete the knowledge base item (no separate linking)
+                        kb_item.delete()
                         deleted = True
             except Exception:
                 pass  # Not a valid UUID or other error
 
-        # Strategy 2: Try to find by knowledge_base_item_id (UUID string)
-        if not deleted:
-            try:
-                # Try as UUID string directly (no int conversion needed)
-                ki = KnowledgeItem.objects.filter(
-                    notebook=notebook, knowledge_base_item_id=file_or_upload_id
-                ).first()
-
-                if ki:
-                    if force_delete:
-                        # Delete the knowledge base item entirely
-                        success = storage_adapter.delete_knowledge_base_item(
-                            str(file_or_upload_id), request.user.pk
-                        )
-                        if success:
-                            deleted = True
-                    else:
-                        # Just unlink from this notebook
-                        success = storage_adapter.unlink_knowledge_item_from_notebook(
-                            str(file_or_upload_id), notebook_id, request.user.pk
-                        )
-                        if success:
-                            deleted = True
-            except (ValueError, TypeError):
-                pass  # Not a valid integer ID
-
-        # Strategy 3: Handle upload IDs by searching in metadata
+        # Strategy 2: Handle upload IDs by searching in metadata
         if not deleted and str(file_or_upload_id).startswith("upload_"):
             try:
-                # Find knowledge items in this notebook that have the upload ID in metadata
-                knowledge_items = KnowledgeItem.objects.filter(
+                # Find knowledge base items in this notebook that have the upload ID in metadata
+                knowledge_base_items = KnowledgeBaseItem.objects.filter(
                     notebook=notebook
-                ).select_related("knowledge_base_item", "source")
+                )
 
-                for ki in knowledge_items:
-                    kb_item = ki.knowledge_base_item
-                    source = ki.source
-
-                    # Check if this knowledge item is related to the upload ID
+                for kb_item in knowledge_base_items:
+                    # Check if this knowledge base item is related to the upload ID
                     upload_id_match = False
 
                     # Check metadata for upload ID references
@@ -507,37 +476,13 @@ class FileDeleteView(APIView):
                                 deleted = True
                                 break
                         else:
-                            # Just delete the link
-                            ki.delete()
+                            # Delete the knowledge base item
+                            kb_item.delete()
                             deleted = True
                             break
 
             except Exception as e:
                 logger.error(f"Error handling upload ID {file_or_upload_id}: {e}")
-
-        # Strategy 4: Legacy fallback - try as string knowledge base item ID
-        if not deleted:
-            try:
-                # Some systems might pass KB item IDs as strings
-                ki = KnowledgeItem.objects.filter(
-                    notebook=notebook, knowledge_base_item_id=file_or_upload_id
-                ).first()
-
-                if ki:
-                    if force_delete:
-                        # Delete the knowledge base item entirely
-                        success = storage_adapter.delete_knowledge_base_item(
-                            str(ki.knowledge_base_item.id), request.user.pk
-                        )
-                        if success:
-                            deleted = True
-                    else:
-                        # Just delete the link
-                        ki.delete()
-                        deleted = True
-
-            except Exception as e:
-                logger.error(f"Error in legacy fallback for {file_or_upload_id}: {e}")
 
         if deleted:
             return Response(status=status.HTTP_204_NO_CONTENT)
@@ -553,23 +498,31 @@ class FileContentView(StandardAPIView, KnowledgeBasePermissionMixin):
     def get(self, request, file_id):
         """Get processed content for a knowledge base item."""
         try:
-            from ..utils.storage_adapter import get_storage_adapter
-            storage_adapter = get_storage_adapter()
             
-            # Get the knowledge base item (verifies ownership)
-            kb_item = self.get_user_kb_item(file_id, request.user)
+            # Get the knowledge base item by first finding which notebook it belongs to
+            # This is needed since knowledge base items are now notebook-specific
+            from ..models import KnowledgeBaseItem
+            try:
+                kb_item = KnowledgeBaseItem.objects.get(id=file_id, notebook__user=request.user)
+                # Verify access using the proper method
+                kb_item = self.get_notebook_kb_item(file_id, kb_item.notebook)
+            except KnowledgeBaseItem.DoesNotExist:
+                return self.error_response(
+                    "File not found or not accessible",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
 
             # Check if user wants MinIO URLs for images
             use_minio_urls = request.GET.get('minio_urls', 'false').lower() == 'true'
             
             if use_minio_urls:
-                # Get content with direct MinIO URLs
-                content = storage_adapter.storage_service.get_content_with_minio_urls(
+                # Get content with direct MinIO URLs using model manager
+                content = KnowledgeBaseItem.objects.get_content_with_minio_urls(
                     file_id, user_id=request.user.pk
                 )
             else:
-                # Get content with API endpoint URLs (legacy behavior)
-                content = storage_adapter.get_file_content(file_id, user_id=request.user.pk)
+                # Use the new model manager for consistent content retrieval
+                content = KnowledgeBaseItem.objects.get_content(file_id, user_id=request.user.pk)
 
             if content is None:
                 return self.error_response(
@@ -601,18 +554,23 @@ class FileContentMinIOView(StandardAPIView, KnowledgeBasePermissionMixin):
     def get(self, request, file_id):
         """Get processed content with direct MinIO pre-signed URLs for images."""
         try:
-            from ..utils.storage_adapter import get_storage_adapter
-            from django.views.decorators.csrf import csrf_exempt
-            from django.utils.decorators import method_decorator
             
-            storage_adapter = get_storage_adapter()
-            
-            # Get the knowledge base item (verifies ownership)
-            kb_item = self.get_user_kb_item(file_id, request.user)
+            # Get the knowledge base item by first finding which notebook it belongs to
+            # This is needed since knowledge base items are now notebook-specific
+            from ..models import KnowledgeBaseItem
+            try:
+                kb_item = KnowledgeBaseItem.objects.get(id=file_id, notebook__user=request.user)
+                # Verify access using the proper method
+                kb_item = self.get_notebook_kb_item(file_id, kb_item.notebook)
+            except KnowledgeBaseItem.DoesNotExist:
+                return self.error_response(
+                    "File not found or not accessible",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
 
-            # Get content with direct MinIO URLs
+            # Get content with direct MinIO URLs using model manager
             expires = int(request.GET.get('expires', '86400'))  # Default 24 hours
-            content = storage_adapter.storage_service.get_content_with_minio_urls(
+            content = KnowledgeBaseItem.objects.get_content_with_minio_urls(
                 file_id, user_id=request.user.pk, expires=expires
             )
 
@@ -648,7 +606,7 @@ class FileRawView(StandardAPIView, FileAccessValidatorMixin):
         """Serve raw file through notebook context."""
         try:
             # Validate access through notebook
-            notebook, kb_item, knowledge_item = self.validate_notebook_file_access(
+            notebook, kb_item = self.validate_notebook_file_access(
                 notebook_id, file_id, request.user
             )
 
@@ -708,8 +666,15 @@ class FileRawSimpleView(StandardAPIView, KnowledgeBasePermissionMixin):
     def get(self, request, file_id):
         """Serve raw file directly by knowledge base item ID."""
         try:
-            # Get the knowledge base item (verifies ownership)
-            kb_item = self.get_user_kb_item(file_id, request.user)
+            # Get the knowledge base item by first finding which notebook it belongs to
+            # This is needed since knowledge base items are now notebook-specific
+            from ..models import KnowledgeBaseItem
+            try:
+                kb_item = KnowledgeBaseItem.objects.get(id=file_id, notebook__user=request.user)
+                # Verify access using the proper method
+                kb_item = self.get_notebook_kb_item(file_id, kb_item.notebook)
+            except KnowledgeBaseItem.DoesNotExist:
+                raise Http404("File not found or not accessible")
 
             # Try to serve original file first
             if kb_item.original_file_object_key:
@@ -794,7 +759,8 @@ class NotebookFileStatusStreamView(View):
                 while time.time() - start_time < max_duration:
                     try:
                         # Poll KnowledgeBaseItem status directly from database
-                        kb_item = KnowledgeBaseItem.objects.get(id=file_id, user=request.user)
+                        # Security: Verify the knowledge base item belongs to the verified notebook
+                        kb_item = KnowledgeBaseItem.objects.get(id=file_id, notebook=notebook)
                         current_status = {
                             'file_id': str(kb_item.id),
                             'status': kb_item.processing_status,
@@ -809,7 +775,7 @@ class NotebookFileStatusStreamView(View):
                             
                         
                         # Stop streaming if processing is complete
-                        if kb_item.processing_status in ['done', 'error']:
+                        if kb_item.processing_status in ['done', 'failed']:
                             break
                             
                         time.sleep(poll_interval)
@@ -1090,11 +1056,11 @@ class VideoImageExtractionView(StandardAPIView, NotebookPermissionMixin):
                         content_type=content_type,
                         metadata={
                             'kb_item_id': str(kb_item.id),
-                            'user_id': str(kb_item.user.id),
+                            'user_id': str(kb_item.notebook.user.id),
                             'file_type': 'video_extracted_image',
                             'extracted_from': 'video_processing',
                         },
-                        user_id=str(kb_item.user.id),
+                        user_id=str(kb_item.notebook.user.id),
                         file_id=str(kb_item.id),
                         subfolder="images",
                         subfolder_uuid=str(kb_image.id)
@@ -1171,7 +1137,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             import mimetypes
             
             # Validate access through notebook
-            notebook, kb_item, knowledge_item = self.validate_notebook_file_access(
+            notebook, kb_item = self.validate_notebook_file_access(
                 notebook_id, file_id, request.user
             )
 
@@ -1238,7 +1204,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             
             # Search for objects that match the knowledge base item and filename pattern
             # The object key pattern is: user_id/kb/file_id/subfolder/filename (for video extraction files)
-            prefix = f"{kb_item.user.id}/kb/{kb_item.id}/images/"
+            prefix = f"{kb_item.notebook.user.id}/kb/{kb_item.id}/images/"
             
             try:
                 # List objects with the prefix for this knowledge base item
@@ -1256,9 +1222,9 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
                 # If no object found, try alternative prefix patterns
                 # For backward compatibility with different object key structures
                 alternative_prefixes = [
-                    f"{kb_item.user.id}/kb/{kb_item.id}/",  # Files in root kb folder (no subfolder)
-                    f"kb/{kb_item.user.id}/{kb_item.id}/images/",  # Alternative structure 1
-                    f"kb/images/{kb_item.user.id}/{kb_item.id}/",  # Alternative structure 2
+                    f"{kb_item.notebook.user.id}/kb/{kb_item.id}/",  # Files in root kb folder (no subfolder)
+                    f"kb/{kb_item.notebook.user.id}/{kb_item.id}/images/",  # Alternative structure 1
+                    f"kb/images/{kb_item.notebook.user.id}/{kb_item.id}/",  # Alternative structure 2
                 ]
                 
                 for alt_prefix in alternative_prefixes:
@@ -1291,7 +1257,7 @@ class FileImageView(StandardAPIView, FileAccessValidatorMixin):
             from reports.core.figure_service import FigureDataService
 
             images_dir = FigureDataService._get_knowledge_base_images_path(
-                user_id=kb_item.user.id,
+                user_id=kb_item.notebook.user.id,
                 file_id=str(kb_item.id),
             )
 

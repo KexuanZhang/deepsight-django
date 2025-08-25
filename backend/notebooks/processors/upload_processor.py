@@ -1309,11 +1309,11 @@ class UploadProcessor:
                                 content_type="text/markdown" if file.endswith('.md') else "application/json",
                                 metadata={
                                     'kb_item_id': str(kb_item.id),
-                                    'user_id': str(kb_item.user.id),
+                                    'user_id': str(kb_item.notebook.user.id),
                                     'file_type': 'marker_content',
                                     'marker_original_file': file,
                                 },
-                                user_id=str(kb_item.user.id),
+                                user_id=str(kb_item.notebook.user.id),
                                 file_id=str(kb_item.id)
                             )
                             
@@ -1368,11 +1368,11 @@ class UploadProcessor:
                                 content_type=content_type,
                                 metadata={
                                     'kb_item_id': str(kb_item.id),
-                                    'user_id': str(kb_item.user.id),
+                                    'user_id': str(kb_item.notebook.user.id),
                                     'file_type': 'marker_image',
                                     'marker_original_file': file,
                                 },
-                                user_id=str(kb_item.user.id),
+                                user_id=str(kb_item.notebook.user.id),
                                 file_id=str(kb_item.id),
                                 subfolder="images",
                                 subfolder_uuid=str(kb_image.id)
@@ -1412,11 +1412,11 @@ class UploadProcessor:
                                 prefix="kb",
                                 metadata={
                                     'kb_item_id': str(kb_item.id),
-                                    'user_id': str(kb_item.user.id),
+                                    'user_id': str(kb_item.notebook.user.id),
                                     'file_type': 'marker_other',
                                     'marker_original_file': file,
                                 },
-                                user_id=str(kb_item.user.id),
+                                user_id=str(kb_item.notebook.user.id),
                                 file_id=str(kb_item.id)
                             )
                             
@@ -1589,19 +1589,13 @@ class UploadProcessor:
                 f"Error populating captions for KB item {kb_item.id}: {e}", "error")
 
     def _get_markdown_content_for_captions(self, kb_item):
-        """Get markdown content from knowledge base item for caption extraction."""
+        """Get markdown content from knowledge base item using model manager."""
         try:
-            # First try to get content from the content field
-            if kb_item.content:
-                return kb_item.content
+            from ..models import KnowledgeBaseItem
             
-            # If no inline content, try to get from MinIO file
-            if kb_item.file_object_key:
-                content = kb_item.get_file_content()
-                if content:
-                    return content
-            
-            return None
+            # Use the model manager to get content
+            content = KnowledgeBaseItem.objects.get_content(str(kb_item.id), kb_item.notebook.user.pk)
+            return content
             
         except Exception as e:
             self.log_operation("get_markdown_content_error", 

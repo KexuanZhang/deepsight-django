@@ -18,13 +18,20 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """Handle chat functionality business logic"""
     
-    def validate_chat_request(self, question):
+    def validate_chat_request(self, question, file_ids=None):
         """Validate chat request parameters"""
         if not question:
             return {
                 "error": "Question is required.",
                 "status_code": status.HTTP_400_BAD_REQUEST
             }
+        
+        if file_ids is not None and not isinstance(file_ids, list):
+            return {
+                "error": "file_ids must be a list.",
+                "status_code": status.HTTP_400_BAD_REQUEST
+            }
+        
         
         return None
 
@@ -78,6 +85,14 @@ class ChatService:
         collections=None,
     ):
         """Create RAG chat stream with message recording"""
+        # Check if we should use full content or RAG based on token limit
+        use_full_content = False
+        if file_ids and notebook:
+            total_content_length = self._get_total_content_length(notebook, file_ids)
+            # Using ~200,000 characters as rough estimate for 50k tokens (4 chars per token)
+            TOKEN_LIMIT_CHARS = 200000
+            use_full_content = total_content_length <= TOKEN_LIMIT_CHARS
+            
         # Get the chatbot singleton
         bot = RAGChatbot(
             user_id=user_id,
@@ -89,6 +104,7 @@ class ChatService:
             question=question,
             history=history,
             file_ids=file_ids,  # <-- pass file_ids to bot
+            use_full_content=use_full_content,  # <-- pass the full content flag
         )
 
         def wrapped_stream():
@@ -113,6 +129,17 @@ class ChatService:
                 self.record_assistant_message(notebook, full_response)
 
         return wrapped_stream()
+
+    def _get_total_content_length(self, notebook, file_ids):
+        """Calculate total character length of selected knowledge base items using model manager"""
+        from ..models import KnowledgeBaseItem
+        
+        # Use the custom manager to get items with content
+        items = KnowledgeBaseItem.objects.get_items_with_content(file_ids, user_id=notebook.user.pk)
+        
+        total_length = sum(len(item['content'] or '') for item in items)
+        logger.info(f"Total content length for {len(items)} files with content out of {len(file_ids)} requested: {total_length} characters")
+        return total_length
 
     def get_formatted_chat_history(self, notebook):
         """Get formatted chat history for display"""

@@ -13,13 +13,8 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
 import "highlight.js/styles/github.css";
 import { useFileSelection } from "@/features/notebook/hooks";
-import { config } from "@/config";
 import { PANEL_HEADERS, COLORS } from "@/features/notebook/config/uiConfig";
-
-function getCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
-  return match ? decodeURIComponent(match[2]) : null;
-}
+import ChatService from "@/features/notebook/services/ChatService";
 
 // Memoized markdown content component for assistant messages
 interface MarkdownContentProps {
@@ -175,11 +170,7 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }: ChatPanelP
 
   const fetchSuggestions = async () => {
     try {
-      const response = await fetch(`${config.API_BASE_URL}/notebooks/${notebookId}/suggested-questions/`, {
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error("Failed to fetch suggestions");
-      const data = await response.json();
+      const data = await ChatService.getSuggestedQuestionsWithFetch(notebookId);
       setSuggestedQuestions(data.suggestions || []);
     } catch (err) {
       console.error("Failed to load suggestions:", err);
@@ -206,11 +197,7 @@ const ChatPanel = ({ notebookId, sourcesListRef, onSelectionChange }: ChatPanelP
 useEffect(() => {
   const fetchChatHistory = async () => {
     try {
-      const response = await fetch(`${config.API_BASE_URL}/notebooks/${notebookId}/chat-history/`, {
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error("Failed to fetch chat history");
-      const data = await response.json();
+      const data = await ChatService.getChatHistoryWithFetch(notebookId);
       const formattedMessages = data.history.map((msg: any) => ({
         id: msg.id.toString(),
         type: msg.sender === "user" ? "user" : "assistant" as const,
@@ -303,22 +290,7 @@ useEffect(() => {
     }
 
     try {
-      const response = await fetch(`${config.API_BASE_URL}/notebooks/${notebookId}/chat/`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": getCookie("csrftoken") || "",
-        },
-        body: JSON.stringify({
-          file_ids: selectedFileIds,
-          question: messageToSend,
-        }),
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${response.status}`);
-      }
+      const response = await ChatService.sendChatMessageStream(notebookId, selectedFileIds, messageToSend);
 
       // 3) Set up SSE reader
       const reader = response.body?.getReader();
@@ -365,16 +337,12 @@ useEffect(() => {
 
       // 6) Stream is done – fetch follow-up suggestions
       try {
-        const followupResp = await fetch(`${config.API_BASE_URL}/notebooks/${notebookId}/suggested-questions/`, {
-          credentials: "include",
-        });
-        if (followupResp.ok) {
-          const { suggestions } = await followupResp.json();
-          setSuggestedQuestions(suggestions || []);
-          // Cache the new suggestions
-          if ((suggestions || []).length > 0) {
-            cacheSuggestions(suggestions);
-          }
+        const data = await ChatService.getSuggestedQuestionsWithFetch(notebookId);
+        const suggestions = data.suggestions;
+        setSuggestedQuestions(suggestions || []);
+        // Cache the new suggestions
+        if ((suggestions || []).length > 0) {
+          cacheSuggestions(suggestions);
         }
       } catch (e) {
         console.error("Failed to fetch suggested questions:", e);
@@ -426,16 +394,7 @@ useEffect(() => {
               className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
               onClick={async () => {
                 try {
-                  const response = await fetch(`${config.API_BASE_URL}/notebooks/${notebookId}/chat-history/clear/`, {
-                    method: "DELETE",
-                    credentials: 'include',
-                    headers: {
-                      "Content-Type": "application/json",
-                      "X-CSRFToken": getCookie("csrftoken") || "",
-                    },
-                  });
-
-                  if (!response.ok) throw new Error("Failed to clear chat");
+                  await ChatService.clearChatHistoryWithFetch(notebookId);
 
                   // Reset to empty messages
                   setMessages([]);

@@ -17,9 +17,6 @@ from .file_serializers import (
     BatchFileUploadSerializer,
     KnowledgeBaseItemSerializer,
     KnowledgeBaseImageSerializer,
-    KnowledgeItemSerializer,
-    SourceSerializer,
-    ProcessingJobSerializer
 )
 
 # URL serializers
@@ -47,9 +44,6 @@ __all__ = [
     'BatchFileUploadSerializer',
     'KnowledgeBaseItemSerializer',
     'KnowledgeBaseImageSerializer',
-    'KnowledgeItemSerializer',
-    'SourceSerializer',
-    'ProcessingJobSerializer',
     
     # URL processing
     'URLParseSerializer',

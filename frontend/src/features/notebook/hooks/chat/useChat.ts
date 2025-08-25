@@ -7,6 +7,10 @@ import type { NotebookChatMessage } from '@/features/notebook/type';
 interface FileReference {
   file_id?: string;
   file?: string;
+  metadata?: {
+    knowledge_item_id?: string;
+    [key: string]: any;
+  };
   [key: string]: any;
 }
 
@@ -148,7 +152,10 @@ export const useChat = (notebookId: string, sourcesListRef: SourcesListRef): Use
 
     // Get selected files
     const currentSelectedFiles = getCurrentSelectedFiles();
-    const selectedFileIds = currentSelectedFiles.map(file => file.file_id || file.file).filter((id): id is string => Boolean(id));
+    const selectedFileIds = currentSelectedFiles.map(file => 
+      // Use knowledge_item_id from metadata, fallback to file_id or file for backward compatibility
+      file.metadata?.knowledge_item_id || file.file_id || file.file
+    ).filter((id): id is string => Boolean(id));
 
     // Validate file selection
     if (selectedFileIds.length === 0) {

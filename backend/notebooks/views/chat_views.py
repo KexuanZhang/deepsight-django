@@ -39,7 +39,7 @@ class RAGChatFromKBView(NotebookPermissionMixin, APIView):
         file_ids = request.data.get("file_ids", None)
         collections = request.data.get("collections", None)
         # 1) Validate inputs using service
-        validation_error = self.chat_service.validate_chat_request(question)
+        validation_error = self.chat_service.validate_chat_request(question, file_ids)
         if validation_error:
             return Response(validation_error, status=validation_error['status_code'])
 
@@ -51,9 +51,11 @@ class RAGChatFromKBView(NotebookPermissionMixin, APIView):
 
         # 3) Check user's knowledge base using service
         user_id = request.user.pk
-        kb_error = self.chat_service.check_user_knowledge_base(user_id)
-        if kb_error:
-            return Response(kb_error, status=kb_error['status_code'])
+        # Only check general knowledge base if no specific files are selected
+        if not file_ids:
+            kb_error = self.chat_service.check_user_knowledge_base(user_id)
+            if kb_error:
+                return Response(kb_error, status=kb_error['status_code'])
 
         # 4) Load chat history and record user question using service
         history = self.chat_service.get_chat_history(notebook)
