@@ -1,4 +1,4 @@
-import httpClient from '@/common/utils/httpClient';
+import httpClient from "@/shared/utils/httpClient";
 
 interface ListOptions {
   limit?: number;
@@ -24,19 +24,12 @@ class SourceService {
     return httpClient.get(`/notebooks/${notebookId}/files/?limit=${limit}&offset=${offset}`);
   }
 
-  createFileListEventSource(notebookId: string): EventSource {
-    const url = `${httpClient.baseUrl}/notebooks/${notebookId}/files/stream`;
-    return new EventSource(url, {
-      withCredentials: true
-    });
+  async getParsedFile(fileId: string, notebookId: string): Promise<any> {
+    return httpClient.get(`/notebooks/${notebookId}/files/${fileId}/content/`);
   }
 
-  async getParsedFile(fileId: string): Promise<any> {
-    return httpClient.get(`/notebooks/files/${fileId}/content/`);
-  }
-
-  async getFileContentWithMinIOUrls(fileId: string, expires: number = 86400): Promise<any> {
-    return httpClient.get(`/notebooks/files/${fileId}/content/minio/?expires=${expires}`);
+  async getFileContentWithMinIOUrls(fileId: string, notebookId: string, expires: number = 86400): Promise<any> {
+    return httpClient.get(`/notebooks/${notebookId}/files/${fileId}/content/?expires=${expires}`);
   }
 
   getFileRaw(fileId: string, notebookId: string): string {
@@ -55,10 +48,9 @@ class SourceService {
       form.append('file', file);
     }
     
-    form.append('notebook', notebookId);
     if (uploadFileId) form.append('upload_file_id', uploadFileId);
 
-    const response = await httpClient.post(`/notebooks/${notebookId}/files/upload/`, form);
+    const response = await httpClient.post(`/notebooks/${notebookId}/files/`, form);
     
     return {
       ...response,
@@ -86,7 +78,7 @@ class SourceService {
   // ─── KNOWLEDGE BASE ───────────────────────────────────────────────────────
 
   async getKnowledgeBase(notebookId: string, { limit = 50, offset = 0, content_type = null }: ListOptions = {}): Promise<any> {
-    let url = `/notebooks/${notebookId}/knowledge-base/?limit=${limit}&offset=${offset}`;
+    let url = `/notebooks/${notebookId}/knowledge/?limit=${limit}&offset=${offset}`;
     if (content_type) {
       url += `&content_type=${content_type}`;
     }
@@ -94,21 +86,14 @@ class SourceService {
   }
 
   async linkKnowledgeBaseItem(notebookId: string, knowledgeBaseItemId: string, notes: string = ''): Promise<any> {
-    return httpClient.post(`/notebooks/${notebookId}/knowledge-base/`, {
+    return httpClient.post(`/notebooks/${notebookId}/knowledge/`, {
       knowledge_base_item_id: knowledgeBaseItemId,
       notes: notes
     });
   }
 
   async deleteKnowledgeBaseItem(notebookId: string, knowledgeBaseItemId: string): Promise<any> {
-    return httpClient.delete(`/notebooks/${notebookId}/knowledge-base/`, {
-      body: JSON.stringify({
-        knowledge_base_item_id: knowledgeBaseItemId
-      }),
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
+    return httpClient.delete(`/notebooks/${notebookId}/knowledge/${knowledgeBaseItemId}/`);
   }
 
   // ─── STATUS ───────────────────────────────────────────────────────────────
@@ -161,7 +146,7 @@ class SourceService {
     
     if (uploadFileId) body.upload_url_id = uploadFileId;
 
-    const response = await httpClient.post(`/notebooks/${notebookId}/files/parse_url_media/`, body);
+    const response = await httpClient.post(`/notebooks/${notebookId}/files/parse_url_with_media/`, body);
     
     return {
       ...response,
@@ -199,11 +184,12 @@ class SourceService {
   // ─── BATCH OPERATIONS ────────────────────────────────────────────────────
 
   async getBatchJobStatus(notebookId: string, batchJobId: string): Promise<any> {
-    return httpClient.get(`/notebooks/${notebookId}/batch-jobs/${batchJobId}/status/`);
+    return httpClient.get(`/notebooks/${notebookId}/batches/${batchJobId}/`);
   }
 
+  // Note: Video image extraction endpoint needs to be implemented on backend
   async extractVideoImages(notebookId: string, data: any = {}): Promise<any> {
-    return httpClient.post(`/notebooks/${notebookId}/extraction/video_image_extraction/`, data);
+    throw new Error('Video image extraction endpoint not yet implemented on backend');
   }
 }
 

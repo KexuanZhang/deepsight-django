@@ -1,5 +1,5 @@
 import React from 'react';
-import { ReportFilters as ReportFiltersType, ReportStats } from '../type';
+import { ReportFilters as ReportFiltersType, ReportStats } from '../types/type';
 
 interface ReportFiltersProps {
   filters: ReportFiltersType;

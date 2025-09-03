@@ -1,4 +1,4 @@
-import httpClient, { getCookie } from '@/common/utils/httpClient';
+import httpClient, { getCookie } from "@/shared/utils/httpClient";
 
 interface GenerationConfig {
   model?: string;

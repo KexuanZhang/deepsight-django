@@ -42,7 +42,7 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
         
         # Get required objects
         user = User.objects.get(id=user_id)
-        notebook = notebook_service.get_notebook_or_404(notebook_id, user)
+        notebook = get_object_or_404(Notebook, id=notebook_id, user=user)
         
         # Update batch item status if this is part of a batch
         if batch_item_id:
@@ -67,6 +67,8 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
                 title=clean_title(url),
                 content_type="webpage",
                 notes=f"Processing URL: {url}",
+                tags=[],  # Explicitly set empty list
+                file_metadata={},  # Explicitly set empty dict
                 metadata={
                     "source_url": url,
                     "upload_url_id": upload_url_id or uuid4().hex,
@@ -162,7 +164,7 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
         
         # Get required objects
         user = User.objects.get(id=user_id)
-        notebook = notebook_service.get_notebook_or_404(notebook_id, user)
+        notebook = get_object_or_404(Notebook, id=notebook_id, user=user)
         
         # Update batch item status if this is part of a batch
         if batch_item_id:
@@ -174,6 +176,8 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
             processing_status="processing",  # Start in processing state
             title=clean_title(url),
             content_type="media",
+            tags=[],  # Explicitly set empty list
+            file_metadata={},  # Explicitly set empty dict
             metadata={
                 "source_url": url,
                 "upload_url_id": upload_url_id or uuid4().hex,
@@ -270,7 +274,7 @@ def process_url_document_task(self, url, notebook_id, user_id, upload_url_id=Non
         
         # Get required objects
         user = User.objects.get(id=user_id)
-        notebook = notebook_service.get_notebook_or_404(notebook_id, user)
+        notebook = get_object_or_404(Notebook, id=notebook_id, user=user)
         
         # Update batch item status if this is part of a batch
         if batch_item_id:
@@ -282,6 +286,8 @@ def process_url_document_task(self, url, notebook_id, user_id, upload_url_id=Non
             processing_status="processing",  # Start in processing state
             title=clean_title(url),
             content_type="document",
+            tags=[],  # Explicitly set empty list
+            file_metadata={},  # Explicitly set empty dict
             metadata={
                 "source_url": url,
                 "upload_url_id": upload_url_id or uuid4().hex,
@@ -377,7 +383,7 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
         
         # Get required objects
         user = User.objects.get(id=user_id)
-        notebook = notebook_service.get_notebook_or_404(notebook_id, user)
+        notebook = get_object_or_404(Notebook, id=notebook_id, user=user)
         
         # Update batch item status if this is part of a batch
         if batch_item_id:

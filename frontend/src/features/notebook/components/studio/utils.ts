@@ -1,4 +1,4 @@
-import { config } from '@/config';
+import { config } from "@/config";
 
 const API_BASE_URL = config.API_BASE_URL;
 
@@ -87,9 +87,9 @@ export const processReportMarkdownContent = (content: string, notebookId: string
 };
 
 // Function to get file content with MinIO URLs
-export const getFileContentWithMinIOUrls = async (fileId: string, expires = 86400) => {
+export const getFileContentWithMinIOUrls = async (fileId: string, notebookId: string, expires = 86400) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/notebooks/files/${fileId}/content/minio/?expires=${expires}`, {
+    const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}/files/${fileId}/content/?expires=${expires}`, {
       credentials: 'include',
       headers: {
         'Accept': 'application/json',

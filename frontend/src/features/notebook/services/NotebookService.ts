@@ -1,8 +1,8 @@
-import httpClient from '@/common/utils/httpClient';
+import httpClient from "@/shared/utils/httpClient";
 import type {
   Notebook,
   UpdateNotebookRequest
-} from '@/features/notebook/type';
+} from "@/features/notebook/type";
 
 /**
  * Service class for core notebook management

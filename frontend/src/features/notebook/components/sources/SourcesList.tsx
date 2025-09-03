@@ -1,14 +1,15 @@
 import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback, useMemo } from "react";
 import { Trash2, Plus, ChevronLeft, RefreshCw, AlertCircle, Upload, Group, File as FileIcon, FileText, Music, Video, Presentation, Loader2, Eye, Database, Link2, Globe, ImageIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Button } from "@/common/components/ui/button";
-import { Alert, AlertDescription } from "@/common/components/ui/alert";
-import { Badge } from "@/common/components/ui/badge";
+import { Button } from "@/shared/components/ui/button";
+import { Alert, AlertDescription } from "@/shared/components/ui/alert";
+import { Badge } from "@/shared/components/ui/badge";
 import sourceService from "@/features/notebook/services/SourceService";
 import { supportsPreview } from "@/features/notebook/utils/filePreview";
 import { PANEL_HEADERS, COLORS } from "@/features/notebook/config/uiConfig";
-import { FileIcons } from "@/types";
-import { Source, FileMetadata, SourcesListProps, SourceItemProps } from "@/features/notebook/type";
+import { FileIcons } from "@/shared/types";
+import { Source, SourcesListProps, SourceItemProps } from "@/features/notebook/type";
+import { FileMetadata } from "@/shared/types";
 import { useFileUploadStatus } from "@/features/notebook/hooks/generation/useFileUploadStatus";
 import { useFileStatus } from "@/features/notebook/hooks/generation/useFileStatus";
 import AddSourceModal from "./AddSourceModal";
@@ -82,7 +83,7 @@ interface SourcesListRef {
 }
 
 // Helper function to get principle file icon with visual indicator
-const getPrincipleFileIcon = (source: Source) => {
+  const getPrincipleFileIcon = (source: Source): React.ComponentType<any> => {
   // Enhanced URL detection with multiple fallbacks
   const isUrl = source.ext === 'url' || 
                 source.metadata?.source_url || 
@@ -94,15 +95,16 @@ const getPrincipleFileIcon = (source: Source) => {
   
   if (isUrl) {
     const processingType = source.metadata?.processing_method || source.metadata?.processing_type;
-    return processingType === 'media' ? fileIcons.media : fileIcons.website;
+    return processingType === 'media' ? (fileIcons.media ?? FileIcon) : (fileIcons.website ?? Globe);
   }
   
   // For regular files, use the file extension
-  return fileIcons[source.ext || 'unknown'] || FileIcon;
+  const icon = fileIcons[source.ext || 'unknown'];
+  return icon ?? FileIcon;
 };
 
 
-const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, onSelectionChange, onToggleCollapse, onOpenModal, onCloseModal, sourcesRemovedTrigger }, ref) => {
+const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, onSelectionChange, onToggleCollapse, onOpenModal, onCloseModal }, ref) => {
   const [sources, setSources] = useState<Source[]>([]);
 
   const [error, setError] = useState<string | null>(null);
@@ -161,8 +163,11 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
       
       const response = await sourceService.listParsedFiles(notebookId);
       
-      if (response.success) {
-        const parsedSources = response.data.map((metadata: FileMetadata) => ({
+      // Handle paginated response format {results: [...], count: 0, etc}
+      if (response && response.results !== undefined) {
+        const data = response.results || [];
+        
+        const parsedSources = data.map((metadata: FileMetadata) => ({
           id: metadata.file_id || 'unknown',
           name: generatePrincipleTitle(metadata),
           title: generatePrincipleTitle(metadata),
@@ -186,11 +191,11 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
         
         fileUploadStatus.stopAllTracking();
       } else {
-        throw new Error(response.error || "Failed to load files");
+        throw new Error("Failed to load files - unexpected response format");
       }
     } catch (error) {
       console.error('Error loading parsed files:', error);
-      setError(`Failed to load files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setError(`${error instanceof Error ? error.message : 'Unknown error'}`);
       setSources([]);
     } finally {
       setIsLoading(false);
@@ -367,7 +372,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     const sortedGroups = Object.keys(grouped)
       .sort()
       .reduce((acc: Record<string, Source[]>, type: string) => {
-        acc[type] = grouped[type];
+        acc[type] = grouped[type] || [];
         return acc;
       }, {} as Record<string, Source[]>);
 
@@ -376,7 +381,11 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
 
   // Get processed sources (grouped or not)
   const processedSources = useMemo(() => {
-    return isGrouped ? groupSources(sources) : sources;
+    if (isGrouped) {
+      const grouped = groupSources(sources);
+      return grouped || {};
+    }
+    return sources;
   }, [sources, isGrouped, groupSources]);
 
   // Handle group toggle
@@ -497,9 +506,10 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
       const timer = setTimeout(() => onSelectionChange(), 50);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [selectedIdsString, onSelectionChange]); // Use string comparison to avoid array reference changes
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelected = async (): Promise<void> => {
     const selectedSources = sources.filter(source => source.selected);
     
     if (selectedSources.length === 0) {
@@ -514,20 +524,26 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
         let result;
         let knowledgeItemId = null;
         
+        console.log('Attempting to delete source:', source);
         
         if (source.metadata?.knowledge_item_id) {
           knowledgeItemId = source.metadata.knowledge_item_id;
+          console.log('Deleting by metadata knowledge_item_id:', knowledgeItemId);
           result = await sourceService.deleteParsedFile(source.metadata.knowledge_item_id, notebookId);
         } else if (source.file_id) {
           knowledgeItemId = source.file_id;
+          console.log('Deleting by file_id:', knowledgeItemId);
           result = await sourceService.deleteParsedFile(source.file_id, notebookId);
         } else if (source.upload_file_id) {
+          console.log('Deleting by upload_file_id:', source.upload_file_id);
           result = await sourceService.deleteFileByUploadId(source.upload_file_id, notebookId);
           fileUploadStatus.stopTracking(source.upload_file_id);
         } else {
           console.warn('Source has no valid ID for deletion:', source);
           continue;
         }
+        
+        console.log('Delete result:', result);
         
         if (result.success) {
           deletionResults.push({ source, success: true });
@@ -563,7 +579,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
   };
 
 
-  const handleAddSource = () => {
+  const handleAddSource = (): void => {
     if (onOpenModal) {
       const modalContent = (
         <AddSourceModal
@@ -577,6 +593,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
           }}
           onUploadStarted={(uploadFileId: string, filename: string, fileType: string, oldUploadFileId?: string) => {
             if (oldUploadFileId) {
+              console.log(`SourcesList: Updating source from ${oldUploadFileId} to ${uploadFileId}`);
               // Update existing temp source with real file_id
               setSources(prev => prev.map(source => 
                 source.id === oldUploadFileId ? {
@@ -622,7 +639,6 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
           onKnowledgeBaseItemsDeleted={() => {
             loadParsedFiles();
           }}
-          onSourcesRemoved={sourcesRemovedTrigger}
         />
       );
       onOpenModal('addSourceModal', modalContent);
@@ -631,7 +647,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
 
 
 
-  const renderFileStatus = (source: Source) => {
+  const renderFileStatus = (source: Source): React.ReactNode => {
     const isProcessing = source.parsing_status && ['pending', 'parsing', 'uploading', 'processing', 'in_progress'].includes(source.parsing_status);
     const isFailed = source.parsing_status === 'failed' || source.parsing_status === 'error';
     
@@ -677,7 +693,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     // Show caption generation status for files with images
     if (showCaptionStatus) {
       return (
-        <div className="flex items-center space-x-1" title={`Generating captions for ${imagesRequiringCaptions || 'multiple'} images`}>
+        <div className="flex items-center space-x-1" title={`Generating captions for ${imagesRequiringCaptions || "multiple"} images`}>
           <ImageIcon className="h-3 w-3 text-blue-500" />
           <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
           <span className="text-xs text-blue-500">
@@ -691,7 +707,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
   };
 
   // Get tooltip text for source items
-  const getSourceTooltip = (source: Source) => {
+  const getSourceTooltip = (source: Source): string => {
     // Enhanced URL detection with multiple fallbacks
     const isUrl = source.metadata?.source_url || 
                   source.metadata?.extraction_type === 'url_extractor' ||
@@ -708,7 +724,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
                            'Unknown URL');
       return `Original URL: ${originalUrl}`;
     }
-    return `Original file: ${source.originalFile?.filename || source.title}`;
+    return `Original file: ${source.originalFile?.filename || source.title || ''}`;
   };
 
   // Handle opening file preview
@@ -719,7 +735,7 @@ const SourcesList = forwardRef<SourcesListRef, SourcesListProps>(({ notebookId, 
     }
 
     // Import FilePreview component dynamically
-    import('@/features/notebook/components/shared/FilePreview').then(({ default: FilePreview }) => {
+    import("@/features/notebook/components/shared/FilePreview").then(({ default: FilePreview }) => {
       const previewContent = (
         <FilePreview
           source={{

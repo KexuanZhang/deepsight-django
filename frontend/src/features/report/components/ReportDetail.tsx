@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Report, ReportDetailProps, ReportContent } from '../type';
+import { Report, ReportDetailProps, ReportContent } from '../types/type';
 import { ReportService } from '../services/ReportService';
 
 const ReportDetail: React.FC<ReportDetailProps> = ({
@@ -123,22 +123,22 @@ const ReportDetail: React.FC<ReportDetailProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Topic</h3>
-                <p className="mt-1 text-sm text-gray-900">{report.topic || 'No topic specified'}</p>
+                <p className="mt-1 text-sm text-gray-900">{report.topic || "No topic specified"}</p>
               </div>
               
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Model Provider</h3>
-                <p className="mt-1 text-sm text-gray-900">{report.model_provider || 'Not specified'}</p>
+                <p className="mt-1 text-sm text-gray-900">{report.model_provider || "Not specified"}</p>
               </div>
               
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Retriever</h3>
-                <p className="mt-1 text-sm text-gray-900">{report.retriever || 'Not specified'}</p>
+                <p className="mt-1 text-sm text-gray-900">{report.retriever || "Not specified"}</p>
               </div>
               
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Prompt Type</h3>
-                <p className="mt-1 text-sm text-gray-900">{report.prompt_type || 'Not specified'}</p>
+                <p className="mt-1 text-sm text-gray-900">{report.prompt_type || "Not specified"}</p>
               </div>
               
               <div>

@@ -1,8 +1,8 @@
 import React, { useState, useRef, useCallback, ReactElement } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, Database, RectangleHorizontal } from "lucide-react";
-import { Toaster } from "@/common/components/ui/toaster";
-import { Button } from "@/common/components/ui/button";
+import { Toaster } from "@/shared/components/ui/toaster";
+import { Button } from "@/shared/components/ui/button";
 import { LAYOUT_RATIOS, COLORS, SHADOWS, RESPONSIVE_PANELS, PANEL_HEADERS } from "@/features/notebook/config/uiConfig";
 import NotebookHeader from "@/features/notebook/components/layout/NotebookHeader";
 import SidebarMenu from "@/features/notebook/components/layout/SidebarMenu";

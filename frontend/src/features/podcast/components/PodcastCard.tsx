@@ -1,5 +1,5 @@
 import React from "react";
-import { Podcast, PodcastCardProps } from "../type";
+import { Podcast, PodcastCardProps } from "../types/type";
 
 export default function PodcastCard({ 
   podcast, 

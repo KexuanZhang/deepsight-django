@@ -7,7 +7,7 @@ import type {
   UpdateNotebookRequest,
   SortOrder,
   ViewMode
-} from '@/features/notebook/type';
+} from "@/features/notebook/type";
 
 const initialState: NotebookState = {
   notebooks: [],

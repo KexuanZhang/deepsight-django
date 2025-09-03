@@ -1,0 +1,46 @@
+"""
+Local settings template - copy this to local.py and customize as needed.
+
+This file should be ignored by git and used for developer-specific settings.
+"""
+
+from .development import *
+
+# Override any settings for your local development environment
+
+# Example: Use PostgreSQL locally instead of SQLite
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'deepsight_dev',
+#         'USER': 'your_username',
+#         'PASSWORD': 'your_password',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
+# }
+
+# Example: Custom MinIO settings for local development
+# MINIO_SETTINGS.update({
+#     'ENDPOINT': 'localhost:9001',
+#     'BUCKET_NAME': 'my-dev-bucket',
+# })
+
+# Example: Enable additional debug apps
+# INSTALLED_APPS += [
+#     'django_extensions',
+#     'silk',
+# ]
+
+# Example: Custom logging for debugging specific modules
+# LOGGING['loggers'].update({
+#     'myapp': {
+#         'handlers': ['console'],
+#         'level': 'DEBUG',
+#         'propagate': False,
+#     },
+# })
+
+# Example: Override API keys for testing
+# OPENAI_API_KEY = 'your-test-key'
+# MINIMAX_API_KEY = 'your-test-key'

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Podcast } from '../type';
+import { Podcast } from '../types/type';
 
 interface PodcastListItemProps {
   podcast: Podcast;

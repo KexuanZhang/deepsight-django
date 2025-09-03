@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import { config } from '@/config';
-import studioService from '@/features/notebook/services/StudioService';
+import { config } from "@/config";
+import studioService from "@/features/notebook/services/StudioService";
 
 class AbortError extends Error {
   constructor() {

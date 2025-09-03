@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
-import { useApiUtils } from '@/features/notebook/hooks/shared/useApiUtils';
-import { useAsyncState } from '@/features/notebook/hooks/shared/useAsyncState';
-import type { Notebook, CreateNotebookRequest, UpdateNotebookRequest } from '@/features/notebook/type';
+import { useApiUtils } from "@/features/notebook/hooks/shared/useApiUtils";
+import { useAsyncState } from "@/features/notebook/hooks/shared/useAsyncState";
+import type { Notebook, CreateNotebookRequest, UpdateNotebookRequest, PaginatedResponse } from "@/features/notebook/type";
 
 /**
  * Optimized notebook data management hook
@@ -48,25 +48,44 @@ export const useNotebookData = () => {
    */
   const fetchNotebooks = useCallback(async (sortOrder: 'recent' | 'oldest' | 'name' | 'updated' = 'recent') => {
     return execute(async () => {
-      const data = await get<Notebook[]>('/notebooks/');
-      
-      // Sort notebooks based on sort order
-      const sortedData = [...data].sort((a, b) => {
-        switch (sortOrder) {
-          case 'recent':
-            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-          case 'oldest':
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-          case 'name':
-            return a.name.localeCompare(b.name);
-          case 'updated':
-            return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-          default:
-            return 0;
+      try {
+        const response = await get<PaginatedResponse<Notebook>>('/notebooks/');
+        
+        console.log('API Response:', response);
+        
+        // Handle paginated response - extract results array
+        const notebooks = response.results || response;
+        
+        console.log('Extracted notebooks:', notebooks);
+        
+        
+        // Ensure notebooks is an array
+        if (!Array.isArray(notebooks)) {
+          console.error('Expected notebooks array, got:', typeof notebooks, notebooks);
+          return [];
         }
-      });
-      
-      return sortedData;
+        
+        // Sort notebooks based on sort order
+        const sortedData = [...notebooks].sort((a, b) => {
+          switch (sortOrder) {
+            case 'recent':
+              return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            case 'oldest':
+              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+            case 'name':
+              return a.name.localeCompare(b.name);
+            case 'updated':
+              return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+            default:
+              return 0;
+          }
+        });
+        
+        return sortedData;
+      } catch (error) {
+        console.error('Error fetching notebooks:', error);
+        throw error;
+      }
     });
   }, [execute, get]);
 

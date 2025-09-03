@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Eye, FileText, Globe, Music, Video, File, HardDrive, Calendar, ExternalLink, Loader2, AlertCircle, RefreshCw, Trash2, Plus, ChevronLeft, CheckCircle, Clock, Upload, Link2, Youtube, Group, Presentation } from 'lucide-react';
-import { Button } from '@/common/components/ui/button';
-import { Badge } from '@/common/components/ui/badge';
-import { generatePreview, supportsPreview, PREVIEW_TYPES, formatDate, getVideoMimeType, getAudioMimeType, generateTextPreviewWithMinIOUrls } from '@/features/notebook/utils/filePreview';
+import { Button } from "@/shared/components/ui/button";
+import { Badge } from "@/shared/components/ui/badge";
+import { generatePreview, supportsPreview, PREVIEW_TYPES, formatDate, getVideoMimeType, getAudioMimeType, generateTextPreviewWithMinIOUrls } from "@/features/notebook/utils/filePreview";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
 import "highlight.js/styles/github.css";
-import GallerySection from '@/features/notebook/components/shared/GallerySection';
-import { Source, PreviewState, VideoErrorEvent, FileSource } from '@/types';
+import GallerySection from "@/features/notebook/components/shared/GallerySection";
+import { Source, PreviewState, VideoErrorEvent, FileSource } from '@/shared/types';
 
 // API Base URL for raw file access
-import { config } from '@/config';
+import { config } from "@/config";
 
 const API_BASE_URL = config.API_BASE_URL;
 
@@ -84,11 +84,6 @@ const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({ src, alt, title
           setImgSrc(blobUrl);
           setIsLoading(false);
           console.log('Image blob URL created:', blobUrl);
-
-          // Cleanup blob URL when component unmounts
-          return () => {
-            URL.revokeObjectURL(blobUrl);
-          };
         } catch (error) {
           console.error('Failed to fetch image with credentials:', error);
           setImgError(true);
@@ -1083,7 +1078,7 @@ const FilePreview: React.FC<FilePreviewComponentProps> = ({ source, isOpen, onCl
         
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
           <p className="text-sm text-yellow-800">
-            {state.preview.error || 'PDF content could not be extracted. Click "Download" to view the original document.'}
+            {state.preview.error || "PDF content could not be extracted. Click 'Download' to view the original document."}
           </p>
         </div>
       </div>
@@ -1154,7 +1149,7 @@ const FilePreview: React.FC<FilePreviewComponentProps> = ({ source, isOpen, onCl
           <div className="mt-4">
             <span className="text-sm font-medium text-gray-700">Available Features:</span>
             <div className="flex flex-wrap gap-1 mt-1">
-              {state.preview.featuresAvailable.map((feature) => (
+              {state.preview.featuresAvailable.map((feature: string) => (
                 <Badge key={feature} variant="outline" className="text-xs">
                   {feature}
                 </Badge>
@@ -1191,7 +1186,7 @@ const FilePreview: React.FC<FilePreviewComponentProps> = ({ source, isOpen, onCl
           })}
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Preview</h2>
-            <p className="text-sm text-gray-500">{source?.title || 'Unknown file'}</p>
+            <p className="text-sm text-gray-500">{source?.title || "Unknown file"}</p>
           </div>
         </div>
         <Button

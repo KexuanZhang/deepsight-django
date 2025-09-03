@@ -1,7 +1,7 @@
-import sourceService from '@/features/notebook/services/SourceService';
+import sourceService from "@/features/notebook/services/SourceService";
 
 // API Base URL for raw file access (should match the one in api.js)
-import { config } from '@/config';
+import { config } from "@/config";
 
 const API_BASE_URL = config.API_BASE_URL;
 
@@ -210,7 +210,7 @@ async function generateTextPreview(fileId: string, metadata: FileMetadata, sourc
     } else if (useMinIOUrls) {
       // Use MinIO content endpoint if available (for files with images like PPTX)
       try {
-        const response = await sourceService.getFileContentWithMinIOUrls(fileId);
+        const response = await sourceService.getFileContentWithMinIOUrls(fileId, 'default-notebook', 86400);
         if (response.success && response.data.content) {
           content = response.data.content;
           console.log('Text content: Using MinIO URLs for content with images');
@@ -220,7 +220,7 @@ async function generateTextPreview(fileId: string, metadata: FileMetadata, sourc
       } catch (minioError) {
         console.log('MinIO content not available, trying regular endpoint:', minioError);
         // Fall back to regular endpoint
-        const response = await sourceService.getParsedFile(fileId);
+        const response = await sourceService.getParsedFile(fileId, 'default-notebook');
         if (!response.success) {
           throw new Error('Failed to fetch file content');
         }
@@ -228,7 +228,7 @@ async function generateTextPreview(fileId: string, metadata: FileMetadata, sourc
       }
     } else {
       // Fetch from API for regular files
-      const response = await sourceService.getParsedFile(fileId);
+      const response = await sourceService.getParsedFile(fileId, 'default-notebook');
       if (!response.success) {
         throw new Error('Failed to fetch file content');
       }
@@ -334,7 +334,7 @@ async function generateAudioPreview(fileId: string, metadata: FileMetadata, note
   let wordCount = 0;
   
   try {
-    const response = await sourceService.getParsedFile(fileId);
+    const response = await sourceService.getParsedFile(fileId, 'default-notebook');
     if (response.success && response.data.content) {
       transcriptContent = response.data.content;
       hasTranscript = transcriptContent.trim().length > 0;
@@ -414,7 +414,7 @@ async function generateVideoPreview(fileId: string, metadata: FileMetadata, note
   let wordCount = 0;
   
   try {
-    const response = await sourceService.getParsedFile(fileId);
+    const response = await sourceService.getParsedFile(fileId, 'default-notebook');
     if (response.success && response.data.content) {
       transcriptContent = response.data.content;
       hasTranscript = transcriptContent.trim().length > 0;
@@ -473,7 +473,7 @@ async function generatePdfPreview(fileId: string, metadata: FileMetadata, notebo
     } else if (useMinIOUrls) {
       // Use MinIO content endpoint if available
       try {
-        const response = await sourceService.getFileContentWithMinIOUrls(fileId);
+        const response = await sourceService.getFileContentWithMinIOUrls(fileId, 'default-notebook', 86400);
         if (response.success && response.data.content) {
           pdfContent = response.data.content;
           hasParsedContent = pdfContent.trim().length > 0;
@@ -483,7 +483,7 @@ async function generatePdfPreview(fileId: string, metadata: FileMetadata, notebo
       } catch (minioError) {
         console.log('MinIO content not available for PDF, trying regular endpoint:', minioError);
         // Fall back to regular endpoint
-        const response = await sourceService.getParsedFile(fileId);
+        const response = await sourceService.getParsedFile(fileId, 'default-notebook');
         if (response.success && response.data.content) {
           pdfContent = response.data.content;
           hasParsedContent = pdfContent.trim().length > 0;
@@ -491,7 +491,7 @@ async function generatePdfPreview(fileId: string, metadata: FileMetadata, notebo
         }
       }
     } else {
-      const response = await sourceService.getParsedFile(fileId);
+      const response = await sourceService.getParsedFile(fileId, 'default-notebook');
       if (response.success && response.data.content) {
         pdfContent = response.data.content;
         hasParsedContent = pdfContent.trim().length > 0;
@@ -563,7 +563,7 @@ function extractDomain(url: string): string {
     return urlObj.hostname.replace('www.', '');
   } catch (error) {
     const match = url.match(/^https?:\/\/(?:www\.)?([^\/]+)/);
-    return match ? match[1] : url;
+    return match && match[1] ? match[1] : url;
   }
 }
 
@@ -603,7 +603,7 @@ export function formatDate(dateString: string): string {
  */
 export async function getFileContentWithMinIOUrls(fileId: string, expires: number = 86400): Promise<any> {
   try {
-    const response = await sourceService.getFileContentWithMinIOUrls(fileId, expires);
+    const response = await sourceService.getFileContentWithMinIOUrls(fileId, 'default-notebook', expires);
     if (response.success) {
       return response.data;
     } else {

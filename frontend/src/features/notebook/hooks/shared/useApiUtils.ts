@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { config } from '@/config';
+import { config } from "@/config";
 
 /**
  * Shared API utilities hook
@@ -17,7 +17,7 @@ export const useApiUtils = () => {
    */
   const getCsrfToken = useCallback((name: string = 'csrftoken'): string | null => {
     const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
-    return match ? decodeURIComponent(match[2]) : null;
+    return match && match[2] ? decodeURIComponent(match[2]) : null;
   }, []);
 
   /**

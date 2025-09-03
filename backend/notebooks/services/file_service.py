@@ -1,44 +1,79 @@
 """
-File Service - Handle file processing business logic
+File Service - Handle file processing business logic following Django patterns.
 """
 import logging
 from uuid import uuid4
+from typing import Dict, List, Optional
 from asgiref.sync import async_to_sync
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.core.exceptions import ValidationError
 from rest_framework import status
 
 from ..models import KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.upload_processor import UploadProcessor
 from ..processors import FileProcessor
 from rag.rag import add_user_files
+from .base_service import NotebookBaseService
 
 logger = logging.getLogger(__name__)
 
 
-class FileService:
-    """Handle file processing business logic"""
+class FileService(NotebookBaseService):
+    """Handle file processing business logic following Django patterns."""
     
     def __init__(self):
+        super().__init__()
         # Use new focused file processor
         self.file_processor = FileProcessor()
         # Keep original upload processor for full pipeline
         self.upload_processor = UploadProcessor()
     
-    def handle_single_file_upload(self, file_obj, upload_id, notebook, user):
-        """Process single file upload"""
+    def perform_action(self, **kwargs):
+        """
+        Implementation of abstract method from BaseService.
+        This service uses direct method calls rather than the template pattern.
+        """
+        # This method is required by BaseService but not used in this service
+        # Individual methods handle their own transactions and validation
+        pass
+    
+    @transaction.atomic
+    def handle_single_file_upload(self, file_obj, upload_id: str, notebook, user) -> Dict:
+        """
+        Process single file upload with proper validation and error handling.
+        
+        Args:
+            file_obj: Django file object
+            upload_id: Unique upload identifier
+            notebook: Notebook instance
+            user: User instance
+            
+        Returns:
+            Dict with upload result and status
+        """
+        # Validate notebook access
+        self.validate_notebook_access(notebook, user)
         kb_item = None
         try:
             # Step 1: Create KnowledgeBaseItem immediately in separate transaction
             with transaction.atomic():
                 # Create KnowledgeBaseItem with processing_status="processing" directly in notebook
-                kb_item = KnowledgeBaseItem.objects.create(
+                kb_item = KnowledgeBaseItem(
                     notebook=notebook,
                     title=file_obj.name,
                     content_type="document",
                     processing_status="processing",
-                    notes=f"Processing {file_obj.name}"
+                    notes=f"Processing {file_obj.name}",
+                    tags=[],  # Explicitly set empty list
+                    file_metadata={}  # Explicitly set empty dict
                 )
+                # Set defaults explicitly to avoid validation issues
+                if not hasattr(kb_item, 'tags') or kb_item.tags is None:
+                    kb_item.tags = []
+                if not hasattr(kb_item, 'file_metadata') or kb_item.file_metadata is None:
+                    kb_item.file_metadata = {}
+                kb_item.save()
 
             # Step 2: Queue file processing to Celery (async)
             try:
@@ -57,13 +92,19 @@ class FileService:
                     kb_item_id=str(kb_item.id)  # Pass our pre-created kb_item ID
                 )
                 
-                logger.info(f"Queued file processing task for {file_obj.name} (kb_item: {kb_item.id})")
+                self.log_notebook_operation(
+                    "file_upload_queued",
+                    str(notebook.id),
+                    user.id,
+                    kb_item_id=str(kb_item.id),
+                    filename=file_obj.name
+                )
                 
             except Exception as queue_error:
                 # Update processing status to error if queueing fails
                 kb_item.processing_status = "error"
                 kb_item.save(update_fields=["processing_status"])
-                logger.error(f"Failed to queue processing for {file_obj.name}: {queue_error}")
+                self.logger.error(f"Failed to queue processing for {file_obj.name}: {queue_error}")
                 # Don't re-raise - return success so frontend shows the item with error status
                 
             return {
@@ -77,12 +118,24 @@ class FileService:
             }
 
         except Exception as e:
-            logger.exception(f"Single file upload failed for {file_obj.name}: {e}")
-            raise
+            self.logger.exception(f"Single file upload failed for {file_obj.name}: {e}")
+            raise ValidationError(f"File upload failed: {str(e)}")
 
     @transaction.atomic
-    def handle_batch_file_upload(self, files, notebook, user):
-        """Process batch file upload"""
+    def handle_batch_file_upload(self, files: List, notebook, user) -> Dict:
+        """
+        Process batch file upload with proper transaction management.
+        
+        Args:
+            files: List of Django file objects
+            notebook: Notebook instance
+            user: User instance
+            
+        Returns:
+            Dict with batch job information
+        """
+        # Validate notebook access
+        self.validate_notebook_access(notebook, user)
         try:
             # Create batch job
             batch_job = BatchJob.objects.create(
@@ -103,7 +156,9 @@ class FileService:
                     notebook=notebook,
                     title=file_obj.name,
                     content_type="document",
-                    processing_status="processing"
+                    processing_status="processing",
+                    tags=[],  # Explicitly set empty list
+                    file_metadata={}  # Explicitly set empty dict
                 )
 
                 batch_item = BatchJobItem.objects.create(
@@ -126,6 +181,14 @@ class FileService:
                     kb_item_id=str(kb_item.id)  # Pass the kb_item_id to the task
                 )
 
+            self.log_notebook_operation(
+                "batch_file_upload_started",
+                str(notebook.id),
+                user.id,
+                batch_job_id=str(batch_job.id),
+                total_files=len(files)
+            )
+            
             return {
                 'success': True,
                 'batch_job_id': batch_job.id,
@@ -135,22 +198,47 @@ class FileService:
             }
 
         except Exception as e:
-            logger.exception(f"Batch file upload failed: {e}")
-            raise
+            self.logger.exception(f"Batch file upload failed: {e}")
+            raise ValidationError(f"Batch file upload failed: {str(e)}")
 
-    def process_file_by_type(self, file_path, file_metadata):
-        """Process file using focused file processor"""
+    def process_file_by_type(self, file_path: str, file_metadata: Dict) -> Dict:
+        """
+        Process file using focused file processor.
+        
+        Args:
+            file_path: Path to the file to process
+            file_metadata: Metadata about the file
+            
+        Returns:
+            Processing result dictionary
+        """
         return async_to_sync(self.file_processor.process_file_by_type)(file_path, file_metadata)
 
-    def validate_file_upload(self, serializer):
-        """Validate file upload data"""
+    def validate_file_upload(self, serializer) -> tuple:
+        """
+        Validate file upload data from serializer.
+        
+        Args:
+            serializer: DRF serializer instance
+            
+        Returns:
+            Tuple of (file_obj, upload_id)
+        """
         serializer.is_valid(raise_exception=True)
         file_obj = serializer.validated_data['file']
         upload_id = serializer.validated_data.get('upload_file_id') or uuid4().hex
         return file_obj, upload_id
 
-    def validate_batch_file_upload(self, serializer):
-        """Validate batch file upload data"""
+    def validate_batch_file_upload(self, serializer) -> Optional[List]:
+        """
+        Validate batch file upload data from serializer.
+        
+        Args:
+            serializer: DRF serializer instance
+            
+        Returns:
+            List of file objects or None
+        """
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
         

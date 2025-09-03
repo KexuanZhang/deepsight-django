@@ -1,5 +1,5 @@
 import React from 'react';
-import { Report } from '../type';
+import { Report } from '../types/type';
 
 interface ReportListItemProps {
   report: Report;

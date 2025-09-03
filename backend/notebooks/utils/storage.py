@@ -529,6 +529,7 @@ class FileStorageService:
                     content_type=metadata.get('source_type', 'document'),  # Map source_type to content_type
                     content=content,  # Store the actual content in the database
                     source_hash=source_hash,
+                    tags=[],  # Explicitly set empty list
                     metadata={
                         'file_extension': metadata.get('file_extension', ''),
                         'file_size': metadata.get('file_size', len(content.encode('utf-8'))),

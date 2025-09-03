@@ -1,6 +1,6 @@
 import React from 'react';
-import Studio from '@/features/notebook/components/studio/StudioPanel';
-import { FileItem, SourceItem } from '@/features/notebook/components/studio/types';
+import Studio from "@/features/notebook/components/studio/StudioPanel";
+import { FileItem, SourceItem } from "@/features/notebook/components/studio/types";
 
 interface SourcesListRef {
   getSelectedFiles?: () => FileItem[];

@@ -1,25 +1,43 @@
 """
-Knowledge Base Service - Handle knowledge base operations business logic
+Knowledge Base Service - Handle knowledge base operations following Django patterns.
 """
 import logging
+from typing import Dict, List, Optional
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.core.exceptions import ValidationError
 from rest_framework import status
 
 from ..models import KnowledgeBaseItem, BatchJob
 from ..utils.storage import get_storage_adapter
+from .base_service import NotebookBaseService
 
 logger = logging.getLogger(__name__)
 
 
-class KnowledgeBaseService:
-    """Handle knowledge base operations business logic"""
+class KnowledgeBaseService(NotebookBaseService):
+    """Handle knowledge base operations business logic following Django patterns."""
     
     def __init__(self):
+        super().__init__()
         self.storage_adapter = get_storage_adapter()
     
-    def get_user_knowledge_base(self, user_id, notebook, content_type=None, limit=None, offset=None):
-        """Get knowledge base items for this specific notebook"""
+    def get_user_knowledge_base(self, user_id: int, notebook, content_type: str = None, limit: int = None, offset: int = None) -> Dict:
+        """
+        Get knowledge base items for this specific notebook.
+        
+        Args:
+            user_id: User ID
+            notebook: Notebook instance
+            content_type: Optional content type filter
+            limit: Optional limit for pagination
+            offset: Optional offset for pagination
+            
+        Returns:
+            Dict with knowledge base items and metadata
+        """
+        # Validate notebook access
+        self.validate_notebook_access(notebook, notebook.user)
         try:
             # Since knowledge base items are now notebook-specific, just get items for this notebook
             queryset = KnowledgeBaseItem.objects.filter(notebook=notebook)
@@ -60,7 +78,7 @@ class KnowledgeBaseService:
             }
 
         except Exception as e:
-            logger.exception(f"Failed to retrieve knowledge base for user {user_id}: {e}")
+            self.logger.exception(f"Failed to retrieve knowledge base for user {user_id}: {e}")
             return {
                 "error": "Failed to retrieve knowledge base",
                 "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -68,8 +86,21 @@ class KnowledgeBaseService:
             }
 
     @transaction.atomic
-    def link_knowledge_item_to_notebook(self, kb_item_id, notebook, user_id, notes=""):
-        """Link a knowledge base item to a notebook"""
+    def link_knowledge_item_to_notebook(self, kb_item_id: str, notebook, user_id: int, notes: str = "") -> Dict:
+        """
+        Link a knowledge base item to a notebook.
+        
+        Args:
+            kb_item_id: Knowledge base item ID
+            notebook: Notebook instance
+            user_id: User ID
+            notes: Optional notes
+            
+        Returns:
+            Dict with operation result
+        """
+        # Validate notebook access
+        self.validate_notebook_access(notebook, notebook.user)
         try:
             # Link the item using storage adapter
             success = self.storage_adapter.link_knowledge_item_to_notebook(
@@ -91,7 +122,7 @@ class KnowledgeBaseService:
                 }
 
         except Exception as e:
-            logger.exception(f"Failed to link KB item {kb_item_id} to notebook {notebook.id}: {e}")
+            self.logger.exception(f"Failed to link KB item {kb_item_id} to notebook {notebook.id}: {e}")
             return {
                 "error": "Link operation failed",
                 "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,

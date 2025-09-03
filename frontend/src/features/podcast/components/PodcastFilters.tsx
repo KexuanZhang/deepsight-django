@@ -1,5 +1,5 @@
 import React from 'react';
-import { PodcastFilters as PodcastFiltersType, PodcastStats } from '../type';
+import { PodcastFilters as PodcastFiltersType, PodcastStats } from '../types/type';
 
 interface PodcastFiltersProps {
   filters: PodcastFiltersType;

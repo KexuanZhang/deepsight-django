@@ -1,5 +1,5 @@
 import React from 'react';
-import { ReportStats as ReportStatsType } from '../type';
+import { ReportStats as ReportStatsType } from '../types/type';
 
 interface ReportStatsProps {
   stats: ReportStatsType;

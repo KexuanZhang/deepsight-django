@@ -1,8 +1,8 @@
-import httpClient from '@/common/utils/httpClient';
+import httpClient from "@/shared/utils/httpClient";
 import type {
   ChatResponse,
   NotebookChatMessage
-} from '@/features/notebook/type';
+} from "@/features/notebook/type";
 
 /**
  * Service class for chat-related API operations
@@ -101,7 +101,7 @@ class ChatService {
   // Helper method to get cookie value
   private getCookie(name: string): string | null {
     const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
-    return match ? decodeURIComponent(match[2]) : null;
+    return match && match[2] ? decodeURIComponent(match[2]) : null;
   }
 
   // Get chat message by ID

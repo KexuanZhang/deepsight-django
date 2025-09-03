@@ -431,5 +431,5 @@ export const buildSpacing = (size: 'xs' | 'sm' | 'md' | 'lg' | 'xl'): string => 
     lg: 'gap-6 p-6',
     xl: 'gap-8 p-8'
   };
-  return sizeMap[size] || sizeMap.md;
+  return sizeMap[size] || sizeMap.md || 'gap-4 p-4';
 };

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useToast } from '@/common/components/ui/use-toast';
-import chatService from '@/features/notebook/services/ChatService';
-import type { NotebookChatMessage } from '@/features/notebook/type';
+import { useToast } from "@/shared/components/ui/use-toast";
+import chatService from "@/features/notebook/services/ChatService";
+import type { NotebookChatMessage } from "@/features/notebook/type";
 
 // File interface
 interface FileReference {
@@ -57,7 +57,7 @@ export const useChat = (notebookId: string, sourcesListRef: SourcesListRef): Use
   // Helper to get CSRF token
   const getCookie = useCallback((name: string): string | null => {
     const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
-    return match ? decodeURIComponent(match[2]) : null;
+    return match && match[2] ? decodeURIComponent(match[2]) : null;
   }, []);
 
   // Scroll to bottom of messages

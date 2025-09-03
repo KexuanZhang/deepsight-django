@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Report } from '../type';
+import { Report } from '../types/type';
 import { Trash2 } from 'lucide-react';
 
 interface ReportEditorProps {

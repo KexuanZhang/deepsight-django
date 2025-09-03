@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from "react";
 import { X, Upload, Link2, FileText, Globe, Youtube, Loader2 } from "lucide-react";
-import { Button } from "@/common/components/ui/button";
+import { Button } from "@/shared/components/ui/button";
 import sourceService from "@/features/notebook/services/SourceService";
 import { COLORS } from "@/features/notebook/config/uiConfig";
 
@@ -10,6 +10,7 @@ interface AddSourceModalProps {
   notebookId: string;
   onSourcesAdded: () => void;
   onUploadStarted?: (uploadFileId: string, filename: string, fileType: string, oldUploadFileId?: string) => void;
+  onKnowledgeBaseItemsDeleted?: () => void;
 }
 
 const AddSourceModal: React.FC<AddSourceModalProps> = ({
@@ -38,7 +39,7 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       if (!extension) {
       errors.push("File must have an extension");
     } else if (!allowedExtensions.includes(extension)) {
-      errors.push(`File type "${extension}" is not supported. Allowed types: ${allowedExtensions.join(', ')}`);
+      errors.push(`File type "${extension}" is not supported. Allowed types: ${allowedExtensions.join(", ")}`);
     }
       if (file.size > maxSize) {
       errors.push(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds maximum allowed size of 100MB`);
@@ -69,6 +70,14 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
       }
           const response = await sourceService.parseFile(file, uploadFileId, notebookId);
           if (response.success) {
+        // Update temp source with real file_id from API for proper tracking
+        if (onUploadStarted && response.file_id && response.file_id !== uploadFileId) {
+          console.log(`Updating file tracking from upload_id ${uploadFileId} to real file_id ${response.file_id}`);
+          // Call onUploadStarted again with the real file_id to update the temp source
+          onUploadStarted(response.file_id, file.name, validation.extension, uploadFileId);
+        } else {
+          console.log(`File upload response:`, response, `uploadFileId: ${uploadFileId}`);
+        }
         // Close modal and refresh sources list on success
         handleClose();
         onSourcesAdded();
@@ -180,11 +189,18 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
           const filename = words.length > 0 ? `${words.join('_').toLowerCase()}.md` : 'pasted_text.md';
           const blob = new Blob([pasteText], { type: 'text/markdown' });
       const file = new File([blob], filename, { type: 'text/markdown' });
+          
+      // Notify parent component that upload started IMMEDIATELY
+      if (onUploadStarted) {
+        onUploadStarted(uploadFileId, filename, 'md');
+      }
+      
           const response = await sourceService.parseFile(file, uploadFileId, notebookId);
           if (response.success) {
-        // Notify parent component that upload started
-        if (onUploadStarted) {
-          onUploadStarted(uploadFileId, filename, 'md');
+        // Update temp source with real file_id from API for proper tracking
+        if (onUploadStarted && response.file_id && response.file_id !== uploadFileId) {
+          // Call onUploadStarted again with the real file_id to update the temp source
+          onUploadStarted(response.file_id, filename, 'md', uploadFileId);
         }
               // Close modal and refresh sources list
         handleClose();
@@ -234,7 +250,10 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
     setIsDragOver(false);
       const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
-      handleFileUpload(files[0]);
+      const file = files[0];
+      if (file) {
+        handleFileUpload(file);
+      }
     }
   }, []);
 
@@ -537,9 +556,8 @@ const AddSourceModal: React.FC<AddSourceModalProps> = ({
         type="file"
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) {
-            handleFileUpload(file);
-          }
+          if (!file) return;
+          handleFileUpload(file);
         }}
         style={{ display: 'none' }}
         accept=".pdf,.txt,.md,.ppt,.pptx,.docx,.mp3,.mp4,.wav,.m4a,.avi,.mov,.mkv,.webm,.wmv,.m4v"

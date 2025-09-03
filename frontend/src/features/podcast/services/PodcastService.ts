@@ -1,7 +1,7 @@
 // ====== PODCAST SERVICE ======
 // Handles all podcast-related API operations and business logic
 
-import { ApiClient, createFormData } from '@/common/utils/generation';
+import { ApiClient, createFormData } from "@/shared/utils/generation";
 import { 
   Podcast, 
   PodcastGenerationRequest, 
@@ -9,7 +9,7 @@ import {
   PodcastAudio, 
   PodcastFilters,
   PodcastStats 
-} from '@/features/podcast/type';
+} from "@/features/podcast/types/type";
 
 export interface IPodcastService {
   getPodcasts(filters?: PodcastFilters): Promise<Podcast[]>;
@@ -295,8 +295,7 @@ export class PodcastService implements IPodcastService {
   }
 
   getAudioUrl(podcast: Podcast): string | null {
-    // Priority order: audio_url (from API) -> audioUrl (legacy) -> audio_file -> construct from object key
-    if (podcast.audio_url) return podcast.audio_url;
+    // Priority order: audioUrl -> audio_file -> construct from object key
     if (podcast.audioUrl) return podcast.audioUrl;
     if (podcast.audio_file) return podcast.audio_file;
     if (podcast.audio_object_key) {

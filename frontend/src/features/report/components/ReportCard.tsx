@@ -1,5 +1,5 @@
 import React from "react";
-import { Report, ReportCardProps } from "../type";
+import { Report, ReportCardProps } from "../types/type";
 
 export default function ReportCard({ 
   report, 

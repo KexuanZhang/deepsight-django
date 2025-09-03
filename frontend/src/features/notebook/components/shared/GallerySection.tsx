@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Button } from '@/common/components/ui/button';
+import { Button } from "@/shared/components/ui/button";
 import { Settings, Image as ImageIcon, Loader2, X, ZoomIn, ChevronDown, ChevronUp, Camera } from 'lucide-react';
-import sourceService from '@/features/notebook/services/SourceService';
-import { config } from '@/config';
+import sourceService from "@/features/notebook/services/SourceService";
+import { config } from "@/config";
 // Define the missing types locally
 interface GalleryImage {
   name: string;
@@ -334,7 +334,7 @@ const GallerySection: React.FC<GallerySectionProps> = ({ videoFileId, notebookId
         <p className="text-xs text-gray-500">No images yet. Run extraction or reload to view gallery.</p>
       ) : (
         <div>
-          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
+          <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))" }}>
             {images.slice(0, getDisplayCount()).map((img, idx) => (
               <div
                 key={idx}

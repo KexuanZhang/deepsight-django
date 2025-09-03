@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk, createSelector } from '@reduxjs/toolkit';
 import { ReportService } from './services/ReportService';
-import { Report, ReportState, ReportGenerationRequest, ReportFilters, ReportContent } from '@/features/report/type';
-import { GenerationState } from '@/common/utils/generation';
+import { Report, ReportState, ReportGenerationRequest, ReportFilters, ReportContent } from "@/features/report/types/type";
+import { GenerationState } from "@/shared/utils/generation";
 
 const initialState: ReportState = {
   reports: [],
@@ -132,13 +132,13 @@ const reportSlice = createSlice({
       state.reports.unshift(action.payload);
     },
     updateReportOptimistic: (state, action) => {
-      const index = state.reports.findIndex(r => r.id === action.payload.id);
+      const index = state.reports.findIndex((r: Report) => r.id === action.payload.id);
       if (index !== -1) {
         state.reports[index] = { ...state.reports[index], ...action.payload };
       }
     },
     removeReportOptimistic: (state, action) => {
-      state.reports = state.reports.filter(r => r.id !== action.payload);
+      state.reports = state.reports.filter((r: Report) => r.id !== action.payload);
     },
   },
   extraReducers: (builder) => {
@@ -197,7 +197,7 @@ const reportSlice = createSlice({
       
       // Cancel report
       .addCase(cancelReport.fulfilled, (state, action) => {
-        const index = state.reports.findIndex(r => r.id === action.payload);
+        const index = state.reports.findIndex((r: Report) => r.id === action.payload);
         if (index !== -1) {
           state.reports[index].status = 'cancelled';
         }
@@ -208,7 +208,7 @@ const reportSlice = createSlice({
       
       // Delete report
       .addCase(deleteReport.fulfilled, (state, action) => {
-        state.reports = state.reports.filter(r => r.id !== action.payload);
+        state.reports = state.reports.filter((r: Report) => r.id !== action.payload);
         if (state.currentReport?.id === action.payload) {
           state.currentReport = null;
         }
@@ -248,7 +248,7 @@ export const selectFilteredReports = createSelector(
     // Apply search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter(report => 
+      filtered = filtered.filter((report: Report) => 
         report.title?.toLowerCase().includes(searchLower) ||
         report.topic?.toLowerCase().includes(searchLower) ||
         report.content?.toLowerCase().includes(searchLower)
@@ -257,23 +257,23 @@ export const selectFilteredReports = createSelector(
 
     // Apply other filters
     if (filters.status) {
-      filtered = filtered.filter(report => report.status === filters.status);
+      filtered = filtered.filter((report: Report) => report.status === filters.status);
     }
     if (filters.model_provider) {
-      filtered = filtered.filter(report => report.model_provider === filters.model_provider);
+      filtered = filtered.filter((report: Report) => report.model_provider === filters.model_provider);
     }
     if (filters.notebook_id) {
-      filtered = filtered.filter(report => report.notebook_id === filters.notebook_id);
+      filtered = filtered.filter((report: Report) => report.notebook_id === filters.notebook_id);
     }
 
     // Apply sorting
     switch (sortOrder) {
       case 'recent':
-        return filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        return filtered.sort((a: Report, b: Report) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       case 'oldest':
-        return filtered.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        return filtered.sort((a: Report, b: Report) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
       case 'title':
-        return filtered.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+        return filtered.sort((a: Report, b: Report) => (a.title || '').localeCompare(b.title || ''));
       default:
         return filtered;
     }
@@ -283,18 +283,18 @@ export const selectFilteredReports = createSelector(
 export const selectReportById = (id: string) =>
   createSelector(
     [selectReports],
-    (reports) => reports.find(report => report.id === id)
+    (reports: any[]) => reports.find((report: any) => report.id === id)
   );
 
 export const selectReportStats = createSelector(
   [selectReports],
-  (reports) => ({
+  (reports: any[]) => ({
     total: reports.length,
-    completed: reports.filter(r => r.status === 'completed').length,
-    failed: reports.filter(r => r.status === 'failed').length,
-    pending: reports.filter(r => r.status === 'pending').length,
-    running: reports.filter(r => r.status === 'running').length,
-    cancelled: reports.filter(r => r.status === 'cancelled').length,
+    completed: reports.filter((r: any) => r.status === 'completed').length,
+    failed: reports.filter((r: any) => r.status === 'failed').length,
+    pending: reports.filter((r: any) => r.status === 'pending').length,
+    running: reports.filter((r: any) => r.status === 'running').length,
+    cancelled: reports.filter((r: any) => r.status === 'cancelled').length,
   })
 );
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import { config } from '@/config';
+import { config } from "@/config";
 
 class AbortError extends Error {
   constructor() {
@@ -86,7 +86,7 @@ export const useFileStatus = (
       
       // Build SSE URL based on file type
       const sseUrl = isUUID 
-        ? `${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/files/${fileId}/status-stream/`
+        ? `${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/files/${fileId}/status/stream/`
         : `${config.API_BASE_URL}/notebooks/${currentNotebookIdRef.current}/files/${fileId}/status/stream`;
       
       console.log('Connecting to file SSE:', sseUrl, 'isUUID:', isUUID);

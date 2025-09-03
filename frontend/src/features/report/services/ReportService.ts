@@ -1,7 +1,7 @@
 // ====== REPORT SERVICE ======
 // Handles all report-related API operations and business logic
 
-import { ApiClient } from '@/common/utils/generation';
+import { ApiClient } from "@/shared/utils/generation";
 import { 
   Report, 
   ReportGenerationRequest, 
@@ -9,7 +9,7 @@ import {
   ReportContent, 
   ReportFilters,
   ReportStats 
-} from '@/features/report/type';
+} from "@/features/report/types/type";
 
 export interface IReportService {
   getReports(filters?: ReportFilters): Promise<Report[]>;

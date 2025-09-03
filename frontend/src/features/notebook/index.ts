@@ -1,6 +1,6 @@
 // Main Components
-export { default as DeepdivePage } from './DeepdivePage';
-export { default as NotebookListPage } from './NotebookListPage';
+export { default as DeepdivePage } from './pages/DeepdivePage';
+export { default as NotebookListPage } from './pages/NotebookListPage';
 
 // Layout Components
 export { default as NotebookLayout } from './components/layout/NotebookLayout';
@@ -20,7 +20,7 @@ export { default as FilePreview } from './components/shared/FilePreview';
 
 // Individual Panel Components (for direct access if needed)
 export { default as SourcesList } from './components/sources/SourcesList';
-export { default as Chat } from './components/chat/ChatPanel';
+export { default as Chat } from './components/panels/ChatPanel';
 export { default as Studio } from './components/studio/StudioPanel';
 
 // Hooks

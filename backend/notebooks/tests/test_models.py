@@ -120,7 +120,9 @@ class KnowledgeBaseItemModelTests(TestCase):
             user=self.user,
             title="Test Document",
             content_type="document",
-            content="Test content"
+            content="Test content",
+            tags=[],
+            file_metadata={}
         )
 
         self.assertEqual(item.user, self.user)
@@ -134,7 +136,9 @@ class KnowledgeBaseItemModelTests(TestCase):
             user=self.user,
             title="Test Document",
             content="Test content",
-            source_hash="test_hash_123"
+            source_hash="test_hash_123",
+            tags=[],
+            file_metadata={}
         )
 
         self.assertEqual(item.source_hash, "test_hash_123")
@@ -144,7 +148,8 @@ class KnowledgeBaseItemModelTests(TestCase):
         item = KnowledgeBaseItem.objects.create(
             user=self.user,
             title="Test Document",
-            tags=["tag1", "tag2", "tag3"]
+            tags=["tag1", "tag2", "tag3"],
+            file_metadata={}
         )
 
         self.assertEqual(item.tags, ["tag1", "tag2", "tag3"])

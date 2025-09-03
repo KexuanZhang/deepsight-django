@@ -8,7 +8,12 @@ This package contains focused serializers for different aspects:
 """
 
 # Notebook serializers
-from .notebook_serializers import NotebookSerializer
+from .notebook_serializers import (
+    NotebookSerializer,
+    NotebookListSerializer,
+    NotebookCreateSerializer,
+    NotebookUpdateSerializer
+)
 
 # File serializers
 from .file_serializers import (
@@ -37,6 +42,9 @@ from .batch_serializers import (
 __all__ = [
     # Notebook
     'NotebookSerializer',
+    'NotebookListSerializer',
+    'NotebookCreateSerializer',
+    'NotebookUpdateSerializer',
     
     # File processing
     'FileUploadSerializer',

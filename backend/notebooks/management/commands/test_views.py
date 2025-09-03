@@ -3,7 +3,8 @@ Test command to verify view imports and basic functionality
 """
 from django.core.management.base import BaseCommand
 from django.test import RequestFactory
-from notebooks.views.url_views import URLParseView, SimpleTestView
+# Legacy views no longer available - using services directly
+from notebooks.services import URLService
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -13,26 +14,20 @@ class Command(BaseCommand):
     help = 'Test view imports and basic functionality'
 
     def handle(self, *args, **options):
-        self.stdout.write("Testing view imports...")
+        self.stdout.write("Testing service functionality...")
         
         try:
-            # Test import
-            self.stdout.write(f"URLParseView class: {URLParseView}")
-            self.stdout.write(f"URLParseView module: {URLParseView.__module__}")
-            self.stdout.write(f"URLParseView methods: {[m for m in dir(URLParseView) if not m.startswith('_')]}")
+            # Test service import
+            self.stdout.write(f"URLService class: {URLService}")
+            self.stdout.write(f"URLService module: {URLService.__module__}")
+            self.stdout.write(f"URLService methods: {[m for m in dir(URLService) if not m.startswith('_')]}")
             
             # Test instantiation
-            view = URLParseView()
-            self.stdout.write(f"URLParseView instance: {view}")
-            self.stdout.write(f"Has post method: {hasattr(view, 'post')}")
-            self.stdout.write(f"HTTP method names: {getattr(view, 'http_method_names', 'not set')}")
+            service = URLService()
+            self.stdout.write(f"URLService instance: {service}")
+            self.stdout.write(f"Has handle methods: {hasattr(service, 'handle_single_url_parse')}")
             
-            # Test SimpleTestView
-            simple_view = SimpleTestView()
-            self.stdout.write(f"SimpleTestView instance: {simple_view}")
-            self.stdout.write(f"SimpleTestView has post: {hasattr(simple_view, 'post')}")
-            
-            self.stdout.write(self.style.SUCCESS("All view imports and instantiation successful!"))
+            self.stdout.write(self.style.SUCCESS("All service imports and instantiation successful!"))
             
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Error: {e}"))

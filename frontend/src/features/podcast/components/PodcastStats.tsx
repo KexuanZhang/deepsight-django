@@ -1,5 +1,5 @@
 import React from 'react';
-import { PodcastStats as PodcastStatsType } from '../type';
+import { PodcastStats as PodcastStatsType } from '../types/type';
 
 interface PodcastStatsProps {
   stats: PodcastStatsType;

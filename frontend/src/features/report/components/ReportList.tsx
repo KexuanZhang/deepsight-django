@@ -1,5 +1,5 @@
 import React from 'react';
-import { Report, ReportListProps } from '../type';
+import { Report, ReportListProps } from '../types/type';
 import ReportCard from './ReportCard';
 
 const ReportList: React.FC<ReportListProps> = ({
@@ -152,7 +152,7 @@ const ReportList: React.FC<ReportListProps> = ({
               <div className="mt-3">
                 <div className="flex items-center space-x-2">
                   <div className="flex-1 bg-gray-200 rounded-full h-2">
-                    <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                    <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: "60%" }}></div>
                   </div>
                   <span className="text-xs text-gray-500">{report.progress}</span>
                 </div>

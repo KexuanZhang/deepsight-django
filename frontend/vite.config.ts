@@ -233,6 +233,24 @@ export default defineConfig({
     allowedHosts: true,
   },
   
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Vendor libraries
+          react: ['react', 'react-dom'],
+          redux: ['@reduxjs/toolkit', 'react-redux', 'redux-persist'],
+          query: ['@tanstack/react-query', '@tanstack/react-query-devtools'],
+          ui: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-toast', '@headlessui/react'],
+          table: ['@tanstack/react-table'],
+          router: ['react-router-dom'],
+          markdown: ['react-markdown', 'rehype-highlight', 'rehype-raw', 'remark-gfm'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+  },
+  
   resolve: {
     extensions: ['.tsx', '.ts', '.jsx', '.js', '.json'],
     alias: {

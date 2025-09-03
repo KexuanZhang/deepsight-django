@@ -1,392 +1,377 @@
 """
-Base service classes providing common functionality for all services.
+Enhanced Django service base classes for notebooks app.
+
+This module extends the core service classes with notebook-specific
+functionality while maintaining Django best practices.
 """
 
-import uuid
 import logging
-from abc import ABC, abstractmethod
-from typing import Dict, Optional, Any, List
-from datetime import datetime, UTC
-from pathlib import Path
+from typing import Any, Dict, List, Optional, Type
+from django.db import models, transaction
+from django.core.exceptions import ValidationError, PermissionDenied
+from django.contrib.auth import get_user_model
 
-try:
-    from redis import Redis
-    from rq import Queue
+# Import from our core service base
+from core.services import BaseService, ModelService, AsyncService
+from core.exceptions import ProcessingError, ValidationError as CustomValidationError
 
-    redis_available = True
-except ImportError:
-    Redis = None
-    Queue = None
-    redis_available = False
-
-try:
-    from ..utils.helpers import config as settings
-except ImportError:
-    settings = None
+User = get_user_model()
 
 
-class BaseService(ABC):
+class NotebookBaseService(BaseService):
     """
-    Abstract base service class providing common functionality.
-
-    This class establishes patterns for:
-    - Logging
-    - Data directory management
-    - Configuration access
-    - Error handling
+    Base service for notebook-related operations.
+    
+    Provides common patterns for notebook-scoped operations with
+    proper user permission checking and validation.
     """
+    
+    def __init__(self):
+        super().__init__()
+        self.logger = logging.getLogger(self.__class__.__module__)
+    
+    def get_user_notebook(self, notebook_id: str, user):
+        """
+        Get a notebook that belongs to the specified user.
+        
+        Args:
+            notebook_id: ID of the notebook
+            user: User who should own the notebook
+            
+        Returns:
+            Notebook instance
+            
+        Raises:
+            PermissionDenied: If notebook not found or doesn't belong to user
+        """
+        from ..models import Notebook
+        
+        try:
+            return Notebook.objects.get(id=notebook_id, user=user)
+        except Notebook.DoesNotExist:
+            raise PermissionDenied("Notebook not found or access denied")
+    
+    def validate_notebook_access(self, notebook, user):
+        """
+        Validate that user has access to the notebook.
+        
+        Args:
+            notebook: Notebook instance
+            user: User to check access for
+            
+        Raises:
+            PermissionDenied: If user doesn't have access
+        """
+        if notebook.user != user:
+            raise PermissionDenied("Access denied to notebook")
+    
+    def log_notebook_operation(self, operation: str, notebook_id: str, 
+                             user_id: int, **kwargs):
+        """
+        Log notebook-specific operations with consistent formatting.
+        
+        Args:
+            operation: Description of the operation
+            notebook_id: ID of the notebook involved
+            user_id: ID of the user performing the operation
+            **kwargs: Additional context for logging
+        """
+        self.log_operation(
+            operation,
+            notebook_id=notebook_id,
+            user_id=user_id,
+            **kwargs
+        )
 
-    def __init__(self, service_name: str):
-        self.service_name = service_name
-        self.logger = logging.getLogger(f"{__name__}.{service_name}")
 
-        # Create service-specific data directory
-        if settings and hasattr(settings, "PROJECT_ROOT"):
-            self.data_dir = Path(settings.PROJECT_ROOT) / "data" / service_name
-            self.data_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            # Fallback to a default data directory
-            import tempfile
-
-            self.data_dir = (
-                Path(tempfile.gettempdir()) / "deepsight_data" / service_name
-            )
-            self.data_dir.mkdir(parents=True, exist_ok=True)
-
-        self.logger.info(f"{service_name} service initialized")
-
-    def generate_id(self) -> str:
-        """Generate a unique ID for service operations."""
-        return str(uuid.uuid4())
-
-    def get_timestamp(self) -> str:
-        """Get current timestamp in ISO format."""
-        return datetime.now(UTC).isoformat()
-
-    def log_operation(self, operation: str, details: str = "", level: str = "info"):
-        """Log service operations with consistent formatting."""
-        message = f"[{self.service_name}] {operation}"
-        if details:
-            message += f": {details}"
-
-        getattr(self.logger, level)(message)
-
-
-class BaseQueueService(BaseService):
+class KnowledgeBaseService(ModelService):
     """
-    Base service class for services that use Redis queue functionality.
-
-    Provides:
-    - Redis connection management
-    - Queue setup
-    - Job metadata handling
-    - Common queue operations
+    Service for knowledge base item operations.
+    
+    Handles CRUD operations for knowledge base items with proper
+    notebook scoping and user permission checks.
     """
+    
+    def __init__(self):
+        from ..models import KnowledgeBaseItem
+        super().__init__(KnowledgeBaseItem)
+    
+    def get_items_for_notebook(self, notebook_id: str, user, 
+                              filters: Dict = None):
+        """
+        Get knowledge base items for a specific notebook.
+        
+        Args:
+            notebook_id: ID of the notebook
+            user: User who owns the notebook
+            filters: Optional additional filters
+            
+        Returns:
+            QuerySet of knowledge base items
+        """
+        # Validate notebook access
+        from ..models import Notebook
+        notebook = Notebook.objects.get(id=notebook_id, user=user)
+        
+        # Get items with optional filters
+        queryset = self.model_class.objects.for_notebook(notebook)
+        
+        if filters:
+            if 'status' in filters:
+                if filters['status'] == 'processed':
+                    queryset = queryset.processed()
+                elif filters['status'] == 'processing':
+                    queryset = queryset.processing()
+                elif filters['status'] == 'failed':
+                    queryset = queryset.failed()
+            
+            if 'content_type' in filters:
+                queryset = queryset.by_content_type(filters['content_type'])
+            
+            if 'has_content' in filters and filters['has_content']:
+                queryset = queryset.with_content()
+            
+            if 'search' in filters:
+                queryset = queryset.search_content(filters['search'])
+        
+        return queryset
+    
+    def create_knowledge_item(self, notebook_id: str, user, **item_data):
+        """
+        Create a new knowledge base item.
+        
+        Args:
+            notebook_id: ID of the notebook
+            user: User who owns the notebook
+            **item_data: Data for the knowledge base item
+            
+        Returns:
+            Created KnowledgeBaseItem instance
+        """
+        # Validate notebook access
+        from ..models import Notebook
+        notebook = Notebook.objects.get(id=notebook_id, user=user)
+        
+        # Add notebook to item data
+        item_data['notebook'] = notebook
+        
+        # Create the item
+        item = self.model_class(**item_data)
+        item.full_clean()
+        item.save()
+        
+        self.log_operation(
+            "knowledge_item_created",
+            item_id=str(item.id),
+            notebook_id=notebook_id,
+            user_id=user.id
+        )
+        
+        return item
+    
+    def update_processing_status(self, item_id: str, user, 
+                               status: str, error_message: str = None):
+        """
+        Update the processing status of a knowledge base item.
+        
+        Args:
+            item_id: ID of the knowledge base item
+            user: User who owns the item
+            status: New processing status
+            error_message: Error message if status is 'failed'
+        """
+        item = self.model_class.objects.select_related('notebook').get(
+            id=item_id, notebook__user=user
+        )
+        
+        item.processing_status = status
+        if error_message and status == 'failed':
+            if not item.metadata:
+                item.metadata = {}
+            item.metadata['error_message'] = error_message
+        
+        item.save(update_fields=['processing_status', 'metadata', 'updated_at'])
+        
+        self.log_operation(
+            "processing_status_updated",
+            item_id=item_id,
+            status=status,
+            user_id=user.id
+        )
 
-    def __init__(self, service_name: str, queue_name: str):
-        super().__init__(service_name)
 
-        if not redis_available or not settings:
-            self.logger.warning(f"Redis/RQ not available for {service_name}")
-            self.redis_client = None
-            self.queue = None
-            self.queue_name = queue_name
-            self.job_metadata_key = f"{service_name}_metadata"
-            return
-
-        try:
-            # Redis connection (without string decoding for RQ compatibility)
-            self.redis_client = Redis.from_url(
-                settings.redis_url, decode_responses=False
+class BatchProcessingService(NotebookBaseService):
+    """
+    Service for handling batch processing operations.
+    
+    Manages batch jobs and their individual items with proper
+    status tracking and error handling.
+    """
+    
+    @transaction.atomic
+    def create_batch_job(self, notebook_id: str, user, job_type: str, 
+                        items_data: List[Dict]):
+        """
+        Create a new batch processing job.
+        
+        Args:
+            notebook_id: ID of the notebook
+            user: User who owns the notebook
+            job_type: Type of batch job
+            items_data: List of item data dictionaries
+            
+        Returns:
+            Created BatchJob instance
+        """
+        from ..models import BatchJob, BatchJobItem
+        
+        # Validate notebook access
+        notebook = self.get_user_notebook(notebook_id, user)
+        
+        # Create batch job
+        batch_job = BatchJob.objects.create(
+            notebook=notebook,
+            job_type=job_type,
+            total_items=len(items_data)
+        )
+        
+        # Create individual job items
+        job_items = []
+        for item_data in items_data:
+            job_item = BatchJobItem(
+                batch_job=batch_job,
+                item_data=item_data
             )
+            job_items.append(job_item)
+        
+        BatchJobItem.objects.bulk_create(job_items)
+        
+        self.log_notebook_operation(
+            "batch_job_created",
+            notebook_id,
+            user.id,
+            job_type=job_type,
+            total_items=len(items_data)
+        )
+        
+        return batch_job
+    
+    def update_job_item_status(self, item_id: str, status: str, 
+                              result_data: Dict = None, 
+                              error_message: str = None):
+        """
+        Update the status of a batch job item.
+        
+        Args:
+            item_id: ID of the batch job item
+            status: New status
+            result_data: Result data if completed
+            error_message: Error message if failed
+        """
+        from ..models import BatchJobItem
+        
+        item = BatchJobItem.objects.select_related('batch_job').get(id=item_id)
+        
+        item.status = status
+        if result_data:
+            item.result_data = result_data
+        if error_message:
+            item.error_message = error_message
+        
+        item.save()
+        
+        self.log_operation(
+            "batch_item_status_updated",
+            item_id=item_id,
+            batch_job_id=str(item.batch_job.id),
+            status=status
+        )
 
-            # RQ Queue
-            self.queue = Queue(queue_name, connection=self.redis_client)
-            self.queue_name = queue_name
 
-            # Job metadata storage key
-            self.job_metadata_key = f"{service_name}_metadata"
-
-            self.logger.info(
-                f"Queue service {service_name} initialized with queue: {queue_name}"
-            )
-        except Exception as e:
-            self.logger.warning(f"Failed to initialize Redis for {service_name}: {e}")
-            self.redis_client = None
-            self.queue = None
-            self.queue_name = queue_name
-            self.job_metadata_key = f"{service_name}_metadata"
-
-    def _decode_redis_hash(self, data: Dict) -> Dict[str, str]:
-        """Decode Redis hash data from bytes to strings."""
-        if not data:
-            return {}
-
-        decoded = {}
-        for key, value in data.items():
-            if isinstance(key, bytes):
-                key = key.decode("utf-8")
-            if isinstance(value, bytes):
-                value = value.decode("utf-8")
-            decoded[key] = value
-        return decoded
-
-    def store_job_metadata(self, job_id: str, metadata: Dict[str, Any]) -> None:
-        """Store job metadata in Redis."""
-        if not self.redis_client:
-            self.log_operation(
-                "store_metadata_skipped", f"Redis not available for job_id={job_id}"
-            )
-            return
-
-        try:
-            # Ensure all values are strings for Redis storage
-            redis_data = {}
-            for key, value in metadata.items():
-                if isinstance(value, dict) or isinstance(value, list):
-                    import json
-
-                    redis_data[key] = json.dumps(value)
-                else:
-                    redis_data[key] = str(value)
-
-            self.redis_client.hset(
-                f"{self.job_metadata_key}:{job_id}", mapping=redis_data
-            )
-            self.log_operation("store_metadata", f"job_id={job_id}")
-
-        except Exception as e:
-            self.log_operation("store_metadata_error", str(e), "error")
-            raise
-
-    def get_job_metadata(self, job_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve job metadata from Redis."""
-        if not self.redis_client:
-            return None
-
-        try:
-            raw_data = self.redis_client.hgetall(f"{self.job_metadata_key}:{job_id}")
-            if not raw_data:
-                return None
-
-            decoded_data = self._decode_redis_hash(raw_data)
-
-            # Try to parse JSON strings back to objects
-            for key, value in decoded_data.items():
-                if key in ["request", "result", "metadata"] and value:
-                    try:
-                        import json
-
-                        decoded_data[key] = json.loads(value)
-                    except json.JSONDecodeError:
-                        pass  # Keep as string if not valid JSON
-
-            return decoded_data
-
-        except Exception as e:
-            self.log_operation("get_metadata_error", str(e), "error")
-            return None
-
-    def update_job_progress(
-        self,
-        job_id: str,
-        progress: str,
-        status: Optional[str] = None,
-        percentage: Optional[int] = None,
-    ):
-        """Update job progress in Redis."""
-        if not self.redis_client:
-            return
-
-        try:
-            update_data = {"progress": progress, "updated_at": self.get_timestamp()}
-
-            if status:
-                update_data["status"] = status
-
-            if percentage is not None:
-                update_data["progress_percentage"] = str(percentage)
-
-            self.redis_client.hset(
-                f"{self.job_metadata_key}:{job_id}", mapping=update_data
-            )
-
-            # Publish status update to Redis pub/sub for real-time updates
-            if status:
-                self._publish_status_update(
-                    job_id,
-                    {
-                        "status": status,
-                        "progress": progress,
-                        "progress_percentage": percentage,
-                        "updated_at": update_data["updated_at"],
-                    },
-                )
-
-            self.log_operation(
-                "update_progress", f"job_id={job_id}, progress={progress}"
-            )
-
-        except Exception as e:
-            self.log_operation("update_progress_error", str(e), "error")
-            raise
-
-    def update_job_result(
-        self, job_id: str, result: Dict[str, Any], status: str = "completed"
-    ):
-        """Update job with final result."""
-        if not self.redis_client:
-            return
-
-        try:
-            import json
-
-            update_data = {
-                "status": status,
-                "result": json.dumps(result)
-                if isinstance(result, dict)
-                else str(result),
-                "updated_at": self.get_timestamp(),
-            }
-
-            self.redis_client.hset(
-                f"{self.job_metadata_key}:{job_id}", mapping=update_data
-            )
-
-            # Publish final status update
-            self._publish_status_update(
-                job_id,
-                {
-                    "status": status,
-                    "result": result,
-                    "updated_at": update_data["updated_at"],
-                },
-            )
-
-            self.log_operation("update_result", f"job_id={job_id}, status={status}")
-
-        except Exception as e:
-            self.log_operation("update_result_error", str(e), "error")
-            raise
-
-    def update_job_error(self, job_id: str, error: str):
-        """Update job with error information."""
-        if not self.redis_client:
-            return
-
-        try:
-            update_data = {
-                "status": "error",
-                "error": error,
-                "progress": f"Job failed: {error}",
-                "updated_at": self.get_timestamp(),
-            }
-
-            self.redis_client.hset(
-                f"{self.job_metadata_key}:{job_id}", mapping=update_data
-            )
-
-            # Publish error status update
-            self._publish_status_update(
-                job_id,
-                {
-                    "status": "error",
-                    "error": error,
-                    "progress": f"Job failed: {error}",
-                    "updated_at": update_data["updated_at"],
-                },
-            )
-
-            self.log_operation(
-                "update_error", f"job_id={job_id}, error={error[:100]}", "error"
-            )
-
-        except Exception as e:
-            self.log_operation("update_error_failed", str(e), "error")
-            raise
-
-    def _publish_status_update(self, job_id: str, status_data: Dict[str, Any]):
-        """Publish status update to Redis pub/sub for real-time notifications."""
-        if not self.redis_client:
-            return
-
-        try:
-            import json
-
-            channel_name = f"file_parsing_status:{job_id}"
-            message = json.dumps(status_data)
-            self.redis_client.publish(channel_name, message)
-            self.log_operation(
-                "publish_status", f"job_id={job_id}, channel={channel_name}"
-            )
-        except Exception as e:
-            self.log_operation(
-                "publish_status_error", f"job_id={job_id}, error={str(e)}", "error"
-            )
-            # Don't raise here to avoid breaking the main flow
-
-    def delete_job_metadata(self, job_id: str) -> bool:
-        """Delete job metadata from Redis."""
-        if not self.redis_client:
-            return False
-
-        try:
-            result = self.redis_client.delete(f"{self.job_metadata_key}:{job_id}")
-            self.log_operation("delete_metadata", f"job_id={job_id}")
-            return bool(result)
-
-        except Exception as e:
-            self.log_operation("delete_metadata_error", str(e), "error")
-            return False
-
-    def list_jobs(self, pattern: str = "*", limit: int = 50) -> List[Dict[str, Any]]:
-        """List jobs matching pattern."""
-        try:
-            keys = self.redis_client.keys(f"{self.job_metadata_key}:{pattern}")
-            jobs = []
-
-            for key in keys[:limit]:
-                job_id = key.decode("utf-8").split(":")[-1]
-                metadata = self.get_job_metadata(job_id)
-                if metadata:
-                    jobs.append(metadata)
-
-            self.log_operation("list_jobs", f"found {len(jobs)} jobs")
-            return jobs
-
-        except Exception as e:
-            self.log_operation("list_jobs_error", str(e), "error")
-            return []
-
-    def cleanup_old_jobs(self, days_old: int = 7) -> int:
-        """Clean up old job metadata."""
-        try:
-            from datetime import timedelta
-
-            cutoff_date = datetime.now(UTC) - timedelta(days=days_old)
-
-            keys = self.redis_client.keys(f"{self.job_metadata_key}:*")
-            cleaned_count = 0
-
-            for key in keys:
-                job_id = key.decode("utf-8").split(":")[-1]
-                metadata = self.get_job_metadata(job_id)
-
-                if metadata and metadata.get("created_at"):
-                    try:
-                        created_at = datetime.fromisoformat(
-                            metadata["created_at"].replace("Z", "+00:00")
-                        )
-                        if created_at < cutoff_date:
-                            self.delete_job_metadata(job_id)
-                            cleaned_count += 1
-                    except ValueError:
-                        # Invalid date format, skip
-                        continue
-
-            self.log_operation("cleanup_jobs", f"cleaned {cleaned_count} old jobs")
-            return cleaned_count
-
-        except Exception as e:
-            self.log_operation("cleanup_jobs_error", str(e), "error")
-            return 0
+class ChatService(NotebookBaseService):
+    """
+    Service for notebook chat operations.
+    
+    Handles chat message creation, retrieval, and management
+    with proper notebook scoping.
+    """
+    
+    def add_message(self, notebook_id: str, user, sender: str, 
+                   message: str, metadata: Dict = None):
+        """
+        Add a new chat message to a notebook.
+        
+        Args:
+            notebook_id: ID of the notebook
+            user: User who owns the notebook
+            sender: Who sent the message ('user' or 'assistant')
+            message: Message content
+            metadata: Optional metadata for the message
+            
+        Returns:
+            Created NotebookChatMessage instance
+        """
+        from ..models import NotebookChatMessage
+        
+        # Validate notebook access
+        notebook = self.get_user_notebook(notebook_id, user)
+        
+        # Create chat message
+        chat_message = NotebookChatMessage.objects.create(
+            notebook=notebook,
+            sender=sender,
+            message=message,
+            metadata=metadata or {}
+        )
+        
+        self.log_notebook_operation(
+            "chat_message_added",
+            notebook_id,
+            user.id,
+            sender=sender,
+            message_length=len(message)
+        )
+        
+        return chat_message
+    
+    def get_chat_history(self, notebook_id: str, user, limit: int = 50):
+        """
+        Get chat history for a notebook.
+        
+        Args:
+            notebook_id: ID of the notebook
+            user: User who owns the notebook
+            limit: Maximum number of messages to return
+            
+        Returns:
+            QuerySet of chat messages
+        """
+        # Validate notebook access
+        notebook = self.get_user_notebook(notebook_id, user)
+        
+        return notebook.chat_messages.all()[:limit]
+    
+    def clear_chat_history(self, notebook_id: str, user):
+        """
+        Clear all chat messages for a notebook.
+        
+        Args:
+            notebook_id: ID of the notebook
+            user: User who owns the notebook
+            
+        Returns:
+            Number of messages deleted
+        """
+        # Validate notebook access
+        notebook = self.get_user_notebook(notebook_id, user)
+        
+        count, _ = notebook.chat_messages.all().delete()
+        
+        self.log_notebook_operation(
+            "chat_history_cleared",
+            notebook_id,
+            user.id,
+            messages_deleted=count
+        )
+        
+        return count

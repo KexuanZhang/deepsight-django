@@ -1,23 +1,27 @@
 """
-URL Service - Handle URL processing business logic
+URL Service - Handle URL processing business logic following Django patterns.
 """
 import logging
 from uuid import uuid4
+from typing import Dict, List, Optional
 from asgiref.sync import async_to_sync
 from django.db import transaction
+from django.core.exceptions import ValidationError
 from rest_framework import status
 
 from ..models import KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.url_extractor import URLExtractor
 from rag.rag import add_user_files
+from .base_service import NotebookBaseService
 
 logger = logging.getLogger(__name__)
 
 
-class URLService:
-    """Handle URL processing business logic"""
+class URLService(NotebookBaseService):
+    """Handle URL processing business logic following Django patterns."""
     
     def __init__(self):
+        super().__init__()
         # Keep original url extractor for full pipeline
         self.url_extractor = URLExtractor()
     

@@ -1,5 +1,5 @@
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { config } from '@/config';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { config } from "@/config";
 
 interface User {
   id: string;
@@ -29,8 +29,7 @@ export const checkCurrentUser = createAsyncThunk<User, void>(
   'auth/checkCurrentUser',
   async (_, { rejectWithValue }) => {
     try {
-      // Use a completely silent approach - create image element to avoid console logs
-      const img = new Image();
+      // Use a completely silent approach
       const testUrl = `${config.API_BASE_URL}/users/me/`;
       
       return new Promise((resolve, reject) => {
@@ -85,7 +84,8 @@ export const loginUser = createAsyncThunk(
       // Helper function to get CSRF token from cookies
       const getCookie = (name: string) => {
         const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
-        return match ? decodeURIComponent(match[2]) : null;
+        const value = match?.[2];
+        return value ? decodeURIComponent(value) : null;
       };
 
       const response = await fetch(`${config.API_BASE_URL}/users/login/`, {
@@ -118,7 +118,8 @@ export const signupUser = createAsyncThunk(
       // Helper function to get CSRF token from cookies
       const getCookie = (name: string) => {
         const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
-        return match ? decodeURIComponent(match[2]) : null;
+        const value = match?.[2];
+        return value ? decodeURIComponent(value) : null;
       };
 
       const response = await fetch(`${config.API_BASE_URL}/users/signup/`, {
@@ -151,7 +152,8 @@ export const logoutUser = createAsyncThunk(
       // Helper function to get CSRF token from cookies
       const getCookie = (name: string) => {
         const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
-        return match ? decodeURIComponent(match[2]) : null;
+        const value = match?.[2];
+        return value ? decodeURIComponent(value) : null;
       };
 
       const response = await fetch(`${config.API_BASE_URL}/users/logout/`, {

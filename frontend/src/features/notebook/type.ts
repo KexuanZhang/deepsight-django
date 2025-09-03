@@ -79,6 +79,22 @@ export interface GenerationRequest {
   options?: Record<string, any>;
 }
 
+// API Response Types
+export interface PaginatedResponse<T> {
+  count: number;
+  total_pages: number;
+  current_page: number;
+  page_size: number;
+  next: string | null;
+  previous: string | null;
+  stats?: {
+    total_notebooks: number;
+    active_notebooks: number;
+    total_items_across_notebooks: number;
+  };
+  results: T[];
+}
+
 // State Types
 export interface NotebookState {
   notebooks: Notebook[];
@@ -159,12 +175,6 @@ export interface ApiResponse<T> {
   timestamp: number;
 }
 
-export interface PaginatedResponse<T> {
-  results: T[];
-  count: number;
-  next?: string;
-  previous?: string;
-}
 
 // Filter and Sort Types
 export interface NotebookFilters {
@@ -245,19 +255,18 @@ export interface SourceItemProps {
 }
 
 // Re-export global types that are used in notebook feature
-export type { 
-  FileMetadata, 
-  FileSource, 
-  ChatMessage,
-  GenerationState,
-  FileData,
-  StatusProps,
-  GenerationConfig,
-  GalleryImage,
-  ExtractResult,
-  StatusUpdate,
-  FileIcons,
-  ProgressState,
-  KnowledgeBaseItem,
-  Suggestion
-} from '@/types/global';
+// export type { 
+//   FileMetadata,
+//   ChatMessage,
+//   GenerationState,
+//   FileData,
+//   StatusProps,
+//   GenerationConfig,
+//   GalleryImage,
+//   ExtractResult,
+//   StatusUpdate,
+//   FileIcons,
+//   ProgressState,
+//   KnowledgeBaseItem,
+//   Suggestion
+// } from '@/features/notebook/type';

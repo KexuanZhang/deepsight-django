@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { VALIDATION_CONFIG } from '@/features/notebook/config/fileConfig';
+import { VALIDATION_CONFIG } from "@/features/notebook/config/fileConfig";
 
 interface ValidationResult {
   isValid: boolean;
@@ -30,7 +30,7 @@ export const useFileUpload = () => {
     if (!extension) {
       errors.push("File must have an extension");
     } else if (!VALIDATION_CONFIG.allowedExtensions.includes(extension)) {
-      errors.push(`File type "${extension}" is not supported. Allowed types: ${VALIDATION_CONFIG.allowedExtensions.join(', ')}`);
+      errors.push(`File type "${extension}" is not supported. Allowed types: ${VALIDATION_CONFIG.allowedExtensions.join(", ")}`);
     }
     
     // Check file size
@@ -48,7 +48,7 @@ export const useFileUpload = () => {
     // Check MIME type if available
     if (file.type) {
       const expectedType = VALIDATION_CONFIG.expectedMimeTypes[extension as keyof typeof VALIDATION_CONFIG.expectedMimeTypes];
-      if (expectedType && !file.type.startsWith(expectedType.split('/')[0])) {
+      if (expectedType && !file.type.startsWith(expectedType.split('/')[0] || '')) {
         warnings.push(`File type "${file.type}" may not match extension "${extension}"`);
       }
     }
@@ -80,7 +80,7 @@ export const useFileUpload = () => {
     setIsDragOver(false);
     
     const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0 && onFileDrop) {
+    if (files.length > 0 && files[0] && onFileDrop) {
       onFileDrop(files[0]);
     }
   }, []);

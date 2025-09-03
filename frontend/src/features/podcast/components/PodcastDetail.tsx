@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Podcast, PodcastDetailProps, PodcastAudio } from '../type';
+import { Podcast, PodcastDetailProps, PodcastAudio } from '../types/type';
 import { PodcastService } from '../services/PodcastService';
 
 const PodcastDetail: React.FC<PodcastDetailProps> = ({
@@ -46,7 +46,7 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
       };
 
       // Start polling every 2 seconds
-      pollingIntervalRef.current = setInterval(pollForUpdates, 2000);
+      pollingIntervalRef.current = window.setInterval(pollForUpdates, 2000);
 
       // Cleanup on unmount or when status changes
       return () => {
@@ -216,12 +216,12 @@ const PodcastDetail: React.FC<PodcastDetailProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Topic</h3>
-                <p className="mt-1 text-sm text-gray-900">{currentPodcast.topic || 'No topic specified'}</p>
+                <p className="mt-1 text-sm text-gray-900">{currentPodcast.topic || "No topic specified"}</p>
               </div>
               
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Description</h3>
-                <p className="mt-1 text-sm text-gray-900">{currentPodcast.description || 'No description'}</p>
+                <p className="mt-1 text-sm text-gray-900">{currentPodcast.description || "No description"}</p>
               </div>
               
               <div>

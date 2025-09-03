@@ -1,5 +1,5 @@
 import React from 'react';
-import { Podcast, PodcastListProps } from '../type';
+import { Podcast, PodcastListProps } from '../types/type';
 import PodcastCard from './PodcastCard';
 
 const PodcastList: React.FC<PodcastListProps> = ({
@@ -176,7 +176,7 @@ const PodcastList: React.FC<PodcastListProps> = ({
               <div className="mt-3">
                 <div className="flex items-center space-x-2">
                   <div className="flex-1 bg-gray-200 rounded-full h-2">
-                    <div className="bg-purple-600 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                    <div className="bg-purple-600 h-2 rounded-full animate-pulse" style={{ width: "60%" }}></div>
                   </div>
                   <span className="text-xs text-gray-500">{podcast.progress}</span>
                 </div>

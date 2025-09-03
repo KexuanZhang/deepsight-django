@@ -50,11 +50,12 @@ const NotebookList: React.FC<NotebookListProps> = ({ notebooks, onNotebookClick,
     const handleClickOutside = () => {
       setOpenDropdown(null);
     };
-
     if (openDropdown) {
       document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
     }
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
   }, [openDropdown]);
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">

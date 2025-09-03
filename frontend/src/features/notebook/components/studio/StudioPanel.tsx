@@ -3,26 +3,26 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { RefreshCw, Maximize2, Minimize2, Settings, FileText, Play, Palette, ChevronDown, Trash2, Edit, Download, Save, X, Eye } from 'lucide-react';
-import { Button } from '@/common/components/ui/button';
-import { useToast } from '@/common/components/ui/use-toast';
+import { Button } from "@/shared/components/ui/button";
+import { useToast } from "@/shared/components/ui/use-toast";
 
 // ====== DEPENDENCY INVERSION PRINCIPLE (DIP) ======
 // Import service abstractions, not concrete implementations
-import { jobStorage } from '@/features/notebook/utils/jobStorage';
-import studioService from '@/features/notebook/services/StudioService';
+import { jobStorage } from "@/features/notebook/utils/jobStorage";
+import studioService from "@/features/notebook/services/StudioService";
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused custom hooks for specific concerns
-import { config } from '@/config';
+import { config } from "@/config";
 import { PANEL_HEADERS } from "@/features/notebook/config/uiConfig";
-import { useStudioData, useGenerationState, useJobStatus } from '@/features/notebook/hooks';
+import { useStudioData, useGenerationState, useJobStatus } from "@/features/notebook/hooks";
 
 // ====== SINGLE RESPONSIBILITY PRINCIPLE (SRP) ======
 // Import focused UI components
-import ReportGenerationForm from './components/ReportGenerationForm';
-import PodcastGenerationForm from './components/PodcastGenerationForm';
-import PodcastAudioPlayer from './components/PodcastAudioPlayer';
-import FileViewer from './components/FileViewer';
+import ReportGenerationForm from './ReportGenerationForm';
+import PodcastGenerationForm from './PodcastGenerationForm';
+import PodcastAudioPlayer from './PodcastAudioPlayer';
+import FileViewer from './FileViewer';
 
 // ====== INTERFACE SEGREGATION PRINCIPLE (ISP) ======
 // Import type definitions and prop creators
@@ -772,7 +772,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                   className="h-7 px-2 text-xs text-gray-500 hover:text-gray-700"
                   onClick={() => {
                     // Import AdvancedSettingsModal component dynamically
-                    import('./components/AdvancedSettingsModal').then(({ default: AdvancedSettingsModal }) => {
+                    import('./AdvancedSettingsModal').then(({ default: AdvancedSettingsModal }) => {
                       const settingsContent = (
                         <AdvancedSettingsModal
                           isOpen={true}

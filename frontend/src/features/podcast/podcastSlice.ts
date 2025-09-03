@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk, createSelector } from '@reduxjs/toolkit';
 import { PodcastService } from './services/PodcastService';
-import { Podcast, PodcastState, PodcastGenerationRequest, PodcastFilters, PodcastAudio } from '@/features/podcast/type';
-import { GenerationState } from '@/common/utils/generation';
+import { Podcast, PodcastState, PodcastGenerationRequest, PodcastFilters, PodcastAudio } from "@/features/podcast/types/type";
+import { GenerationState } from "@/shared/utils/generation";
 
 const initialState: PodcastState = {
   podcasts: [],
@@ -120,13 +120,13 @@ const podcastSlice = createSlice({
       state.podcasts.unshift(action.payload);
     },
     updatePodcastOptimistic: (state, action) => {
-      const index = state.podcasts.findIndex(p => p.id === action.payload.id);
+      const index = state.podcasts.findIndex((p: any) => p.id === action.payload.id);
       if (index !== -1) {
         state.podcasts[index] = { ...state.podcasts[index], ...action.payload };
       }
     },
     removePodcastOptimistic: (state, action) => {
-      state.podcasts = state.podcasts.filter(p => p.id !== action.payload);
+      state.podcasts = state.podcasts.filter((p: any) => p.id !== action.payload);
     },
   },
   extraReducers: (builder) => {
@@ -185,7 +185,7 @@ const podcastSlice = createSlice({
       
       // Cancel podcast
       .addCase(cancelPodcast.fulfilled, (state, action) => {
-        const index = state.podcasts.findIndex(p => p.id === action.payload);
+        const index = state.podcasts.findIndex((p: any) => p.id === action.payload);
         if (index !== -1) {
           state.podcasts[index].status = 'cancelled';
         }
@@ -196,7 +196,7 @@ const podcastSlice = createSlice({
       
       // Delete podcast
       .addCase(deletePodcast.fulfilled, (state, action) => {
-        state.podcasts = state.podcasts.filter(p => p.id !== action.payload);
+        state.podcasts = state.podcasts.filter((p: any) => p.id !== action.payload);
         if (state.currentPodcast?.id === action.payload) {
           state.currentPodcast = null;
         }
@@ -275,11 +275,11 @@ export const selectPodcastStats = createSelector(
   [selectPodcasts],
   (podcasts) => ({
     total: podcasts.length,
-    completed: podcasts.filter(p => p.status === 'completed').length,
-    failed: podcasts.filter(p => p.status === 'failed').length,
-    pending: podcasts.filter(p => p.status === 'pending').length,
-    generating: podcasts.filter(p => p.status === 'generating').length,
-    cancelled: podcasts.filter(p => p.status === 'cancelled').length,
+    completed: podcasts.filter((p: any) => p.status === 'completed').length,
+    failed: podcasts.filter((p: any) => p.status === 'failed').length,
+    pending: podcasts.filter((p: any) => p.status === 'pending').length,
+    generating: podcasts.filter((p: any) => p.status === 'generating').length,
+    cancelled: podcasts.filter((p: any) => p.status === 'cancelled').length,
   })
 );
 
