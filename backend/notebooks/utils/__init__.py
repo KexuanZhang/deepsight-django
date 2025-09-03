@@ -71,11 +71,8 @@ try:
 except ImportError:
     MediaProcessor = None
 
-# RAG import with fallback
-try:
-    from rag.rag import RAGChatbot as ExternalRAGChatbot
-except ImportError:
-    ExternalRAGChatbot = None
+# Legacy Milvus RAG import removed - now using RagFlow integration
+ExternalRAGChatbot = None
 
 __all__ = [
     # Configuration

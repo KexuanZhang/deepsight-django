@@ -11,8 +11,7 @@ from django.db import transaction
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.paginator import Paginator
 
-from core.services import ModelService
-from .base_service import NotebookBaseService
+from core.services import ModelService, NotebookBaseService
 
 
 class NotebookService(ModelService):
@@ -139,12 +138,35 @@ class NotebookService(ModelService):
         notebook.full_clean()
         notebook.save()
         
-        self.log_operation(
-            "notebook_created",
-            notebook_id=str(notebook.id),
-            user_id=user.id,
-            name=notebook.name
-        )
+        # Create RagFlow dataset for the notebook
+        try:
+            from .ragflow_service import RagFlowService
+            ragflow_service = RagFlowService()
+            dataset_result = ragflow_service.create_dataset(notebook)
+            
+            if not dataset_result.get('success'):
+                # If dataset creation fails, rollback notebook creation
+                notebook.delete()
+                error_msg = dataset_result.get('error', 'Failed to create RagFlow dataset')
+                raise ValidationError(f"Failed to create notebook: {error_msg}")
+            
+            self.log_operation(
+                "notebook_created_with_ragflow_dataset",
+                notebook_id=str(notebook.id),
+                user_id=user.id,
+                name=notebook.name,
+                ragflow_dataset_id=dataset_result.get('dataset_id'),
+                ragflow_chat_id=dataset_result.get('chat_id')
+            )
+            
+        except ValidationError:
+            # Re-raise ValidationError to maintain the interface
+            raise
+        except Exception as e:
+            # For any other error, rollback and raise ValidationError
+            notebook.delete()
+            self.logger.error(f"Failed to create RagFlow dataset for notebook {name}: {e}")
+            raise ValidationError(f"Failed to create notebook: RagFlow service error")
         
         return notebook
     
@@ -231,13 +253,42 @@ class NotebookService(ModelService):
             'batch_jobs_count': notebook.batch_jobs.count(),
         }
         
-        # Delete notebook (cascade will handle related objects)
+        # Delete RagFlow dataset if it exists
+        ragflow_dataset_deleted = False
+        ragflow_dataset_id = None
+        if hasattr(notebook, 'ragflow_dataset'):
+            try:
+                from .ragflow_service import RagFlowService
+                ragflow_service = RagFlowService()
+                ragflow_dataset_id = notebook.ragflow_dataset.ragflow_dataset_id
+                
+                delete_result = ragflow_service.delete_dataset(notebook.ragflow_dataset)
+                ragflow_dataset_deleted = delete_result.get('success', False)
+                
+                if not ragflow_dataset_deleted:
+                    self.logger.warning(
+                        f"Failed to delete RagFlow dataset {ragflow_dataset_id} "
+                        f"for notebook {notebook_id}: {delete_result.get('error')}"
+                    )
+                else:
+                    stats['ragflow_dataset_deleted'] = True
+                    stats['ragflow_dataset_id'] = ragflow_dataset_id
+                    
+            except Exception as e:
+                self.logger.error(
+                    f"Error deleting RagFlow dataset for notebook {notebook_id}: {e}"
+                )
+                stats['ragflow_cleanup_error'] = str(e)
+        
+        # Delete notebook (cascade will handle related objects including RagFlowDataset)
         notebook.delete()
         
         self.log_operation(
-            "notebook_deleted",
+            "notebook_deleted_with_ragflow_cleanup",
             notebook_id=notebook_id,
             user_id=user.id,
+            ragflow_dataset_deleted=ragflow_dataset_deleted,
+            ragflow_dataset_id=ragflow_dataset_id,
             **stats
         )
         
@@ -381,3 +432,78 @@ class NotebookService(ModelService):
             )
         
         return count
+    
+    # RagFlow Integration Methods
+    
+    def get_notebook_dataset(self, notebook_id: str, user):
+        """
+        Get RagFlow dataset for a notebook.
+        
+        Args:
+            notebook_id: ID of the notebook
+            user: User who owns the notebook
+            
+        Returns:
+            RagFlowDataset instance or None if not found
+            
+        Raises:
+            PermissionDenied: If user doesn't own the notebook
+        """
+        notebook = self.get_object_for_user(notebook_id, user)
+        return getattr(notebook, 'ragflow_dataset', None)
+    
+    def has_dataset(self, notebook_id: str, user) -> bool:
+        """
+        Check if notebook has an associated RagFlow dataset.
+        
+        Args:
+            notebook_id: ID of the notebook
+            user: User who owns the notebook
+            
+        Returns:
+            True if dataset exists and is active
+        """
+        try:
+            dataset = self.get_notebook_dataset(notebook_id, user)
+            return dataset is not None and dataset.is_ready()
+        except Exception:
+            return False
+    
+    def get_dataset_status(self, notebook_id: str, user):
+        """
+        Get RagFlow dataset status for a notebook.
+        
+        Args:
+            notebook_id: ID of the notebook
+            user: User who owns the notebook
+            
+        Returns:
+            Dict with dataset status information
+        """
+        try:
+            dataset = self.get_notebook_dataset(notebook_id, user)
+            if not dataset:
+                return {
+                    'has_dataset': False,
+                    'status': 'not_created'
+                }
+            
+            return {
+                'has_dataset': True,
+                'status': dataset.status,
+                'dataset_id': dataset.ragflow_dataset_id,
+                'dataset_name': dataset.dataset_name,
+                'chat_id': dataset.ragflow_chat_id,
+                'error_message': dataset.error_message if dataset.has_error() else None,
+                'document_count': dataset.get_document_count(),
+                'created_at': dataset.created_at,
+                'updated_at': dataset.updated_at
+            }
+            
+        except Exception as e:
+            self.logger.exception(f"Failed to get dataset status for notebook {notebook_id}: {e}")
+            return {
+                'has_dataset': False,
+                'status': 'error',
+                'error': str(e)
+            }

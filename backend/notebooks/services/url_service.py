@@ -11,8 +11,7 @@ from rest_framework import status
 
 from ..models import KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.url_extractor import URLExtractor
-from rag.rag import add_user_files
-from .base_service import NotebookBaseService
+from core.services import NotebookBaseService
 
 logger = logging.getLogger(__name__)
 

@@ -63,7 +63,7 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
             # Create new KnowledgeBaseItem (fallback or batch processing)
             kb_item = KnowledgeBaseItem.objects.create(
                 notebook=notebook,
-                processing_status="processing",  # Start in processing state
+                parsing_status="queueing",  # Start in queueing state
                 title=clean_title(url),
                 content_type="webpage",
                 notes=f"Processing URL: {url}",
@@ -81,7 +81,6 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
 
         # Step 4: Now process the URL using url extractor
         from .processors.url_extractor import URLExtractor
-        from rag.rag import add_user_files
         from asgiref.sync import async_to_sync
         
         url_extractor = URLExtractor()
@@ -98,22 +97,39 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
 
         try:
             # Update status to in_progress before starting processing
-            kb_item.processing_status = "in_progress"
-            kb_item.save(update_fields=["processing_status"])
+            kb_item.parsing_status = "parsing"
+            kb_item.save(update_fields=["parsing_status"])
             
             # Run async processing using async_to_sync
             result = async_to_sync(process_url_async)()
             
             # Step 5: Update status to done (this will trigger SSE update)
-            kb_item.processing_status = "done"
-            kb_item.save(update_fields=["processing_status"])
+            kb_item.parsing_status = "done"
+            kb_item.save(update_fields=["parsing_status"])
 
-            # Ingest KB item content for retrieval (embedding)
+            # Upload to RagFlow dataset if content is available
             if kb_item.content:  # Ensure content exists
                 try:
+                    from .services.ragflow_service import RagFlowService
+                    ragflow_service = RagFlowService()
+                    
+                    # Upload knowledge item content to RagFlow
+                    upload_result = ragflow_service.upload_knowledge_item_content(kb_item)
+                    if upload_result.get('success'):
+                        logger.info(f"Successfully uploaded KB item {kb_item.id} to RagFlow: {upload_result.get('ragflow_document_id')}")
+                    else:
+                        logger.warning(f"Failed to upload KB item {kb_item.id} to RagFlow: {upload_result.get('error')}")
+                        
+                except Exception as ragflow_error:
+                    logger.error(f"RagFlow upload error for KB item {kb_item.id}: {ragflow_error}")
+                    # Don't fail the task - content processing was successful
+                
+                # Keep legacy RAG collection for now (will be removed later)
+                try:
                     add_user_files(user_id=user.pk, kb_items=[kb_item])
-                except Exception as e:
-                    logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
+                except Exception as legacy_rag_error:
+                    logger.error(f"Legacy RAG processing error for KB item {kb_item.id}: {legacy_rag_error}")
+                    # Don't fail the task
             
             # Update batch item status on success
             if batch_item_id:
@@ -128,10 +144,10 @@ def process_url_task(self, url, notebook_id, user_id, upload_url_id=None, batch_
         
         except Exception as processing_error:
             # Update status to error (this will trigger SSE update)
-            kb_item.processing_status = "error"
+            kb_item.parsing_status = "done"
             kb_item.metadata = kb_item.metadata or {}
             kb_item.metadata["error_message"] = str(processing_error)
-            kb_item.save(update_fields=["processing_status", "metadata"])
+            kb_item.save(update_fields=["parsing_status", "metadata"])
             raise processing_error
         
     except Exception as e:
@@ -173,7 +189,7 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
         # Step 1: Create KnowledgeBaseItem directly in notebook with processing status
         kb_item = KnowledgeBaseItem.objects.create(
             notebook=notebook,
-            processing_status="processing",  # Start in processing state
+            parsing_status="queueing",  # Start in queueing state
             title=clean_title(url),
             content_type="media",
             tags=[],  # Explicitly set empty list
@@ -191,7 +207,6 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
 
         # Step 4: Now process the URL with media using url extractor
         from .processors.url_extractor import URLExtractor
-        from rag.rag import add_user_files
         from asgiref.sync import async_to_sync
         
         url_extractor = URLExtractor()
@@ -208,22 +223,39 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
 
         try:
             # Update status to in_progress before starting processing
-            kb_item.processing_status = "in_progress"
-            kb_item.save(update_fields=["processing_status"])
+            kb_item.parsing_status = "parsing"
+            kb_item.save(update_fields=["parsing_status"])
             
             # Run async processing using async_to_sync
             result = async_to_sync(process_url_with_media_async)()
             
             # Step 5: Update status to done (this will trigger SSE update)
-            kb_item.processing_status = "done"
-            kb_item.save(update_fields=["processing_status"])
+            kb_item.parsing_status = "done"
+            kb_item.save(update_fields=["parsing_status"])
 
-            # Ingest KB item content for retrieval (embedding)
+            # Upload to RagFlow dataset if content is available
             if kb_item.content:  # Ensure content exists
                 try:
+                    from .services.ragflow_service import RagFlowService
+                    ragflow_service = RagFlowService()
+                    
+                    # Upload knowledge item content to RagFlow
+                    upload_result = ragflow_service.upload_knowledge_item_content(kb_item)
+                    if upload_result.get('success'):
+                        logger.info(f"Successfully uploaded KB item {kb_item.id} to RagFlow: {upload_result.get('ragflow_document_id')}")
+                    else:
+                        logger.warning(f"Failed to upload KB item {kb_item.id} to RagFlow: {upload_result.get('error')}")
+                        
+                except Exception as ragflow_error:
+                    logger.error(f"RagFlow upload error for KB item {kb_item.id}: {ragflow_error}")
+                    # Don't fail the task - content processing was successful
+                
+                # Keep legacy RAG collection for now (will be removed later)
+                try:
                     add_user_files(user_id=user.pk, kb_items=[kb_item])
-                except Exception as e:
-                    logger.error(f"Error ingesting KB item {kb_item.id}: {e}")
+                except Exception as legacy_rag_error:
+                    logger.error(f"Legacy RAG processing error for KB item {kb_item.id}: {legacy_rag_error}")
+                    # Don't fail the task
             
             # Update batch item status on success
             if batch_item_id:
@@ -238,10 +270,10 @@ def process_url_media_task(self, url, notebook_id, user_id, upload_url_id=None, 
         
         except Exception as processing_error:
             # Update status to error (this will trigger SSE update)
-            kb_item.processing_status = "error"
+            kb_item.parsing_status = "done"
             kb_item.metadata = kb_item.metadata or {}
             kb_item.metadata["error_message"] = str(processing_error)
-            kb_item.save(update_fields=["processing_status", "metadata"])
+            kb_item.save(update_fields=["parsing_status", "metadata"])
             raise processing_error
         
     except Exception as e:
@@ -283,7 +315,7 @@ def process_url_document_task(self, url, notebook_id, user_id, upload_url_id=Non
         # Step 1: Create KnowledgeBaseItem directly in notebook with processing status
         kb_item = KnowledgeBaseItem.objects.create(
             notebook=notebook,
-            processing_status="processing",  # Start in processing state
+            parsing_status="queueing",  # Start in queueing state
             title=clean_title(url),
             content_type="document",
             tags=[],  # Explicitly set empty list
@@ -317,15 +349,15 @@ def process_url_document_task(self, url, notebook_id, user_id, upload_url_id=Non
         
         try:
             # Update status to in_progress before starting processing
-            kb_item.processing_status = "in_progress"
-            kb_item.save(update_fields=["processing_status"])
+            kb_item.parsing_status = "parsing"
+            kb_item.save(update_fields=["parsing_status"])
             
             # Run async processing using async_to_sync
             result = async_to_sync(process_document_async)()
             
             # Step 5: Update status to done (this will trigger SSE update)
-            kb_item.processing_status = "done"
-            kb_item.save(update_fields=["processing_status"])
+            kb_item.parsing_status = "done"
+            kb_item.save(update_fields=["parsing_status"])
             
             # Update batch item status on success
             if batch_item_id:
@@ -340,10 +372,10 @@ def process_url_document_task(self, url, notebook_id, user_id, upload_url_id=Non
         
         except Exception as processing_error:
             # Update status to error (this will trigger SSE update)
-            kb_item.processing_status = "error"
+            kb_item.parsing_status = "done"
             kb_item.metadata = kb_item.metadata or {}
             kb_item.metadata["error_message"] = str(processing_error)
-            kb_item.save(update_fields=["processing_status", "metadata"])
+            kb_item.save(update_fields=["parsing_status", "metadata"])
             raise processing_error
         
     except Exception as e:
@@ -369,7 +401,6 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
         from .services.notebook_service import NotebookService
         from django.core.files.base import ContentFile
         from django.shortcuts import get_object_or_404
-        from rag.rag import add_user_files
         from django.db import transaction
         from asgiref.sync import async_to_sync
         
@@ -407,9 +438,9 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
             try:
                 # Security: Verify the knowledge base item belongs to the verified notebook
                 kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, notebook=notebook)
-                # Update status to show processing has started
-                kb_item.processing_status = "in_progress"
-                kb_item.save(update_fields=["processing_status"])
+                # Update status to show parsing has started
+                kb_item.parsing_status = "parsing"
+                kb_item.save(update_fields=["parsing_status"])
             except KnowledgeBaseItem.DoesNotExist:
                 logger.error(f"KnowledgeBaseItem {kb_item_id} not found in notebook {notebook_id}")
         
@@ -423,15 +454,35 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
             # Get the updated KnowledgeBaseItem
             kb_item = get_object_or_404(KnowledgeBaseItem, id=kb_item_id, notebook=notebook)
             
-            # Update status to done - this will trigger the signal
-            kb_item.processing_status = "done"
-            kb_item.save(update_fields=["processing_status"])
+            # Update status to done - parsing is complete
+            kb_item.parsing_status = "done"
+            kb_item.save(update_fields=["parsing_status"])
             
-            # Add to user's RAG collection
-            add_user_files(
-                user_id=user.pk,
-                kb_items=[kb_item],
-            )
+            # Upload to RagFlow dataset if content is available
+            try:
+                from .services.ragflow_service import RagFlowService
+                ragflow_service = RagFlowService()
+                
+                # Upload knowledge item content to RagFlow
+                upload_result = ragflow_service.upload_knowledge_item_content(kb_item)
+                if upload_result.get('success'):
+                    logger.info(f"Successfully uploaded KB item {kb_item.id} to RagFlow: {upload_result.get('ragflow_document_id')}")
+                else:
+                    logger.warning(f"Failed to upload KB item {kb_item.id} to RagFlow: {upload_result.get('error')}")
+                    
+            except Exception as ragflow_error:
+                logger.error(f"RagFlow upload error for KB item {kb_item.id}: {ragflow_error}")
+                # Don't fail the task - content processing was successful
+            
+            # Keep legacy RAG collection for now (will be removed later)
+            try:
+                add_user_files(
+                    user_id=user.pk,
+                    kb_items=[kb_item],
+                )
+            except Exception as legacy_rag_error:
+                logger.error(f"Legacy RAG processing error for KB item {kb_item.id}: {legacy_rag_error}")
+                # Don't fail the task
             
             # Ensure the result uses our kb_item ID
             result["file_id"] = kb_item.id
@@ -472,8 +523,8 @@ def process_file_upload_task(self, file_data, filename, notebook_id, user_id, up
                 notebook = Notebook.objects.get(id=notebook_id, user=user)
                 # Security: Verify the knowledge base item belongs to the verified notebook
                 kb_item = KnowledgeBaseItem.objects.get(id=kb_item_id, notebook=notebook)
-                kb_item.processing_status = "failed"  # Use "failed" status
-                kb_item.save(update_fields=["processing_status"])
+                kb_item.parsing_status = "done"  # Mark as done even if failed
+                kb_item.save(update_fields=["parsing_status"])
                 logger.info(f"Updated kb_item {kb_item_id} status to failed")
             except (KnowledgeBaseItem.DoesNotExist, Notebook.DoesNotExist):
                 logger.error(f"Could not find kb_item {kb_item_id} to update error status")
@@ -697,7 +748,7 @@ def generate_image_captions_task(self, kb_item_id):
                             'title': kb_item.title,
                             # Use completed to indicate post-processing (captions) finished
                             'status': 'completed',
-                            'processing_status': kb_item.processing_status,
+                            'parsing_status': kb_item.parsing_status,
                             # Include updated metadata so frontend knows captions are done
                             'metadata': kb_item.metadata,
                             'file_metadata': kb_item.file_metadata,

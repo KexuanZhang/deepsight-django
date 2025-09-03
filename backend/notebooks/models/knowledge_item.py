@@ -15,11 +15,10 @@ class KnowledgeBaseItem(BaseModel):
     Each item belongs to a specific notebook and contains processed content from sources.
     """
     
-    PROCESSING_STATUS_CHOICES = [
-        ("processing", "Processing"),
-        ("in_progress", "In Progress"),
+    PARSING_STATUS_CHOICES = [
+        ("queueing", "Queueing"),
+        ("parsing", "Parsing"),
         ("done", "Done"),
-        ("failed", "Failed"),
     ]
     
     CONTENT_TYPE_CHOICES = [
@@ -35,11 +34,11 @@ class KnowledgeBaseItem(BaseModel):
         related_name="knowledge_base_items",
         help_text="Notebook this knowledge item belongs to",
     )
-    processing_status = models.CharField(
+    parsing_status = models.CharField(
         max_length=20,
-        choices=PROCESSING_STATUS_CHOICES,
-        default="processing",
-        help_text="Processing status of this knowledge base item",
+        choices=PARSING_STATUS_CHOICES,
+        default="queueing",
+        help_text="Parsing status of this knowledge base item",
         db_index=True,
     )
     title = models.CharField(
@@ -98,6 +97,27 @@ class KnowledgeBaseItem(BaseModel):
         help_text="File metadata stored in database"
     )
     
+    # RagFlow integration fields
+    ragflow_document_id = models.CharField(
+        max_length=255,
+        blank=True,
+        db_index=True,
+        help_text="RagFlow document ID linking to uploaded document in RagFlow dataset"
+    )
+    ragflow_processing_status = models.CharField(
+        max_length=20,
+        choices=[
+            ("pending", "Pending"),
+            ("uploading", "Uploading"),
+            ("parsing", "Parsing"),
+            ("completed", "Completed"),
+            ("failed", "Failed"),
+        ],
+        default="pending",
+        db_index=True,
+        help_text="RagFlow document processing status"
+    )
+    
     # Custom manager
     objects = KnowledgeBaseItemManager()
     
@@ -107,11 +127,13 @@ class KnowledgeBaseItem(BaseModel):
         verbose_name_plural = "Knowledge Base Items"
         indexes = [
             models.Index(fields=["notebook", "-created_at"]),
-            models.Index(fields=["notebook", "processing_status"]),
+            models.Index(fields=["notebook", "parsing_status"]),
             models.Index(fields=["notebook", "content_type"]),
             models.Index(fields=["notebook", "source_hash"]),
             models.Index(fields=["file_object_key"]),
             models.Index(fields=["original_file_object_key"]),
+            models.Index(fields=["ragflow_document_id"]),
+            models.Index(fields=["notebook", "ragflow_processing_status"]),
         ]
         constraints = [
             models.CheckConstraint(
@@ -182,10 +204,15 @@ class KnowledgeBaseItem(BaseModel):
             'file_metadata': self.file_metadata,
         }
     
-    def mark_processing_complete(self, success=True):
-        """Mark item as processing complete or failed."""
-        self.processing_status = 'done' if success else 'failed'
-        self.save(update_fields=['processing_status', 'updated_at'])
+    def mark_parsing_complete(self):
+        """Mark item as parsing complete."""
+        self.parsing_status = 'done'
+        self.save(update_fields=['parsing_status', 'updated_at'])
+    
+    def mark_parsing_started(self):
+        """Mark item as currently parsing."""
+        self.parsing_status = 'parsing'
+        self.save(update_fields=['parsing_status', 'updated_at'])
     
     def add_tag(self, tag):
         """Add a tag to this knowledge item."""
@@ -206,6 +233,51 @@ class KnowledgeBaseItem(BaseModel):
         return bool((self.content and self.content.strip()) or 
                    self.file_object_key or 
                    self.original_file_object_key)
+    
+    # RagFlow integration methods
+    def is_uploaded_to_ragflow(self):
+        """Check if item has been uploaded to RagFlow."""
+        return bool(self.ragflow_document_id and self.ragflow_document_id.strip())
+    
+    def is_ragflow_processing_complete(self):
+        """Check if RagFlow processing is complete."""
+        return self.ragflow_processing_status == 'completed'
+    
+    def is_ragflow_processing_failed(self):
+        """Check if RagFlow processing failed."""
+        return self.ragflow_processing_status == 'failed'
+    
+    def mark_ragflow_uploading(self):
+        """Mark as being uploaded to RagFlow."""
+        self.ragflow_processing_status = 'uploading'
+        self.save(update_fields=['ragflow_processing_status', 'updated_at'])
+    
+    def mark_ragflow_parsing(self):
+        """Mark as being parsed by RagFlow."""
+        self.ragflow_processing_status = 'parsing'
+        self.save(update_fields=['ragflow_processing_status', 'updated_at'])
+    
+    def mark_ragflow_completed(self, ragflow_document_id: str):
+        """Mark RagFlow processing as completed."""
+        self.ragflow_document_id = ragflow_document_id
+        self.ragflow_processing_status = 'completed'
+        self.save(update_fields=['ragflow_document_id', 'ragflow_processing_status', 'updated_at'])
+    
+    def mark_ragflow_failed(self, error_message: str = ""):
+        """Mark RagFlow processing as failed."""
+        self.ragflow_processing_status = 'failed'
+        if error_message:
+            # Store error in metadata
+            if not isinstance(self.metadata, dict):
+                self.metadata = {}
+            self.metadata['ragflow_error'] = error_message
+        self.save(update_fields=['ragflow_processing_status', 'metadata', 'updated_at'])
+    
+    def get_ragflow_error(self):
+        """Get RagFlow error message from metadata."""
+        if isinstance(self.metadata, dict):
+            return self.metadata.get('ragflow_error', '')
+        return ''
 
 
 class KnowledgeBaseImage(BaseModel):

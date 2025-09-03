@@ -45,10 +45,8 @@ class SignalHandlers:
             
             # Initialize user-specific resources
             try:
-                # Create user's Milvus collection if needed
-                from rag.rag import user_collection
-                collection_name = user_collection(instance.id)
-                logger.info(f"User collection name assigned: {collection_name}")
+                # Legacy Milvus initialization removed - now using RagFlow per-notebook datasets
+                logger.info(f"User {instance.id} created - RagFlow datasets will be created per notebook")
                 
             except Exception as e:
                 logger.exception(f"Failed to initialize user resources for {instance.id}: {e}")

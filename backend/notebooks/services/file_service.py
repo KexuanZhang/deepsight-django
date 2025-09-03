@@ -13,8 +13,7 @@ from rest_framework import status
 from ..models import KnowledgeBaseItem, BatchJob, BatchJobItem
 from ..processors.upload_processor import UploadProcessor
 from ..processors import FileProcessor
-from rag.rag import add_user_files
-from .base_service import NotebookBaseService
+from core.services import NotebookBaseService
 
 logger = logging.getLogger(__name__)
 
@@ -58,12 +57,12 @@ class FileService(NotebookBaseService):
         try:
             # Step 1: Create KnowledgeBaseItem immediately in separate transaction
             with transaction.atomic():
-                # Create KnowledgeBaseItem with processing_status="processing" directly in notebook
+                # Create KnowledgeBaseItem with parsing_status="queueing" directly in notebook
                 kb_item = KnowledgeBaseItem(
                     notebook=notebook,
                     title=file_obj.name,
                     content_type="document",
-                    processing_status="processing",
+                    parsing_status="queueing",
                     notes=f"Processing {file_obj.name}",
                     tags=[],  # Explicitly set empty list
                     file_metadata={}  # Explicitly set empty dict
@@ -101,9 +100,9 @@ class FileService(NotebookBaseService):
                 )
                 
             except Exception as queue_error:
-                # Update processing status to error if queueing fails
-                kb_item.processing_status = "error"
-                kb_item.save(update_fields=["processing_status"])
+                # Update parsing status to done if queueing fails (parsing isn't the issue)
+                kb_item.parsing_status = "done" 
+                kb_item.save(update_fields=["parsing_status"])
                 self.logger.error(f"Failed to queue processing for {file_obj.name}: {queue_error}")
                 # Don't re-raise - return success so frontend shows the item with error status
                 

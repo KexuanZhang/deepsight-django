@@ -257,3 +257,79 @@ class AsyncService(BaseService):
             'result': result.result if result.ready() else None,
             'info': result.info
         }
+
+
+class NotebookBaseService(BaseService):
+    """
+    Base service for notebook-related operations.
+    
+    Provides common patterns for notebook-scoped operations with
+    proper user permission checking and validation.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.logger = logging.getLogger(self.__class__.__module__)
+    
+    def get_user_notebook(self, notebook_id: str, user):
+        """
+        Get a notebook that belongs to the specified user.
+        
+        Args:
+            notebook_id: ID of the notebook
+            user: User who should own the notebook
+            
+        Returns:
+            Notebook instance
+            
+        Raises:
+            PermissionDenied: If notebook not found or doesn't belong to user
+        """
+        from django.core.exceptions import PermissionDenied
+        
+        # Import here to avoid circular imports
+        from notebooks.models import Notebook
+        
+        try:
+            return Notebook.objects.get(id=notebook_id, user=user)
+        except Notebook.DoesNotExist:
+            raise PermissionDenied("Notebook not found or access denied")
+    
+    def validate_notebook_access(self, notebook, user):
+        """
+        Validate that user has access to the notebook.
+        
+        Args:
+            notebook: Notebook instance
+            user: User to check access for
+            
+        Raises:
+            PermissionDenied: If user doesn't have access
+        """
+        from django.core.exceptions import PermissionDenied
+        
+        if notebook.user != user:
+            raise PermissionDenied("Access denied to this notebook")
+    
+    def log_notebook_operation(self, operation: str, notebook_id: str, user_id: int, **kwargs):
+        """
+        Log notebook-specific operations.
+        
+        Args:
+            operation: Operation description
+            notebook_id: Notebook ID
+            user_id: User ID
+            **kwargs: Additional context
+        """
+        self.log_operation(
+            operation,
+            notebook_id=notebook_id,
+            user_id=user_id,
+            **kwargs
+        )
+    
+    def perform_action(self, **kwargs):
+        """
+        Default implementation - services can override if needed.
+        """
+        pass

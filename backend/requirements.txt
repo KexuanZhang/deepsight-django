@@ -63,3 +63,4 @@ celery
 pydantic
 ffmpeg-python
 aiohttp
+ragflow-sdk

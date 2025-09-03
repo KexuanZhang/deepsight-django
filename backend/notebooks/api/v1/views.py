@@ -77,6 +77,10 @@ class NotebookViewSet(viewsets.ModelViewSet):
         
         Uses select_related and prefetch_related for optimal database performance.
         """
+        # Handle schema generation when user is not authenticated
+        if getattr(self, 'swagger_fake_view', False) or not self.request.user.is_authenticated:
+            return Notebook.objects.none()
+            
         return Notebook.objects.filter(
             user=self.request.user
         ).select_related(

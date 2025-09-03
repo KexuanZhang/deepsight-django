@@ -293,28 +293,29 @@ class Command(BaseCommand):
             # Export vector collections metadata
             collections_metadata = []
             
-            # Get all unique user collections
+            # Legacy Milvus backup removed - RagFlow datasets are managed separately
             from notebooks.models import KnowledgeBaseItem
-            from rag.rag import user_collection
             
             user_ids = set(KnowledgeBaseItem.objects.values_list('notebook__user_id', flat=True))
             
             for user_id in user_ids:
                 if user_id:
                     try:
-                        from pymilvus import Collection
-                        collection_name = user_collection(user_id)
-                        collection = Collection(collection_name)
+                        # RagFlow datasets are managed per-notebook, not per-user
+                        from notebooks.models import RagFlowDataset
+                        datasets = RagFlowDataset.objects.filter(notebook__user_id=user_id)
                         
-                        collections_metadata.append({
-                            'user_id': user_id,
-                            'collection_name': collection_name,
-                            'entity_count': collection.num_entities,
-                            'schema': str(collection.schema)
-                        })
+                        for dataset in datasets:
+                            collections_metadata.append({
+                                'user_id': user_id,
+                                'notebook_id': dataset.notebook.id,
+                                'ragflow_dataset_id': dataset.ragflow_dataset_id,
+                                'status': dataset.status,
+                                'document_count': dataset.get_document_count() if dataset.is_ready() else 0
+                            })
                         
                     except Exception as e:
-                        logger.warning(f"Failed to backup collection for user {user_id}: {e}")
+                        logger.warning(f"Failed to backup RagFlow datasets for user {user_id}: {e}")
                         continue
             
             # Save metadata

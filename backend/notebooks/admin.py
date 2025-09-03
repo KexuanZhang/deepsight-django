@@ -4,6 +4,7 @@ from .models import (
     Notebook,
     KnowledgeBaseItem,
     NotebookChatMessage,
+    RagFlowDataset,
 )
 
 
@@ -12,8 +13,8 @@ class KnowledgeBaseItemInline(admin.TabularInline):
     """Inline admin for knowledge base items."""
 
     model = KnowledgeBaseItem
-    readonly_fields = ("created_at", "processing_status")
-    fields = ("title", "content_type", "processing_status", "notes", "created_at")
+    readonly_fields = ("created_at", "parsing_status")
+    fields = ("title", "content_type", "parsing_status", "notes", "created_at")
     extra = 0
     show_change_link = True
 
@@ -54,15 +55,15 @@ class KnowledgeBaseItemAdmin(admin.ModelAdmin):
         "notebook",
         "title",
         "content_type",
-        "processing_status",
+        "parsing_status",
         "get_file_status",
         "created_at",
     )
-    list_filter = ("content_type", "processing_status", "created_at", "notebook__user")
+    list_filter = ("content_type", "parsing_status", "created_at", "notebook__user")
     search_fields = ("title", "content", "notebook__name", "notebook__user__username")
     readonly_fields = ("created_at", "updated_at", "source_hash")
     fieldsets = (
-        (None, {"fields": ("notebook", "title", "content_type", "processing_status", "notes")}),
+        (None, {"fields": ("notebook", "title", "content_type", "parsing_status", "notes")}),
         ("Content", {"fields": ("file_object_key", "original_file_object_key", "content", "tags")}),
         ("Metadata", {"fields": ("metadata", "source_hash"), "classes": ("collapse",)}),
         (
@@ -84,6 +85,39 @@ class KnowledgeBaseItemAdmin(admin.ModelAdmin):
 
     get_file_status.short_description = "Files"
 
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("notebook", "notebook__user")
+
+
+@admin.register(RagFlowDataset)
+class RagFlowDatasetAdmin(admin.ModelAdmin):
+    """Admin configuration for RagFlowDataset model."""
+    
+    list_display = (
+        "id", 
+        "notebook", 
+        "dataset_name", 
+        "status", 
+        "get_document_count",
+        "created_at"
+    )
+    list_filter = ("status", "created_at")
+    search_fields = ("dataset_name", "notebook__name", "notebook__user__username")
+    readonly_fields = ("created_at", "updated_at", "ragflow_dataset_id", "ragflow_chat_id")
+    fieldsets = (
+        (None, {"fields": ("notebook", "dataset_name", "status")}),
+        ("RagFlow Integration", {"fields": ("ragflow_dataset_id", "ragflow_chat_id")}),
+        ("Status", {"fields": ("error_message",)}),
+        ("Metadata", {"fields": ("metadata",), "classes": ("collapse",)}),
+        ("Timestamps", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+    )
+    
+    def get_document_count(self, obj):
+        """Get count of documents in the dataset."""
+        return obj.get_document_count()
+    
+    get_document_count.short_description = "Documents"
+    
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("notebook", "notebook__user")
 

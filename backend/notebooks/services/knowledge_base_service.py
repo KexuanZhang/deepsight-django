@@ -10,7 +10,7 @@ from rest_framework import status
 
 from ..models import KnowledgeBaseItem, BatchJob
 from ..utils.storage import get_storage_adapter
-from .base_service import NotebookBaseService
+from core.services import NotebookBaseService
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,13 @@ class KnowledgeBaseService(NotebookBaseService):
     def __init__(self):
         super().__init__()
         self.storage_adapter = get_storage_adapter()
+    
+    def perform_action(self, **kwargs):
+        """
+        Implementation of abstract method from BaseService.
+        This service uses direct method calls rather than the template pattern.
+        """
+        pass
     
     def get_user_knowledge_base(self, user_id: int, notebook, content_type: str = None, limit: int = None, offset: int = None) -> Dict:
         """

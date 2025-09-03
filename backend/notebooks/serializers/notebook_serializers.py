@@ -21,17 +21,19 @@ class NotebookSerializer(serializers.ModelSerializer):
     knowledge_item_count = serializers.SerializerMethodField()
     chat_message_count = serializers.SerializerMethodField()
     last_activity = serializers.SerializerMethodField()
+    ragflow_dataset_info = serializers.SerializerMethodField()
     
     class Meta:
         model = Notebook
         fields = [
             "id", "name", "description", "created_at", "updated_at",
             "source_count", "knowledge_item_count", "chat_message_count", 
-            "last_activity"
+            "last_activity", "ragflow_dataset_info"
         ]
         read_only_fields = [
             "id", "created_at", "updated_at", "source_count", 
-            "knowledge_item_count", "chat_message_count", "last_activity"
+            "knowledge_item_count", "chat_message_count", "last_activity",
+            "ragflow_dataset_info"
         ]
     
     def get_source_count(self, obj):
@@ -40,7 +42,7 @@ class NotebookSerializer(serializers.ModelSerializer):
     
     def get_knowledge_item_count(self, obj):
         """Get count of processed knowledge base items."""
-        return obj.knowledge_base_items.filter(processing_status='completed').count()
+        return obj.knowledge_base_items.filter(parsing_status='done').count()
     
     def get_chat_message_count(self, obj):
         """Get count of chat messages in the notebook."""
@@ -60,6 +62,27 @@ class NotebookSerializer(serializers.ModelSerializer):
             last_activity = latest_chat.timestamp
         
         return last_activity
+    
+    def get_ragflow_dataset_info(self, obj):
+        """Get RagFlow dataset information for the notebook."""
+        try:
+            ragflow_dataset = obj.ragflow_dataset
+            return {
+                "id": ragflow_dataset.ragflow_dataset_id,
+                "status": ragflow_dataset.status,
+                "is_ready": ragflow_dataset.is_ready(),
+                "document_count": ragflow_dataset.get_document_count() if ragflow_dataset.is_ready() else 0,
+                "error_message": ragflow_dataset.error_message or None
+            }
+        except AttributeError:
+            # No RagFlow dataset exists yet
+            return {
+                "id": None,
+                "status": "not_created",
+                "is_ready": False,
+                "document_count": 0,
+                "error_message": None
+            }
     
     def validate_name(self, value):
         """Validate notebook name."""

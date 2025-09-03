@@ -199,6 +199,12 @@ MILVUS_SETTINGS = {
     'COLLECTION': os.getenv('MILVUS_COLLECTION', 'user_vectors'),
 }
 
+# RagFlow Configuration
+RAGFLOW_API_KEY = os.getenv('RAGFLOW_API_KEY')
+RAGFLOW_BASE_URL = os.getenv('RAGFLOW_BASE_URL', 'http://localhost:9380')
+RAGFLOW_DEFAULT_CHUNK_METHOD = os.getenv('RAGFLOW_CHUNK_METHOD', 'naive')
+RAGFLOW_DEFAULT_EMBEDDING_MODEL = os.getenv('RAGFLOW_EMBEDDING_MODEL', 'BAAI/bge-en-v1.5')
+
 # Celery Configuration
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')

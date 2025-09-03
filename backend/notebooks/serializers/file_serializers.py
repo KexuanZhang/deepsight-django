@@ -202,10 +202,17 @@ class KnowledgeBaseItemSerializer(serializers.ModelSerializer):
             "metadata",
             "tags",
             "source_hash",
+            "parsing_status",
+            "ragflow_document_id",
+            "ragflow_processing_status",
+            "notes",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at", "source_hash"]
+        read_only_fields = [
+            "id", "created_at", "updated_at", "source_hash",
+            "ragflow_document_id", "ragflow_processing_status"
+        ]
     
     def get_file_url(self, obj):
         """Get pre-signed URL for processed file."""

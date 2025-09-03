@@ -10,6 +10,7 @@ from .models.notebook import Notebook
 from .models.knowledge_item import KnowledgeBaseItem, KnowledgeBaseImage  
 from .models.batch_processing import BatchJob, BatchJobItem
 from .models.chat import NotebookChatMessage
+from .models.ragflow_dataset import RagFlowDataset
 
 # Export all models for backward compatibility
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     'BatchJob',
     'BatchJobItem',
     'NotebookChatMessage',
+    'RagFlowDataset',
 ]

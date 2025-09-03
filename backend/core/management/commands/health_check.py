@@ -229,45 +229,32 @@ class Command(BaseCommand):
             }
     
     def _check_vectordb(self, timeout: int) -> Dict:
-        """Check Milvus vector database connectivity."""
+        """Check vector database connectivity - now using RagFlow."""
         try:
-            from pymilvus import connections, Collection
-            from rag.rag import user_collection
+            from infrastructure.ragflow.client import get_ragflow_client
             
             start_time = time.time()
             
-            # Test connection
-            connections.connect("default", host="localhost", port="19530", timeout=timeout)
-            
-            # Test with a sample collection (use user ID 1 as test)
-            test_collection_name = user_collection(1)
-            
-            try:
-                collection = Collection(test_collection_name)
-                entity_count = collection.num_entities
-                collection_exists = True
-            except Exception:
-                entity_count = 0
-                collection_exists = False
+            # Test RagFlow connection
+            ragflow_client = get_ragflow_client()
+            ragflow_healthy = ragflow_client.health_check()
             
             response_time = time.time() - start_time
             
             return {
-                'status': 'healthy',
+                'status': 'healthy' if ragflow_healthy else 'unhealthy',
                 'response_time_ms': round(response_time * 1000, 2),
                 'details': {
-                    'connection_ready': True,
-                    'test_collection_exists': collection_exists,
-                    'test_collection_entities': entity_count
+                    'ragflow_ready': ragflow_healthy
                 }
             }
             
         except Exception as e:
-            logger.exception("Vector database health check failed")
+            logger.exception("RagFlow health check failed")
             return {
                 'status': 'error',
                 'message': str(e),
-                'details': {'connection_ready': False}
+                'details': {'ragflow_ready': False}
             }
     
     def _check_cache(self, timeout: int) -> Dict:

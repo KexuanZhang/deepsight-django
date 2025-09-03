@@ -8,12 +8,8 @@ from django.db import transaction
 from django.core.exceptions import ValidationError
 from rest_framework import status
 
-from pymilvus import Collection
-from pymilvus.exceptions import SchemaNotReadyException, CollectionNotExistException
-
 from ..models import Notebook, NotebookChatMessage
-from rag.rag import RAGChatbot, SuggestionRAGAgent, user_collection
-from .base_service import NotebookBaseService
+from core.services import NotebookBaseService
 
 logger = logging.getLogger(__name__)
 
@@ -59,30 +55,49 @@ class ChatService(NotebookBaseService):
         
         return None
 
-    def check_user_knowledge_base(self, user_id: int) -> Optional[Dict]:
+    def check_notebook_knowledge_base(self, notebook) -> Optional[Dict]:
         """
-        Check if user has data in their Milvus collection.
+        Check if notebook has data in its RagFlow dataset.
         
         Args:
-            user_id: The user's ID
+            notebook: Notebook instance
             
         Returns:
             None if valid, error dict if no data found
         """
-        coll_name = user_collection(user_id)
         try:
-            coll = Collection(coll_name)
-            existing = coll.num_entities
-        except (CollectionNotExistException, SchemaNotReadyException):
-            existing = 0
-
-        if existing == 0:
+            # Check if notebook has RagFlow dataset
+            if not hasattr(notebook, 'ragflow_dataset'):
+                return {
+                    "error": "This notebook doesn't have a knowledge base yet. Please upload files first.",
+                    "status_code": status.HTTP_400_BAD_REQUEST
+                }
+            
+            ragflow_dataset = notebook.ragflow_dataset
+            
+            # Check if dataset is ready
+            if not ragflow_dataset.is_ready():
+                return {
+                    "error": f"Knowledge base is not ready. Status: {ragflow_dataset.status}",
+                    "status_code": status.HTTP_400_BAD_REQUEST
+                }
+            
+            # Check if dataset has documents
+            document_count = ragflow_dataset.get_document_count()
+            if document_count == 0:
+                return {
+                    "error": "Your knowledge base is empty. Please upload files first.",
+                    "status_code": status.HTTP_400_BAD_REQUEST
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.exception(f"Error checking notebook knowledge base: {e}")
             return {
-                "error": "Your knowledge base is empty. Please upload files first.",
-                "status_code": status.HTTP_400_BAD_REQUEST
+                "error": "Failed to check knowledge base status.",
+                "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR
             }
-        
-        return None
 
     def get_chat_history(self, notebook) -> List[tuple]:
         """
@@ -159,56 +174,56 @@ class ChatService(NotebookBaseService):
         collections: Optional[List] = None,
     ) -> Generator:
         """
-        Create RAG chat stream with message recording.
+        Create agentic RAG chat stream with message recording using RagFlow Knowledge Base Agent.
         
         Args:
             user_id: User ID
             question: User's question
             history: Chat history as list of (sender, message) tuples
-            file_ids: Optional file IDs for context
+            file_ids: Optional file IDs for context (not used with agentic RAG)
             notebook: Notebook instance
-            collections: Optional additional collections
+            collections: Optional additional collections (not used with agentic RAG)
             
         Returns:
             Generator yielding chat stream chunks
         """
-        # Check if we should use full content or RAG based on token limit
-        use_full_content = False
-        if file_ids and notebook:
-            total_content_length = self._get_total_content_length(notebook, file_ids)
-            # Using ~200,000 characters as rough estimate for 50k tokens (4 chars per token)
-            TOKEN_LIMIT_CHARS = 200000
-            use_full_content = total_content_length <= TOKEN_LIMIT_CHARS
-            
-        # Get the chatbot singleton
-        bot = RAGChatbot(
-            user_id=user_id,
-            extra_collections=collections  # <-- pass collections to RAGChatbot
-        )
-
-        # Get raw stream from chatbot
-        raw_stream = bot.stream(
-            question=question,
-            history=history,
-            file_ids=file_ids,  # <-- pass file_ids to bot
-            use_full_content=use_full_content,  # <-- pass the full content flag
-        )
-
+        from .agentic_rag_service import AgenticRAGService
+        
+        # Convert history format for agent
+        formatted_history = []
+        if history:
+            for sender, message in history:
+                role = "user" if sender == "user" else "assistant"
+                formatted_history.append({"role": role, "content": message})
+        
+        # Create agentic RAG service
+        agentic_rag = AgenticRAGService()
+        
         def wrapped_stream():
             """Wrapper to capture assistant tokens and save final response"""
             buffer = []
-            for chunk in raw_stream:
+            
+            # Get streaming response from knowledge base agent
+            agent_stream = agentic_rag.ask_agent_streaming(
+                notebook=notebook,
+                user_id=user_id,
+                question=question,
+                history=formatted_history
+            )
+            
+            for chunk in agent_stream:
                 yield chunk
-                # Parse only token events
+                
+                # Parse token events to build full response
                 if chunk.startswith("data: "):
                     try:
+                        import json
                         payload = json.loads(chunk[len("data: "):])
                         if payload.get("type") == "token":
                             buffer.append(payload.get("text", ""))
                     except json.JSONDecodeError:
                         # Skip malformed JSON
                         continue
-                # Ignore metadata and done events
             
             # Once stream finishes, save the full assistant response
             full_response = "".join(buffer).strip()
@@ -280,7 +295,7 @@ class ChatService(NotebookBaseService):
 
     def generate_suggested_questions(self, notebook) -> Dict:
         """
-        Generate suggested questions based on chat history.
+        Generate suggested questions using the knowledge base agent.
         
         Args:
             notebook: Notebook instance
@@ -289,27 +304,73 @@ class ChatService(NotebookBaseService):
             Dict with suggestions or error information
         """
         try:
-            history = NotebookChatMessage.objects.filter(notebook=notebook).order_by("timestamp")
-            history_text = "\n".join([f"{msg.sender}: {msg.message}" for msg in history])
-
-            agent = SuggestionRAGAgent()
-            suggestions = agent.generate_suggestions(history_text)
-
-            self.log_notebook_operation(
-                "suggestions_generated",
-                str(notebook.id),
-                notebook.user.id,
-                suggestion_count=len(suggestions) if isinstance(suggestions, list) else 0
+            from .agentic_rag_service import AgenticRAGService
+            
+            # Get recent chat history
+            recent_messages = NotebookChatMessage.objects.filter(
+                notebook=notebook
+            ).order_by("-timestamp")[:10]  # Last 10 messages
+            
+            # Build history context
+            history = []
+            for msg in reversed(recent_messages):  # Reverse to get chronological order
+                role = "user" if msg.sender == "user" else "assistant" 
+                history.append({"role": role, "content": msg.message})
+            
+            # Create suggestion prompt
+            suggestion_prompt = """Based on our conversation and the knowledge base, suggest 3-5 relevant follow-up questions that would be helpful to explore. 
+            Make the questions specific and actionable. Format your response as a simple numbered list."""
+            
+            # Use agentic RAG to generate suggestions
+            agentic_rag = AgenticRAGService()
+            result = agentic_rag.ask_agent_direct(
+                notebook=notebook,
+                user_id=notebook.user.id,
+                question=suggestion_prompt,
+                history=history
             )
-
-            return {
-                "success": True,
-                "suggestions": suggestions
-            }
+            
+            if result.get('success'):
+                content = result.get('content', '')
+                
+                # Parse suggestions from response (simple parsing for numbered list)
+                suggestions = []
+                lines = content.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line and (line[0].isdigit() or line.startswith('-')):
+                        # Remove numbering and clean up
+                        clean_question = line.split('.', 1)[-1].strip()
+                        if clean_question.startswith('-'):
+                            clean_question = clean_question[1:].strip()
+                        if clean_question:
+                            suggestions.append(clean_question)
+                
+                # Fallback: if no parsed suggestions, use the raw content
+                if not suggestions:
+                    suggestions = [content]
+                
+                self.log_notebook_operation(
+                    "agent_suggestions_generated",
+                    str(notebook.id),
+                    notebook.user.id,
+                    suggestion_count=len(suggestions)
+                )
+                
+                return {
+                    "success": True,
+                    "suggestions": suggestions[:5]  # Limit to 5 suggestions
+                }
+            else:
+                return {
+                    "error": result.get('error', 'Failed to generate suggestions'),
+                    "status_code": result.get('status_code', status.HTTP_500_INTERNAL_SERVER_ERROR)
+                }
 
         except Exception as e:
-            self.logger.exception(f"Failed to generate suggestions for notebook {notebook.id}: {e}")
+            self.logger.exception(f"Failed to generate agent suggestions for notebook {notebook.id}: {e}")
             return {
-                "error": str(e),
-                "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR
+                "error": "Failed to generate suggestions",
+                "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "details": {"error": str(e)}
             }

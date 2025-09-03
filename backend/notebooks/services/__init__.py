@@ -11,19 +11,14 @@ This package contains all business logic services:
 - knowledge_base_image_service.py: Knowledge base image service (moved from utils)
 """
 
-# New focused services
+# Focused services for notebooks
 from .notebook_service import NotebookService
 from .file_service import FileService
 from .url_service import URLService
 from .chat_service import ChatService
 from .knowledge_base_service import KnowledgeBaseService
 
-# Legacy services (moved from utils)
-try:
-    from .base_service import BaseService
-except ImportError:
-    BaseService = None
-
+# Optional services  
 try:
     from .knowledge_base_image_service import KnowledgeBaseImageService
 except ImportError:
@@ -35,6 +30,5 @@ __all__ = [
     'URLService',
     'ChatService', 
     'KnowledgeBaseService',
-    'BaseService',
     'KnowledgeBaseImageService'
 ] 
